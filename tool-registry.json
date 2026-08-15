@@ -1,5 +1,5 @@
 {
-  "version": "2.1",
+  "version": "2.2",
   "repository_role": "browser_execution_capability_for_webactueel_leads",
   "policy": {
     "read_only": true,
@@ -33,7 +33,8 @@
       "bij ontbrekende uitvoerroute wordt handoff_required teruggegeven"
     ],
     "required_inputs": [
-      "officiële bedrijfswebsite via target_url of vooraf gecontroleerde sites.txt",
+      "GitHub/Chat: officiële bedrijfswebsite via requests/scan.json target_url of expliciete workflow_dispatch target_url",
+      "Lokale CLI-batch: sites.txt mag alleen bewust handmatig worden gebruikt en is nooit een automatische GitHub/Chat-trigger",
       "scanintentie: new_candidate, qualification, rescan of same_day_refresh"
     ],
     "optional_context_from_leads": [
@@ -43,9 +44,11 @@
     ],
     "execution_modes": {
       "github_actions": {
-        "when": "de actuele GitHub-capability workflow_dispatch daadwerkelijk kan starten en run/artifact kan teruglezen",
+        "when": "de actuele GitHub-capability workflow_dispatch daadwerkelijk kan starten en run/artifact kan teruglezen, of een source-bound requests/scan.json push wordt gedaan",
         "workflow": ".github/workflows/scan.yml",
         "primary_input": "target_url",
+        "request_file": "requests/scan.json",
+        "sites_txt_trigger": false,
         "post_scan_command": "npm run handoff:leads"
       },
       "codex_or_cli_local": {
@@ -56,7 +59,8 @@
           "npm run scan",
           "npm run enrich",
           "npm run handoff:leads"
-        ]
+        ],
+        "manual_batch_note": "sites.txt is alleen hier als expliciet gekozen lokale batchinput toegestaan; nooit als verborgen Chat-fallback."
       },
       "unavailable": {
         "when": "geen van beide uitvoerroutes aantoonbaar beschikbaar is",
@@ -106,6 +110,15 @@
       "purpose": "desktop- en mobiele browserbewijzen",
       "use_when": "Leads formele websitekwalificatie of rescan uitvoert",
       "evidence_role": "primary_browser_evidence",
+      "automatic_score_effect": false
+    },
+    "axe_core": {
+      "status": "enabled",
+      "module": "src/scan.mjs",
+      "package": "@axe-core/playwright",
+      "purpose": "ernstige/kritieke geautomatiseerde accessibility-signalen op de homepage als kandidaatbevinding",
+      "use_when": "de primaire browserrun de homepage beoordeelt",
+      "evidence_role": "supplemental_candidate_signal",
       "automatic_score_effect": false
     },
     "sitemap_robots": {
