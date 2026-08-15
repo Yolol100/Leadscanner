@@ -1,21 +1,30 @@
 # Leadscanner
 
-Private Webactueel lead-scanner voor het read-only controleren van publieke websites.
+Private Webactueel lead-scanner voor het read-only controleren van publieke websites met Crawlee + Playwright.
 
 ## Wat de scanner doet
 
+- gebruikt `PlaywrightCrawler` voor begrensde parallelle verwerking van websites;
 - opent iedere website in Chromium;
-- controleert desktop (1440x900) en mobiel (iPhone 13-emulatie);
-- bekijkt de homepage plus maximaal twee relevante interne pagina's, zoals contact, offerte, diensten, booking of checkout;
+- controleert desktop (1440x900) en mobiel met iPhone 13-emulatie;
+- bepaalt per website eerst het waarschijnlijke sitetype `service`, `shop` of `booking`;
+- kiest daarna de belangrijkste routepagina's, bijvoorbeeld homepage -> hoofddienst -> contact/offerte, of product -> winkelwagen -> checkout;
+- bekijkt maximaal vier kernpagina's per website en stopt voor formulierverzending, bestelling, betaling of boekingsbevestiging;
+- blokkeert niet-GET/HEAD-verzoeken tijdens de scan;
 - signaleert onder andere HTTP-fouten, JavaScript-fouten, kapotte afbeeldingen, mobiele overflow, placeholderteksten en generieke CTA-labels;
 - draait axe op serieuze/kritieke toegankelijkheidsproblemen;
 - kan optioneel Lighthouse draaien op websites waar al een sterke browserbevinding is gevonden;
-- maakt screenshots bij bevindingen met ernst 3 of hoger;
+- maakt per bezochte kernpagina een compacte screenshot als browserbewijs;
+- maakt hashgebonden `controlled_browser_capture`-records met desktop- en mobile-evidence-ID's die aansluiten op de Webactueel Leads-workflow;
 - bewaart per website JSON en daarnaast een gezamenlijk `summary.md` en `results.json`.
 
 ## Veiligheidsgrens
 
-De scanner is read-only. Hij verstuurt geen formulieren, plaatst geen bestellingen en wijzigt niets op doelwebsites. Hij navigeert alleen via publieke GET-pagina's.
+De scanner is read-only. Hij verstuurt geen formulieren, plaatst geen bestellingen, bevestigt geen boekingen en wijzigt niets op doelwebsites. Verzoeken anders dan GET/HEAD worden tijdens de scan geblokkeerd.
+
+## Schaalbegrenzing
+
+De standaard full scan gebruikt maximaal vier websites tegelijk en maximaal 30 Crawlee-startrequests per minuut. `maxRequestsPerCrawl` wordt begrensd op de ingevoerde websitebatch. Crawlee mag de leadkwalificatie niet zelfstandig beslissen: `candidate: true` is alleen een technisch browsersignaal.
 
 ## Websites toevoegen
 
@@ -26,19 +35,26 @@ https://voorbeeldbedrijf.nl/
 https://anderbedrijf.nl/
 ```
 
-Je kunt bij een handmatige run ook één losse URL invullen. Dan wordt `sites.txt` voor die run genegeerd.
+Een wijziging aan `sites.txt` op `main` start automatisch de workflow **Website Scan**. Je kunt de workflow ook handmatig uitvoeren en optioneel één `target_url` invullen.
 
 ## Scan starten
 
-1. Open in GitHub het tabblad **Actions**.
-2. Kies **Website Scan**.
-3. Klik **Run workflow**.
-4. Laat `target_url` leeg om `sites.txt` te gebruiken, of vul één website in.
-5. Zet Lighthouse alleen aan wanneer je die extra controle wilt; dit kost meer runtime.
-6. Na afloop staat onder de run een artifact `leadscanner-results-...` met het bewijs en de resultaten.
+1. Zet de te controleren URLs in `sites.txt`.
+2. Commit de wijziging op `main`, of open in GitHub **Actions -> Website Scan -> Run workflow**.
+3. Laat Lighthouse standaard uit voor de eerste batch; gebruik het alleen als extra tweede controle.
+4. Na afloop staat onder de run een artifact `leadscanner-results-...` met screenshots, JSON-bewijs en `summary.md`.
 
 Artifacts blijven 7 dagen bewaard.
 
-## Interpretatie
+## Interpretatie voor Project Leads
 
-`candidate: true` betekent alleen dat de automatische browsercontrole minstens één bevinding met ernst 3+ heeft gevonden. Het is nog geen definitieve commerciële lead. De uiteindelijke kwalificatie hoort de Webactueel Leads-workflow te doen op basis van bewijs, relevantie en impact voor een echte bezoeker.
+De scanner levert browserbewijs en triagesignalen. De uiteindelijke kwalificatie blijft eigendom van de Webactueel Leads-workflow:
+
+1. registry-voorcheck / expliciete rescan;
+2. officiële bedrijfswebsite bevestigen;
+3. desktop + mobiel kernroutebewijs beoordelen;
+4. maximaal drie bewezen observaties kiezen;
+5. `problem_severity`, `webactueel_fit` en score 1-5 bepalen;
+6. alleen score 3-5 met `qualified=true` gaat door naar contactcontrole.
+
+Een openbaar e-mailadres is geen toestemming en de scanner maakt of verstuurt geen e-mail.
