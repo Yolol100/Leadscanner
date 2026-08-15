@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'sites.txt'
+      - 'requests/scan.json'
   workflow_dispatch:
     inputs:
       target_url:
@@ -44,7 +45,112 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  resolve-request:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.resolve.outputs.run }}
+      request_id: ${{ steps.resolve.outputs.request_id }}
+      target_url: ${{ steps.resolve.outputs.target_url }}
+      site_type_hint: ${{ steps.resolve.outputs.site_type_hint }}
+      run_lighthouse: ${{ steps.resolve.outputs.run_lighthouse }}
+      run_language_tool: ${{ steps.resolve.outputs.run_language_tool }}
+      max_concurrency: ${{ steps.resolve.outputs.max_concurrency }}
+      max_requests_per_minute: ${{ steps.resolve.outputs.max_requests_per_minute }}
+      require_single_target: ${{ steps.resolve.outputs.require_single_target }}
+    steps:
+      - name: Checkout request contract
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve and validate trigger
+        id: resolve
+        shell: bash
+        env:
+          DISPATCH_TARGET_URL: ${{ inputs.target_url }}
+          DISPATCH_SITE_TYPE_HINT: ${{ inputs.site_type_hint }}
+          DISPATCH_RUN_LIGHTHOUSE: ${{ inputs.run_lighthouse || 'false' }}
+          DISPATCH_RUN_LANGUAGE_TOOL: ${{ inputs.run_language_tool || 'false' }}
+          DISPATCH_MAX_CONCURRENCY: ${{ inputs.max_concurrency || '2' }}
+          DISPATCH_MAX_REQUESTS_PER_MINUTE: ${{ inputs.max_requests_per_minute || '30' }}
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const output = process.env.GITHUB_OUTPUT;
+          const write = (key, value) => fs.appendFileSync(output, `${key}=${String(value)}\n`);
+          const safeId = (value) => typeof value === 'string' && /^[A-Za-z0-9._-]{3,80}$/.test(value);
+          const safeText = (value) => typeof value === 'string' && value.trim().length > 0 && !/[\r\n]/.test(value);
+          const safeInt = (value, min, max, fallback) => {
+            const parsed = Number(value ?? fallback);
+            if (!Number.isInteger(parsed) || parsed < min || parsed > max) throw new Error(`integer out of range ${min}-${max}`);
+            return String(parsed);
+          };
+          const safeBool = (value, fallback = false) => {
+            if (value === undefined || value === null || value === '') return String(fallback);
+            if (value === true || value === 'true') return 'true';
+            if (value === false || value === 'false') return 'false';
+            throw new Error('boolean expected');
+          };
+
+          const defaults = {
+            run: 'false', request_id: 'none', target_url: '', site_type_hint: '',
+            run_lighthouse: 'false', run_language_tool: 'false', max_concurrency: '2',
+            max_requests_per_minute: '30', require_single_target: 'false'
+          };
+          let resolved = {...defaults};
+
+          if (process.env.GITHUB_EVENT_NAME === 'workflow_dispatch') {
+            const target = process.env.DISPATCH_TARGET_URL || '';
+            new URL(target);
+            const hint = process.env.DISPATCH_SITE_TYPE_HINT || '';
+            if (hint && !['service', 'shop', 'booking'].includes(hint)) throw new Error('invalid site_type_hint');
+            resolved = {
+              run: 'true', request_id: `dispatch-${process.env.GITHUB_RUN_ID}`,
+              target_url: target, site_type_hint: hint,
+              run_lighthouse: safeBool(process.env.DISPATCH_RUN_LIGHTHOUSE),
+              run_language_tool: safeBool(process.env.DISPATCH_RUN_LANGUAGE_TOOL),
+              max_concurrency: safeInt(process.env.DISPATCH_MAX_CONCURRENCY, 1, 4, 2),
+              max_requests_per_minute: safeInt(process.env.DISPATCH_MAX_REQUESTS_PER_MINUTE, 1, 120, 30),
+              require_single_target: 'true'
+            };
+          } else if (process.env.GITHUB_EVENT_NAME === 'push') {
+            const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
+            const commit = event.head_commit || {};
+            const changed = new Set([...(commit.added || []), ...(commit.modified || [])]);
+            if (changed.has('requests/scan.json')) {
+              const req = JSON.parse(fs.readFileSync(path.join(process.env.GITHUB_WORKSPACE, 'requests/scan.json'), 'utf8'));
+              if (req.enabled === true) {
+                if (!safeId(req.request_id)) throw new Error('invalid request_id');
+                if (req.owner !== 'leads' || req.project_id !== 'project-leads') throw new Error('request owner/project mismatch');
+                for (const key of ['for', 'task', 'why', 'trigger_when', 'do_not_trigger_when', 'requested_by']) {
+                  if (!safeText(req[key])) throw new Error(`missing or unsafe ${key}`);
+                }
+                if (!req.source_context || req.source_context.project_id !== 'project-leads' || !safeText(req.source_context.source_set_version)) {
+                  throw new Error('invalid source_context');
+                }
+                const target = req.target_url || '';
+                new URL(target);
+                const hint = req.site_type_hint || '';
+                if (hint && !['service', 'shop', 'booking'].includes(hint)) throw new Error('invalid site_type_hint');
+                resolved = {
+                  run: 'true', request_id: req.request_id, target_url: target, site_type_hint: hint,
+                  run_lighthouse: safeBool(req.run_lighthouse),
+                  run_language_tool: safeBool(req.run_language_tool),
+                  max_concurrency: safeInt(req.max_concurrency, 1, 4, 2),
+                  max_requests_per_minute: safeInt(req.max_requests_per_minute, 1, 120, 30),
+                  require_single_target: 'true'
+                };
+              }
+            } else if (changed.has('sites.txt')) {
+              resolved = {...defaults, run: 'true', request_id: `batch-${process.env.GITHUB_RUN_ID}`};
+            }
+          }
+
+          for (const [key, value] of Object.entries(resolved)) write(key, value);
+          NODE
+
   scan:
+    needs: resolve-request
+    if: needs.resolve-request.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 120
 
@@ -75,25 +181,25 @@ jobs:
 
       - name: Run lead scanner
         env:
-          TARGET_URL: ${{ inputs.target_url }}
-          REQUIRE_SINGLE_TARGET: ${{ github.event_name == 'workflow_dispatch' }}
-          SITE_TYPE_HINT: ${{ inputs.site_type_hint }}
-          RUN_LIGHTHOUSE: ${{ inputs.run_lighthouse || 'false' }}
-          MAX_CONCURRENCY: ${{ inputs.max_concurrency || '2' }}
-          MAX_REQUESTS_PER_MINUTE: ${{ inputs.max_requests_per_minute || '30' }}
+          TARGET_URL: ${{ needs.resolve-request.outputs.target_url }}
+          REQUIRE_SINGLE_TARGET: ${{ needs.resolve-request.outputs.require_single_target }}
+          SITE_TYPE_HINT: ${{ needs.resolve-request.outputs.site_type_hint }}
+          RUN_LIGHTHOUSE: ${{ needs.resolve-request.outputs.run_lighthouse }}
+          MAX_CONCURRENCY: ${{ needs.resolve-request.outputs.max_concurrency }}
+          MAX_REQUESTS_PER_MINUTE: ${{ needs.resolve-request.outputs.max_requests_per_minute }}
           MAX_ACTIVE_REQUESTS_PER_MINUTE: '120'
           MAX_PAGES_PER_SITE: '4'
         run: npm run scan
 
       - name: Setup Java 17 for LanguageTool
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_language_tool }}
+        if: needs.resolve-request.outputs.run_language_tool == 'true'
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Start pinned local LanguageTool
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_language_tool }}
+        if: needs.resolve-request.outputs.run_language_tool == 'true'
         run: bash scripts/start-languagetool.sh
 
       - name: Run supplemental toolbox checks
@@ -101,7 +207,7 @@ jobs:
           RUN_DISCOVERY: 'true'
           RUN_TECH_DETECT: 'true'
           RUN_LINKINATOR: 'true'
-          RUN_LANGUAGE_TOOL: ${{ inputs.run_language_tool || 'false' }}
+          RUN_LANGUAGE_TOOL: ${{ needs.resolve-request.outputs.run_language_tool }}
           LANGUAGE_TOOL_URL: http://127.0.0.1:8010/v2/check
         run: npm run enrich
 
@@ -111,6 +217,7 @@ jobs:
       - name: Publish scan summary
         if: always()
         run: |
+          echo "Request: ${{ needs.resolve-request.outputs.request_id }}" >> "$GITHUB_STEP_SUMMARY"
           if [ -f scan-results/summary.md ]; then
             cat scan-results/summary.md >> "$GITHUB_STEP_SUMMARY"
           fi
