@@ -16,6 +16,11 @@ on:
         required: true
         default: false
         type: boolean
+      run_language_tool:
+        description: 'Lokale LanguageTool-controle uitvoeren (geen account/API-key)'
+        required: true
+        default: false
+        type: boolean
       max_concurrency:
         description: 'Maximaal aantal websites tegelijk (1-4)'
         required: true
@@ -54,6 +59,9 @@ jobs:
       - name: Verify Crawlee and Playwright
         run: npm run check:crawler
 
+      - name: Verify toolbox dependencies
+        run: npm run check:tools
+
       - name: Install Chromium
         run: npx playwright install chromium --with-deps
 
@@ -65,6 +73,26 @@ jobs:
           MAX_REQUESTS_PER_MINUTE: ${{ inputs.max_requests_per_minute || '30' }}
           MAX_PAGES_PER_SITE: '4'
         run: npm run scan
+
+      - name: Setup Java 17 for LanguageTool
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_language_tool }}
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Start local LanguageTool
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_language_tool }}
+        run: bash scripts/start-languagetool.sh
+
+      - name: Run supplemental toolbox checks
+        env:
+          RUN_DISCOVERY: 'true'
+          RUN_TECH_DETECT: 'true'
+          RUN_LINKINATOR: 'true'
+          RUN_LANGUAGE_TOOL: ${{ inputs.run_language_tool || 'false' }}
+          LANGUAGE_TOOL_URL: http://127.0.0.1:8010/v2/check
+        run: npm run enrich
 
       - name: Publish scan summary
         if: always()

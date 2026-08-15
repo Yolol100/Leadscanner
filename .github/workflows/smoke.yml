@@ -6,6 +6,15 @@ on:
     paths:
       - 'package.json'
       - 'src/**'
+      - 'scripts/**'
+      - 'tool-registry.json'
+      - '.github/workflows/smoke.yml'
+  pull_request:
+    paths:
+      - 'package.json'
+      - 'src/**'
+      - 'scripts/**'
+      - 'tool-registry.json'
       - '.github/workflows/smoke.yml'
   workflow_dispatch:
 
@@ -15,7 +24,7 @@ permissions:
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,6 +40,14 @@ jobs:
       - name: Verify Crawlee and Playwright
         run: npm run check:crawler
 
+      - name: Verify toolbox dependencies
+        run: npm run check:tools
+
+      - name: Run accountless toolbox unit smoke
+        env:
+          RUN_LANGUAGE_TOOL: 'false'
+        run: npm run smoke:toolbox
+
       - name: Install Chromium
         run: npx playwright install chromium --with-deps
 
@@ -41,6 +58,14 @@ jobs:
           MAX_CONCURRENCY: '1'
           MAX_REQUESTS_PER_MINUTE: '10'
         run: npm run scan
+
+      - name: Enrich safe test site
+        env:
+          RUN_DISCOVERY: 'true'
+          RUN_TECH_DETECT: 'true'
+          RUN_LINKINATOR: 'true'
+          RUN_LANGUAGE_TOOL: 'false'
+        run: npm run enrich
 
       - name: Verify lead-compatible browser evidence
         run: |
@@ -53,6 +78,8 @@ jobs:
           if (!r.browser_route_complete) throw new Error('Desktop/mobile route is incomplete');
           if (!r.desktop_evidence_ids?.length || !r.mobile_evidence_ids?.length) throw new Error('Missing desktop/mobile evidence IDs');
           if (!r.browser_evidence_records?.every((e) => e.source_type === 'controlled_browser_capture' && /^evidence-[0-9a-f]{12}$/.test(e.evidence_id) && /^[0-9a-f]{64}$/.test(e.evidence_sha256))) throw new Error('Invalid browser evidence contract');
+          if (r.supplemental?.scoring_policy !== 'supplemental_only_no_automatic_lead_score') throw new Error('Supplemental scoring boundary missing');
+          if (!r.supplemental?.discovery || !r.supplemental?.technology || !r.supplemental?.linkinator) throw new Error('Missing toolbox enrichment');
           NODE
           test -f scan-results/summary.md
 

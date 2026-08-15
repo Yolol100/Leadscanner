@@ -1,0 +1,48 @@
+name: Toolbox Smoke Test
+
+on:
+  pull_request:
+    paths:
+      - 'package.json'
+      - 'src/tools/**'
+      - 'src/toolbox-smoke.mjs'
+      - 'scripts/start-languagetool.sh'
+      - '.github/workflows/toolbox-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  toolbox:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Verify toolbox dependencies
+        run: npm run check:tools
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Start local LanguageTool
+        run: bash scripts/start-languagetool.sh
+
+      - name: Run toolbox integration smoke
+        env:
+          RUN_LANGUAGE_TOOL: 'true'
+          LANGUAGE_TOOL_URL: http://127.0.0.1:8010/v2/check
+        run: npm run smoke:toolbox
