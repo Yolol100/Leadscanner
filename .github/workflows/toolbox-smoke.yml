@@ -1,6 +1,15 @@
 name: Toolbox Smoke Test
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'package.json'
+      - 'package-lock.json'
+      - 'src/tools/**'
+      - 'src/toolbox-smoke.mjs'
+      - 'scripts/start-languagetool.sh'
+      - '.github/workflows/toolbox-smoke.yml'
   pull_request:
     paths:
       - 'package.json'
@@ -28,8 +37,8 @@ jobs:
           node-version: '22.23.2'
           package-manager-cache: false
 
-      - name: Install dependencies
-        run: npm install
+      - name: Install locked dependencies
+        run: npm ci
 
       - name: Verify toolbox dependencies
         run: npm run check:tools

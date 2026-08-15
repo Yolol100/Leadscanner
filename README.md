@@ -26,13 +26,21 @@ Na de browsercontrole kan `npm run enrich` aanvullende, read-only signalen toevo
 - **Linkinator** — controleert ondiep alleen links op hetzelfde domein vanaf de maximaal vier kernroutepagina's. 401/403/429/999 worden niet als bruikbare kapotte-linkbevinding gepromoveerd.
 - **Tech-detect** — herkent duidelijke HTML/header-signaturen van onder andere WordPress, Elementor, WooCommerce, Shopify, Wix, Webflow, Squarespace, Drupal en Joomla.
 - **LanguageTool** — optioneel. GitHub Actions kan een lokale LanguageTool-server starten vanuit de officiële snapshot. Hiervoor is geen LanguageTool-account of API-key nodig.
-- **Lighthouse** — bestond al in de scanner en blijft optioneel als tweede technische meting voor sterke kandidaten.
+- **Lighthouse** — blijft optioneel als tweede technische meting voor sterke kandidaten.
 
 De machineleesbare routing staat in `tool-registry.json`.
 
 ### Belangrijke scoregrens
 
 De toolbox is **supplementair**. `sitemap/robots`, Linkinator, LanguageTool, tech-detect en Lighthouse mogen niet zelfstandig `candidate`, `topFindings` of de uiteindelijke Leadscore wijzigen. De browserbewijzen en de Webactueel Leads Skill blijven de eigenaar van kwalificatie en score.
+
+## Reproduceerbare runtime
+
+- Node is in GitHub Actions vastgezet op `22.23.2` en npm op `10.9.8`.
+- De directe npm-dependencies staan op exacte versies en `package-lock.json` legt ook de transitieve dependencyboom vast.
+- GitHub Actions gebruiken `npm ci`; een mismatch tussen `package.json` en `package-lock.json` laat CI falen in plaats van stil een nieuwe dependencyboom te maken.
+- Externe GitHub Actions zijn vastgezet op gecontroleerde commit-SHA's in plaats van bewegende major-tags.
+- De Scanner Smoke Test voert ook `npm audit --omit=dev --audit-level=high` uit.
 
 ## Veiligheidsgrens
 
@@ -66,8 +74,8 @@ Artifacts blijven 7 dagen bewaard.
 
 ## Tests
 
-- **Scanner Smoke Test** controleert Crawlee, Playwright, browserbewijs en de lichte toolbox-integratie op `example.com`.
-- **Toolbox Smoke Test** controleert sitemap/robots parsing, tech-detect, Linkinator tegen een lokale testserver en een lokaal gestarte LanguageTool-server.
+- **Scanner Smoke Test** controleert locked dependencies, dependency-audit, Crawlee, Playwright, browserbewijs en de lichte toolbox-integratie op `example.com`.
+- **Toolbox Smoke Test** controleert sitemap/robots parsing, tech-detect, Linkinator tegen een lokale testserver en een lokaal gestarte LanguageTool-server. Deze test draait ook bij relevante wijzigingen die direct op `main` landen.
 
 ## Interpretatie voor Project Leads
 
