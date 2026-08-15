@@ -1,6 +1,10 @@
 name: Website Scan
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'sites.txt'
   workflow_dispatch:
     inputs:
       target_url:
@@ -12,9 +16,23 @@ on:
         required: true
         default: false
         type: boolean
+      max_concurrency:
+        description: 'Maximaal aantal websites tegelijk (1-8)'
+        required: true
+        default: '4'
+        type: string
+      max_requests_per_minute:
+        description: 'Crawlee startlimiet per minuut (1-120)'
+        required: true
+        default: '30'
+        type: string
 
 permissions:
   contents: read
+
+concurrency:
+  group: leadscanner-full-scan
+  cancel-in-progress: false
 
 jobs:
   scan:
@@ -33,14 +51,27 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Verify Crawlee and Playwright
+        run: npm run check:crawler
+
       - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium --with-deps
 
       - name: Run lead scanner
         env:
           TARGET_URL: ${{ inputs.target_url }}
-          RUN_LIGHTHOUSE: ${{ inputs.run_lighthouse }}
+          RUN_LIGHTHOUSE: ${{ inputs.run_lighthouse || 'false' }}
+          MAX_CONCURRENCY: ${{ inputs.max_concurrency || '4' }}
+          MAX_REQUESTS_PER_MINUTE: ${{ inputs.max_requests_per_minute || '30' }}
+          MAX_PAGES_PER_SITE: '4'
         run: npm run scan
+
+      - name: Publish scan summary
+        if: always()
+        run: |
+          if [ -f scan-results/summary.md ]; then
+            cat scan-results/summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload scan evidence
         if: always()
