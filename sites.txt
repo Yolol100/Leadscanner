@@ -1,4 +1,4 @@
-# Webactueel historische 60-lead rescan — 2026-08-15
+# Webactueel historische 60-lead rescan — 2026-08-15 — hardened run 2
 # Bron: Webactueel Lead Registry; expliciete rescan door gebruiker.
 https://kalmaschilders.nl/
 https://www.vijfsterrenschilders.nl/
