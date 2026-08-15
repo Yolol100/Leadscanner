@@ -10,8 +10,27 @@ Gebruik de Leadscanner voor nieuwe kwalificatie, expliciete rescan/reactivate of
 
 1. Doe de Leads Registry-voorcheck waar die volgens Leads vereist is.
 2. Bevestig de officiële bedrijfswebsite.
-3. Geef voor een gecontroleerde GitHub `workflow_dispatch` altijd precies één `target_url`. Een lege URL mag nooit stil terugvallen op `sites.txt`.
-4. Geef het door Leads bevestigde `site_type` als `site_type_hint=service|shop|booking` wanneer dat bekend is. De scanner rapporteert daarnaast `site_type_detected`; een materieel verschil blijft een Leads-reviewpunt vóór scoring.
+3. Op Chat: schrijf precies één source-bound request naar `requests/scan.json` en gebruik alleen die route wanneer GitHub file-write plus Actions run/artifact-readback beschikbaar zijn.
+4. Via GitHub UI/CLI/API mag `workflow_dispatch` worden gebruikt wanneer die capability werkelijk beschikbaar is; geef dan altijd precies één `target_url`.
+5. Gebruik `sites.txt` alleen voor een expliciet gevraagde batchscan. Een lege URL of ontbrekende dispatch-capability mag nooit stil terugvallen op `sites.txt`.
+6. Geef het door Leads bevestigde `site_type` als `site_type_hint=service|shop|booking` wanneer dat bekend is. De scanner rapporteert daarnaast `site_type_detected`; een materieel verschil blijft een Leads-reviewpunt vóór scoring.
+
+## Request-file contract
+
+Een ingeschakeld `requests/scan.json` bevat minimaal:
+
+- `enabled=true` en een unieke veilige `request_id`;
+- `requested_by`, `owner=leads` en `project_id=project-leads`;
+- `for`: voor wie/waarvoor het bewijs wordt verkregen;
+- `task`: wat de repo moet doen;
+- `why`: waarom nieuw browserbewijs nodig is;
+- `trigger_when`: wanneer deze capability mag starten;
+- `do_not_trigger_when`: wanneer de repo juist niet mag starten;
+- exact één `target_url` plus optioneel bevestigd `site_type_hint`;
+- begrensde scaninstellingen;
+- `source_context.project_id=project-leads` en de actuele `source_set_version`.
+
+De workflow valideert dit contract vóór npm, browser- of netwerkruntime wordt gestart. `enabled=false` is een geldige idle/self-test state en start geen scan.
 
 ## Veiligheidsgrens
 
@@ -63,9 +82,10 @@ Geen supplementair signaal mag zelfstandig `priority`, `qualified` of Leadscore 
 
 ## Runtimekeuze
 
-1. **GitHub Actions** — `.github/workflows/scan.yml` alleen wanneer workflow-dispatch én artifact-readback beschikbaar zijn.
-2. **Codex/CLI repo-runtime** — alleen bij aantoonbare repo/Node/npm/Chromium-runtime: `npm ci`, Chromium installeren, `npm run scan`, `npm run enrich`, `npm run handoff:leads`.
-3. **Geen uitvoerroute** — `handoff_required`; simuleer geen browserrun.
+1. **GitHub request-file** — voorkeursroute op Chat wanneer `requests/scan.json` geschreven kan worden en Actions run/artifact-readback beschikbaar is.
+2. **GitHub `workflow_dispatch`** — voor UI/CLI/API-surfaces die dispatch én readback werkelijk aanbieden.
+3. **Codex/CLI repo-runtime** — alleen bij aantoonbare repo/Node/npm/Chromium-runtime: `npm ci`, Chromium installeren, `npm run scan`, `npm run enrich`, `npm run handoff:leads`.
+4. **Geen uitvoerroute** — `handoff_required`; simuleer geen browserrun en gebruik `sites.txt` niet als verborgen fallback.
 
 ## Handoff naar Leads
 
@@ -78,7 +98,7 @@ De Leads Skill blijft eigenaar van:
 - contact-, juridische, privacy- en outreachpoorten;
 - Registry- en Gmailstatus.
 
-De Leadscanner levert alleen browserbewijs en `finding_candidates` met `requires_leads_validation=true` en `automatic_score_effect=false`.
+De Leadscanner levert alleen browserbewijs en `finding_candidates` met `requires_leads_validation=true` en `automatic_score_effect=false`. De Leads Skill bindt het teruggelezen artifact vóór gebruik aan `webactueel-leadscanner-ingest/1.0` met repository, workflow, volledige commit-SHA, ref, run-ID, artifactnaam, artifact-SHA-256 en `artifact_readback_verified=true`.
 
 ## CI en supply chain
 
