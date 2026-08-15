@@ -8,7 +8,11 @@ on:
   workflow_dispatch:
     inputs:
       target_url:
-        description: 'Optioneel: scan één website. Leeg = gebruik sites.txt'
+        description: 'Verplicht: scan precies deze officiële bedrijfswebsite'
+        required: true
+        type: string
+      site_type_hint:
+        description: 'Leads-context: service, shop of booking (optioneel maar aanbevolen)'
         required: false
         type: string
       run_lighthouse:
@@ -17,7 +21,7 @@ on:
         default: false
         type: boolean
       run_language_tool:
-        description: 'Lokale LanguageTool-controle uitvoeren (geen account/API-key)'
+        description: 'Lokale vastgepinde LanguageTool-controle uitvoeren'
         required: true
         default: false
         type: boolean
@@ -27,7 +31,7 @@ on:
         default: '2'
         type: string
       max_requests_per_minute:
-        description: 'Crawlee startlimiet per minuut (1-120)'
+        description: 'Maximaal aantal website-starts per minuut (1-120); geen claim over alle subresources'
         required: true
         default: '30'
         type: string
@@ -46,16 +50,19 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node 22.23.2
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22.23.2'
           package-manager-cache: false
 
       - name: Install locked dependencies
         run: npm ci
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
 
       - name: Verify Crawlee and Playwright
         run: npm run check:crawler
@@ -69,20 +76,23 @@ jobs:
       - name: Run lead scanner
         env:
           TARGET_URL: ${{ inputs.target_url }}
+          REQUIRE_SINGLE_TARGET: ${{ github.event_name == 'workflow_dispatch' }}
+          SITE_TYPE_HINT: ${{ inputs.site_type_hint }}
           RUN_LIGHTHOUSE: ${{ inputs.run_lighthouse || 'false' }}
           MAX_CONCURRENCY: ${{ inputs.max_concurrency || '2' }}
           MAX_REQUESTS_PER_MINUTE: ${{ inputs.max_requests_per_minute || '30' }}
+          MAX_ACTIVE_REQUESTS_PER_MINUTE: '120'
           MAX_PAGES_PER_SITE: '4'
         run: npm run scan
 
       - name: Setup Java 17 for LanguageTool
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_language_tool }}
-        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Start local LanguageTool
+      - name: Start pinned local LanguageTool
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_language_tool }}
         run: bash scripts/start-languagetool.sh
 

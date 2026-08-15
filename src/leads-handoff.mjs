@@ -82,26 +82,41 @@ function remapFinding(finding, idMap, recordByOldId) {
   };
 }
 
-function deviceRouteComplete(site, adaptedRecords, device) {
-  const expectedPages = Array.isArray(site.route_plan) ? site.route_plan.length : 0;
+function deviceRouteCoverage(site, adaptedRecords, device) {
+  const expected = Array.isArray(site.route_plan) ? site.route_plan : [];
   const pageRecords = adaptedRecords.filter((record) => record.device === device && record.route_category !== 'full_route');
-  return expectedPages > 0 && pageRecords.length >= expectedPages;
+  const matched = [];
+  const missing = [];
+  for (const item of expected) {
+    const expectedUrl = new URL(item.url).toString();
+    const expectedCategory = normalizeRouteCategory(item.role);
+    const match = pageRecords.find((record) => {
+      if (!record.planned_url) return false;
+      let planned;
+      try { planned = new URL(record.planned_url).toString(); } catch { return false; }
+      return planned === expectedUrl && record.route_category === expectedCategory;
+    });
+    if (match) matched.push(match.evidence_id);
+    else missing.push(`${expectedCategory}:${expectedUrl}`);
+  }
+  return { complete: expected.length > 0 && missing.length === 0, matched, missing };
 }
 
 async function buildFullRouteEvidence(site, adaptedRecords, device) {
   const records = adaptedRecords.filter((record) => record.device === device && record.route_category !== 'full_route');
   if (!records.length) return null;
-  const complete = deviceRouteComplete(site, adaptedRecords, device);
+  const coverage = deviceRouteCoverage(site, adaptedRecords, device);
   const dir = path.join(OUT, safe(site.target));
   await fs.mkdir(dir, { recursive: true });
   const manifest = {
-    format: 'leadscanner-route-manifest/1.1',
+    format: 'leadscanner-route-manifest/1.2',
     target: site.target,
     lead_id: leadIdForTarget(site.target),
     device,
     route_plan: site.route_plan || [],
-    page_evidence_ids: records.map((record) => record.evidence_id),
-    route_complete: complete,
+    page_evidence_ids: coverage.matched,
+    missing_route_steps: coverage.missing,
+    route_complete: coverage.complete,
     source_run_id: process.env.GITHUB_RUN_ID ? `github-actions-${process.env.GITHUB_RUN_ID}` : 'local-run',
     generated_at: new Date().toISOString(),
   };
@@ -117,13 +132,15 @@ async function buildFullRouteEvidence(site, adaptedRecords, device) {
     runtime_detail: RUNTIME_DETAIL,
     canonical_url: site.target,
     runtime_url: site.target,
+    planned_url: site.target,
     route_category: 'full_route',
-    route_complete: complete,
+    route_complete: coverage.complete,
     artifact_sha256: sha256(bytes),
     artifact_ref: path.relative(process.cwd(), artifactPath),
     captured_at: capturedAt,
     viewport: records[0].viewport,
-    page_evidence_ids: records.map((record) => record.evidence_id),
+    page_evidence_ids: coverage.matched,
+    missing_route_steps: coverage.missing,
   });
 }
 
@@ -149,13 +166,16 @@ for (const site of results) {
     source_run_id: process.env.GITHUB_RUN_ID ? `github-actions-${process.env.GITHUB_RUN_ID}` : 'local-run',
     lead_id: leadIdForTarget(site.target),
     target: site.target,
+    site_type_hint: site.site_type_hint || null,
     site_type_detected: site.site_type_detected || null,
+    site_type_used: site.site_type_used || null,
     site_type_requires_leads_confirmation: true,
     route_plan: site.route_plan || [],
     checked_on: String(site.scannedAt || new Date().toISOString()).slice(0, 10),
     runtime_surface: RUNTIME_SURFACE,
     runtime_detail: RUNTIME_DETAIL,
     safe_boundary_respected: Boolean(site.safe_boundary_respected),
+    safety: site.safety || null,
     browser_route_complete: browserRouteComplete,
     desktop_checked: desktopChecked,
     mobile_checked: mobileChecked,
@@ -163,57 +183,14 @@ for (const site of results) {
     desktop_evidence_id: desktopChecked ? desktopRoute.evidence_id : null,
     mobile_evidence_id: mobileChecked ? mobileRoute.evidence_id : null,
     finding_candidates: (site.topFindings || []).map((finding) => remapFinding(finding, idMap, recordByOldId)),
-    supplemental: {
-      ...(site.supplemental || {}),
-      lighthouse: site.lighthouse || null,
-      scoring_policy: 'supplemental_only_no_automatic_lead_score',
-    },
-    scoring: {
-      owner: SCORE_OWNER,
-      performed_by_repository: false,
-      priority: null,
-      qualified: null,
-    },
+    supplemental: { ...(site.supplemental || {}), lighthouse: site.lighthouse || null, scoring_policy: 'supplemental_only_no_automatic_lead_score' },
+    scoring: { owner: SCORE_OWNER, performed_by_repository: false, priority: null, qualified: null },
     merge_contract: {
-      scanner_provides: [
-        'lead_id',
-        'target',
-        'checked_on',
-        'runtime_surface',
-        'desktop_checked',
-        'mobile_checked',
-        'safe_boundary_respected',
-        'browser_evidence_records',
-        'desktop_evidence_id',
-        'mobile_evidence_id',
-        'finding_candidates',
-        'supplemental',
-      ],
-      required_from_leads: [
-        'TARGET_SPEC context',
-        'company_name',
-        'region',
-        'site_type confirmation',
-        'official_confirmed',
-        'official_company_evidence',
-        'webactueel_fit',
-        'fit_reason',
-        'fit_evidence_ids',
-        'validated_observations_max_3',
-      ],
+      scanner_provides: ['lead_id', 'target', 'checked_on', 'runtime_surface', 'desktop_checked', 'mobile_checked', 'safe_boundary_respected', 'safety', 'browser_evidence_records', 'desktop_evidence_id', 'mobile_evidence_id', 'finding_candidates', 'supplemental'],
+      required_from_leads: ['TARGET_SPEC context', 'company_name', 'region', 'site_type confirmation', 'official_confirmed', 'official_company_evidence', 'webactueel_fit', 'fit_reason', 'fit_evidence_ids', 'validated_observations_max_3'],
     },
     ready_for_leads_review: ready,
-    missing_for_final_leads_score: [
-      'company_name',
-      'region',
-      'site_type confirmation',
-      'official_confirmed',
-      'official_company_evidence',
-      'webactueel_fit',
-      'fit_reason',
-      'fit_evidence_ids',
-      'validated_observations_max_3',
-    ],
+    missing_for_final_leads_score: ['company_name', 'region', 'site_type confirmation', 'official_confirmed', 'official_company_evidence', 'webactueel_fit', 'fit_reason', 'fit_evidence_ids', 'validated_observations_max_3'],
   };
   const dir = path.join(OUT, safe(site.target));
   await fs.writeFile(path.join(dir, 'leads-handoff.json'), `${JSON.stringify(handoff, null, 2)}\n`);
@@ -221,4 +198,4 @@ for (const site of results) {
 }
 
 await fs.writeFile(path.join(OUT, 'leads-handoff.json'), `${JSON.stringify(handoffs, null, 2)}\n`);
-console.log(`Leads handoff gebouwd voor ${handoffs.length} website(s); ${handoffs.filter((item) => item.ready_for_leads_review).length} browser-compleet.`);
+console.log(`Leads handoff gebouwd voor ${handoffs.length} website(s); ${handoffs.filter((item) => item.ready_for_leads_review).length} exact browser-compleet.`);
