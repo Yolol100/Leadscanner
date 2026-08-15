@@ -16,7 +16,7 @@
     "check:tools": "node -e \"Promise.all([import('linkinator'), import('lighthouse')]).then(() => console.log('Linkinator + Lighthouse OK'))\""
   },
   "dependencies": {
-    "@axe-core/playwright": "4.12.1",
+    "@axe-core/playwright": "4.13.0",
     "crawlee": "3.18.0",
     "lighthouse": "13.4.1",
     "linkinator": "8.0.3",
