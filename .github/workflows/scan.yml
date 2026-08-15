@@ -95,6 +95,9 @@ jobs:
           LANGUAGE_TOOL_URL: http://127.0.0.1:8010/v2/check
         run: npm run enrich
 
+      - name: Build Leads handoff
+        run: npm run handoff:leads
+
       - name: Publish scan summary
         if: always()
         run: |
