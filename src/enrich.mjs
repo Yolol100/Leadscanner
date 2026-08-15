@@ -34,10 +34,12 @@ const results = JSON.parse(await fs.readFile(resultsPath, 'utf8'));
 
 for (const site of results) {
   const supplemental = { ...(site.supplemental || {}), scoring_policy: 'supplemental_only_no_automatic_lead_score' };
-  if (runDiscovery) supplemental.discovery = await discoverSite(site.target);
-  if (runTechDetect) supplemental.technology = await detectTechnology(site.target);
-  if (runLinkinator) supplemental.linkinator = await checkRouteLinks(site.target, site.route_plan || []);
-  if (runLanguageTool) supplemental.language = await checkDutchText(visibleDutchText(site));
+  const tasks = [];
+  if (runDiscovery) tasks.push(discoverSite(site.target).then((value) => ['discovery', value]));
+  if (runTechDetect) tasks.push(detectTechnology(site.target).then((value) => ['technology', value]));
+  if (runLinkinator) tasks.push(checkRouteLinks(site.target, site.route_plan || []).then((value) => ['linkinator', value]));
+  if (runLanguageTool) tasks.push(checkDutchText(visibleDutchText(site)).then((value) => ['language', value]));
+  Object.assign(supplemental, Object.fromEntries(await Promise.all(tasks)));
   site.supplemental = supplemental;
   await persistSite(site);
 }
