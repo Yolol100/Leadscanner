@@ -1,8 +1,12 @@
 {
   "name": "webactueel-leadscanner",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22.23.2 <23"
+  },
+  "packageManager": "npm@10.9.8",
   "scripts": {
     "scan": "node src/scan.mjs",
     "enrich": "node src/enrich.mjs",
@@ -11,10 +15,10 @@
     "check:tools": "node -e \"Promise.all([import('linkinator'), import('lighthouse')]).then(() => console.log('Linkinator + Lighthouse OK'))\""
   },
   "dependencies": {
-    "@axe-core/playwright": "latest",
-    "crawlee": "latest",
-    "lighthouse": "latest",
+    "@axe-core/playwright": "4.12.1",
+    "crawlee": "3.17.0",
+    "lighthouse": "13.4.1",
     "linkinator": "8.0.3",
-    "playwright": "latest"
+    "playwright": "1.62.1"
   }
 }
