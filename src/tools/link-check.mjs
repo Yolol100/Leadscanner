@@ -1,19 +1,29 @@
 import { LinkChecker } from 'linkinator';
+import { assertPublicUrl, isDangerousActionUrl, isSameOfficialSite } from './network-safety.mjs';
 
-export async function checkRouteLinks(target, routePlan = []) {
-  const origin = new URL(target).origin;
-  const paths = [...new Set((routePlan || []).map((item) => item?.url).filter(Boolean))].slice(0, 4);
-  if (!paths.length) paths.push(target);
+export async function checkRouteLinks(target, routePlan = [], { allowPrivateForTest = false } = {}) {
   try {
+    if (!allowPrivateForTest) await assertPublicUrl(target);
+    const paths = [...new Set((routePlan || [])
+      .map((item) => item?.url)
+      .filter((url) => url && isSameOfficialSite(url, target) && !isDangerousActionUrl(url)))]
+      .slice(0, 4);
+    if (!paths.length) paths.push(target);
     const checker = new LinkChecker();
     const result = await checker.check({
       path: paths,
       recurse: false,
-      concurrency: 4,
+      concurrency: 2,
       timeout: 10000,
       retry: false,
       linksToSkip: async (url) => {
-        try { return new URL(url).origin !== origin; } catch { return true; }
+        try {
+          if (!isSameOfficialSite(url, target) || isDangerousActionUrl(url)) return true;
+          if (!allowPrivateForTest) await assertPublicUrl(url);
+          return false;
+        } catch {
+          return true;
+        }
       },
     });
     const links = Array.isArray(result.links) ? result.links : [];
@@ -22,7 +32,7 @@ export async function checkRouteLinks(target, routePlan = []) {
       .map((item) => ({ url: item.url, parent: item.parent || null, status: item.status || null, state: item.state }))
       .slice(0, 25);
     const skipped = links.filter((item) => item.state === 'SKIPPED').length;
-    return { source: 'linkinator', checked: links.length, passed: broken.length === 0, broken, skipped };
+    return { source: 'linkinator', checked: links.length, passed: broken.length === 0, broken, skipped, concurrency: 2 };
   } catch (error) {
     return { source: 'linkinator', checked: 0, passed: null, broken: [], skipped: 0, error: String(error.message || error).slice(0, 220) };
   }

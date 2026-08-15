@@ -4,88 +4,86 @@ Deze repository is een uitvoeringscapability voor de Webactueel Leads Skill. De 
 
 ## Wanneer gebruiken
 
-Gebruik de Leadscanner wanneer de Leads-workflow echte websitekwalificatie nodig heeft:
+Gebruik de Leadscanner voor nieuwe kwalificatie, expliciete rescan/reactivate of wanneer geldig desktop+mobiel browserbewijs ontbreekt of volgens Leads te oud is. Gebruik hem niet voor alleen keywordonderzoek, Registry-deduplicatie, officiële bedrijfsbevestiging, contactonderzoek, mailcopy, Gmail-history of follow-ups.
 
-- nieuwe kandidaat na Registry-voorcheck en officiële websitebevestiging;
-- kwalificatie van een opgegeven bedrijfswebsite;
-- expliciete rescan/reactivate van een bestaande lead;
-- hercontrole wanneer geldig desktop+mobiel browserbewijs ontbreekt of volgens Leads niet meer vers genoeg is;
-- dezelfde-dag hercontrole voordat een Gmail-write wordt voorbereid wanneer de Leads-regels dit eisen.
+## Verplichte precondities
 
-Gebruik de Leadscanner niet voor:
+1. Doe de Leads Registry-voorcheck waar die volgens Leads vereist is.
+2. Bevestig de officiële bedrijfswebsite.
+3. Geef voor een gecontroleerde GitHub `workflow_dispatch` altijd precies één `target_url`. Een lege URL mag nooit stil terugvallen op `sites.txt`.
+4. Geef het door Leads bevestigde `site_type` als `site_type_hint=service|shop|booking` wanneer dat bekend is. De scanner rapporteert daarnaast `site_type_detected`; een materieel verschil blijft een Leads-reviewpunt vóór scoring.
 
-- alleen zoekwoord- of sectoronderzoek;
-- alleen Registry-deduplicatie;
-- alleen officiële bedrijfsbevestiging;
-- een reeds geldige voldoende verse websitecontrole;
-- alleen contact/e-mailadres zoeken;
-- mailcopy, Gmail-history, bestaande drafts of follow-ups.
+## Veiligheidsgrens
 
-## Waarom gebruiken
+De scanner werkt fail-closed waar een automatische browseractie risico kan opleveren:
 
-De Leads Skill vereist voor echte kwalificatie gecontroleerd desktop- én mobiel browserbewijs van de minimumroute. Deze repository levert precies die browserlaag en aanvullende technische signalen. Crawlee/Playwright leveren primair bewijs; sitemap/robots, Linkinator, LanguageTool, Lighthouse en tech-detect blijven ondersteuning en mogen nooit zelfstandig een Leadscore verhogen.
+- alleen publieke `http`/`https` targets; localhost, private, link-local, gereserveerde en metadata-IP-ranges worden geblokkeerd;
+- DNS wordt gecontroleerd vóór server-side fetches en browserverzoeken;
+- documentnavigatie blijft op de officiële site; cross-site documentredirects worden geblokkeerd;
+- alleen `GET`/`HEAD`; niet-leesmethoden worden geblokkeerd;
+- bekende actie-URLs zoals logout, unsubscribe, account-delete, add-to-cart en confirm-routes worden niet automatisch bezocht;
+- TLS-validatie blijft streng; certificaatfouten worden niet genegeerd;
+- third-party HTTP-fouten zijn geen Leadscanner-probleemfinding;
+- `401`, `403` en `429` zijn scan-/toegangsblokkades, geen salesprobleem;
+- `safe_boundary_respected` wordt afgeleid uit gemeten boundary-events en is geen hardcoded claim.
+
+## Routekeuze
+
+1. Voer vóór Playwright een publieke target-preflight uit.
+2. Lees `robots.txt`; pas de relevante `User-agent`, `Allow` en `Disallow` regels toe. Een tijdelijke robots-fout (`429`/`5xx`) blokkeert de scan conservatief.
+3. Lees toegestane sitemaps en bouw routekandidaten.
+4. Combineer homepage-links en sitemapkandidaten met het optionele `site_type_hint`.
+5. Bezoek maximaal de afgesproken kernroute op desktop en mobiel.
+
+Sitemap/robots is daarmee route-input, niet alleen post-scan enrichment.
+
+## Browser- en evidencecontract
+
+Crawlee + Playwright leveren het primaire browserbewijs. Iedere paginacapture bevat:
+
+- `planned_url` en de feitelijke `runtime_url`;
+- device, viewport en routecategorie;
+- hashgebonden screenshotbewijs;
+- `route_complete=false` op losse paginacaptures.
+
+Volledige routedekking wordt exact bepaald: iedere geplande URL + rol moet per device een passende capture hebben. Alleen daarna wordt een apart `full_route` bewijsrecord `route_complete=true`. Aantallen screenshots alleen zijn nooit voldoende.
+
+`scan-results/leads-handoff.json` blijft formaat `webactueel-leadscanner-handoff/1.1` voor compatibiliteit met de Leads Skill. Het bevat daarnaast de gemeten `safety`-status, `site_type_hint`, `site_type_detected` en `site_type_used`.
+
+## Supplementaire tools
+
+- Sitemap/robots: route-discovery en toegangsbeleid.
+- Linkinator: alleen same-site, lage concurrency, riskante actie-URLs overslaan.
+- Tech-detect: fit-support, geen probleemernst.
+- LanguageTool: optioneel; lokale distributie is vastgepind en SHA-256-gecontroleerd.
+- Lighthouse: optioneel; strict TLS en alleen aanvullende context.
+- Axe: accessibility-signaal; nooit zelfstandig kwalificatiegrond.
+
+Geen supplementair signaal mag zelfstandig `priority`, `qualified` of Leadscore bepalen.
 
 ## Runtimekeuze
 
-Kies eerst de echte uitvoerroute; simuleer geen browserrun.
+1. **GitHub Actions** — `.github/workflows/scan.yml` alleen wanneer workflow-dispatch én artifact-readback beschikbaar zijn.
+2. **Codex/CLI repo-runtime** — alleen bij aantoonbare repo/Node/npm/Chromium-runtime: `npm ci`, Chromium installeren, `npm run scan`, `npm run enrich`, `npm run handoff:leads`.
+3. **Geen uitvoerroute** — `handoff_required`; simuleer geen browserrun.
 
-1. **GitHub Actions** — gebruik `.github/workflows/scan.yml` wanneer de actuele GitHub-capability `workflow_dispatch` werkelijk kan starten én de run/artifact kan teruglezen.
-2. **Codex/CLI lokale repo-runtime** — gebruik de uitgecheckte repository wanneer Node/npm/Chromium aantoonbaar beschikbaar zijn. Voer dan `npm ci`, Chromium-installatie, `npm run scan`, `npm run enrich` en `npm run handoff:leads` uit.
-3. **Geen uitvoerroute** — geef `handoff_required`. Een zichtbare GitHub-connector zonder workflow-dispatch is geen bewijs dat de scan kan worden gestart.
+## Handoff naar Leads
 
-## Uitvoering
+De Leads Skill blijft eigenaar van:
 
-1. Doe eerst de Leads Registry-voorcheck, behalve bij expliciete rescan/reactivate.
-2. Bevestig de officiële bedrijfswebsite vóór formele kwalificatie.
-3. Geef één officiële website via `target_url`, of gebruik een vooraf gecontroleerde lijst in `sites.txt`.
-4. Laat de scanner het sitetype en de kernroute bepalen. Als Leads het sitetype al heeft vastgesteld, vergelijk dat na de scan met `site_type_detected`; los een materieel verschil op vóór scoring.
-5. Crawlee + Playwright voeren de read-only GET/HEAD browserroute uit op desktop en mobiel.
-6. Sitemap/robots, Linkinator en tech-detect draaien als supplementaire checks; LanguageTool en Lighthouse zijn optioneel.
-7. Draai `npm run handoff:leads` na `npm run enrich`.
-8. Gebruik `scan-results/leads-handoff.json` als overdracht naar Leads.
+- officiële bedrijfscontext en sitetypebevestiging;
+- validatie van maximaal drie bewezen observaties;
+- `problem_severity` versus `webactueel_fit`;
+- prioriteit 1–5 en `qualified`;
+- contact-, juridische, privacy- en outreachpoorten;
+- Registry- en Gmailstatus.
 
-## Handoffregels
+De Leadscanner levert alleen browserbewijs en `finding_candidates` met `requires_leads_validation=true` en `automatic_score_effect=false`.
 
-`leads-handoff.json` gebruikt formaat `webactueel-leadscanner-handoff/1.1` en levert:
+## CI en supply chain
 
-- een deterministische `lead_id` op basis van het genormaliseerde domein;
-- `runtime_surface=controlled-browser` met `runtime_detail=github_actions_crawlee_playwright` voor provenance;
-- één echt `full_route` bewijsrecord per device;
-- aparte pagina-evidence waarbij `route_complete=false`, zodat een losse screenshot nooit een complete route claimt;
-- Leads-genormaliseerde routecategorieën zoals `presentatie`, `navigatie`, `contact`, `product`, `bestellen` en `betalen`;
-- alleen `finding_candidates`, altijd met `requires_leads_validation=true` en `automatic_score_effect=false`;
-- expliciet welke context nog uit Leads moet komen voordat scoring mag plaatsvinden.
-
-De Leads Skill moet daarna zelf:
-
-- `TARGET_SPEC`, bedrijf, regio en officiële bedrijfsbevestiging binden;
-- `site_type_detected` vergelijken met de reeds bevestigde kandidaatcontext;
-- maximaal drie observaties kiezen en aan passende evidence-ID's binden;
-- `webactueel_fit`, `fit_reason` en passend bewijs bepalen;
-- de formele Leads-validator/scoring uitvoeren;
-- Registrystatus terugschrijven.
-
-## Toolselectie binnen de repo
-
-- **Crawlee:** altijd voor crawlregie van een echte websitecontrole.
-- **Playwright:** altijd voor formele desktop+mobiel kwalificatie.
-- **Sitemap/robots:** standaard als route-discovery-support.
-- **Linkinator:** standaard aanvullend op kernroutes; nooit zelfstandig scorebewijs.
-- **Tech-detect:** standaard fit-support; nooit zelfstandig probleemernst.
-- **LanguageTool:** alleen wanneer Nederlandse copycontrole relevant of expliciet gevraagd is.
-- **Lighthouse:** alleen als aanvullende performancecontext bij een reeds interessante kandidaat of expliciete performancevraag.
-
-## Stop- en fallbackregels
-
-- Geen complete desktop+mobiel route: niet kwalificeren; markeer browser/handoff-blocked.
-- Geen uitvoerroute op de actuele surface: `handoff_required`; simuleer geen scan.
-- Sitetype of kernroute materieel in conflict met de bevestigde kandidaatcontext: review/rescan vóór scoring.
-- Een finding zonder bruikbaar browserbewijs mag niet als formele observatie worden gebruikt.
-- Een Linkinator-, Lighthouse-, LanguageTool-, Axe- of tech-detect-signaal verhoogt nooit zelfstandig de Leadscore.
-- Formulieren, bestellingen, betalingen en boekingsbevestigingen worden nooit verzonden of afgerond.
-
-## Eigenaarschap
-
-- Leads Skill: probleemvalidatie, Webactueel-fit, prioriteit 1-5, contact/outreach.
-- Leadscanner: gecontroleerde browseruitvoering en technische kandidaat-signalen.
-- Lead Registry: persistente operationele leadstatus.
+- npm-dependencies zijn lockfile-gebonden en worden met `npm ci` geïnstalleerd.
+- productie-dependencies krijgen in CI `npm audit --omit=dev --audit-level=high`.
+- gebruikte GitHub Actions zijn aan volledige commit-SHA's gepind.
+- Dependabot controleert wekelijks npm- en GitHub Actions-dependencies; updates moeten dezelfde smoke- en integratietests doorlopen.
+- `main` hoort met vereiste statuschecks beschermd te zijn. Als repositoryrechten dit niet via de automation-capability toestaan, is dat een expliciete repository-adminactie en geen codeclaim.

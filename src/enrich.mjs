@@ -35,7 +35,7 @@ const results = JSON.parse(await fs.readFile(resultsPath, 'utf8'));
 for (const site of results) {
   const supplemental = { ...(site.supplemental || {}), scoring_policy: 'supplemental_only_no_automatic_lead_score' };
   const tasks = [];
-  if (runDiscovery) tasks.push(discoverSite(site.target).then((value) => ['discovery', value]));
+  if (runDiscovery && !supplemental.discovery) tasks.push(discoverSite(site.target).then((value) => ['discovery', value]));
   if (runTechDetect) tasks.push(detectTechnology(site.target).then((value) => ['technology', value]));
   if (runLinkinator) tasks.push(checkRouteLinks(site.target, site.route_plan || []).then((value) => ['linkinator', value]));
   if (runLanguageTool) tasks.push(checkDutchText(visibleDutchText(site)).then((value) => ['language', value]));
@@ -51,12 +51,12 @@ let summary = '';
 try { summary = await fs.readFile(summaryPath, 'utf8'); } catch {}
 const extra = ['', '# Aanvullende toolbox-signalen', '', 'Deze signalen zijn supplementair en wijzigen de Leadscore niet automatisch.', ''];
 for (const site of results) {
-  const s = site.supplemental || {};
+  const supplemental = site.supplemental || {};
   extra.push(`## ${site.target}`);
-  if (s.discovery) extra.push(`- Sitemap/robots: ${s.discovery.discovered_url_count || 0} URL(s), ${s.discovery.route_candidates?.length || 0} routekandidaat/kandidaten.`);
-  if (s.technology) extra.push(`- Tech-detect: ${s.technology.detected?.map((item) => item.name).join(', ') || 'geen duidelijke technologie-signatuur'}.`);
-  if (s.linkinator) extra.push(`- Linkinator: ${s.linkinator.checked || 0} link(s) gecontroleerd, ${s.linkinator.broken?.length || 0} bruikbare kapotte link(s).`);
-  if (s.language) extra.push(`- LanguageTool: ${s.language.matches?.length || 0} taalsignaal/signalen op ${s.language.checked_chars || 0} tekens.`);
+  if (supplemental.discovery) extra.push(`- Sitemap/robots: ${supplemental.discovery.discovered_url_count || 0} URL(s), ${supplemental.discovery.route_candidates?.length || 0} routekandidaat/kandidaten; robots=${supplemental.discovery.robots_policy?.access || 'onbekend'}.`);
+  if (supplemental.technology) extra.push(`- Tech-detect: ${supplemental.technology.detected?.map((item) => item.name).join(', ') || 'geen duidelijke technologie-signatuur'}.`);
+  if (supplemental.linkinator) extra.push(`- Linkinator: ${supplemental.linkinator.checked || 0} link(s) gecontroleerd, ${supplemental.linkinator.broken?.length || 0} bruikbare kapotte link(s).`);
+  if (supplemental.language) extra.push(`- LanguageTool: ${supplemental.language.matches?.length || 0} taalsignaal/signalen op ${supplemental.language.checked_chars || 0} tekens.`);
   extra.push('');
 }
 await fs.writeFile(summaryPath, `${summary.trim()}\n${extra.join('\n')}\n`);

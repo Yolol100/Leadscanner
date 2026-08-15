@@ -1,3 +1,5 @@
+import { safeFetchText } from './network-safety.mjs';
+
 const DETECTORS = [
   ['WordPress', /wp-content\/|wp-includes\/|generator[^>]+wordpress/i, 'high'],
   ['Elementor', /elementor(?:-frontend|-pro)?|elementor-widget|data-elementor-/i, 'high'],
@@ -20,18 +22,12 @@ export function detectTechnologyFromHtml(html, headers = {}) {
 
 export async function detectTechnology(target) {
   try {
-    const response = await fetch(target, {
-      redirect: 'follow',
-      signal: AbortSignal.timeout(12000),
-      headers: { 'user-agent': 'Webactueel-Leadscanner/1.2 read-only' },
-    });
-    const html = await response.text();
-    const headers = Object.fromEntries(response.headers.entries());
+    const response = await safeFetchText(target, { target, timeoutMs: 12000, maxBytes: 1_500_000 });
     return {
       source: 'html-signatures',
       url: response.url,
       status: response.status,
-      detected: detectTechnologyFromHtml(html, headers),
+      detected: detectTechnologyFromHtml(response.text, response.headers),
     };
   } catch (error) {
     return { source: 'html-signatures', detected: [], error: String(error.message || error).slice(0, 220) };

@@ -11,6 +11,7 @@ on:
       - 'tool-registry.json'
       - 'LEADS-INTEGRATION.md'
       - '.github/workflows/smoke.yml'
+      - '.github/dependabot.yml'
   pull_request:
     paths:
       - 'package.json'
@@ -20,6 +21,7 @@ on:
       - 'tool-registry.json'
       - 'LEADS-INTEGRATION.md'
       - '.github/workflows/smoke.yml'
+      - '.github/dependabot.yml'
   workflow_dispatch:
 
 permissions:
@@ -31,10 +33,10 @@ jobs:
     timeout-minutes: 25
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node 22.23.2
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22.23.2'
           package-manager-cache: false
@@ -51,7 +53,7 @@ jobs:
       - name: Verify toolbox dependencies
         run: npm run check:tools
 
-      - name: Run accountless toolbox unit smoke
+      - name: Run safety and toolbox unit smoke
         env:
           RUN_LANGUAGE_TOOL: 'false'
         run: npm run smoke:toolbox
@@ -62,9 +64,12 @@ jobs:
       - name: Scan safe test site
         env:
           TARGET_URL: https://example.com/
+          REQUIRE_SINGLE_TARGET: 'true'
+          SITE_TYPE_HINT: service
           RUN_LIGHTHOUSE: 'false'
           MAX_CONCURRENCY: '1'
           MAX_REQUESTS_PER_MINUTE: '10'
+          MAX_ACTIVE_REQUESTS_PER_MINUTE: '60'
         run: npm run scan
 
       - name: Enrich safe test site
@@ -78,39 +83,42 @@ jobs:
       - name: Build Leads handoff
         run: npm run handoff:leads
 
-      - name: Verify lead-compatible browser evidence and handoff
+      - name: Verify hardened browser evidence and Leads handoff
         run: |
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
           const results = JSON.parse(fs.readFileSync('scan-results/results.json', 'utf8'));
           if (results.length !== 1) throw new Error('Expected exactly one smoke result');
           const r = results[0];
-          if (!r.safe_boundary_respected) throw new Error('Safe boundary not recorded');
-          if (!r.browser_route_complete) throw new Error('Desktop/mobile route is incomplete');
+          if (!r.safe_boundary_respected || r.safety?.enforced !== true || Number(r.safety?.unsafe_continued || 0) !== 0) throw new Error('Measured safe boundary failed');
+          if (!r.browser_route_complete || !r.route_coverage?.desktop?.complete || !r.route_coverage?.mobile?.complete) throw new Error('Exact desktop/mobile route is incomplete');
           if (!r.desktop_evidence_ids?.length || !r.mobile_evidence_ids?.length) throw new Error('Missing desktop/mobile evidence IDs');
           if (!r.browser_evidence_records?.every((e) => e.source_type === 'controlled_browser_capture' && /^evidence-[0-9a-f]{12}$/.test(e.evidence_id) && /^[0-9a-f]{64}$/.test(e.evidence_sha256))) throw new Error('Invalid browser evidence contract');
+          if (r.browser_evidence_records.some((e) => e.route_complete !== false || !e.planned_url)) throw new Error('Raw page captures must be incomplete and planned-URL-bound');
+          if (r.site_type_used !== 'service' || r.site_type_hint !== 'service') throw new Error('Leads site type hint not honored');
           if (r.supplemental?.scoring_policy !== 'supplemental_only_no_automatic_lead_score') throw new Error('Supplemental scoring boundary missing');
-          if (!r.supplemental?.discovery || !r.supplemental?.technology || !r.supplemental?.linkinator) throw new Error('Missing toolbox enrichment');
+          if (!r.supplemental?.discovery || !r.supplemental?.discovery?.robots_policy) throw new Error('Pre-route robots/sitemap discovery missing');
+          if (!r.supplemental?.technology || !r.supplemental?.linkinator) throw new Error('Missing toolbox enrichment');
 
           const handoffs = JSON.parse(fs.readFileSync('scan-results/leads-handoff.json', 'utf8'));
           if (handoffs.length !== 1) throw new Error('Expected exactly one Leads handoff');
           const h = handoffs[0];
           if (h.format !== 'webactueel-leadscanner-handoff/1.1') throw new Error('Wrong handoff format');
           if (!/^lead-[0-9a-f]{12}$/.test(h.lead_id || '')) throw new Error('Missing deterministic lead_id');
-          if (h.runtime_surface !== 'controlled-browser') throw new Error('Leads runtime_surface mismatch');
-          if (h.runtime_detail !== 'github_actions_crawlee_playwright') throw new Error('Missing runtime provenance');
+          if (h.runtime_surface !== 'controlled-browser' || h.runtime_detail !== 'github_actions_crawlee_playwright') throw new Error('Runtime provenance mismatch');
           if (!h.ready_for_leads_review || !h.desktop_checked || !h.mobile_checked) throw new Error('Handoff should be browser-complete');
-          if (!/^evidence-[0-9a-f]{12}$/.test(h.desktop_evidence_id || '')) throw new Error('Missing desktop full-route evidence');
-          if (!/^evidence-[0-9a-f]{12}$/.test(h.mobile_evidence_id || '')) throw new Error('Missing mobile full-route evidence');
+          if (h.safety?.enforced !== true || h.safe_boundary_respected !== true) throw new Error('Handoff lacks measured safety evidence');
+          if (h.site_type_used !== 'service' || h.site_type_hint !== 'service') throw new Error('Handoff lost site type context');
+          if (!/^evidence-[0-9a-f]{12}$/.test(h.desktop_evidence_id || '') || !/^evidence-[0-9a-f]{12}$/.test(h.mobile_evidence_id || '')) throw new Error('Missing full-route evidence');
           if (h.missing_for_final_leads_score.includes('lead_id')) throw new Error('lead_id must be scanner-provided');
           if (h.site_type_requires_leads_confirmation !== true) throw new Error('Detected site type must remain subject to Leads confirmation');
 
           const fullRoutes = h.browser_evidence_records.filter((e) => e.route_category === 'full_route' && e.route_complete === true);
           if (fullRoutes.length !== 2 || new Set(fullRoutes.map((e) => e.device)).size !== 2) throw new Error('Expected desktop and mobile full-route evidence');
-          if (fullRoutes.some((e) => !Array.isArray(e.page_evidence_ids) || e.page_evidence_ids.length < 1)) throw new Error('Full-route evidence must bind page evidence');
+          if (fullRoutes.some((e) => !Array.isArray(e.page_evidence_ids) || e.page_evidence_ids.length !== h.route_plan.length || e.missing_route_steps?.length)) throw new Error('Full-route evidence must bind every planned route step exactly');
 
           const pageRecords = h.browser_evidence_records.filter((e) => e.route_category !== 'full_route');
-          if (!pageRecords.length || pageRecords.some((e) => e.route_complete !== false)) throw new Error('Page captures must not claim full-route completion');
+          if (!pageRecords.length || pageRecords.some((e) => e.route_complete !== false || !e.planned_url)) throw new Error('Page captures must remain planned-URL-bound and incomplete');
           if (pageRecords.some((e) => /_/.test(e.route_category || ''))) throw new Error('Handoff route categories must match Leads-normalized vocabulary');
 
           if (h.scoring?.owner !== 'Webactueel Leads Skill' || h.scoring?.performed_by_repository !== false) throw new Error('Score ownership boundary broken');
