@@ -15,7 +15,7 @@ permissions:
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,16 +32,29 @@ jobs:
         run: npm run check:crawler
 
       - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium --with-deps
 
       - name: Scan safe test site
         env:
           TARGET_URL: https://example.com/
           RUN_LIGHTHOUSE: 'false'
+          MAX_CONCURRENCY: '1'
+          MAX_REQUESTS_PER_MINUTE: '10'
         run: npm run scan
 
-      - name: Verify output
-        run: test -f scan-results/results.json && test -f scan-results/summary.md
+      - name: Verify lead-compatible browser evidence
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const results = JSON.parse(fs.readFileSync('scan-results/results.json', 'utf8'));
+          if (results.length !== 1) throw new Error('Expected exactly one smoke result');
+          const r = results[0];
+          if (!r.safe_boundary_respected) throw new Error('Safe boundary not recorded');
+          if (!r.browser_route_complete) throw new Error('Desktop/mobile route is incomplete');
+          if (!r.desktop_evidence_ids?.length || !r.mobile_evidence_ids?.length) throw new Error('Missing desktop/mobile evidence IDs');
+          if (!r.browser_evidence_records?.every((e) => e.source_type === 'controlled_browser_capture' && /^evidence-[0-9a-f]{12}$/.test(e.evidence_id) && /^[0-9a-f]{64}$/.test(e.evidence_sha256))) throw new Error('Invalid browser evidence contract');
+          NODE
+          test -f scan-results/summary.md
 
       - name: Upload smoke evidence
         if: always()
