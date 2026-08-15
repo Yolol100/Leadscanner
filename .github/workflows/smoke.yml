@@ -34,15 +34,15 @@ jobs:
       - name: Install Chromium
         run: npx playwright install chromium --with-deps
 
-      - name: Scan route QA site
+      - name: Scan safe test site
         env:
-          TARGET_URL: https://www.douwschilderwerken.nl/
+          TARGET_URL: https://example.com/
           RUN_LIGHTHOUSE: 'false'
           MAX_CONCURRENCY: '1'
           MAX_REQUESTS_PER_MINUTE: '10'
         run: npm run scan
 
-      - name: Verify lead-compatible browser evidence and route
+      - name: Verify lead-compatible browser evidence
         run: |
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
@@ -53,10 +53,6 @@ jobs:
           if (!r.browser_route_complete) throw new Error('Desktop/mobile route is incomplete');
           if (!r.desktop_evidence_ids?.length || !r.mobile_evidence_ids?.length) throw new Error('Missing desktop/mobile evidence IDs');
           if (!r.browser_evidence_records?.every((e) => e.source_type === 'controlled_browser_capture' && /^evidence-[0-9a-f]{12}$/.test(e.evidence_id) && /^[0-9a-f]{64}$/.test(e.evidence_sha256))) throw new Error('Invalid browser evidence contract');
-          const service = r.route_plan?.find((p) => p.role === 'main_service');
-          const contact = r.route_plan?.find((p) => p.role === 'contact_or_quote');
-          if (!service || !/\/diensten\//i.test(service.url) || /persoonlijk-kleuradvies/i.test(service.url)) throw new Error(`Wrong main-service route: ${service?.url}`);
-          if (!contact || !/contact/i.test(contact.url)) throw new Error(`Wrong contact route: ${contact?.url}`);
           NODE
           test -f scan-results/summary.md
 
