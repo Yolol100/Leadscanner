@@ -1,16 +1,20 @@
 {
   "name": "webactueel-leadscanner",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "scripts": {
     "scan": "node src/scan.mjs",
-    "check:crawler": "node -e \"Promise.all([import('crawlee'), import('playwright')]).then(() => console.log('Crawlee + Playwright OK'))\""
+    "enrich": "node src/enrich.mjs",
+    "smoke:toolbox": "node src/toolbox-smoke.mjs",
+    "check:crawler": "node -e \"Promise.all([import('crawlee'), import('playwright')]).then(() => console.log('Crawlee + Playwright OK'))\"",
+    "check:tools": "node -e \"Promise.all([import('linkinator'), import('lighthouse')]).then(() => console.log('Linkinator + Lighthouse OK'))\""
   },
   "dependencies": {
     "@axe-core/playwright": "latest",
     "crawlee": "latest",
     "lighthouse": "latest",
+    "linkinator": "8.0.3",
     "playwright": "latest"
   }
 }
