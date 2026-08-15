@@ -76,7 +76,7 @@ jobs:
 
       - name: Setup Java 17 for LanguageTool
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_language_tool }}
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
