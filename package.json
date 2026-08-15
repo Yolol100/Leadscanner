@@ -1,0 +1,14 @@
+{
+  "name": "webactueel-leadscanner",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "scan": "node src/scan.mjs"
+  },
+  "dependencies": {
+    "@axe-core/playwright": "latest",
+    "@playwright/test": "latest",
+    "lighthouse": "latest"
+  }
+}

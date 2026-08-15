@@ -1,0 +1,5 @@
+node_modules/
+scan-results/
+playwright-report/
+test-results/
+.DS_Store
