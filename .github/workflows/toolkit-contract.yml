@@ -1,0 +1,44 @@
+name: Toolkit Contract
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    paths:
+      - 'toolkit-contract.json'
+      - 'tool-registry.json'
+      - 'package.json'
+      - '.github/workflows/**'
+      - 'src/**'
+      - 'scripts/**'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate registered toolkit is accountless and wired
+        run: |
+          python3 - <<'PY'
+          import json, pathlib
+          c=json.load(open('toolkit-contract.json', encoding='utf-8'))
+          for key in ('requires_account','requires_api_key','requires_mcp'):
+              assert c.get(key) is False, f'{key} must be false'
+          ids=[t['id'] for t in c['tools']]
+          assert len(ids)==len(set(ids)), 'duplicate tool ids'
+          covered=set()
+          for a in c['usage_assertions']:
+              assert a['tool'] in ids
+              p=pathlib.Path(a['path']); assert p.is_file(), f'missing {p}'
+              assert a['contains'] in p.read_text(encoding='utf-8'), f"{a['tool']} not wired in {p}"
+              covered.add(a['tool'])
+          assert covered==set(ids), f'unwired tools: {set(ids)-covered}'
+          workflow=pathlib.Path('.github/workflows/scan.yml').read_text(encoding='utf-8')
+          assert "- 'sites.txt'" not in workflow, 'sites.txt must not be a GitHub push trigger'
+          registry=json.load(open('tool-registry.json', encoding='utf-8'))
+          assert registry['tools']['axe_core']['automatic_score_effect'] is False
+          print('toolkit-contract: OK')
+          PY
