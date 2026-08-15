@@ -4,7 +4,6 @@ on:
   push:
     branches: [main]
     paths:
-      - 'sites.txt'
       - 'requests/scan.json'
   workflow_dispatch:
     inputs:
@@ -140,8 +139,6 @@ jobs:
                   require_single_target: 'true'
                 };
               }
-            } else if (changed.has('sites.txt')) {
-              resolved = {...defaults, run: 'true', request_id: `batch-${process.env.GITHUB_RUN_ID}`};
             }
           }
 
