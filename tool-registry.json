@@ -1,0 +1,17 @@
+{
+  "version": "1.0",
+  "policy": {
+    "read_only": true,
+    "lead_score_owner": "Webactueel Leads Skill",
+    "supplemental_checks_change_score_automatically": false
+  },
+  "tools": {
+    "crawlee": { "status": "existing", "purpose": "website-batches en crawlregie" },
+    "playwright": { "status": "existing", "purpose": "desktop- en mobiele browserbewijzen" },
+    "sitemap_robots": { "status": "enabled", "module": "src/tools/discovery.mjs", "purpose": "publieke routekandidaten uit robots.txt en sitemaps" },
+    "linkinator": { "status": "enabled", "module": "src/tools/link-check.mjs", "purpose": "shallow same-origin linkcontrole op kernroutes" },
+    "lighthouse": { "status": "existing_optional", "purpose": "performance/accessibility/best-practices/SEO als tweede technische meting" },
+    "languagetool": { "status": "optional_local", "module": "src/tools/language-check.mjs", "purpose": "Nederlandse taalsignalen via lokale accountloze server" },
+    "tech_detect": { "status": "enabled", "module": "src/tools/tech-detect.mjs", "purpose": "CMS/pagebuilder/webshop-signaturen voor Webactueel-fit" }
+  }
+}
