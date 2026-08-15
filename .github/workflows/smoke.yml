@@ -95,16 +95,27 @@ jobs:
           const handoffs = JSON.parse(fs.readFileSync('scan-results/leads-handoff.json', 'utf8'));
           if (handoffs.length !== 1) throw new Error('Expected exactly one Leads handoff');
           const h = handoffs[0];
-          if (h.format !== 'webactueel-leadscanner-handoff/1.0') throw new Error('Wrong handoff format');
+          if (h.format !== 'webactueel-leadscanner-handoff/1.1') throw new Error('Wrong handoff format');
+          if (!/^lead-[0-9a-f]{12}$/.test(h.lead_id || '')) throw new Error('Missing deterministic lead_id');
           if (h.runtime_surface !== 'controlled-browser') throw new Error('Leads runtime_surface mismatch');
           if (h.runtime_detail !== 'github_actions_crawlee_playwright') throw new Error('Missing runtime provenance');
-          if (!h.ready_for_leads_review) throw new Error('Handoff should be browser-complete');
+          if (!h.ready_for_leads_review || !h.desktop_checked || !h.mobile_checked) throw new Error('Handoff should be browser-complete');
           if (!/^evidence-[0-9a-f]{12}$/.test(h.desktop_evidence_id || '')) throw new Error('Missing desktop full-route evidence');
           if (!/^evidence-[0-9a-f]{12}$/.test(h.mobile_evidence_id || '')) throw new Error('Missing mobile full-route evidence');
+          if (h.missing_for_final_leads_score.includes('lead_id')) throw new Error('lead_id must be scanner-provided');
+          if (h.site_type_requires_leads_confirmation !== true) throw new Error('Detected site type must remain subject to Leads confirmation');
+
           const fullRoutes = h.browser_evidence_records.filter((e) => e.route_category === 'full_route' && e.route_complete === true);
           if (fullRoutes.length !== 2 || new Set(fullRoutes.map((e) => e.device)).size !== 2) throw new Error('Expected desktop and mobile full-route evidence');
+          if (fullRoutes.some((e) => !Array.isArray(e.page_evidence_ids) || e.page_evidence_ids.length < 1)) throw new Error('Full-route evidence must bind page evidence');
+
+          const pageRecords = h.browser_evidence_records.filter((e) => e.route_category !== 'full_route');
+          if (!pageRecords.length || pageRecords.some((e) => e.route_complete !== false)) throw new Error('Page captures must not claim full-route completion');
+          if (pageRecords.some((e) => /_/.test(e.route_category || ''))) throw new Error('Handoff route categories must match Leads-normalized vocabulary');
+
           if (h.scoring?.owner !== 'Webactueel Leads Skill' || h.scoring?.performed_by_repository !== false) throw new Error('Score ownership boundary broken');
           if (h.finding_candidates.some((f) => f.automatic_score_effect !== false || f.requires_leads_validation !== true)) throw new Error('Finding candidates may not auto-score');
+          if (h.finding_candidates.some((f) => f.evidence_usable && !f.evidence_ids?.length)) throw new Error('Usable finding must carry evidence');
           NODE
           test -f scan-results/summary.md
 
