@@ -1,54 +1,97 @@
 {
-  "version": "2.0",
+  "version": "2.1",
   "repository_role": "browser_execution_capability_for_webactueel_leads",
   "policy": {
     "read_only": true,
     "lead_score_owner": "Webactueel Leads Skill",
     "supplemental_checks_change_score_automatically": false,
     "required_output": "scan-results/leads-handoff.json",
-    "fallback_when_dispatch_unavailable": "handoff_required"
+    "fallback_when_runtime_unavailable": "handoff_required",
+    "never_simulate_browser_evidence": true
   },
   "routing": {
+    "why_this_repository_exists": "De Leads Skill vereist echte desktop- en mobiele browser-evidence voor formele websitekwalificatie. Deze repository levert die gecontroleerde browseruitvoering plus supplementaire technische signalen zonder zelf de Leadscore te bepalen.",
     "use_repository_when": [
-      "Leads stap 3 website beoordelen echte desktop+mobiel browser-evidence nodig heeft",
-      "een kandidaatwebsite formeel moet worden gekwalificeerd",
-      "een expliciete rescan/reactivate browserbewijs vereist",
-      "bestaand browserbewijs ontbreekt of volgens Leads niet meer vers genoeg is",
-      "een Gmail-write dezelfde-dag websitecontrole vereist"
+      "Leads stap 3 Website beoordelen echte desktop+mobiel browser-evidence nodig heeft",
+      "een kandidaatwebsite formeel moet worden gekwalificeerd en nog geen geldig scanbewijs heeft",
+      "een expliciete rescan/reactivate nieuw browserbewijs vereist",
+      "bestaand browserbewijs volgens de Leads-versheidsregels niet meer bruikbaar is",
+      "een Gmail-write een websitecontrole van vandaag vereist"
     ],
     "do_not_use_repository_when": [
       "alleen keyword- of sectoronderzoek nodig is",
       "alleen Registry-deduplicatie nodig is",
       "alleen officiële bedrijfsbevestiging nodig is",
+      "een geldige voldoende verse Leads-scan al beschikbaar is",
       "alleen contactinformatie of e-mailadres gezocht wordt",
-      "alleen mailcopy, Gmail-history, draft of follow-up nodig is"
+      "alleen mailcopy, Gmail-history, bestaande draftcontrole of follow-upstatus nodig is"
+    ],
+    "preconditions": [
+      "Lead Registry-voorcheck is uitgevoerd of de opdracht is expliciet rescan/reactivate",
+      "de officiële bedrijfswebsite is bevestigd voordat formele kwalificatie start",
+      "de actuele surface heeft een bewezen uitvoerroute voor GitHub Actions of een lokale repo-runtime",
+      "bij ontbrekende uitvoerroute wordt handoff_required teruggegeven"
     ],
     "required_inputs": [
-      "officiële bedrijfswebsite of vooraf gecontroleerde sites.txt",
-      "site_type indien Leads dit al betrouwbaar heeft bepaald",
+      "officiële bedrijfswebsite via target_url of vooraf gecontroleerde sites.txt",
       "scanintentie: new_candidate, qualification, rescan of same_day_refresh"
     ],
-    "execution": {
-      "workflow": ".github/workflows/scan.yml",
-      "primary_input": "target_url",
-      "default_max_concurrency": 2,
-      "default_max_requests_per_minute": 30,
-      "safe_boundary": "GET/HEAD only; no submit/order/payment/booking confirmation",
-      "post_scan_command": "npm run handoff:leads"
+    "optional_context_from_leads": [
+      "site_type service/shop/booking voor post-scan vergelijking met site_type_detected",
+      "of performancecontext gewenst is",
+      "of Nederlandse taalcontrole gewenst is"
+    ],
+    "execution_modes": {
+      "github_actions": {
+        "when": "de actuele GitHub-capability workflow_dispatch daadwerkelijk kan starten en run/artifact kan teruglezen",
+        "workflow": ".github/workflows/scan.yml",
+        "primary_input": "target_url",
+        "post_scan_command": "npm run handoff:leads"
+      },
+      "codex_or_cli_local": {
+        "when": "de repository aantoonbaar is uitgecheckt en Node/npm/Chromium-uitvoering beschikbaar is",
+        "commands": [
+          "npm ci",
+          "npx playwright install chromium --with-deps",
+          "npm run scan",
+          "npm run enrich",
+          "npm run handoff:leads"
+        ]
+      },
+      "unavailable": {
+        "when": "geen van beide uitvoerroutes aantoonbaar beschikbaar is",
+        "result": "handoff_required"
+      }
+    },
+    "default_limits": {
+      "max_concurrency": 2,
+      "max_requests_per_minute": 30,
+      "max_pages_per_site": 4,
+      "safe_boundary": "GET/HEAD only; no submit/order/payment/booking confirmation"
     },
     "expected_output": {
       "file": "scan-results/leads-handoff.json",
+      "format": "webactueel-leadscanner-handoff/1.1",
       "runtime_surface": "controlled-browser",
       "runtime_detail": "github_actions_crawlee_playwright",
       "contains": [
+        "deterministic lead_id",
         "desktop full_route evidence",
         "mobile full_route evidence",
         "page browser evidence",
-        "finding_candidates",
+        "finding_candidates requiring Leads validation",
         "supplemental signals",
-        "explicit missing fields for final Leads score"
+        "explicit fields still required from Leads before scoring"
       ]
-    }
+    },
+    "after_execution": [
+      "validate the handoff against the Leads evidence contract",
+      "compare scanner site_type_detected with the already confirmed Leads site_type and resolve material mismatch before scoring",
+      "choose at most three evidence-backed observations",
+      "determine webactueel_fit separately from problem severity",
+      "run the Leads score validator; never accept a repository-generated score",
+      "write the resulting scan/priority status back to the Lead Registry"
+    ]
   },
   "tools": {
     "crawlee": {
@@ -84,7 +127,7 @@
     "lighthouse": {
       "status": "existing_optional",
       "purpose": "performance/accessibility/best-practices/SEO als tweede technische meting",
-      "use_when": "een reeds interessante kandidaat aanvullende performancecontext nodig heeft",
+      "use_when": "een reeds interessante kandidaat aanvullende performancecontext nodig heeft of de gebruiker expliciet performance vraagt",
       "evidence_role": "supplemental_candidate_signal",
       "automatic_score_effect": false
     },
@@ -92,7 +135,7 @@
       "status": "optional_local",
       "module": "src/tools/language-check.mjs",
       "purpose": "Nederlandse taalsignalen via lokale accountloze server",
-      "use_when": "zichtbare Nederlandse tekst relevante copy-signalen kan bevatten",
+      "use_when": "zichtbare Nederlandse tekst relevante copy-signalen kan bevatten of de gebruiker taalcontrole vraagt",
       "evidence_role": "supplemental_candidate_signal",
       "automatic_score_effect": false
     },
@@ -107,7 +150,7 @@
     "leads_handoff": {
       "status": "enabled",
       "module": "src/leads-handoff.mjs",
-      "purpose": "scannerbewijs normaliseren naar een Leads-reviewpakket zonder te scoren",
+      "purpose": "scannerbewijs normaliseren naar het Leads evidence-vocabulaire zonder te scoren",
       "use_when": "iedere scan die terug moet naar de Leads Skill",
       "evidence_role": "handoff_adapter",
       "automatic_score_effect": false
