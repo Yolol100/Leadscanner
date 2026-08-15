@@ -1,0 +1,2 @@
+# Eén publieke website per regel. Voorbeeld:
+# https://example.nl/
