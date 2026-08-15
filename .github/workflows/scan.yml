@@ -17,9 +17,9 @@ on:
         default: false
         type: boolean
       max_concurrency:
-        description: 'Maximaal aantal websites tegelijk (1-8)'
+        description: 'Maximaal aantal websites tegelijk (1-4)'
         required: true
-        default: '4'
+        default: '2'
         type: string
       max_requests_per_minute:
         description: 'Crawlee startlimiet per minuut (1-120)'
@@ -61,7 +61,7 @@ jobs:
         env:
           TARGET_URL: ${{ inputs.target_url }}
           RUN_LIGHTHOUSE: ${{ inputs.run_lighthouse || 'false' }}
-          MAX_CONCURRENCY: ${{ inputs.max_concurrency || '4' }}
+          MAX_CONCURRENCY: ${{ inputs.max_concurrency || '2' }}
           MAX_REQUESTS_PER_MINUTE: ${{ inputs.max_requests_per_minute || '30' }}
           MAX_PAGES_PER_SITE: '4'
         run: npm run scan
