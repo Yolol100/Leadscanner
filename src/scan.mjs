@@ -11,8 +11,9 @@ const runLighthouse = String(process.env.RUN_LIGHTHOUSE || 'false').toLowerCase(
 const singleTarget = (process.env.TARGET_URL || '').trim();
 const maxConcurrency = Math.max(1, Math.min(8, Number(process.env.MAX_CONCURRENCY || 4)));
 const maxRequestsPerMinute = Math.max(1, Math.min(120, Number(process.env.MAX_REQUESTS_PER_MINUTE || 30)));
-const maxPagesPerSite = Math.max(2, Math.min(5, Number(process.env.MAX_PAGES_PER_SITE || 4)));
+const maxPagesPerSite = Math.max(2, Math.min(4, Number(process.env.MAX_PAGES_PER_SITE || 4)));
 const runtimeSurface = 'github_actions_crawlee_playwright';
+
 const safe = (value) => value.replace(/^https?:\/\//, '').replace(/[^a-z0-9.-]+/gi, '_').replace(/_+/g, '_').slice(0, 100);
 const sha256 = (value) => crypto.createHash('sha256').update(value).digest('hex');
 
@@ -25,8 +26,8 @@ function stable(value) {
 }
 
 function buildHashedEvidence(payload) {
-  const evidenceSha256 = sha256(JSON.stringify(stable(payload)));
-  return { ...payload, evidence_sha256: evidenceSha256, evidence_id: `evidence-${evidenceSha256.slice(0, 12)}` };
+  const digest = sha256(JSON.stringify(stable(payload)));
+  return { ...payload, evidence_sha256: digest, evidence_id: `evidence-${digest.slice(0, 12)}` };
 }
 
 await fs.rm(OUT, { recursive: true, force: true });
@@ -37,19 +38,18 @@ const urls = [...new Set((singleTarget ? [singleTarget] : fileLines)
   .map((x) => x.trim())
   .filter((x) => x && !x.startsWith('#'))
   .map((x) => /^https?:\/\//i.test(x) ? x : `https://${x}`))];
-
 if (!urls.length) throw new Error('Geen websites gevonden. Zet URLs in sites.txt of gebruik TARGET_URL.');
 
-const placeholder = /\b(lorem ipsum|dummy text|placeholder|coming soon|under construction)\b/i;
-const genericButton = /^(button|knop|click here|klik hier|read more|lees meer)$/i;
-const shopSignal = /(webshop|shop|winkel|product|producten|category|categorie|cart|winkelwagen|checkout|afrekenen)/i;
-const bookingSignal = /(booking|boek|boeken|afspraak|reserver|reservation|reserveer)/i;
+const placeholderRe = /\b(lorem ipsum|dummy text|placeholder|coming soon|under construction)\b/i;
+const genericButtonRe = /^(button|knop|click here|klik hier|read more|lees meer)$/i;
+const bookingSignal = /(booking|boek(?:ing|en)?|afspraak|reserver|reservation|reserveer)/i;
+const strongShopSignal = /(webshop|winkelwagen|checkout|afrekenen|\bcart\b|\/shop(?:\/|$)|\/winkel(?:\/|$))/i;
+const productSignal = /(product|producten|shop|winkel|category|categorie)/i;
 const serviceSignal = /(dienst|diensten|service|services|werkzaamheden|aanbod|specialisme|oplossing)/i;
 const contactSignal = /(contact|offerte|aanvraag|prijsopgave|advies|bel ons|neem contact)/i;
 const cartSignal = /(cart|winkelwagen)/i;
 const checkoutSignal = /(checkout|afrekenen|bestellen)/i;
-const productSignal = /(product|producten|shop|winkel|category|categorie)/i;
-const ignoreLink = /(privacy|cookie|voorwaarden|disclaimer|login|inloggen|account|facebook|instagram|linkedin|youtube|whatsapp)/i;
+const ignoreLink = /(privacy|cookie|voorwaarden|disclaimer|login|inloggen|account|facebook|instagram|linkedin|youtube|whatsapp|mailto:|tel:)/i;
 
 function addFinding(bucket, finding) {
   const key = `${finding.type}|${finding.url}|${finding.detail}|${finding.device}`;
@@ -78,25 +78,26 @@ function sameOriginUrls(links, origin) {
 }
 
 function pickBest(links, regexes, used) {
-  const candidates = links
+  return links
     .filter((l) => !used.has(l.href))
     .map((l) => {
       const hay = `${l.text || ''} ${l.href}`;
-      const score = regexes.reduce((sum, re, i) => sum + (re.test(hay) ? (10 - i) : 0), 0) + Math.min(4, (l.text || '').trim().length / 25);
+      const score = regexes.reduce((sum, re, i) => sum + (re.test(hay) ? (10 - i) : 0), 0)
+        + Math.min(4, (l.text || '').trim().length / 25);
       return { ...l, score };
     })
     .filter((l) => l.score > 0)
-    .sort((a, b) => b.score - a.score);
-  return candidates[0] || null;
+    .sort((a, b) => b.score - a.score)[0] || null;
 }
 
 function buildRoute(homeUrl, links) {
   const origin = new URL(homeUrl).origin;
   const internal = sameOriginUrls(links, origin);
   const haystack = internal.map((l) => `${l.text} ${l.href}`).join(' ');
-  const siteType = shopSignal.test(haystack) ? 'shop' : (bookingSignal.test(haystack) ? 'booking' : 'service');
+  const siteType = strongShopSignal.test(haystack) ? 'shop' : (bookingSignal.test(haystack) ? 'booking' : 'service');
   const used = new Set([homeUrl]);
   const pages = [{ url: homeUrl, role: 'home' }];
+
   const add = (candidate, role) => {
     if (!candidate || pages.length >= maxPagesPerSite) return;
     used.add(candidate.href);
@@ -116,10 +117,7 @@ function buildRoute(homeUrl, links) {
     add(pickBest(internal, [contactSignal], used), 'contact_or_quote');
   }
 
-  if (pages.length === 1) {
-    const fallback = internal.find((l) => !used.has(l.href));
-    add(fallback, 'important_internal');
-  }
+  if (pages.length === 1) add(internal.find((l) => !used.has(l.href)), 'important_internal');
   return { siteType, pages };
 }
 
@@ -128,6 +126,41 @@ async function installReadOnlyRoute(page) {
     const method = route.request().method().toUpperCase();
     if (method === 'GET' || method === 'HEAD') await route.continue();
     else await route.abort('blockedbyclient');
+  });
+}
+
+function wirePageSignals(page, target, profileName, bucket) {
+  page.on('console', (msg) => {
+    if (msg.type() === 'error') addFinding(bucket, {
+      severity: 2,
+      type: 'console_error',
+      url: page.url() || target,
+      detail: msg.text().slice(0, 400),
+      device: profileName,
+      route_category: 'runtime',
+    });
+  });
+  page.on('pageerror', (err) => addFinding(bucket, {
+    severity: 3,
+    type: 'javascript_error',
+    url: page.url() || target,
+    detail: String(err.message || err).slice(0, 400),
+    device: profileName,
+    route_category: 'runtime',
+  }));
+  page.on('response', (res) => {
+    if (res.status() >= 400) {
+      const resource = res.request().resourceType();
+      const severity = resource === 'document' ? 5 : (['script', 'stylesheet', 'image'].includes(resource) ? 3 : 1);
+      addFinding(bucket, {
+        severity,
+        type: 'http_error',
+        url: page.url() || target,
+        detail: `${res.status()} ${resource}: ${res.url()}`,
+        device: profileName,
+        route_category: 'runtime',
+      });
+    }
   });
 }
 
@@ -141,36 +174,95 @@ async function inspectRenderedPage(page, target, profileName, routeRole, bucket)
       return s.visibility !== 'hidden' && s.display !== 'none' && r.width > 0 && r.height > 0;
     };
     const text = (document.body?.innerText || '').replace(/\s+/g, ' ').trim();
-    const placeholderRe = new RegExp(placeholderSource, 'i');
-    const genericButtonRe = new RegExp(genericButtonSource, 'i');
-    const brokenImages = [...document.images].filter((img) => img.complete && img.naturalWidth === 0 && visible(img)).slice(0, 10).map((img) => img.currentSrc || img.src);
-    const genericButtons = [...document.querySelectorAll('button, a')].filter(visible).map((el) => (el.innerText || el.getAttribute('aria-label') || '').trim()).filter((t) => genericButtonRe.test(t)).slice(0, 10);
-    const forms = [...document.forms].map((form) => ({ action: form.action, method: (form.method || 'get').toUpperCase(), fields: [...form.querySelectorAll('input, select, textarea')].length }));
-    const overflow = document.documentElement.scrollWidth > window.innerWidth + 5;
-    const links = [...document.querySelectorAll('a[href]')].filter(visible).map((a) => ({ href: a.href, text: (a.innerText || a.getAttribute('aria-label') || '').trim() })).slice(0, 500);
-    return { textSample: text.slice(0, 8000), hasPlaceholder: placeholderRe.test(text), brokenImages, genericButtons, forms, overflow, links };
-  }, { placeholderSource: placeholder.source, genericButtonSource: genericButton.source });
+    const placeholder = new RegExp(placeholderSource, 'i');
+    const genericButton = new RegExp(genericButtonSource, 'i');
+    const brokenImages = [...document.images]
+      .filter((img) => img.complete && img.naturalWidth === 0 && visible(img))
+      .slice(0, 10)
+      .map((img) => img.currentSrc || img.src);
+    const genericButtons = [...document.querySelectorAll('button, a')]
+      .filter(visible)
+      .map((el) => (el.innerText || el.getAttribute('aria-label') || '').trim())
+      .filter((t) => genericButton.test(t))
+      .slice(0, 10);
+    const forms = [...document.forms].map((form) => ({
+      action: form.action,
+      method: (form.method || 'get').toUpperCase(),
+      fields: [...form.querySelectorAll('input, select, textarea')].length,
+    }));
+    const links = [...document.querySelectorAll('a[href]')]
+      .filter(visible)
+      .map((a) => ({ href: a.href, text: (a.innerText || a.getAttribute('aria-label') || '').trim() }))
+      .slice(0, 500);
+    const headings = [...document.querySelectorAll('h1, h2')]
+      .filter(visible)
+      .map((h) => (h.innerText || '').replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+      .slice(0, 12);
+    return {
+      textSample: text.slice(0, 6000),
+      headings,
+      hasPlaceholder: placeholder.test(text),
+      brokenImages,
+      genericButtons,
+      forms,
+      overflow: document.documentElement.scrollWidth > window.innerWidth + 5,
+      links,
+    };
+  }, { placeholderSource: placeholderRe.source, genericButtonSource: genericButtonRe.source });
 
-  if (state.overflow && profileName === 'mobile') addFinding(bucket, { severity: 4, type: 'mobile_overflow', url: pageUrl, detail: 'Pagina is breder dan het mobiele scherm; horizontaal scrollen is nodig.', device: profileName, route_category: routeRole });
-  if (state.brokenImages.length) addFinding(bucket, { severity: 3, type: 'broken_images', url: pageUrl, detail: `${state.brokenImages.length} zichtbare afbeelding(en) laden niet.`, device: profileName, route_category: routeRole });
-  if (state.hasPlaceholder) addFinding(bucket, { severity: 4, type: 'placeholder_content', url: pageUrl, detail: 'Zichtbare placeholder-/dummytekst aangetroffen.', device: profileName, route_category: routeRole });
-  if (state.genericButtons.length) addFinding(bucket, { severity: 3, type: 'generic_cta', url: pageUrl, detail: `Generieke knoptekst: ${state.genericButtons.join(', ')}`, device: profileName, route_category: routeRole });
+  if (state.overflow && profileName === 'mobile') addFinding(bucket, {
+    severity: 4, type: 'mobile_overflow', url: pageUrl,
+    detail: 'Pagina is breder dan het mobiele scherm; horizontaal scrollen is nodig.',
+    device: profileName, route_category: routeRole,
+  });
+  if (state.brokenImages.length) addFinding(bucket, {
+    severity: 3, type: 'broken_images', url: pageUrl,
+    detail: `${state.brokenImages.length} zichtbare afbeelding(en) laden niet.`,
+    device: profileName, route_category: routeRole,
+  });
+  if (state.hasPlaceholder) addFinding(bucket, {
+    severity: 4, type: 'placeholder_content', url: pageUrl,
+    detail: 'Zichtbare placeholder-/dummytekst aangetroffen.',
+    device: profileName, route_category: routeRole,
+  });
+  if (state.genericButtons.length) addFinding(bucket, {
+    severity: 3, type: 'generic_cta', url: pageUrl,
+    detail: `Generieke knoptekst: ${state.genericButtons.join(', ')}`,
+    device: profileName, route_category: routeRole,
+  });
 
   try {
     const axe = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
     for (const v of axe.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical').slice(0, 5)) {
-      addFinding(bucket, { severity: v.impact === 'critical' ? 4 : 3, type: 'accessibility', url: pageUrl, detail: `${v.impact}: ${v.help} (${v.nodes.length} element(en))`, device: profileName, route_category: routeRole });
+      addFinding(bucket, {
+        severity: v.impact === 'critical' ? 4 : 3,
+        type: 'accessibility',
+        url: pageUrl,
+        detail: `${v.impact}: ${v.help} (${v.nodes.length} element(en))`,
+        device: profileName,
+        route_category: routeRole,
+      });
     }
   } catch (e) {
-    addFinding(bucket, { severity: 1, type: 'axe_scan_error', url: pageUrl, detail: String(e.message || e).slice(0, 300), device: profileName, route_category: routeRole });
+    addFinding(bucket, {
+      severity: 1,
+      type: 'axe_scan_error',
+      url: pageUrl,
+      detail: String(e.message || e).slice(0, 300),
+      device: profileName,
+      route_category: routeRole,
+    });
   }
 
   const dir = path.join(OUT, safe(target));
   await fs.mkdir(dir, { recursive: true });
   const screenshotPath = path.join(dir, `${profileName}-${routeRole}-${safe(new URL(pageUrl).pathname || 'home')}.jpg`);
-  await page.screenshot({ path: screenshotPath, type: 'jpeg', quality: 60, fullPage: false });
+  await page.screenshot({ path: screenshotPath, type: 'jpeg', quality: 55, fullPage: false });
   const screenshotBytes = await fs.readFile(screenshotPath);
-  const viewport = page.viewportSize() || { width: profileName === 'mobile' ? 390 : 1440, height: profileName === 'mobile' ? 844 : 900 };
+  const viewport = page.viewportSize();
+  if (!viewport) throw new Error(`Geen viewport voor ${profileName} ${pageUrl}`);
+
   const evidence = buildHashedEvidence({
     evidence_kind: 'browser',
     source_type: 'controlled_browser_capture',
@@ -185,26 +277,23 @@ async function inspectRenderedPage(page, target, profileName, routeRole, bucket)
     captured_at: new Date().toISOString(),
     viewport,
   });
+
   bucket.browser_evidence_records.push(evidence);
-  bucket.pages.push({ url: pageUrl, title, route_category: routeRole, forms: state.forms, evidence_id: evidence.evidence_id });
+  bucket.pages.push({
+    url: pageUrl,
+    title,
+    route_category: routeRole,
+    headings: state.headings,
+    text_sample: state.textSample,
+    forms: state.forms,
+    evidence_id: evidence.evidence_id,
+  });
   for (const finding of bucket.findings) {
-    if (finding.url === pageUrl && finding.device === profileName && !finding.evidence_ids) finding.evidence_ids = [evidence.evidence_id];
+    if (finding.url === pageUrl && finding.device === profileName && !finding.evidence_ids) {
+      finding.evidence_ids = [evidence.evidence_id];
+    }
   }
   return { links: state.links, evidence };
-}
-
-function wirePageSignals(page, target, profileName, bucket) {
-  page.on('console', (msg) => {
-    if (msg.type() === 'error') addFinding(bucket, { severity: 2, type: 'console_error', url: page.url() || target, detail: msg.text().slice(0, 400), device: profileName, route_category: 'runtime' });
-  });
-  page.on('pageerror', (err) => addFinding(bucket, { severity: 3, type: 'javascript_error', url: page.url() || target, detail: String(err.message || err).slice(0, 400), device: profileName, route_category: 'runtime' }));
-  page.on('response', (res) => {
-    if (res.status() >= 400) {
-      const resource = res.request().resourceType();
-      const severity = resource === 'document' ? 5 : (['script', 'stylesheet', 'image'].includes(resource) ? 3 : 1);
-      addFinding(bucket, { severity, type: 'http_error', url: page.url() || target, detail: `${res.status()} ${resource}: ${res.url()}`, device: profileName, route_category: 'runtime' });
-    }
-  });
 }
 
 async function navigateAndInspect(page, target, profileName, planPages, bucket) {
@@ -212,11 +301,25 @@ async function navigateAndInspect(page, target, profileName, planPages, bucket) 
     const item = planPages[i];
     try {
       const response = await page.goto(item.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-      if (response && response.status() >= 400) addFinding(bucket, { severity: 5, type: 'core_page_error', url: item.url, detail: `Belangrijke pagina geeft HTTP ${response.status()}.`, device: profileName, route_category: item.role });
-      await page.waitForTimeout(i === 0 ? 1000 : 600);
+      if (response && response.status() >= 400) addFinding(bucket, {
+        severity: 5,
+        type: 'core_page_error',
+        url: item.url,
+        detail: `Belangrijke pagina geeft HTTP ${response.status()}.`,
+        device: profileName,
+        route_category: item.role,
+      });
+      await page.waitForTimeout(i === 0 ? 900 : 500);
       await inspectRenderedPage(page, target, profileName, item.role, bucket);
     } catch (e) {
-      addFinding(bucket, { severity: 4, type: 'core_page_unreachable', url: item.url, detail: `Belangrijke pagina kon niet worden geopend: ${String(e.message || e).slice(0, 250)}`, device: profileName, route_category: item.role });
+      addFinding(bucket, {
+        severity: 4,
+        type: 'core_page_unreachable',
+        url: item.url,
+        detail: `Belangrijke pagina kon niet worden geopend: ${String(e.message || e).slice(0, 250)}`,
+        device: profileName,
+        route_category: item.role,
+      });
       bucket.pages.push({ url: item.url, route_category: item.role, error: String(e.message || e).slice(0, 250) });
     }
   }
@@ -235,26 +338,48 @@ async function scanSite(request, desktopPage) {
 
   const desktop = { profile: 'desktop', findings: [], pages: [], browser_evidence_records: [], _keys: new Set() };
   wirePageSignals(desktopPage, target, 'desktop', desktop);
-  await desktopPage.waitForTimeout(1000);
+  await desktopPage.waitForTimeout(900);
   const desktopHome = await inspectRenderedPage(desktopPage, target, 'desktop', 'home', desktop);
   const route = buildRoute(desktopPage.url(), desktopHome.links);
   siteResult.site_type_detected = route.siteType;
   siteResult.route_plan = route.pages;
+
   for (const item of route.pages.slice(1)) {
     try {
       const response = await desktopPage.goto(item.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-      if (response && response.status() >= 400) addFinding(desktop, { severity: 5, type: 'core_page_error', url: item.url, detail: `Belangrijke pagina geeft HTTP ${response.status()}.`, device: 'desktop', route_category: item.role });
-      await desktopPage.waitForTimeout(600);
+      if (response && response.status() >= 400) addFinding(desktop, {
+        severity: 5,
+        type: 'core_page_error',
+        url: item.url,
+        detail: `Belangrijke pagina geeft HTTP ${response.status()}.`,
+        device: 'desktop',
+        route_category: item.role,
+      });
+      await desktopPage.waitForTimeout(500);
       await inspectRenderedPage(desktopPage, target, 'desktop', item.role, desktop);
     } catch (e) {
-      addFinding(desktop, { severity: 4, type: 'core_page_unreachable', url: item.url, detail: `Belangrijke pagina kon niet worden geopend: ${String(e.message || e).slice(0, 250)}`, device: 'desktop', route_category: item.role });
+      addFinding(desktop, {
+        severity: 4,
+        type: 'core_page_unreachable',
+        url: item.url,
+        detail: `Belangrijke pagina kon niet worden geopend: ${String(e.message || e).slice(0, 250)}`,
+        device: 'desktop',
+        route_category: item.role,
+      });
     }
   }
 
   const browser = desktopPage.context().browser();
   const mobile = { profile: 'mobile', findings: [], pages: [], browser_evidence_records: [], _keys: new Set() };
   if (!browser) {
-    addFinding(mobile, { severity: 4, type: 'mobile_runtime_unavailable', url: target, detail: 'Mobiele browsercontext kon niet worden aangemaakt.', device: 'mobile', route_category: 'runtime' });
+    addFinding(mobile, {
+      severity: 4,
+      type: 'mobile_runtime_unavailable',
+      url: target,
+      detail: 'Mobiele browsercontext kon niet worden aangemaakt.',
+      device: 'mobile',
+      route_category: 'runtime',
+    });
   } else {
     const context = await browser.newContext({ ...devices['iPhone 13'], ignoreHTTPSErrors: false });
     await context.route('**/*', async (routeRequest) => {
@@ -274,9 +399,11 @@ async function scanSite(request, desktopPage) {
   siteResult.browser_evidence_records = [...desktop.browser_evidence_records, ...mobile.browser_evidence_records];
   siteResult.desktop_evidence_ids = desktop.browser_evidence_records.map((e) => e.evidence_id);
   siteResult.mobile_evidence_ids = mobile.browser_evidence_records.map((e) => e.evidence_id);
+
   const findings = [...desktop.findings, ...mobile.findings];
   siteResult.topFindings = findings.sort((a, b) => b.severity - a.severity).slice(0, 3);
-  siteResult.browser_route_complete = desktop.browser_evidence_records.length >= route.pages.length && mobile.browser_evidence_records.length >= route.pages.length;
+  siteResult.browser_route_complete = desktop.browser_evidence_records.length >= route.pages.length
+    && mobile.browser_evidence_records.length >= route.pages.length;
   siteResult.candidate = siteResult.browser_route_complete && siteResult.topFindings.some((f) => f.severity >= 3);
   return siteResult;
 }
@@ -288,7 +415,11 @@ async function maybeRunLighthouse(target, siteResult) {
   await fs.mkdir(dir, { recursive: true });
   const output = path.join(dir, 'lighthouse.json');
   try {
-    execFileSync('npx', ['lighthouse', target, '--quiet', '--output=json', `--output-path=${output}`, '--only-categories=performance,accessibility,best-practices,seo', '--chrome-flags=--headless --no-sandbox --disable-gpu'], { stdio: 'pipe', timeout: 90000 });
+    execFileSync('npx', [
+      'lighthouse', target, '--quiet', '--output=json', `--output-path=${output}`,
+      '--only-categories=performance,accessibility,best-practices,seo',
+      '--chrome-flags=--headless --no-sandbox --disable-gpu',
+    ], { stdio: 'pipe', timeout: 90000 });
     const report = JSON.parse(await fs.readFile(output, 'utf8'));
     return Object.fromEntries(Object.entries(report.categories || {}).map(([k, v]) => [k, Math.round((v.score || 0) * 100)]));
   } catch (e) {
@@ -307,6 +438,7 @@ const crawler = new PlaywrightCrawler({
   navigationTimeoutSecs: 35,
   requestHandlerTimeoutSecs: 240,
   preNavigationHooks: [async ({ page }, gotoOptions) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
     await installReadOnlyRoute(page);
     gotoOptions.waitUntil = 'domcontentloaded';
     gotoOptions.timeout = 30000;
@@ -338,8 +470,14 @@ const crawler = new PlaywrightCrawler({
   },
 });
 
-await crawler.run(urls.map((url, inputIndex) => ({ url, userData: { inputIndex } })));
-const allResults = urls.map((url, inputIndex) => resultsByTarget.get(url) || ({ inputIndex, target: url, candidate: false, browser_route_complete: false, error: 'Geen scanresultaat ontvangen.' }));
+await crawler.run(urls.map((url, inputIndex) => ({ url, uniqueKey: url, userData: { inputIndex } })));
+const allResults = urls.map((url, inputIndex) => resultsByTarget.get(url) || ({
+  inputIndex,
+  target: url,
+  candidate: false,
+  browser_route_complete: false,
+  error: 'Geen scanresultaat ontvangen.',
+}));
 
 for (const site of allResults) {
   if (!site.profiles) continue;
