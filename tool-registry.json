@@ -1,17 +1,116 @@
 {
-  "version": "1.0",
+  "version": "2.0",
+  "repository_role": "browser_execution_capability_for_webactueel_leads",
   "policy": {
     "read_only": true,
     "lead_score_owner": "Webactueel Leads Skill",
-    "supplemental_checks_change_score_automatically": false
+    "supplemental_checks_change_score_automatically": false,
+    "required_output": "scan-results/leads-handoff.json",
+    "fallback_when_dispatch_unavailable": "handoff_required"
+  },
+  "routing": {
+    "use_repository_when": [
+      "Leads stap 3 website beoordelen echte desktop+mobiel browser-evidence nodig heeft",
+      "een kandidaatwebsite formeel moet worden gekwalificeerd",
+      "een expliciete rescan/reactivate browserbewijs vereist",
+      "bestaand browserbewijs ontbreekt of volgens Leads niet meer vers genoeg is",
+      "een Gmail-write dezelfde-dag websitecontrole vereist"
+    ],
+    "do_not_use_repository_when": [
+      "alleen keyword- of sectoronderzoek nodig is",
+      "alleen Registry-deduplicatie nodig is",
+      "alleen officiële bedrijfsbevestiging nodig is",
+      "alleen contactinformatie of e-mailadres gezocht wordt",
+      "alleen mailcopy, Gmail-history, draft of follow-up nodig is"
+    ],
+    "required_inputs": [
+      "officiële bedrijfswebsite of vooraf gecontroleerde sites.txt",
+      "site_type indien Leads dit al betrouwbaar heeft bepaald",
+      "scanintentie: new_candidate, qualification, rescan of same_day_refresh"
+    ],
+    "execution": {
+      "workflow": ".github/workflows/scan.yml",
+      "primary_input": "target_url",
+      "default_max_concurrency": 2,
+      "default_max_requests_per_minute": 30,
+      "safe_boundary": "GET/HEAD only; no submit/order/payment/booking confirmation",
+      "post_scan_command": "npm run handoff:leads"
+    },
+    "expected_output": {
+      "file": "scan-results/leads-handoff.json",
+      "runtime_surface": "controlled-browser",
+      "runtime_detail": "github_actions_crawlee_playwright",
+      "contains": [
+        "desktop full_route evidence",
+        "mobile full_route evidence",
+        "page browser evidence",
+        "finding_candidates",
+        "supplemental signals",
+        "explicit missing fields for final Leads score"
+      ]
+    }
   },
   "tools": {
-    "crawlee": { "status": "existing", "purpose": "website-batches en crawlregie" },
-    "playwright": { "status": "existing", "purpose": "desktop- en mobiele browserbewijzen" },
-    "sitemap_robots": { "status": "enabled", "module": "src/tools/discovery.mjs", "purpose": "publieke routekandidaten uit robots.txt en sitemaps" },
-    "linkinator": { "status": "enabled", "module": "src/tools/link-check.mjs", "purpose": "shallow same-origin linkcontrole op kernroutes" },
-    "lighthouse": { "status": "existing_optional", "purpose": "performance/accessibility/best-practices/SEO als tweede technische meting" },
-    "languagetool": { "status": "optional_local", "module": "src/tools/language-check.mjs", "purpose": "Nederlandse taalsignalen via lokale accountloze server" },
-    "tech_detect": { "status": "enabled", "module": "src/tools/tech-detect.mjs", "purpose": "CMS/pagebuilder/webshop-signaturen voor Webactueel-fit" }
+    "crawlee": {
+      "status": "existing",
+      "purpose": "website-batches en crawlregie",
+      "use_when": "een of meer gecontroleerde websites door de browserroute moeten",
+      "evidence_role": "orchestration_only",
+      "automatic_score_effect": false
+    },
+    "playwright": {
+      "status": "existing",
+      "purpose": "desktop- en mobiele browserbewijzen",
+      "use_when": "Leads formele websitekwalificatie of rescan uitvoert",
+      "evidence_role": "primary_browser_evidence",
+      "automatic_score_effect": false
+    },
+    "sitemap_robots": {
+      "status": "enabled",
+      "module": "src/tools/discovery.mjs",
+      "purpose": "publieke routekandidaten uit robots.txt en sitemaps",
+      "use_when": "routekeuze voor de kernroute moet worden verbeterd",
+      "evidence_role": "route_discovery_support",
+      "automatic_score_effect": false
+    },
+    "linkinator": {
+      "status": "enabled",
+      "module": "src/tools/link-check.mjs",
+      "purpose": "shallow same-origin linkcontrole op kernroutes",
+      "use_when": "kernroutes aanvullende linkcontrole nodig hebben",
+      "evidence_role": "supplemental_candidate_signal",
+      "automatic_score_effect": false
+    },
+    "lighthouse": {
+      "status": "existing_optional",
+      "purpose": "performance/accessibility/best-practices/SEO als tweede technische meting",
+      "use_when": "een reeds interessante kandidaat aanvullende performancecontext nodig heeft",
+      "evidence_role": "supplemental_candidate_signal",
+      "automatic_score_effect": false
+    },
+    "languagetool": {
+      "status": "optional_local",
+      "module": "src/tools/language-check.mjs",
+      "purpose": "Nederlandse taalsignalen via lokale accountloze server",
+      "use_when": "zichtbare Nederlandse tekst relevante copy-signalen kan bevatten",
+      "evidence_role": "supplemental_candidate_signal",
+      "automatic_score_effect": false
+    },
+    "tech_detect": {
+      "status": "enabled",
+      "module": "src/tools/tech-detect.mjs",
+      "purpose": "CMS/pagebuilder/webshop-signaturen voor Webactueel-fit",
+      "use_when": "technologiecontext de Webactueel-fit kan ondersteunen",
+      "evidence_role": "fit_support_only",
+      "automatic_score_effect": false
+    },
+    "leads_handoff": {
+      "status": "enabled",
+      "module": "src/leads-handoff.mjs",
+      "purpose": "scannerbewijs normaliseren naar een Leads-reviewpakket zonder te scoren",
+      "use_when": "iedere scan die terug moet naar de Leads Skill",
+      "evidence_role": "handoff_adapter",
+      "automatic_score_effect": false
+    }
   }
 }
