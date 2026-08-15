@@ -4,11 +4,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "scan": "node src/scan.mjs"
+    "scan": "node src/scan.mjs",
+    "check:crawler": "node -e \"Promise.all([import('crawlee'), import('playwright')]).then(() => console.log('Crawlee + Playwright OK'))\""
   },
   "dependencies": {
     "@axe-core/playwright": "latest",
     "@playwright/test": "latest",
-    "lighthouse": "latest"
+    "crawlee": "latest",
+    "lighthouse": "latest",
+    "playwright": "latest"
   }
 }
