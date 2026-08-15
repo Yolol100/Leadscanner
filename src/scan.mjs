@@ -40,11 +40,12 @@ const genericButtonRe = /^(button|knop|click here|klik hier|read more|lees meer)
 const bookingSignal = /(booking|boek(?:ing|en)?|afspraak|reserver|reservation|reserveer)/i;
 const strongShopSignal = /(webshop|winkelwagen|checkout|afrekenen|\bcart\b|\/shop(?:\/|$)|\/winkel(?:\/|$))/i;
 const productSignal = /(product|producten|shop|winkel|category|categorie)/i;
-const serviceSignal = /(dienst|diensten|service|services|werkzaamheden|aanbod|specialisme|oplossing)/i;
-const contactSignal = /(contact|offerte|aanvraag|prijsopgave|advies|bel ons|neem contact)/i;
+const serviceSignal = /(diensten?|services?|werkzaamheden|aanbod|specialismen?|schilderwerk|dakwerk|dakdekking|tuinaanleg|tuinonderhoud|installatie(?:techniek)?|loodgieter|elektra|verwarming|airco|renovatie)/i;
+const contactSignal = /(contact|offerte|aanvraag|prijsopgave|vrijblijvend|contactformulier)/i;
 const cartSignal = /(cart|winkelwagen)/i;
 const checkoutSignal = /(checkout|afrekenen|bestellen)/i;
-const ignoreLink = /(privacy|cookie|voorwaarden|disclaimer|login|inloggen|account|facebook|instagram|linkedin|youtube|whatsapp|mailto:|tel:)/i;
+const ignoreLink = /(privacy|cookie|voorwaarden|disclaimer|login|inloggen|account|facebook|instagram|linkedin|youtube|whatsapp|mailto:|tel:|vacatur|stage|werken[\s-]?bij|carri[eè]re|career)/i;
+const serviceNegative = /(contact|offerte|aanvraag|prijsopgave|vacatur|stage|werken[\s-]?bij|over[\s-]?ons|blog|nieuws|privacy|voorwaarden)/i;
 
 function newBucket(profile) {
   return { profile, findings: [], pages: [], browser_evidence_records: [], _keys: new Set() };
@@ -75,10 +76,12 @@ function sameOriginLinks(links, origin) {
   }
   return out;
 }
-function pickBest(links, regexes, used) {
+function pickBest(links, regexes, used, negative = null) {
   return links.filter((l) => !used.has(l.href)).map((l) => {
     const hay = `${l.text} ${l.href}`;
-    const score = regexes.reduce((sum, re, i) => sum + (re.test(hay) ? 10 - i : 0), 0) + Math.min(3, l.text.trim().length / 30);
+    const positive = regexes.reduce((sum, re, i) => sum + (re.test(hay) ? 12 - i : 0), 0);
+    const penalty = negative && negative.test(hay) ? 25 : 0;
+    const score = positive - penalty + Math.min(3, l.text.trim().length / 30);
     return { ...l, score };
   }).filter((l) => l.score > 0).sort((a, b) => b.score - a.score)[0] || null;
 }
@@ -98,11 +101,13 @@ function buildRoute(homeUrl, links) {
     add(pickBest(internal, [cartSignal], used), 'cart');
     add(pickBest(internal, [checkoutSignal], used), 'checkout');
   } else if (siteType === 'booking') {
-    add(pickBest(internal, [serviceSignal, productSignal], used), 'offering');
+    add(pickBest(internal, [serviceSignal, productSignal], used, serviceNegative), 'offering');
     add(pickBest(internal, [bookingSignal], used), 'booking');
     add(pickBest(internal, [contactSignal], used), 'contact');
   } else {
-    add(pickBest(internal, [serviceSignal], used), 'main_service');
+    const primaryService = pickBest(internal, [serviceSignal], used, serviceNegative)
+      || internal.find((l) => !used.has(l.href) && !serviceNegative.test(`${l.text} ${l.href}`));
+    add(primaryService, 'main_service');
     add(pickBest(internal, [contactSignal], used), 'contact_or_quote');
   }
   if (pages.length === 1) add(internal.find((l) => !used.has(l.href)), 'important_internal');
