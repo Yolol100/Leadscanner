@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0",
+  "owner_skill": "leads",
+  "project_id": "project-leads",
+  "repository": "Yolol100/Leadscanner",
+  "evidence_role": "controlled_runtime_lead_browser_evidence",
+  "requires_account": false,
+  "requires_api_key": false,
+  "requires_mcp": false,
+  "tools": [
+    {"id":"crawlee","version":"3.18.0","trigger_when":"browser route orchestration is needed","outputs":["scan-results/"]},
+    {"id":"playwright","version":"1.62.1","trigger_when":"formal desktop/mobile evidence is needed","outputs":["scan-results/"]},
+    {"id":"axe-core","version":"4.13.0","trigger_when":"homepage browser evidence is collected","outputs":["finding_candidates"]},
+    {"id":"linkinator","version":"8.0.3","trigger_when":"supplemental link signals are enabled","outputs":["supplemental signals"]},
+    {"id":"lighthouse","version":"13.4.1","trigger_when":"performance context is requested","outputs":["supplemental signals"]},
+    {"id":"languagetool","version":"pinned-local-script","trigger_when":"Dutch language signals are requested","outputs":["supplemental signals"]},
+    {"id":"sitemap-robots","version":"repo","trigger_when":"route discovery is needed","outputs":["route discovery"]},
+    {"id":"tech-detect","version":"repo","trigger_when":"technology context supports fit assessment","outputs":["fit support"]},
+    {"id":"leads-handoff","version":"repo","trigger_when":"every completed scan returns to Leads","outputs":["scan-results/leads-handoff.json"]}
+  ],
+  "usage_assertions": [
+    {"tool":"crawlee","path":"package.json","contains":"\"crawlee\""},
+    {"tool":"playwright","path":"package.json","contains":"\"playwright\""},
+    {"tool":"axe-core","path":"src/scan.mjs","contains":"AxeBuilder"},
+    {"tool":"linkinator","path":"package.json","contains":"\"linkinator\""},
+    {"tool":"lighthouse","path":"package.json","contains":"\"lighthouse\""},
+    {"tool":"languagetool","path":".github/workflows/scan.yml","contains":"start-languagetool.sh"},
+    {"tool":"sitemap-robots","path":"src/scan.mjs","contains":"discoverSite"},
+    {"tool":"tech-detect","path":".github/workflows/scan.yml","contains":"RUN_TECH_DETECT"},
+    {"tool":"leads-handoff","path":"package.json","contains":"handoff:leads"}
+  ],
+  "boundaries": [
+    "No scanner signal automatically changes Lead score or qualification.",
+    "GitHub/Chat scans use requests/scan.json or explicit workflow_dispatch; sites.txt is local-manual only.",
+    "Accessibility findings are candidate signals, not a conformance claim."
+  ]
+}
