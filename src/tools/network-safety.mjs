@@ -1,5 +1,6 @@
 import dns from 'node:dns/promises';
 import net from 'node:net';
+import { domainToASCII } from 'node:url';
 
 export const USER_AGENT = 'Webactueel-Leadscanner/1.2.1 read-only';
 
@@ -42,14 +43,35 @@ export function isPrivateOrReservedIp(address) {
   return true;
 }
 
+export function normalizeHost(value) {
+  const raw = value instanceof URL ? value.hostname : /^https?:\/\//i.test(String(value)) ? new URL(String(value)).hostname : String(value);
+  const normalized = raw.trim().toLowerCase().replace(/\.$/, '');
+  if (!normalized) throw new Error('Hostname ontbreekt.');
+  if (net.isIP(normalized)) return normalized;
+  const ascii = domainToASCII(normalized);
+  if (!ascii) throw new Error(`Ongeldige hostname: ${normalized}`);
+  return ascii.toLowerCase().replace(/\.$/, '');
+}
+
 export function canonicalSiteHost(value) {
-  const host = new URL(value).hostname.toLowerCase().replace(/\.$/, '');
+  const host = normalizeHost(new URL(value));
   return host.startsWith('www.') ? host.slice(4) : host;
+}
+
+export function siteIdentity(value) {
+  const parsed = new URL(value);
+  const asciiHost = normalizeHost(parsed);
+  return {
+    hostname: asciiHost,
+    canonical_host: asciiHost.startsWith('www.') ? asciiHost.slice(4) : asciiHost,
+    origin: `${parsed.protocol}//${asciiHost}${parsed.port ? `:${parsed.port}` : ''}`,
+    idn_normalized: parsed.hostname.toLowerCase().replace(/\.$/, '') !== asciiHost,
+  };
 }
 
 export function isSameOfficialSite(candidate, target) {
   try {
-    const candidateHost = new URL(candidate).hostname.toLowerCase().replace(/\.$/, '');
+    const candidateHost = normalizeHost(new URL(candidate));
     const root = canonicalSiteHost(target);
     return candidateHost === root || candidateHost === `www.${root}` || candidateHost.endsWith(`.${root}`);
   } catch {
@@ -70,7 +92,7 @@ export async function assertPublicUrl(value, { dnsCache = new Map() } = {}) {
   const parsed = new URL(value);
   if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Alleen publieke http/https-URLs zijn toegestaan.');
   if (parsed.username || parsed.password) throw new Error('URL-credentials zijn niet toegestaan.');
-  const host = parsed.hostname.toLowerCase().replace(/\.$/, '');
+  const host = normalizeHost(parsed);
   if (!host) throw new Error('URL mist een hostname.');
   if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) throw new Error(`Niet-publieke hostname geblokkeerd: ${host}`);
   if (net.isIP(host)) {
