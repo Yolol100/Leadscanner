@@ -12,6 +12,7 @@
     "enrich": "node src/enrich.mjs",
     "handoff:leads": "node src/leads-handoff.mjs",
     "smoke:toolbox": "node src/toolbox-smoke.mjs",
+    "test": "node --test test/*.test.mjs",
     "check:crawler": "node -e \"Promise.all([import('crawlee'), import('playwright')]).then(() => console.log('Crawlee + Playwright OK'))\"",
     "check:tools": "node -e \"Promise.all([import('linkinator'), import('lighthouse')]).then(() => console.log('Linkinator + Lighthouse OK'))\""
   },
