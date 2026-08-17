@@ -7,6 +7,7 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'src/**'
+      - 'test/**'
       - 'scripts/**'
       - 'tool-registry.json'
       - 'LEADS-INTEGRATION.md'
@@ -17,6 +18,7 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'src/**'
+      - 'test/**'
       - 'scripts/**'
       - 'tool-registry.json'
       - 'LEADS-INTEGRATION.md'
@@ -46,6 +48,9 @@ jobs:
 
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
+
+      - name: Run regression tests
+        run: npm test
 
       - name: Verify Crawlee and Playwright
         run: npm run check:crawler
