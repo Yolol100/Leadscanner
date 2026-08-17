@@ -32,39 +32,41 @@ jobs:
           const fs = require('fs');
           const crypto = require('crypto');
           const { chromium } = require('playwright');
-          const probes = [
-            {slug:'danielsnijders-hovenier-de-lier', company:'Daniël Snijders Hoveniers & Bestratingen', canonical:'https://www.danielsnijders.nl/', url:'https://www.danielsnijders.nl/hovenier-de-lier'},
-            {slug:'joostbakker-houtrotreparaties', company:'Joost Bakker Schilderwerken', canonical:'https://joostbakker.nl/', url:'https://joostbakker.nl/houtrotreparaties'},
-            {slug:'joostbakker-overons', company:'Joost Bakker Schilderwerken', canonical:'https://joostbakker.nl/', url:'https://joostbakker.nl/overons'},
-            {slug:'lmuyres-over-ons', company:'L. Muyres Schildersbedrijf', canonical:'https://www.schildersbedrijf-lmuyres.nl/', url:'https://www.schildersbedrijf-lmuyres.nl/over-ons/'},
-            {slug:'lmuyres-faq', company:'L. Muyres Schildersbedrijf', canonical:'https://www.schildersbedrijf-lmuyres.nl/', url:'https://www.schildersbedrijf-lmuyres.nl/faq/'},
-            {slug:'rkschilder-over-ons', company:'RK Schilder', canonical:'https://rkschilder.nl/', url:'https://rkschilder.nl/over-ons'},
-            {slug:'rkschilder-werkgebieden', company:'RK Schilder', canonical:'https://rkschilder.nl/', url:'https://rkschilder.nl/werkgebieden'},
-            {slug:'rkschilder-contact', company:'RK Schilder', canonical:'https://rkschilder.nl/', url:'https://rkschilder.nl/contact'},
-            {slug:'rovaal-contact-us', company:'Rovaal Dakbeheer', canonical:'https://rovaal-dakbeheer.nl/', url:'https://rovaal-dakbeheer.nl/contact-us/'}
-          ];
-          const browser = await chromium.launch({headless:true});
-          const context = await browser.newContext({viewport:{width:1440,height:900}});
-          const out = [];
-          for (const p of probes) {
-            const page = await context.newPage();
-            let response = null, error = null;
-            const started = new Date().toISOString();
-            try {
-              response = await page.goto(p.url, {waitUntil:'domcontentloaded', timeout:30000});
-              await page.waitForTimeout(700);
-            } catch (e) { error = String(e && e.message || e); }
-            const finalUrl = page.url();
-            const title = await page.title().catch(()=> '');
-            const text = (await page.locator('body').innerText().catch(()=> '')).replace(/\s+/g,' ').trim().slice(0,500);
-            const screenshot = `probe-results/screenshots/${p.slug}.png`;
-            await page.screenshot({path:screenshot, fullPage:true}).catch(()=>{});
-            const screenshotSha256 = fs.existsSync(screenshot) ? crypto.createHash('sha256').update(fs.readFileSync(screenshot)).digest('hex') : null;
-            out.push({...p, captured_at:started, status:response ? response.status() : null, final_url:finalUrl, title, text_sample:text, error, screenshot, screenshot_sha256:screenshotSha256});
-            await page.close();
-          }
-          await browser.close();
-          fs.writeFileSync('probe-results/probe-results.json', JSON.stringify(out,null,2));
+          (async () => {
+            const probes = [
+              {slug:'danielsnijders-hovenier-de-lier', company:'Daniël Snijders Hoveniers & Bestratingen', canonical:'https://www.danielsnijders.nl/', url:'https://www.danielsnijders.nl/hovenier-de-lier'},
+              {slug:'joostbakker-houtrotreparaties', company:'Joost Bakker Schilderwerken', canonical:'https://joostbakker.nl/', url:'https://joostbakker.nl/houtrotreparaties'},
+              {slug:'joostbakker-overons', company:'Joost Bakker Schilderwerken', canonical:'https://joostbakker.nl/', url:'https://joostbakker.nl/overons'},
+              {slug:'lmuyres-over-ons', company:'L. Muyres Schildersbedrijf', canonical:'https://www.schildersbedrijf-lmuyres.nl/', url:'https://www.schildersbedrijf-lmuyres.nl/over-ons/'},
+              {slug:'lmuyres-faq', company:'L. Muyres Schildersbedrijf', canonical:'https://www.schildersbedrijf-lmuyres.nl/', url:'https://www.schildersbedrijf-lmuyres.nl/faq/'},
+              {slug:'rkschilder-over-ons', company:'RK Schilder', canonical:'https://rkschilder.nl/', url:'https://rkschilder.nl/over-ons'},
+              {slug:'rkschilder-werkgebieden', company:'RK Schilder', canonical:'https://rkschilder.nl/', url:'https://rkschilder.nl/werkgebieden'},
+              {slug:'rkschilder-contact', company:'RK Schilder', canonical:'https://rkschilder.nl/', url:'https://rkschilder.nl/contact'},
+              {slug:'rovaal-contact-us', company:'Rovaal Dakbeheer', canonical:'https://rovaal-dakbeheer.nl/', url:'https://rovaal-dakbeheer.nl/contact-us/'}
+            ];
+            const browser = await chromium.launch({headless:true});
+            const context = await browser.newContext({viewport:{width:1440,height:900}});
+            const out = [];
+            for (const p of probes) {
+              const page = await context.newPage();
+              let response = null, error = null;
+              const started = new Date().toISOString();
+              try {
+                response = await page.goto(p.url, {waitUntil:'domcontentloaded', timeout:30000});
+                await page.waitForTimeout(700);
+              } catch (e) { error = String(e && e.message || e); }
+              const finalUrl = page.url();
+              const title = await page.title().catch(()=> '');
+              const text = (await page.locator('body').innerText().catch(()=> '')).replace(/\s+/g,' ').trim().slice(0,500);
+              const screenshot = `probe-results/screenshots/${p.slug}.png`;
+              await page.screenshot({path:screenshot, fullPage:true}).catch(()=>{});
+              const screenshotSha256 = fs.existsSync(screenshot) ? crypto.createHash('sha256').update(fs.readFileSync(screenshot)).digest('hex') : null;
+              out.push({...p, captured_at:started, status:response ? response.status() : null, final_url:finalUrl, title, text_sample:text, error, screenshot, screenshot_sha256:screenshotSha256});
+              await page.close();
+            }
+            await browser.close();
+            fs.writeFileSync('probe-results/probe-results.json', JSON.stringify(out,null,2));
+          })().catch((error) => { console.error(error); process.exit(1); });
           NODE
       - name: Publish probe summary
         run: cat probe-results/probe-results.json >> "$GITHUB_STEP_SUMMARY"
