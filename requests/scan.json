@@ -1,0 +1,22 @@
+{
+  "enabled": true,
+  "request_id": "phase3-roofix-20260818",
+  "requested_by": "ChatGPT Webactueel workflow",
+  "owner": "leads",
+  "project_id": "project-leads",
+  "for": "Fase 3 same-day browserbewijs voor bestaand gekwalificeerd leadrecord Roofix Dakdekkers",
+  "task": "Scan de officiele website op desktop en mobiel en lever een Leads handoff zonder Gmail-write",
+  "why": "De bestaande Gmail-draft is op 18 augustus bijgewerkt terwijl het browserbewijs van 17 augustus was; same-day bewijs is vereist voor een latere veilige draftupdate",
+  "trigger_when": "Alleen deze expliciete fase-3 rescan van het bestaande leadrecord",
+  "do_not_trigger_when": "Geen andere leads scannen en geen mail verzenden of plannen",
+  "target_url": "https://roofix-dakdekkers.nl/dakdekker-rotterdam",
+  "site_type_hint": "service",
+  "run_lighthouse": false,
+  "run_language_tool": false,
+  "max_concurrency": 1,
+  "max_requests_per_minute": 10,
+  "source_context": {
+    "project_id": "project-leads",
+    "source_set_version": "10.6.0"
+  }
+}
