@@ -25,7 +25,6 @@ jobs:
           python - <<'PY' > /tmp/dispatch.json
           import json, os
           from pathlib import Path
-
           request = json.loads(Path('requests/scan.json').read_text(encoding='utf-8'))
           if request.get('enabled') is not True:
               raise SystemExit('request is not enabled')
@@ -59,13 +58,12 @@ jobs:
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/scan.yml/dispatches" \
             --data-binary @/tmp/dispatch.json
-      - name: Wait for canonical scan and persist provenance
+      - name: Discover canonical scan and persist run id
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          run_id=""
           run_json=""
           for attempt in $(seq 1 60); do
             runs=$(curl -fsSL \
@@ -84,34 +82,17 @@ jobs:
           PY
           )
             if [ -n "$run_json" ]; then
-              run_id=$(RUN="$run_json" python -c "import json,os; print(json.loads(os.environ['RUN'])['id'])")
               break
             fi
             sleep 2
           done
-          test -n "$run_id"
-
-          status=""
-          for attempt in $(seq 1 240); do
-            run_json=$(curl -fsSL \
-              -H "Authorization: Bearer ${GH_TOKEN}" \
-              -H "Accept: application/vnd.github+json" \
-              -H "X-GitHub-Api-Version: 2022-11-28" \
-              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}")
-            status=$(RUN="$run_json" python -c "import json,os; print(json.loads(os.environ['RUN'])['status'])")
-            if [ "$status" = "completed" ]; then
-              break
-            fi
-            sleep 5
-          done
-          test "$status" = "completed"
-
+          test -n "$run_json"
           mkdir -p runtime
           RUN="$run_json" python - <<'PY'
           import json, os
           run = json.loads(os.environ['RUN'])
           payload = {
-              'format': 'webactueel-leadscanner-run-meta/1.1',
+              'format': 'webactueel-leadscanner-run-meta/1.2',
               'workflow_name': run.get('name'),
               'run_id': run.get('id'),
               'run_number': run.get('run_number'),
@@ -132,5 +113,5 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add runtime/run-meta.json
-          git commit -m 'chore(runtime): record canonical Website Scan provenance'
+          git commit -m 'chore(runtime): record canonical Website Scan run id'
           git push origin "HEAD:${GITHUB_REF_NAME}"
