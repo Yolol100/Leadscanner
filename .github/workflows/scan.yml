@@ -5,6 +5,9 @@ on:
     branches: ['runtime/**']
     paths:
       - 'requests/scan.json'
+  pull_request:
+    paths:
+      - 'requests/scan.json'
   workflow_dispatch:
     inputs:
       target_url:
@@ -111,11 +114,15 @@ jobs:
               max_requests_per_minute: safeInt(process.env.DISPATCH_MAX_REQUESTS_PER_MINUTE, 1, 120, 30),
               require_single_target: 'true'
             };
-          } else if (process.env.GITHUB_EVENT_NAME === 'push') {
-            const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
-            const commit = event.head_commit || {};
-            const changed = new Set([...(commit.added || []), ...(commit.modified || [])]);
-            if (changed.has('requests/scan.json')) {
+          } else if (process.env.GITHUB_EVENT_NAME === 'push' || process.env.GITHUB_EVENT_NAME === 'pull_request') {
+            let shouldReadRequest = process.env.GITHUB_EVENT_NAME === 'pull_request';
+            if (process.env.GITHUB_EVENT_NAME === 'push') {
+              const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
+              const commit = event.head_commit || {};
+              const changed = new Set([...(commit.added || []), ...(commit.modified || [])]);
+              shouldReadRequest = changed.has('requests/scan.json');
+            }
+            if (shouldReadRequest) {
               const req = JSON.parse(fs.readFileSync(path.join(process.env.GITHUB_WORKSPACE, 'requests/scan.json'), 'utf8'));
               if (req.enabled === true) {
                 if (!safeId(req.request_id)) throw new Error('invalid request_id');
