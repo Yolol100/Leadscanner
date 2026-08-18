@@ -2,7 +2,7 @@ name: Website Scan
 
 on:
   push:
-    branches: [main]
+    branches: ['runtime/**']
     paths:
       - 'requests/scan.json'
   workflow_dispatch:
@@ -40,7 +40,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: leadscanner-full-scan
+  group: leadscanner-full-scan-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -150,32 +150,24 @@ jobs:
     if: needs.resolve-request.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 120
-
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
       - name: Setup Node 22.23.2
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22.23.2'
           package-manager-cache: false
-
       - name: Install locked dependencies
         run: npm ci
-
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
-
       - name: Verify Crawlee and Playwright
         run: npm run check:crawler
-
       - name: Verify toolbox dependencies
         run: npm run check:tools
-
       - name: Install Chromium
         run: npx playwright install chromium --with-deps
-
       - name: Run lead scanner
         env:
           TARGET_URL: ${{ needs.resolve-request.outputs.target_url }}
@@ -187,18 +179,15 @@ jobs:
           MAX_ACTIVE_REQUESTS_PER_MINUTE: '120'
           MAX_PAGES_PER_SITE: '4'
         run: npm run scan
-
       - name: Setup Java 17 for LanguageTool
         if: needs.resolve-request.outputs.run_language_tool == 'true'
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
           distribution: temurin
           java-version: '17'
-
       - name: Start pinned local LanguageTool
         if: needs.resolve-request.outputs.run_language_tool == 'true'
         run: bash scripts/start-languagetool.sh
-
       - name: Run supplemental toolbox checks
         env:
           RUN_DISCOVERY: 'true'
@@ -207,10 +196,8 @@ jobs:
           RUN_LANGUAGE_TOOL: ${{ needs.resolve-request.outputs.run_language_tool }}
           LANGUAGE_TOOL_URL: http://127.0.0.1:8010/v2/check
         run: npm run enrich
-
       - name: Build Leads handoff
         run: npm run handoff:leads
-
       - name: Publish scan summary
         if: always()
         run: |
@@ -218,7 +205,6 @@ jobs:
           if [ -f scan-results/summary.md ]; then
             cat scan-results/summary.md >> "$GITHUB_STEP_SUMMARY"
           fi
-
       - name: Upload scan evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

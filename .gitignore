@@ -3,3 +3,5 @@ scan-results/
 playwright-report/
 test-results/
 .DS_Store
+sites.txt
+requests/scan.json

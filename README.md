@@ -1,91 +1,51 @@
 # Leadscanner
 
-Private Webactueel lead-scanner voor het read-only controleren van publieke websites met Crawlee + Playwright en aanvullende accountloze kwaliteitschecks.
+Generieke Webactueel leadscan- en browser-evidenceharness voor read-only controle van publieke bedrijfswebsites. De `leads` Skill blijft eigenaar van kwalificatie en score; deze repository levert alleen reproduceerbaar bewijs.
 
-## Wat de scanner doet
+## Wat de harness doet
 
-- gebruikt `PlaywrightCrawler` voor begrensde parallelle verwerking van websites;
-- opent iedere website in Chromium;
-- controleert desktop (1440x900) en mobiel met iPhone 13-emulatie;
-- bepaalt per website eerst het waarschijnlijke sitetype `service`, `shop` of `booking`;
-- kiest daarna de belangrijkste routepagina's, bijvoorbeeld homepage -> hoofddienst -> contact/offerte, of product -> winkelwagen -> checkout;
-- bekijkt maximaal vier kernpagina's per website en stopt voor formulierverzending, bestelling, betaling of boekingsbevestiging;
-- blokkeert niet-GET/HEAD-verzoeken tijdens de browserkwalificatie;
-- signaleert onder andere HTTP-fouten, JavaScript-fouten, kapotte afbeeldingen, mobiele overflow, placeholderteksten en generieke CTA-labels;
-- draait axe op serieuze/kritieke toegankelijkheidsproblemen;
-- kan optioneel Lighthouse draaien op websites waar al een sterke browserbevinding is gevonden;
-- maakt per bezochte kernpagina een compacte screenshot als browserbewijs;
-- maakt hashgebonden `controlled_browser_capture`-records met desktop- en mobile-evidence-ID's die aansluiten op de Webactueel Leads-workflow;
-- bewaart per website JSON en daarnaast een gezamenlijk `summary.md` en `results.json`.
+- begrensde Crawlee + Playwright-inspectie op desktop en mobiel;
+- maximaal vier kernpagina's per target;
+- GET/HEAD-only browsergrens: geen formulieren, bestellingen, betalingen of boekingen;
+- signalen voor HTTP/JavaScript-fouten, afbeeldingen, overflow, placeholders, CTA's en axe-risico's;
+- optionele Lighthouse- en lokale LanguageTool-controles;
+- sitemap/robots-discovery, Linkinator en tech-detect als aanvullende signalen;
+- run-scoped screenshots, JSON-evidence, `summary.md` en Leads-handoff in een GitHub Actions-artifact.
 
-## Aanvullende toolbox
+## Repository hygiene
 
-Na de browsercontrole kan `npm run enrich` aanvullende, read-only signalen toevoegen:
+`main` bevat uitsluitend de generieke harness. Klant-, site-, scan- en run-specifieke input of evidence wordt niet permanent opgeslagen.
 
-- **Sitemap + robots discovery** — leest `robots.txt`, bekende sitemaplocaties en een begrensd aantal sitemapbestanden; bewaart mogelijke service-, contact-, shop- en boekingsroutes als aanvullende routekandidaten.
-- **Linkinator** — controleert ondiep alleen links op hetzelfde domein vanaf de maximaal vier kernroutepagina's. 401/403/429/999 worden niet als bruikbare kapotte-linkbevinding gepromoveerd.
-- **Tech-detect** — herkent duidelijke HTML/header-signaturen van onder andere WordPress, Elementor, WooCommerce, Shopify, Wix, Webflow, Squarespace, Drupal en Joomla.
-- **LanguageTool** — optioneel. GitHub Actions kan een lokale LanguageTool-server starten vanuit de officiële snapshot. Hiervoor is geen LanguageTool-account of API-key nodig.
-- **Lighthouse** — blijft optioneel als tweede technische meting voor sterke kandidaten.
-
-De machineleesbare routing staat in `tool-registry.json`.
-
-### Belangrijke scoregrens
-
-De toolbox is **supplementair**. `sitemap/robots`, Linkinator, LanguageTool, tech-detect en Lighthouse mogen niet zelfstandig `candidate`, `topFindings` of de uiteindelijke Leadscore wijzigen. De browserbewijzen en de Webactueel Leads Skill blijven de eigenaar van kwalificatie en score.
-
-## Reproduceerbare runtime
-
-- Node is in GitHub Actions vastgezet op `22.23.2` en npm op `10.9.8`.
-- De directe npm-dependencies staan op exacte versies en `package-lock.json` legt ook de transitieve dependencyboom vast.
-- GitHub Actions gebruiken `npm ci`; een mismatch tussen `package.json` en `package-lock.json` laat CI falen in plaats van stil een nieuwe dependencyboom te maken.
-- Externe GitHub Actions zijn vastgezet op gecontroleerde commit-SHA's in plaats van bewegende major-tags.
-- De Scanner Smoke Test voert ook `npm audit --omit=dev --audit-level=high` uit.
-
-## Veiligheidsgrens
-
-De browserkwalificatie is read-only. Hij verstuurt geen formulieren, plaatst geen bestellingen, bevestigt geen boekingen en wijzigt niets op doelwebsites. Verzoeken anders dan GET/HEAD worden tijdens de browserkwalificatie geblokkeerd. De aanvullende checks doen alleen publieke GET/HEAD-controles; Linkinator wordt beperkt tot hetzelfde domein.
-
-## Schaalbegrenzing
-
-De standaard full scan gebruikt maximaal vier websites tegelijk en maximaal 30 Crawlee-startrequests per minuut. `maxRequestsPerCrawl` wordt begrensd op de ingevoerde websitebatch. Crawlee en de aanvullende tools mogen de leadkwalificatie niet zelfstandig beslissen: `candidate: true` blijft alleen een technisch browsersignaal.
-
-## Websites toevoegen
-
-Zet één website per regel in `sites.txt`, bijvoorbeeld:
-
-```text
-https://voorbeeldbedrijf.nl/
-https://anderbedrijf.nl/
-```
-
-Een wijziging aan `sites.txt` op `main` start automatisch de workflow **Website Scan**. Je kunt de workflow ook handmatig uitvoeren en optioneel één `target_url` invullen.
+- `sites.txt` is lokale tijdelijke invoer en staat in `.gitignore`.
+- `requests/scan.json` is tijdelijke requeststate en staat in `.gitignore`.
+- Een connectorgestuurde request mag alleen op een tijdelijke `runtime/**`-branch bestaan.
+- GitHub Actions-resultaten blijven run-scoped artifacts en worden niet terug naar `main` gecommit.
+- Gebruik `sites.example.txt` alleen als leeg generiek voorbeeld; voeg daar geen targets aan toe.
 
 ## Scan starten
 
-1. Zet de te controleren URL's in `sites.txt`.
-2. Commit de wijziging op `main`, of open in GitHub **Actions -> Website Scan -> Run workflow**.
-3. Laat Lighthouse standaard uit voor de eerste batch; gebruik het alleen als extra tweede controle.
-4. Zet `run_language_tool` alleen aan wanneer je ook Nederlandse tekstsignalen wilt. GitHub start LanguageTool dan lokaal; er is geen account/API-key nodig.
-5. Sitemap/robots-discovery, tech-detect en Linkinator draaien als aanvullende toolbox-checks.
-6. Na afloop staat onder de run een artifact `leadscanner-results-...` met screenshots, JSON-bewijs en `summary.md`.
+### GitHub Actions
 
-Artifacts blijven 7 dagen bewaard.
+Gebruik **Actions -> Website Scan -> Run workflow** en vul één publieke officiële bedrijfs-URL in. Wanneer een file-write route nodig is, maak een tijdelijke `runtime/**`-branch vanaf de actuele `main`, plaats daar precies de tijdelijke `requests/scan.json`, lees het Actions-resultaat terug en verwijder de tijdelijke branch na closure.
 
-## Tests
+### Lokale batch
 
-- **Scanner Smoke Test** controleert locked dependencies, dependency-audit, Crawlee, Playwright, browserbewijs en de lichte toolbox-integratie op `example.com`.
-- **Toolbox Smoke Test** controleert sitemap/robots parsing, tech-detect, Linkinator tegen een lokale testserver en een lokaal gestarte LanguageTool-server. Deze test draait ook bij relevante wijzigingen die direct op `main` landen.
+```bash
+cp sites.example.txt sites.txt
+# vul sites.txt lokaal met één URL per regel
+npm ci
+npm run scan
+```
 
-## Interpretatie voor Project Leads
+Commit `sites.txt` nooit.
 
-De scanner levert browserbewijs en triagesignalen. De uiteindelijke kwalificatie blijft eigendom van de Webactueel Leads-workflow:
+## Reproduceerbare runtime
 
-1. registry-voorcheck / expliciete rescan;
-2. officiële bedrijfswebsite bevestigen;
-3. desktop + mobiel kernroutebewijs beoordelen;
-4. maximaal drie bewezen observaties kiezen;
-5. `problem_severity`, `webactueel_fit` en score 1-5 bepalen;
-6. alleen score 3-5 met `qualified=true` gaat door naar contactcontrole.
+- Node `22.23.2` en npm `10.9.8` in GitHub Actions;
+- exacte npm-versies en lockfile-installatie met `npm ci`;
+- externe Actions op vaste commit-SHA's;
+- productie-dependencyaudit en smoke/contractchecks blijven actief.
 
-Een openbaar e-mailadres is geen toestemming en de scanner maakt of verstuurt geen e-mail.
+## Bewijsgrenzen
+
+De scanner levert technische/browserobservaties, geen automatische leadkwalificatie. Toolboxsignalen mogen zelfstandig geen Leadscore bepalen. Volledige WCAG-conformiteit, conversiewinst of productiegeschiktheid worden niet door deze harness bewezen.
