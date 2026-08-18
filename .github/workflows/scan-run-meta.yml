@@ -11,6 +11,7 @@ permissions:
 jobs:
   record-runtime-metadata:
     if: >-
+      github.event.workflow_run.event == 'workflow_dispatch' &&
       github.event.workflow_run.head_repository.full_name == github.repository &&
       startsWith(github.event.workflow_run.head_branch, 'runtime/')
     runs-on: ubuntu-latest
