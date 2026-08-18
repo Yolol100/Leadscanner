@@ -1,0 +1,68 @@
+name: Website Scan Runtime Provenance
+
+on:
+  workflow_run:
+    workflows: ['Website Scan']
+    types: [completed]
+
+permissions:
+  contents: write
+
+jobs:
+  record-runtime-provenance:
+    if: >-
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      startsWith(github.event.workflow_run.head_branch, 'runtime/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout runtime branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_branch }}
+      - name: Record canonical scan provenance
+        shell: bash
+        env:
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
+          RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          RUN_STATUS: ${{ github.event.workflow_run.status }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          RUN_EVENT: ${{ github.event.workflow_run.event }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          RUN_CREATED_AT: ${{ github.event.workflow_run.created_at }}
+          RUN_UPDATED_AT: ${{ github.event.workflow_run.updated_at }}
+        run: |
+          set -euo pipefail
+          git pull --ff-only origin "${RUN_HEAD_BRANCH}"
+          mkdir -p runtime
+          python - <<'PY'
+          import json, os
+          payload = {
+              'format': 'webactueel-leadscanner-run-meta/2.0',
+              'workflow_name': 'Website Scan',
+              'run_id': int(os.environ['RUN_ID']),
+              'run_number': int(os.environ['RUN_NUMBER']),
+              'run_attempt': int(os.environ['RUN_ATTEMPT']),
+              'status': os.environ['RUN_STATUS'],
+              'conclusion': os.environ['RUN_CONCLUSION'],
+              'head_sha': os.environ['RUN_HEAD_SHA'],
+              'head_branch': os.environ['RUN_HEAD_BRANCH'],
+              'event': os.environ['RUN_EVENT'],
+              'run_url': os.environ['RUN_URL'],
+              'created_at': os.environ['RUN_CREATED_AT'],
+              'updated_at': os.environ['RUN_UPDATED_AT'],
+          }
+          with open('runtime/run-meta.json', 'w', encoding='utf-8') as handle:
+              json.dump(payload, handle, indent=2, sort_keys=True)
+              handle.write('\n')
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add runtime/run-meta.json
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m 'chore(runtime): record Website Scan provenance'
+          git push origin "HEAD:${RUN_HEAD_BRANCH}"
