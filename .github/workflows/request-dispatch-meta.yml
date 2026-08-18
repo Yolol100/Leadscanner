@@ -1,0 +1,56 @@
+name: Website Scan Request Dispatch Metadata
+
+on:
+  workflow_run:
+    workflows: ['Website Scan Request Dispatch']
+    types: [completed]
+
+permissions:
+  contents: write
+
+jobs:
+  record-dispatch-metadata:
+    if: >-
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      startsWith(github.event.workflow_run.head_branch, 'runtime/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout runtime branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_branch }}
+      - name: Record dispatch provenance
+        shell: bash
+        env:
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime
+          python - <<'PY'
+          import json, os
+          payload = {
+              'format': 'webactueel-leadscanner-dispatch-meta/1.0',
+              'workflow_name': 'Website Scan Request Dispatch',
+              'run_id': int(os.environ['RUN_ID']),
+              'conclusion': os.environ['RUN_CONCLUSION'],
+              'head_sha': os.environ['RUN_HEAD_SHA'],
+              'head_branch': os.environ['RUN_HEAD_BRANCH'],
+              'run_url': os.environ['RUN_URL'],
+          }
+          with open('runtime/dispatch-meta.json', 'w', encoding='utf-8') as handle:
+              json.dump(payload, handle, indent=2, sort_keys=True)
+              handle.write('\n')
+          PY
+      - name: Commit dispatch metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add runtime/dispatch-meta.json
+          git commit -m 'chore(runtime): record request dispatch provenance'
+          git push origin "HEAD:${{ github.event.workflow_run.head_branch }}"
