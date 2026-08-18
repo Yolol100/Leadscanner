@@ -89,7 +89,6 @@ jobs:
             if (value === false || value === 'false') return 'false';
             throw new Error('boolean expected');
           };
-
           const defaults = {
             run: 'false', request_id: 'none', target_url: '', site_type_hint: '',
             run_lighthouse: 'false', run_language_tool: 'false', max_concurrency: '2',
@@ -112,33 +111,30 @@ jobs:
               require_single_target: 'true'
             };
           } else if (process.env.GITHUB_EVENT_NAME === 'push') {
-            const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
-            const commit = event.head_commit || {};
-            const changed = new Set([...(commit.added || []), ...(commit.modified || [])]);
-            if (changed.has('requests/scan.json')) {
-              const req = JSON.parse(fs.readFileSync(path.join(process.env.GITHUB_WORKSPACE, 'requests/scan.json'), 'utf8'));
-              if (req.enabled === true) {
-                if (!safeId(req.request_id)) throw new Error('invalid request_id');
-                if (req.owner !== 'leads' || req.project_id !== 'project-leads') throw new Error('request owner/project mismatch');
-                for (const key of ['for', 'task', 'why', 'trigger_when', 'do_not_trigger_when', 'requested_by']) {
-                  if (!safeText(req[key])) throw new Error(`missing or unsafe ${key}`);
-                }
-                if (!req.source_context || req.source_context.project_id !== 'project-leads' || !safeText(req.source_context.source_set_version)) {
-                  throw new Error('invalid source_context');
-                }
-                const target = req.target_url || '';
-                new URL(target);
-                const hint = req.site_type_hint || '';
-                if (hint && !['service', 'shop', 'booking'].includes(hint)) throw new Error('invalid site_type_hint');
-                resolved = {
-                  run: 'true', request_id: req.request_id, target_url: target, site_type_hint: hint,
-                  run_lighthouse: safeBool(req.run_lighthouse),
-                  run_language_tool: safeBool(req.run_language_tool),
-                  max_concurrency: safeInt(req.max_concurrency, 1, 4, 2),
-                  max_requests_per_minute: safeInt(req.max_requests_per_minute, 1, 120, 30),
-                  require_single_target: 'true'
-                };
+            const requestPath = path.join(process.env.GITHUB_WORKSPACE, 'requests/scan.json');
+            if (!fs.existsSync(requestPath)) throw new Error('missing requests/scan.json for runtime push');
+            const req = JSON.parse(fs.readFileSync(requestPath, 'utf8'));
+            if (req.enabled === true) {
+              if (!safeId(req.request_id)) throw new Error('invalid request_id');
+              if (req.owner !== 'leads' || req.project_id !== 'project-leads') throw new Error('request owner/project mismatch');
+              for (const key of ['for', 'task', 'why', 'trigger_when', 'do_not_trigger_when', 'requested_by']) {
+                if (!safeText(req[key])) throw new Error(`missing or unsafe ${key}`);
               }
+              if (!req.source_context || req.source_context.project_id !== 'project-leads' || !safeText(req.source_context.source_set_version)) {
+                throw new Error('invalid source_context');
+              }
+              const target = req.target_url || '';
+              new URL(target);
+              const hint = req.site_type_hint || '';
+              if (hint && !['service', 'shop', 'booking'].includes(hint)) throw new Error('invalid site_type_hint');
+              resolved = {
+                run: 'true', request_id: req.request_id, target_url: target, site_type_hint: hint,
+                run_lighthouse: safeBool(req.run_lighthouse),
+                run_language_tool: safeBool(req.run_language_tool),
+                max_concurrency: safeInt(req.max_concurrency, 1, 4, 2),
+                max_requests_per_minute: safeInt(req.max_requests_per_minute, 1, 120, 30),
+                require_single_target: 'true'
+              };
             }
           }
 
@@ -207,7 +203,7 @@ jobs:
           fi
       - name: Upload scan evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875f85b58a # v7.0.1
         with:
           name: leadscanner-results-${{ github.run_number }}
           path: scan-results/
