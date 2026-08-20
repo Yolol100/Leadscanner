@@ -1,4 +1,4 @@
-const IGNORABLE_FAILURE = /(ERR_ABORTED|blockedbyclient)/i;
+const IGNORABLE_FAILURE = /(ERR_ABORTED|ERR_BLOCKED_BY_CLIENT|blockedbyclient)/i;
 
 export function buildRequestFailureFinding({ target, pageUrl, requestUrl, resourceType = 'other', errorText = '', sameOfficialSite }) {
   if (!sameOfficialSite) return null;
