@@ -4,6 +4,7 @@ import { buildRequestFailureFinding } from '../src/tools/runtime-signals.mjs';
 
 test('ignores expected browser aborts and third-party failures', () => {
   assert.equal(buildRequestFailureFinding({ target: 'https://example.com', pageUrl: 'https://example.com', requestUrl: 'https://example.com/image.jpg', resourceType: 'image', errorText: 'net::ERR_ABORTED', sameOfficialSite: true }), null);
+  assert.equal(buildRequestFailureFinding({ target: 'https://example.com', pageUrl: 'https://example.com', requestUrl: 'https://example.com/tracker.js', resourceType: 'script', errorText: 'net::ERR_BLOCKED_BY_CLIENT', sameOfficialSite: true }), null);
   assert.equal(buildRequestFailureFinding({ target: 'https://example.com', pageUrl: 'https://example.com', requestUrl: 'https://cdn.example.net/app.js', resourceType: 'script', errorText: 'net::ERR_FAILED', sameOfficialSite: false }), null);
 });
 
