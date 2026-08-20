@@ -6,6 +6,7 @@ const OUT = path.resolve('scan-results');
 const RUNTIME_SURFACE = 'controlled-browser';
 const RUNTIME_DETAIL = 'github_actions_crawlee_playwright';
 const SCORE_OWNER = 'Webactueel Leads Skill';
+const ROUTE_FAILURE_TYPES = new Set(['access_blocker', 'core_page_error', 'core_page_unreachable']);
 
 const ROUTE_CATEGORY_MAP = new Map([
   ['home', 'presentatie'],
@@ -49,6 +50,14 @@ function leadIdForTarget(target) {
   return `lead-${sha256(canonicalDomain(target)).slice(0, 12)}`;
 }
 
+function sameUrl(left, right) {
+  try {
+    return new URL(left).toString() === new URL(right).toString();
+  } catch {
+    return false;
+  }
+}
+
 function adaptBrowserRecord(record) {
   const { evidence_id: oldId, evidence_sha256: _oldHash, ...payload } = record;
   const routeCategory = normalizeRouteCategory(payload.route_category);
@@ -82,11 +91,34 @@ function remapFinding(finding, idMap, recordByOldId) {
   };
 }
 
+function rawRouteFailures(site, device, expectedCategory, expectedUrl) {
+  const profile = (site.profiles || []).find((item) => item?.profile === device);
+  if (!profile) return [];
+  const failures = [];
+
+  for (const finding of profile.findings || []) {
+    if (!ROUTE_FAILURE_TYPES.has(finding?.type)) continue;
+    if (normalizeRouteCategory(finding.route_category) !== expectedCategory) continue;
+    if (!sameUrl(finding.url, expectedUrl)) continue;
+    failures.push(`${finding.type}:${String(finding.detail || '').slice(0, 180)}`);
+  }
+
+  for (const page of profile.pages || []) {
+    if (!page?.error) continue;
+    if (normalizeRouteCategory(page.route_category) !== expectedCategory) continue;
+    if (!sameUrl(page.planned_url || page.url, expectedUrl)) continue;
+    failures.push(`page_error:${String(page.error).slice(0, 180)}`);
+  }
+
+  return [...new Set(failures)];
+}
+
 function deviceRouteCoverage(site, adaptedRecords, device) {
   const expected = Array.isArray(site.route_plan) ? site.route_plan : [];
   const pageRecords = adaptedRecords.filter((record) => record.device === device && record.route_category !== 'full_route');
   const matched = [];
   const missing = [];
+  const failed = [];
   for (const item of expected) {
     const expectedUrl = new URL(item.url).toString();
     const expectedCategory = normalizeRouteCategory(item.role);
@@ -98,8 +130,16 @@ function deviceRouteCoverage(site, adaptedRecords, device) {
     });
     if (match) matched.push(match.evidence_id);
     else missing.push(`${expectedCategory}:${expectedUrl}`);
+
+    const rawFailures = rawRouteFailures(site, device, expectedCategory, expectedUrl);
+    for (const failure of rawFailures) failed.push(`${expectedCategory}:${expectedUrl}:${failure}`);
   }
-  return { complete: expected.length > 0 && missing.length === 0, matched, missing };
+  return {
+    complete: expected.length > 0 && missing.length === 0 && failed.length === 0,
+    matched,
+    missing,
+    failed,
+  };
 }
 
 async function buildFullRouteEvidence(site, adaptedRecords, device) {
@@ -116,6 +156,7 @@ async function buildFullRouteEvidence(site, adaptedRecords, device) {
     route_plan: site.route_plan || [],
     page_evidence_ids: coverage.matched,
     missing_route_steps: coverage.missing,
+    failed_route_steps: coverage.failed,
     route_complete: coverage.complete,
     source_run_id: process.env.GITHUB_RUN_ID ? `github-actions-${process.env.GITHUB_RUN_ID}` : 'local-run',
     generated_at: new Date().toISOString(),
@@ -141,6 +182,7 @@ async function buildFullRouteEvidence(site, adaptedRecords, device) {
     viewport: records[0].viewport,
     page_evidence_ids: coverage.matched,
     missing_route_steps: coverage.missing,
+    failed_route_steps: coverage.failed,
   });
 }
 
