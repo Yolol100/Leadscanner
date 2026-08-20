@@ -7,6 +7,7 @@ import { devices } from 'playwright';
 import AxeBuilder from '@axe-core/playwright';
 import { discoverSite, isAllowedByRobots } from './tools/discovery.mjs';
 import { buildRoute, routeCoverage } from './tools/route-planner.mjs';
+import { buildRequestFailureFinding } from './tools/runtime-signals.mjs';
 import {
   assertPublicUrl,
   boundaryRespected,
@@ -100,6 +101,24 @@ function wireSignals(page, target, profile, bucket, boundary) {
     addFinding(bucket, { severity: noisy ? 1 : 2, type: 'console_error', url: page.url() || target, detail, device: profile, route_category: 'runtime' });
   });
   page.on('pageerror', (error) => addFinding(bucket, { severity: 3, type: 'javascript_error', url: page.url() || target, detail: String(error.message || error).slice(0, 350), device: profile, route_category: 'runtime' }));
+  page.on('requestfailed', (request) => {
+    const requestUrl = request.url();
+    let sameOfficialSite = false;
+    try {
+      sameOfficialSite = isSameOfficialSite(requestUrl, target);
+    } catch {
+      return;
+    }
+    const finding = buildRequestFailureFinding({
+      target,
+      pageUrl: page.url() || target,
+      requestUrl,
+      resourceType: request.resourceType(),
+      errorText: request.failure()?.errorText || 'network failure',
+      sameOfficialSite,
+    });
+    if (finding) addFinding(bucket, { ...finding, device: profile });
+  });
   page.on('response', (response) => {
     if (response.status() < 400) return;
     if (!isSameOfficialSite(response.url(), target)) {
