@@ -1,0 +1,15 @@
+{
+  "conclusion": "success",
+  "created_at": "2026-08-25T12:43:49Z",
+  "event": "push",
+  "format": "webactueel-leadscanner-run-meta/2.0",
+  "head_branch": "runtime/freshness-audit-2026-08-25",
+  "head_sha": "3dd997e0fb492c187fa2eee87f312c0b741e4bba",
+  "run_attempt": 1,
+  "run_id": 32849209244,
+  "run_number": 154,
+  "run_url": "https://github.com/Yolol100/Leadscanner/actions/runs/32849209244",
+  "status": "completed",
+  "updated_at": "2026-08-25T12:43:59Z",
+  "workflow_name": "Website Scan"
+}
