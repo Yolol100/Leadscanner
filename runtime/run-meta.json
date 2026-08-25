@@ -1,0 +1,15 @@
+{
+  "conclusion": "success",
+  "created_at": "2026-08-25T12:46:25Z",
+  "event": "push",
+  "format": "webactueel-leadscanner-run-meta/2.0",
+  "head_branch": "runtime/refresh-20260825-nietzman",
+  "head_sha": "b96c7f5254bfd81943471ba42d65a8cb19e6b488",
+  "run_attempt": 1,
+  "run_id": 32849462139,
+  "run_number": 162,
+  "run_url": "https://github.com/Yolol100/Leadscanner/actions/runs/32849462139",
+  "status": "completed",
+  "updated_at": "2026-08-25T12:48:30Z",
+  "workflow_name": "Website Scan"
+}
