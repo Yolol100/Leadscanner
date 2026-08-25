@@ -1,0 +1,15 @@
+{
+  "conclusion": "success",
+  "created_at": "2026-08-25T12:46:58Z",
+  "event": "push",
+  "format": "webactueel-leadscanner-run-meta/2.0",
+  "head_branch": "runtime/refresh-20260825-rovaal",
+  "head_sha": "f782cae62e15485580741db74c13bb8ad782d5de",
+  "run_attempt": 1,
+  "run_id": 32849511491,
+  "run_number": 166,
+  "run_url": "https://github.com/Yolol100/Leadscanner/actions/runs/32849511491",
+  "status": "completed",
+  "updated_at": "2026-08-25T12:48:54Z",
+  "workflow_name": "Website Scan"
+}
