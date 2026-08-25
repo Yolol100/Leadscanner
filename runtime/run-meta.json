@@ -1,0 +1,15 @@
+{
+  "conclusion": "success",
+  "created_at": "2026-08-25T12:47:13Z",
+  "event": "push",
+  "format": "webactueel-leadscanner-run-meta/2.0",
+  "head_branch": "runtime/refresh-20260825-vijfsterren",
+  "head_sha": "2b21b04a3c9511a9a2d7c40c5710230376684ce1",
+  "run_attempt": 1,
+  "run_id": 32849534869,
+  "run_number": 168,
+  "run_url": "https://github.com/Yolol100/Leadscanner/actions/runs/32849534869",
+  "status": "completed",
+  "updated_at": "2026-08-25T12:48:58Z",
+  "workflow_name": "Website Scan"
+}
