@@ -1,22 +1,23 @@
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "owner_skill": "leads",
   "project_id": "project-leads",
   "repository": "Yolol100/Leadscanner",
-  "evidence_role": "controlled_runtime_lead_browser_evidence",
+  "evidence_role": "optional_controlled_website_audit_evidence",
   "requires_account": false,
   "requires_api_key": false,
   "requires_mcp": false,
+  "normal_starteractie_route": false,
   "tools": [
-    {"id":"crawlee","version":"3.18.0","trigger_when":"browser route orchestration is needed","outputs":["scan-results/"]},
-    {"id":"playwright","version":"1.62.1","trigger_when":"formal desktop/mobile evidence is needed","outputs":["scan-results/"]},
-    {"id":"axe-core","version":"4.13.0","trigger_when":"homepage browser evidence is collected","outputs":["finding_candidates"]},
-    {"id":"linkinator","version":"8.0.3","trigger_when":"supplemental link signals are enabled","outputs":["supplemental signals"]},
+    {"id":"crawlee","version":"3.18.0","trigger_when":"explicit website audit crawl orchestration is needed","outputs":["scan-results/"]},
+    {"id":"playwright","version":"1.62.1","trigger_when":"explicit desktop/mobile audit evidence is needed","outputs":["scan-results/"]},
+    {"id":"axe-core","version":"4.13.0","trigger_when":"homepage audit evidence is collected","outputs":["finding_candidates"]},
+    {"id":"linkinator","version":"8.0.3","trigger_when":"supplemental link signals are requested","outputs":["supplemental signals"]},
     {"id":"lighthouse","version":"13.4.1","trigger_when":"performance context is requested","outputs":["supplemental signals"]},
     {"id":"languagetool","version":"pinned-local-script","trigger_when":"Dutch language signals are requested","outputs":["supplemental signals"]},
     {"id":"sitemap-robots","version":"repo","trigger_when":"route discovery is needed","outputs":["route discovery"]},
-    {"id":"tech-detect","version":"repo","trigger_when":"technology context supports fit assessment","outputs":["fit support"]},
-    {"id":"leads-handoff","version":"repo","trigger_when":"every completed scan returns to Leads","outputs":["scan-results/leads-handoff.json"]}
+    {"id":"tech-detect","version":"repo","trigger_when":"technology context helps interpret the audit","outputs":["context"]},
+    {"id":"leads-handoff","version":"repo","trigger_when":"a completed explicit audit returns to Leads","outputs":["scan-results/leads-handoff.json"]}
   ],
   "usage_assertions": [
     {"tool":"crawlee","path":"package.json","contains":"\"crawlee\""},
@@ -30,7 +31,8 @@
     {"tool":"leads-handoff","path":"package.json","contains":"handoff:leads"}
   ],
   "boundaries": [
-    "No scanner signal automatically changes Lead score or qualification.",
+    "Never trigger for the normal Starteractie lead flow.",
+    "No scanner signal automatically changes lead fit, priority, send permission or outreach state.",
     "GitHub/Chat scans use requests/scan.json or explicit workflow_dispatch; sites.txt is local-manual only.",
     "Accessibility findings are candidate signals, not a conformance claim."
   ]
