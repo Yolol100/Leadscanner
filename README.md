@@ -1,51 +1,44 @@
 # Leadscanner
 
-Generieke Webactueel leadscan- en browser-evidenceharness voor read-only controle van publieke bedrijfswebsites. De `leads` Skill blijft eigenaar van kwalificatie en score; deze repository levert alleen reproduceerbaar bewijs.
+Optionele Webactueel browser-auditharness voor read-only controle van publieke bedrijfswebsites. De normale Starteractie-leadworkflow gebruikt deze repository niet.
 
-## Wat de harness doet
+## Gebruik
 
-- begrensde Crawlee + Playwright-inspectie op desktop en mobiel;
+Alleen bij een expliciete website-audit, technische scan of rescan. De harness kan begrensde Crawlee + Playwright-inspectie uitvoeren op desktop en mobiel en technische/browserbevindingen als bewijs teruggeven.
+
+Niet gebruiken voor leadselectie, e-mailonderzoek, verzendgrond, leadlijsten, mailcopy, conceptmails, scoring, prioritering of follow-ups.
+
+## Veiligheid
+
 - maximaal vier kernpagina's per target;
-- GET/HEAD-only browsergrens: geen formulieren, bestellingen, betalingen of boekingen;
-- signalen voor HTTP/JavaScript-fouten, afbeeldingen, overflow, placeholders, CTA's en axe-risico's;
-- optionele Lighthouse- en lokale LanguageTool-controles;
-- sitemap/robots-discovery, Linkinator en tech-detect als aanvullende signalen;
-- run-scoped screenshots, JSON-evidence, `summary.md` en Leads-handoff in een GitHub Actions-artifact.
+- GET/HEAD-only; geen formulieren, bestellingen, betalingen of boekingen;
+- publieke officiële website vereist;
+- TLS/robots/sitemap- en netwerkgrenzen blijven actief;
+- Axe, Lighthouse, LanguageTool, Linkinator en tech-detect zijn alleen aanvullende auditcontext;
+- scannerbevindingen veranderen nooit automatisch outreachstatus of geschiktheid.
 
 ## Repository hygiene
 
-`main` bevat uitsluitend de generieke harness. Klant-, site-, scan- en run-specifieke input of evidence wordt niet permanent opgeslagen.
+`main` bevat alleen de generieke harness. Klant-, site-, request- en run-specifieke input/evidence blijft tijdelijk of run-scoped.
 
-- `sites.txt` is lokale tijdelijke invoer en staat in `.gitignore`.
-- `requests/scan.json` is tijdelijke requeststate en staat in `.gitignore`.
-- Een connectorgestuurde request mag alleen op een tijdelijke `runtime/**`-branch bestaan.
-- GitHub Actions-resultaten blijven run-scoped artifacts en worden niet terug naar `main` gecommit.
-- Gebruik `sites.example.txt` alleen als leeg generiek voorbeeld; voeg daar geen targets aan toe.
+- `sites.txt` is lokale tijdelijke input en staat in `.gitignore`;
+- `requests/scan.json` hoort alleen op een tijdelijke runtimebranch;
+- Actions-resultaten blijven artifacts en worden niet naar `main` gecommit.
 
-## Scan starten
+## Starten
 
-### GitHub Actions
+GitHub Actions: gebruik **Actions -> Website Scan -> Run workflow** met één publieke officiële bedrijfs-URL, of de gecontroleerde tijdelijke request-file route.
 
-Gebruik **Actions -> Website Scan -> Run workflow** en vul één publieke officiële bedrijfs-URL in. Wanneer een file-write route nodig is, maak een tijdelijke `runtime/**`-branch vanaf de actuele `main`, plaats daar precies de tijdelijke `requests/scan.json`, lees het Actions-resultaat terug en verwijder de tijdelijke branch na closure.
-
-### Lokale batch
+Lokaal:
 
 ```bash
 cp sites.example.txt sites.txt
-# vul sites.txt lokaal met één URL per regel
 npm ci
 npm run scan
 ```
 
 Commit `sites.txt` nooit.
 
-## Reproduceerbare runtime
+## Bewijsgrens
 
-- Node `22.23.2` en npm `10.9.8` in GitHub Actions;
-- exacte npm-versies en lockfile-installatie met `npm ci`;
-- externe Actions op vaste commit-SHA's;
-- productie-dependencyaudit en smoke/contractchecks blijven actief.
-
-## Bewijsgrenzen
-
-De scanner levert technische/browserobservaties, geen automatische leadkwalificatie. Toolboxsignalen mogen zelfstandig geen Leadscore bepalen. Volledige WCAG-conformiteit, conversiewinst of productiegeschiktheid worden niet door deze harness bewezen.
+De scanner levert technische/browserobservaties. Hij bepaalt geen leadgeschiktheid, Leadscore, prioriteit, verzendgrond, conversiewinst, WCAG-conformiteit of productiegeschiktheid.
