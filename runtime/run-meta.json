@@ -1,0 +1,15 @@
+{
+  "conclusion": "success",
+  "created_at": "2026-08-25T12:46:34Z",
+  "event": "push",
+  "format": "webactueel-leadscanner-run-meta/2.0",
+  "head_branch": "runtime/refresh-20260825-parkstaete",
+  "head_sha": "098ad77f82acffeadb03c2024aae38861d872c5d",
+  "run_attempt": 1,
+  "run_id": 32849475172,
+  "run_number": 163,
+  "run_url": "https://github.com/Yolol100/Leadscanner/actions/runs/32849475172",
+  "status": "completed",
+  "updated_at": "2026-08-25T12:48:50Z",
+  "workflow_name": "Website Scan"
+}
