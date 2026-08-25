@@ -1,0 +1,19 @@
+{
+  "enabled": false,
+  "request_id": "freshness-audit-placeholder-2026-08-25",
+  "owner": "leads",
+  "project_id": "project-leads",
+  "for": "preflight only",
+  "task": "preflight only",
+  "why": "Establish request-file route without starting a scan before validating current workflow contract.",
+  "trigger_when": "never while enabled is false",
+  "do_not_trigger_when": "enabled is false",
+  "requested_by": "ChatGPT",
+  "source_context": {"project_id": "project-leads", "source_set_version": "preflight"},
+  "target_url": "https://example.com/",
+  "site_type_hint": "service",
+  "run_lighthouse": false,
+  "run_language_tool": false,
+  "max_concurrency": 2,
+  "max_requests_per_minute": 30
+}
