@@ -1,50 +1,44 @@
 {
-  "version": "2.2",
-  "repository_role": "browser_execution_capability_for_webactueel_leads",
+  "version": "2.3",
+  "repository_role": "optional_readonly_website_audit_capability",
   "policy": {
     "read_only": true,
-    "lead_score_owner": "Webactueel Leads Skill",
-    "supplemental_checks_change_score_automatically": false,
+    "normal_starteractie_route": false,
+    "changes_lead_fit_automatically": false,
+    "changes_outreach_status_automatically": false,
     "required_output": "scan-results/leads-handoff.json",
     "fallback_when_runtime_unavailable": "handoff_required",
     "never_simulate_browser_evidence": true
   },
   "routing": {
-    "why_this_repository_exists": "De Leads Skill vereist echte desktop- en mobiele browser-evidence voor formele websitekwalificatie. Deze repository levert die gecontroleerde browseruitvoering plus supplementaire technische signalen zonder zelf de Leadscore te bepalen.",
+    "why_this_repository_exists": "Levert reproduceerbaar desktop/mobile browserbewijs wanneer de gebruiker expliciet om een website-audit, technische scan of rescan vraagt.",
     "use_repository_when": [
-      "Leads stap 3 Website beoordelen echte desktop+mobiel browser-evidence nodig heeft",
-      "een kandidaatwebsite formeel moet worden gekwalificeerd en nog geen geldig scanbewijs heeft",
-      "een expliciete rescan/reactivate nieuw browserbewijs vereist",
-      "bestaand browserbewijs volgens de Leads-versheidsregels niet meer bruikbaar is",
-      "een Gmail-write een websitecontrole van vandaag vereist"
+      "de gebruiker expliciet een website-audit vraagt",
+      "de gebruiker expliciet een technische scan vraagt",
+      "de gebruiker expliciet een rescan van een bevestigde officiële bedrijfswebsite vraagt"
     ],
     "do_not_use_repository_when": [
-      "alleen keyword- of sectoronderzoek nodig is",
-      "alleen Registry-deduplicatie nodig is",
-      "alleen officiële bedrijfsbevestiging nodig is",
-      "een geldige voldoende verse Leads-scan al beschikbaar is",
-      "alleen contactinformatie of e-mailadres gezocht wordt",
-      "alleen mailcopy, Gmail-history, bestaande draftcontrole of follow-upstatus nodig is"
+      "bedrijven of websites vinden",
+      "Registry-deduplicatie",
+      "officiële bedrijfsbevestiging zonder audit",
+      "contactinformatie of e-mailadres zoeken",
+      "verzendgrond controleren",
+      "leadlijst bouwen",
+      "mailcopy of Gmail/Outlook-concepten maken",
+      "leadgeschiktheid, Leadscore of prioriteit bepalen",
+      "follow-upstatus beheren"
     ],
     "preconditions": [
-      "Lead Registry-voorcheck is uitgevoerd of de opdracht is expliciet rescan/reactivate",
-      "de officiële bedrijfswebsite is bevestigd voordat formele kwalificatie start",
-      "de actuele surface heeft een bewezen uitvoerroute voor GitHub Actions of een lokale repo-runtime",
-      "bij ontbrekende uitvoerroute wordt handoff_required teruggegeven"
+      "de officiële bedrijfswebsite is bevestigd",
+      "de gebruiker heeft de audit of scan expliciet gevraagd",
+      "de actuele surface heeft een bewezen GitHub Actions- of lokale repo-uitvoerroute"
     ],
     "required_inputs": [
-      "GitHub/Chat: officiële bedrijfswebsite via requests/scan.json target_url of expliciete workflow_dispatch target_url",
-      "Lokale CLI-batch: sites.txt mag alleen bewust handmatig worden gebruikt en is nooit een automatische GitHub/Chat-trigger",
-      "scanintentie: new_candidate, qualification, rescan of same_day_refresh"
-    ],
-    "optional_context_from_leads": [
-      "site_type service/shop/booking voor post-scan vergelijking met site_type_detected",
-      "of performancecontext gewenst is",
-      "of Nederlandse taalcontrole gewenst is"
+      "exact één publieke officiële bedrijfswebsite via requests/scan.json target_url of workflow_dispatch target_url",
+      "sites.txt alleen voor expliciet handmatige lokale batchinput"
     ],
     "execution_modes": {
       "github_actions": {
-        "when": "de actuele GitHub-capability workflow_dispatch daadwerkelijk kan starten en run/artifact kan teruglezen, of een source-bound requests/scan.json push wordt gedaan",
         "workflow": ".github/workflows/scan.yml",
         "primary_input": "target_url",
         "request_file": "requests/scan.json",
@@ -52,18 +46,15 @@
         "post_scan_command": "npm run handoff:leads"
       },
       "codex_or_cli_local": {
-        "when": "de repository aantoonbaar is uitgecheckt en Node/npm/Chromium-uitvoering beschikbaar is",
         "commands": [
           "npm ci",
           "npx playwright install chromium --with-deps",
           "npm run scan",
           "npm run enrich",
           "npm run handoff:leads"
-        ],
-        "manual_batch_note": "sites.txt is alleen hier als expliciet gekozen lokale batchinput toegestaan; nooit als verborgen Chat-fallback."
+        ]
       },
       "unavailable": {
-        "when": "geen van beide uitvoerroutes aantoonbaar beschikbaar is",
         "result": "handoff_required"
       }
     },
@@ -77,96 +68,28 @@
       "file": "scan-results/leads-handoff.json",
       "format": "webactueel-leadscanner-handoff/1.1",
       "runtime_surface": "controlled-browser",
-      "runtime_detail": "github_actions_crawlee_playwright",
       "contains": [
-        "deterministic lead_id",
-        "desktop full_route evidence",
-        "mobile full_route evidence",
-        "page browser evidence",
-        "finding_candidates requiring Leads validation",
-        "supplemental signals",
-        "explicit fields still required from Leads before scoring"
+        "desktop/mobile browser evidence",
+        "page evidence",
+        "finding candidates",
+        "supplemental audit signals"
       ]
     },
     "after_execution": [
-      "validate the handoff against the Leads evidence contract",
-      "compare scanner site_type_detected with the already confirmed Leads site_type and resolve material mismatch before scoring",
-      "choose at most three evidence-backed observations",
-      "determine webactueel_fit separately from problem severity",
-      "run the Leads score validator; never accept a repository-generated score",
-      "write the resulting scan/priority status back to the Lead Registry"
+      "validate artifact provenance/readback",
+      "report only evidence-backed audit observations",
+      "do not change fit, priority, send permission or outreach state automatically"
     ]
   },
   "tools": {
-    "crawlee": {
-      "status": "existing",
-      "purpose": "website-batches en crawlregie",
-      "use_when": "een of meer gecontroleerde websites door de browserroute moeten",
-      "evidence_role": "orchestration_only",
-      "automatic_score_effect": false
-    },
-    "playwright": {
-      "status": "existing",
-      "purpose": "desktop- en mobiele browserbewijzen",
-      "use_when": "Leads formele websitekwalificatie of rescan uitvoert",
-      "evidence_role": "primary_browser_evidence",
-      "automatic_score_effect": false
-    },
-    "axe_core": {
-      "status": "enabled",
-      "module": "src/scan.mjs",
-      "package": "@axe-core/playwright",
-      "purpose": "ernstige/kritieke geautomatiseerde accessibility-signalen op de homepage als kandidaatbevinding",
-      "use_when": "de primaire browserrun de homepage beoordeelt",
-      "evidence_role": "supplemental_candidate_signal",
-      "automatic_score_effect": false
-    },
-    "sitemap_robots": {
-      "status": "enabled",
-      "module": "src/tools/discovery.mjs",
-      "purpose": "publieke routekandidaten uit robots.txt en sitemaps",
-      "use_when": "routekeuze voor de kernroute moet worden verbeterd",
-      "evidence_role": "route_discovery_support",
-      "automatic_score_effect": false
-    },
-    "linkinator": {
-      "status": "enabled",
-      "module": "src/tools/link-check.mjs",
-      "purpose": "shallow same-origin linkcontrole op kernroutes",
-      "use_when": "kernroutes aanvullende linkcontrole nodig hebben",
-      "evidence_role": "supplemental_candidate_signal",
-      "automatic_score_effect": false
-    },
-    "lighthouse": {
-      "status": "existing_optional",
-      "purpose": "performance/accessibility/best-practices/SEO als tweede technische meting",
-      "use_when": "een reeds interessante kandidaat aanvullende performancecontext nodig heeft of de gebruiker expliciet performance vraagt",
-      "evidence_role": "supplemental_candidate_signal",
-      "automatic_score_effect": false
-    },
-    "languagetool": {
-      "status": "optional_local",
-      "module": "src/tools/language-check.mjs",
-      "purpose": "Nederlandse taalsignalen via lokale accountloze server",
-      "use_when": "zichtbare Nederlandse tekst relevante copy-signalen kan bevatten of de gebruiker taalcontrole vraagt",
-      "evidence_role": "supplemental_candidate_signal",
-      "automatic_score_effect": false
-    },
-    "tech_detect": {
-      "status": "enabled",
-      "module": "src/tools/tech-detect.mjs",
-      "purpose": "CMS/pagebuilder/webshop-signaturen voor Webactueel-fit",
-      "use_when": "technologiecontext de Webactueel-fit kan ondersteunen",
-      "evidence_role": "fit_support_only",
-      "automatic_score_effect": false
-    },
-    "leads_handoff": {
-      "status": "enabled",
-      "module": "src/leads-handoff.mjs",
-      "purpose": "scannerbewijs normaliseren naar het Leads evidence-vocabulaire zonder te scoren",
-      "use_when": "iedere scan die terug moet naar de Leads Skill",
-      "evidence_role": "handoff_adapter",
-      "automatic_score_effect": false
-    }
+    "crawlee": {"status":"existing","purpose":"bounded crawl orchestration","evidence_role":"orchestration_only"},
+    "playwright": {"status":"existing","purpose":"desktop/mobile browser evidence","evidence_role":"primary_browser_evidence"},
+    "axe_core": {"status":"enabled","purpose":"automated accessibility candidate signals","evidence_role":"supplemental_candidate_signal"},
+    "sitemap_robots": {"status":"enabled","purpose":"route discovery and access policy","evidence_role":"route_discovery_support"},
+    "linkinator": {"status":"enabled","purpose":"shallow same-origin link checks","evidence_role":"supplemental_candidate_signal"},
+    "lighthouse": {"status":"existing_optional","purpose":"optional performance/accessibility/best-practices/SEO context","evidence_role":"supplemental_candidate_signal"},
+    "languagetool": {"status":"optional_local","purpose":"optional Dutch language signals","evidence_role":"supplemental_candidate_signal"},
+    "tech_detect": {"status":"enabled","purpose":"technology context for audit interpretation","evidence_role":"context_only"},
+    "leads_handoff": {"status":"enabled","purpose":"normalize audit evidence for readback","evidence_role":"handoff_adapter"}
   }
 }
