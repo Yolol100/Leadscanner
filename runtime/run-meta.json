@@ -1,0 +1,15 @@
+{
+  "conclusion": "success",
+  "created_at": "2026-08-25T12:45:55Z",
+  "event": "push",
+  "format": "webactueel-leadscanner-run-meta/2.0",
+  "head_branch": "runtime/refresh-20260825-danielsnijders",
+  "head_sha": "5aecf5845cf38e3ab3c54adc88126cf2c6b96ef1",
+  "run_attempt": 1,
+  "run_id": 32849413255,
+  "run_number": 158,
+  "run_url": "https://github.com/Yolol100/Leadscanner/actions/runs/32849413255",
+  "status": "completed",
+  "updated_at": "2026-08-25T12:48:07Z",
+  "workflow_name": "Website Scan"
+}
