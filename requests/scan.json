@@ -1,0 +1,19 @@
+{
+  "enabled": true,
+  "request_id": "refresh-20260825-nietzman",
+  "owner": "leads",
+  "project_id": "project-leads",
+  "for": "current lead-list requalification",
+  "task": "Run a fresh controlled desktop and mobile website assessment for Nietzman Schilderwerken.",
+  "why": "Existing evidence reaches the seven-day freshness boundary today.",
+  "trigger_when": "This runtime branch receives this enabled request.",
+  "do_not_trigger_when": "Target is not the confirmed official website or safe boundary cannot be respected.",
+  "requested_by": "ChatGPT for Webactueel",
+  "source_context": {"project_id": "project-leads", "source_set_version": "leads-2026-08-25-v10.9.0"},
+  "target_url": "https://nietzmanschilderwerken.nl/",
+  "site_type_hint": "service",
+  "run_lighthouse": false,
+  "run_language_tool": true,
+  "max_concurrency": 2,
+  "max_requests_per_minute": 30
+}
