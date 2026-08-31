@@ -1,5 +1,5 @@
 {
-  "version": "2.3",
+  "version": "2.4",
   "repository_role": "optional_readonly_website_audit_capability",
   "policy": {
     "read_only": true,
@@ -11,30 +11,33 @@
     "never_simulate_browser_evidence": true
   },
   "routing": {
-    "why_this_repository_exists": "Levert reproduceerbaar desktop/mobile browserbewijs wanneer de gebruiker expliciet om een website-audit, technische scan of rescan vraagt.",
+    "why_this_repository_exists": "Levert reproduceerbaar desktop/mobile browserbewijs voor expliciete audits of een specifiek technisch bewijs-gat dat Leads na de lichte officiële-sitecheck heeft vastgesteld.",
     "use_repository_when": [
       "de gebruiker expliciet een website-audit vraagt",
-      "de gebruiker expliciet een technische scan vraagt",
-      "de gebruiker expliciet een rescan van een bevestigde officiële bedrijfswebsite vraagt"
+      "de gebruiker expliciet een technische scan of rescan vraagt",
+      "Leads heeft een specifieke technische outreachclaim die na de lichte officiële-sitecheck nog onvoldoende bewezen is, de scanner kan precies dat bewijs leveren en er is geen even sterke eenvoudiger bewezen niet-technische invalshoek"
     ],
     "do_not_use_repository_when": [
       "bedrijven of websites vinden",
       "Registry-deduplicatie",
-      "officiële bedrijfsbevestiging zonder audit",
-      "contactinformatie of e-mailadres zoeken",
-      "verzendgrond controleren",
+      "officiële bedrijfsbevestiging zonder technische evidence-gap",
+      "contactinformatie of e-mailadres zoeken of verifiëren",
+      "verzendgrond of compliance controleren",
       "leadlijst bouwen",
-      "mailcopy of Gmail/Outlook-concepten maken",
-      "leadgeschiktheid, Leadscore of prioriteit bepalen",
-      "follow-upstatus beheren"
+      "mailcopy, Outlook-concepten of Instantly-payloads maken",
+      "leadgeschiktheid, Leadscore of algemene prioriteit bepalen",
+      "Instantly-campaigns of follow-upstatus beheren",
+      "een volledige Instantly-batch standaard scannen"
     ],
     "preconditions": [
       "de officiële bedrijfswebsite is bevestigd",
-      "de gebruiker heeft de audit of scan expliciet gevraagd",
+      "er is een expliciete auditvraag of een door Leads vastgelegd technisch bewijs-gat",
+      "bij een automatisch bewijs-gat ontbreekt een even sterke eenvoudiger bewezen niet-technische invalshoek",
       "de actuele surface heeft een bewezen GitHub Actions- of lokale repo-uitvoerroute"
     ],
     "required_inputs": [
       "exact één publieke officiële bedrijfswebsite via requests/scan.json target_url of workflow_dispatch target_url",
+      "alleen de scoped technische bewijsbehoefte; geen Instantly lead/contact/campaign data",
       "sites.txt alleen voor expliciet handmatige lokale batchinput"
     ],
     "execution_modes": {
@@ -77,14 +80,15 @@
     },
     "after_execution": [
       "validate artifact provenance/readback",
+      "return only the evidence relevant to the scoped technical question to Leads",
       "report only evidence-backed audit observations",
-      "do not change fit, priority, send permission or outreach state automatically"
+      "do not change fit, priority, compliance, send permission or outreach state automatically"
     ]
   },
   "tools": {
     "crawlee": {"status":"existing","purpose":"bounded crawl orchestration","evidence_role":"orchestration_only"},
     "playwright": {"status":"existing","purpose":"desktop/mobile browser evidence","evidence_role":"primary_browser_evidence"},
-    "axe_core": {"status":"enabled","purpose":"automated accessibility candidate signals","evidence_role":"supplemental_candidate_signal"},
+    "axe_core": {"status":"enabled","purpose":"automated accessibility candidate signals","evidence_role":"supplemental_candidate_signal","automatic_score_effect":false},
     "sitemap_robots": {"status":"enabled","purpose":"route discovery and access policy","evidence_role":"route_discovery_support"},
     "linkinator": {"status":"enabled","purpose":"shallow same-origin link checks","evidence_role":"supplemental_candidate_signal"},
     "lighthouse": {"status":"existing_optional","purpose":"optional performance/accessibility/best-practices/SEO context","evidence_role":"supplemental_candidate_signal"},
