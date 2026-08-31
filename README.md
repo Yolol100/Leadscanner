@@ -1,12 +1,26 @@
 # Leadscanner
 
-Optionele Webactueel browser-auditharness voor read-only controle van publieke bedrijfswebsites. De normale Starteractie-leadworkflow gebruikt deze repository niet.
+Optionele Webactueel browser-auditharness voor read-only controle van publieke bedrijfswebsites. De normale Instantly/Leads-flow gebruikt deze repository niet standaard.
 
 ## Gebruik
 
-Alleen bij een expliciete website-audit, technische scan of rescan. De harness kan begrensde Crawlee + Playwright-inspectie uitvoeren op desktop en mobiel en technische/browserbevindingen als bewijs teruggeven.
+Gebruik de harness alleen wanneer:
 
-Niet gebruiken voor leadselectie, e-mailonderzoek, verzendgrond, leadlijsten, mailcopy, conceptmails, scoring, prioritering of follow-ups.
+1. Leads na de lichte officiële-sitecheck een **technisch bewijs-gat** heeft voor de gekozen outreach-invalshoek; of
+2. de gebruiker expliciet een website-audit, technische scan of rescan vraagt.
+
+Typische bewijs-gaten zijn performance/Core Web Vitals, mobiel rendergedrag, een kapotte route/link of een technische accessibility-kandidaat. Als een even sterke, al bewezen niet-technische invalshoek beschikbaar is, gebruik die en sla de scanner over.
+
+De harness kan begrensde Crawlee + Playwright-inspectie uitvoeren op desktop en mobiel en technische/browserbevindingen als bewijs teruggeven.
+
+Niet gebruiken voor leadfinding, e-mailonderzoek, verzendgrond, leadlijsten, mailcopy, Instantly-campaignbeheer, scoring, prioritering of follow-ups. Scan nooit standaard een volledige Instantly-batch.
+
+## Samenwerking
+
+- **Instantly** kan kandidaatleads en geverifieerde contactdata aanleveren en later campagneverzending/follow-ups uitvoeren.
+- **Leads + ChatGPT** bepalen leadfit, controleren de officiële website, kiezen één aantoonbaar verbeterpunt en maken de personalisatie.
+- **Leadscanner** levert alleen ontbrekend technisch browserbewijs wanneer Leads dat nodig heeft.
+- Scannerbevindingen veranderen nooit zelfstandig leadfit, prioriteit, compliance, verzendtoestemming of outreachstatus.
 
 ## Veiligheid
 
@@ -41,4 +55,4 @@ Commit `sites.txt` nooit.
 
 ## Bewijsgrens
 
-De scanner levert technische/browserobservaties. Hij bepaalt geen leadgeschiktheid, Leadscore, prioriteit, verzendgrond, conversiewinst, WCAG-conformiteit of productiegeschiktheid.
+De scanner levert technische/browserobservaties. Hij bepaalt geen leadgeschiktheid, Leadscore, prioriteit, verzendgrond, conversiewinst, WCAG-conformiteit, Instantly-campaignstatus of productiegeschiktheid.
