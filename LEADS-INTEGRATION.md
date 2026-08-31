@@ -1,24 +1,32 @@
 # Leads integration contract
 
-Leadscanner is een optionele, read-only website-auditcapability. De normale Webactueel Starteractie-workflow gebruikt deze repository niet.
+Leadscanner is een optionele, read-only website-auditcapability. De normale Instantly/Leads-flow gebruikt deze repository niet standaard.
 
-## Alleen gebruiken wanneer
+## Gebruik wanneer
 
-De gebruiker expliciet vraagt om een website-audit, technische scan of rescan van een bevestigde officiële bedrijfswebsite.
+Gebruik de scanner wanneer één van deze twee routes geldt:
+
+1. de gebruiker vraagt expliciet om een website-audit, technische scan of rescan van een bevestigde officiële bedrijfswebsite; of
+2. Leads heeft na de lichte officiële-sitecheck een **technisch bewijs-gat** voor de gekozen outreach-invalshoek en geen even sterke, eenvoudiger bewezen niet-technische invalshoek is beschikbaar.
+
+Typische bewijs-gaten: performance/Core Web Vitals, mobiel rendergedrag, kapotte route/link, technische accessibility-kandidaat of relevante tech-detectie.
 
 Niet gebruiken voor:
 
 - bedrijven/websites vinden;
 - Registry-deduplicatie;
-- e-mailadressen zoeken;
-- verzendgrond controleren;
+- e-mailadressen zoeken of verifiëren;
+- verzendgrond/compliance controleren;
 - leadlijsten maken;
-- mailcopy of Gmail/Outlook-concepten;
-- Leadscore, prioriteit of follow-ups.
+- mailcopy of Outlook-/Instantly-payloads maken;
+- Leadscore, algemene prioriteit of campaign follow-ups;
+- batchbreed scannen van alle Instantly-leads.
 
 ## Input
 
 Gebruik per run één bevestigde publieke `http`/`https`-URL via `requests/scan.json` of expliciete `workflow_dispatch`. `sites.txt` is alleen handmatige lokale batchinput en nooit een verborgen fallback.
+
+Leads geeft naast de target-URL alleen de technische bewijsbehoefte door. Instantly-data is geen scannerinput en wordt niet in de repository opgeslagen.
 
 ## Veiligheidsgrens
 
@@ -33,14 +41,14 @@ Gebruik per run één bevestigde publieke `http`/`https`-URL via `requests/scan.
 
 Crawlee + Playwright mogen desktop/mobiel browserbewijs en technische kandidaatbevindingen opleveren in `scan-results/leads-handoff.json`. Supplementaire signalen van Axe, Lighthouse, LanguageTool, Linkinator of tech-detect zijn alleen auditcontext.
 
-De scanner bepaalt nooit geschiktheid, prioriteit, Leadscore, verzendgrond of outreachstatus. De Leads Skill gebruikt de scan alleen als aparte audituitkomst wanneer de gebruiker daarom vroeg.
+De scanner bepaalt nooit geschiktheid, prioriteit, Leadscore, verzendgrond, compliance of outreachstatus. Leads gebruikt alleen de relevante evidence om de technische claim te bevestigen of te verwerpen. Bij onvoldoende bewijs wordt de claim niet gebruikt.
 
 ## Runtime
 
 1. GitHub request-file of `workflow_dispatch` wanneer run/artifact-readback beschikbaar is.
 2. Anders lokale Codex/CLI-runtime met `npm ci` en de bestaande scancommando's.
-3. Zonder bewezen uitvoerroute: `handoff_required`; simuleer geen browserbewijs.
+3. Zonder bewezen uitvoerroute: `handoff_required`; simuleer geen browserbewijs. Leads kiest dan een andere bewezen invalshoek of blokkeert de technische claim.
 
 ## Hygiene
 
-Houd klant-, site- en run-specifieke input/evidence buiten `main`. GitHub Actions-resultaten blijven run-scoped artifacts. Bestaande CI-, dependency-, TLS- en supply-chainchecks blijven gelden.
+Houd klant-, site-, Instantly-, campaign- en run-specifieke input/evidence buiten `main`. GitHub Actions-resultaten blijven run-scoped artifacts. Bestaande CI-, dependency-, TLS- en supply-chainchecks blijven gelden.
