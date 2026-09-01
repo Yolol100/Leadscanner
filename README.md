@@ -1,5 +1,9 @@
 # Leadscanner
 
+> **Portfoliostatus:** Actief ondersteunend · private Webactueel browser-auditharness
+
+**Rol in het platform:** Leadscanner levert uitsluitend ontbrekend technisch browserbewijs aan de Webactueel Leads-flow. Hij vindt geen leads, verstuurt geen outreach en beslist niet over leadfit, compliance of prioriteit. De normale flow gebruikt deze private capability alleen bij een aantoonbaar technisch bewijsgat.
+
 Optionele Webactueel browser-auditharness voor read-only controle van publieke bedrijfswebsites. De normale Instantly/Leads-flow gebruikt deze repository niet standaard.
 
 ## Gebruik
