@@ -17,14 +17,14 @@ Typische bewijs-gaten zijn performance/Core Web Vitals, mobiel rendergedrag, een
 
 De harness kan begrensde Crawlee + Playwright-inspectie uitvoeren op desktop en mobiel en technische/browserbevindingen als bewijs teruggeven.
 
-Niet gebruiken voor leadfinding, e-mailonderzoek, verzendgrond, leadlijsten, mailcopy, Instantly-campaignbeheer, scoring, prioritering of follow-ups. Scan nooit standaard een volledige Instantly-batch.
+Niet gebruiken voor leadfinding, e-mailonderzoek, verzendgrond, leadlijsten, mailcopy, Instantly-campaignbeheer, Opportunity Priority/Leadscore, intent- of triggerweging, sender-preflight, unsubscribe/opt-out, domein-/mailboxrotatie, volume/schaalbeslissingen of follow-ups. Scan nooit standaard een volledige Instantly-batch.
 
 ## Samenwerking
 
 - **Instantly** kan kandidaatleads en geverifieerde contactdata aanleveren en later campagneverzending/follow-ups uitvoeren.
-- **Leads + ChatGPT** bepalen leadfit, controleren de officiële website, kiezen één aantoonbaar verbeterpunt en maken de personalisatie.
+- **Leads + ChatGPT** bepalen leadfit, Opportunity Priority, signal/timing-context, controleren de officiële website, kiezen één aantoonbaar verbeterpunt, bepalen sender-/compliancepoorten en maken de personalisatie.
 - **Leadscanner** levert alleen ontbrekend technisch browserbewijs wanneer Leads dat nodig heeft.
-- Scannerbevindingen veranderen nooit zelfstandig leadfit, prioriteit, compliance, verzendtoestemming of outreachstatus.
+- Scannerbevindingen veranderen nooit zelfstandig leadfit, prioriteit, compliance, verzendtoestemming, sender-health, volume, unsubscribe-modus of outreachstatus.
 
 ## Veiligheid
 
@@ -59,4 +59,4 @@ Commit `sites.txt` nooit.
 
 ## Bewijsgrens
 
-De scanner levert technische/browserobservaties. Hij bepaalt geen leadgeschiktheid, Leadscore, prioriteit, verzendgrond, conversiewinst, WCAG-conformiteit, Instantly-campaignstatus of productiegeschiktheid.
+De scanner levert technische/browserobservaties. Hij bepaalt geen leadgeschiktheid, Leadscore/Opportunity Priority, intent, prioriteit, verzendgrond, sender-preflight, volume-/infrastructuurbeleid, unsubscribe/opt-out, conversiewinst, WCAG-conformiteit, Instantly-campaignstatus of productiegeschiktheid.
