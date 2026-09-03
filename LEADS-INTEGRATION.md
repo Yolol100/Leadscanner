@@ -19,14 +19,19 @@ Niet gebruiken voor:
 - verzendgrond/compliance controleren;
 - leadlijsten maken;
 - mailcopy of Outlook-/Instantly-payloads maken;
-- Leadscore, algemene prioriteit of campaign follow-ups;
+- Leadscore of `Opportunity Priority`;
+- intent-/triggerweging of bronverzadigingsscore;
+- sender-preflight, SPF/DKIM/DMARC-besluiten of sender-health;
+- unsubscribe/opt-out-keuze;
+- domein-/mailboxrotatie, volume- of schaalbeslissingen;
+- campaign follow-ups, replyhandling of CRM/deal learning;
 - batchbreed scannen van alle Instantly-leads.
 
 ## Input
 
 Gebruik per run één bevestigde publieke `http`/`https`-URL via `requests/scan.json` of expliciete `workflow_dispatch`. `sites.txt` is alleen handmatige lokale batchinput en nooit een verborgen fallback.
 
-Leads geeft naast de target-URL alleen de technische bewijsbehoefte door. Instantly-data is geen scannerinput en wordt niet in de repository opgeslagen.
+Leads geeft naast de target-URL alleen de technische bewijsbehoefte door. Instantly-data, campaigndata, Opportunity Priority en sender-health zijn geen scannerinput en worden niet in de repository opgeslagen.
 
 ## Veiligheidsgrens
 
@@ -41,7 +46,9 @@ Leads geeft naast de target-URL alleen de technische bewijsbehoefte door. Instan
 
 Crawlee + Playwright mogen desktop/mobiel browserbewijs en technische kandidaatbevindingen opleveren in `scan-results/leads-handoff.json`. Supplementaire signalen van Axe, Lighthouse, LanguageTool, Linkinator of tech-detect zijn alleen auditcontext.
 
-De scanner bepaalt nooit geschiktheid, prioriteit, Leadscore, verzendgrond, compliance of outreachstatus. Leads gebruikt alleen de relevante evidence om de technische claim te bevestigen of te verwerpen. Bij onvoldoende bewijs wordt de claim niet gebruikt.
+De scanner bepaalt nooit geschiktheid, prioriteit, Leadscore/Opportunity Priority, intent, verzendgrond, compliance, sender-health, volume, unsubscribe/opt-out of outreachstatus. Leads gebruikt alleen de relevante evidence om de technische claim te bevestigen of te verwerpen. Bij onvoldoende bewijs wordt de claim niet gebruikt.
+
+Een scannerresultaat mag daarom nooit punten toevoegen aan Opportunity Priority en mag nooit een `throttle`, `pause` of `blocked` sender-/compliancestatus opheffen.
 
 ## Runtime
 
