@@ -1,88 +1,73 @@
 {
-  "version": "2.4",
-  "repository_role": "optional_readonly_website_audit_capability",
+  "version": "3.0",
+  "repository_role": "central_leads_github_runtime",
   "policy": {
-    "read_only": true,
-    "normal_starteractie_route": false,
+    "website_scanner_read_only": true,
+    "prospect_discovery_bounded": true,
+    "outreach_live_fail_closed": true,
     "changes_lead_fit_automatically": false,
-    "changes_outreach_status_automatically": false,
-    "required_output": "scan-results/leads-handoff.json",
-    "fallback_when_runtime_unavailable": "handoff_required",
+    "changes_compliance_automatically": false,
+    "generates_mailcopy": false,
+    "required_scanner_output": "scan-results/leads-handoff.json",
     "never_simulate_browser_evidence": true
   },
-  "routing": {
-    "why_this_repository_exists": "Levert reproduceerbaar desktop/mobile browserbewijs voor expliciete audits of een specifiek technisch bewijs-gat dat Leads na de lichte officiële-sitecheck heeft vastgesteld.",
-    "use_repository_when": [
-      "de gebruiker expliciet een website-audit vraagt",
-      "de gebruiker expliciet een technische scan of rescan vraagt",
-      "Leads heeft een specifieke technische outreachclaim die na de lichte officiële-sitecheck nog onvoldoende bewezen is, de scanner kan precies dat bewijs leveren en er is geen even sterke eenvoudiger bewezen niet-technische invalshoek"
-    ],
-    "do_not_use_repository_when": [
-      "bedrijven of websites vinden",
-      "Registry-deduplicatie",
-      "officiële bedrijfsbevestiging zonder technische evidence-gap",
-      "contactinformatie of e-mailadres zoeken of verifiëren",
-      "verzendgrond of compliance controleren",
-      "leadlijst bouwen",
-      "mailcopy, Outlook-concepten of Instantly-payloads maken",
-      "leadgeschiktheid, Leadscore of algemene prioriteit bepalen",
-      "Instantly-campaigns of follow-upstatus beheren",
-      "een volledige Instantly-batch standaard scannen"
-    ],
-    "preconditions": [
-      "de officiële bedrijfswebsite is bevestigd",
-      "er is een expliciete auditvraag of een door Leads vastgelegd technisch bewijs-gat",
-      "bij een automatisch bewijs-gat ontbreekt een even sterke eenvoudiger bewezen niet-technische invalshoek",
-      "de actuele surface heeft een bewezen GitHub Actions- of lokale repo-uitvoerroute"
-    ],
-    "required_inputs": [
-      "exact één publieke officiële bedrijfswebsite via requests/scan.json target_url of workflow_dispatch target_url",
-      "alleen de scoped technische bewijsbehoefte; geen Instantly lead/contact/campaign data",
-      "sites.txt alleen voor expliciet handmatige lokale batchinput"
-    ],
-    "execution_modes": {
-      "github_actions": {
-        "workflow": ".github/workflows/scan.yml",
-        "primary_input": "target_url",
-        "request_file": "requests/scan.json",
-        "sites_txt_trigger": false,
-        "post_scan_command": "npm run handoff:leads"
-      },
-      "codex_or_cli_local": {
-        "commands": [
-          "npm ci",
-          "npx playwright install chromium --with-deps",
-          "npm run scan",
-          "npm run enrich",
-          "npm run handoff:leads"
-        ]
-      },
-      "unavailable": {
-        "result": "handoff_required"
-      }
-    },
-    "default_limits": {
-      "max_concurrency": 2,
-      "max_requests_per_minute": 30,
-      "max_pages_per_site": 4,
-      "safe_boundary": "GET/HEAD only; no submit/order/payment/booking confirmation"
-    },
-    "expected_output": {
-      "file": "scan-results/leads-handoff.json",
-      "format": "webactueel-leadscanner-handoff/1.1",
-      "runtime_surface": "controlled-browser",
-      "contains": [
-        "desktop/mobile browser evidence",
-        "page evidence",
-        "finding candidates",
-        "supplemental audit signals"
+  "capabilities": {
+    "prospect_discovery": {
+      "workflow": ".github/workflows/prospect-discovery.yml",
+      "runtime": "python",
+      "role": "bounded_company_domain_discovery",
+      "modes": ["validate", "bootstrap", "discover"],
+      "writes": ["ProspectCandidates"],
+      "boundaries": [
+        "approved ProspectSources only",
+        "no contact harvesting",
+        "no lead score or qualification decision",
+        "no mail copy",
+        "no SMTP/IMAP credentials",
+        "no send permission"
       ]
     },
-    "after_execution": [
-      "validate artifact provenance/readback",
-      "return only the evidence relevant to the scoped technical question to Leads",
-      "report only evidence-backed audit observations",
-      "do not change fit, priority, compliance, send permission or outreach state automatically"
+    "website_evidence_scan": {
+      "workflow": ".github/workflows/scan.yml",
+      "runtime": "node",
+      "role": "optional_readonly_website_audit_capability",
+      "read_only": true,
+      "normal_default_for_every_prospect": false,
+      "output": "scan-results/leads-handoff.json",
+      "safe_boundary": "GET/HEAD only; no submit/order/payment/booking confirmation"
+    },
+    "outreach_delivery": {
+      "workflow": ".github/workflows/outreach-smtp.yml",
+      "runtime": "python",
+      "role": "controlled_transport_for_preapproved_leads_state",
+      "modes": ["validate", "live"],
+      "manual_default": "validate",
+      "transport": "direct mijn.host SMTP + IMAP readback",
+      "external_email_verifier_required": false,
+      "boundaries": [
+        "Leads owns qualification/contact/compliance/copy",
+        "compliance preflight runs before SMTP",
+        "reply/bounce/opt-out stop sequences fail-closed",
+        "suppression checked before send",
+        "scheduled live requires explicit OUTREACH_ENABLED=true",
+        "no live send from CI"
+      ]
+    }
+  },
+  "scanner_routing": {
+    "why_it_exists": "Levert reproduceerbaar desktop/mobile browserbewijs voor expliciete audits of een specifiek technisch bewijs-gat dat Leads na de lichte officiële-sitecheck heeft vastgesteld.",
+    "use_when": [
+      "de gebruiker expliciet een website-audit vraagt",
+      "de gebruiker expliciet een technische scan of rescan vraagt",
+      "Leads heeft een specifiek technisch bewijs-gat dat niet eenvoudiger bewezen kan worden"
+    ],
+    "do_not_use_for": [
+      "prospect discovery",
+      "contactinformatie zoeken",
+      "compliance bepalen",
+      "leadscore bepalen",
+      "mailcopy genereren",
+      "SMTP/IMAP transport"
     ]
   },
   "tools": {
@@ -94,6 +79,8 @@
     "lighthouse": {"status":"existing_optional","purpose":"optional performance/accessibility/best-practices/SEO context","evidence_role":"supplemental_candidate_signal"},
     "languagetool": {"status":"optional_local","purpose":"optional Dutch language signals","evidence_role":"supplemental_candidate_signal"},
     "tech_detect": {"status":"enabled","purpose":"technology context for audit interpretation","evidence_role":"context_only"},
-    "leads_handoff": {"status":"enabled","purpose":"normalize audit evidence for readback","evidence_role":"handoff_adapter"}
+    "leads_handoff": {"status":"enabled","purpose":"normalize audit evidence for Leads readback","evidence_role":"handoff_adapter"},
+    "prospect_discovery": {"status":"enabled","purpose":"bounded approved-source company/domain discovery","evidence_role":"lead_candidate_discovery"},
+    "outreach_transport": {"status":"enabled","purpose":"preflight, SMTP/IMAP, sequences, suppression and reporting","evidence_role":"transport_readback"}
   }
 }
