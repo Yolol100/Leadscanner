@@ -7,6 +7,7 @@
     "contact_enrichment_qualified_only": true,
     "sender_readiness_diagnostic_only": true,
     "inbox_placement_seed_only": true,
+    "mailbox_draft_imap_only": true,
     "dashboard_readout_only": true,
     "outreach_live_fail_closed": true,
     "changes_lead_fit_automatically": false,
@@ -58,6 +59,15 @@
       "writes": ["InboxPlacement"],
       "boundaries": ["workflow_dispatch only", "explicit confirmation required", "maximum 5 configured seed inboxes", "no OutreachQueue recipients", "no scheduled probes"]
     },
+    "mailbox_draft": {
+      "workflow": ".github/workflows/myhost-draft-test.yml",
+      "runtime": "python",
+      "role": "explicit_self_addressed_imap_draft_test",
+      "modes": ["manual_confirmed", "one_time_push_request"],
+      "writes": ["configured mijn.host Drafts/Concepten mailbox"],
+      "send_permission": "none",
+      "boundaries": ["IMAP APPEND only", "self-addressed test only", "no SMTP", "no Google Sheet access", "unique test-id readback required", "no schedule"]
+    },
     "outreach_delivery": {
       "workflow": ".github/workflows/outreach-smtp.yml",
       "runtime": "python",
@@ -95,6 +105,7 @@
     "contact_enrichment": {"status":"enabled","purpose":"bounded official-site business-email lookup for qualified prospects","evidence_role":"contact_candidate_evidence"},
     "sender_readiness": {"status":"enabled","purpose":"technical sender authentication/connectivity/reputation diagnostics","evidence_role":"deliverability_diagnostics"},
     "inbox_placement": {"status":"manual_only","purpose":"controlled seed inbox/spam placement probe","evidence_role":"bounded_placement_sample"},
+    "mailbox_draft": {"status":"manual_test_only","purpose":"append and verify one self-addressed concept through mijn.host IMAP","evidence_role":"mailbox_draft_readback"},
     "outreach_transport": {"status":"enabled","purpose":"preflight, SMTP/IMAP, sequences, suppression and reporting","evidence_role":"transport_readback"},
     "dashboard": {"status":"enabled","purpose":"single Sheet control-panel readout","evidence_role":"aggregate_readout"}
   }

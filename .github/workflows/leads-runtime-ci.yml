@@ -7,6 +7,7 @@ on:
       - '.github/workflows/contact-enrichment.yml'
       - '.github/workflows/sender-readiness.yml'
       - '.github/workflows/inbox-placement.yml'
+      - '.github/workflows/myhost-draft-test.yml'
       - '.github/workflows/outreach-smtp.yml'
       - '.github/workflows/leads-runtime-ci.yml'
       - 'scripts/*.py'
@@ -24,6 +25,7 @@ on:
       - '.github/workflows/contact-enrichment.yml'
       - '.github/workflows/sender-readiness.yml'
       - '.github/workflows/inbox-placement.yml'
+      - '.github/workflows/myhost-draft-test.yml'
       - '.github/workflows/outreach-smtp.yml'
       - '.github/workflows/leads-runtime-ci.yml'
       - 'scripts/*.py'
@@ -66,11 +68,12 @@ jobs:
           PYTHONPATH: scripts
         run: python3 -m unittest discover -s tests -p 'test_*.py' -v
 
-      - name: Assert CI cannot send mail
+      - name: Assert CI cannot send mail or create mailbox drafts
         shell: bash
         run: |
           set -euo pipefail
           test -z "${OUTREACH_MAIL_PASSWORD:-}"
           test -z "${OUTREACH_MAILBOXES_JSON:-}"
           test -z "${GOOGLE_SERVICE_ACCOUNT_JSON:-}"
+          test -z "${OUTREACH_DRAFT_CONFIRM:-}"
           echo "CI_SAFE_MODE=green"

@@ -53,6 +53,17 @@
       "outputs": ["InboxPlacement"],
       "send_permission": "configured_seed_test_only"
     },
+    "mailbox_draft": {
+      "workflow": ".github/workflows/myhost-draft-test.yml",
+      "requires_account": true,
+      "manual_only": true,
+      "required_secrets": ["OUTREACH_MAIL_PASSWORD"],
+      "optional_secrets": ["OUTREACH_MAILBOXES_JSON"],
+      "writes": ["configured mijn.host Drafts/Concepten mailbox only"],
+      "send_permission": "none",
+      "recipient_boundary": "self_only for automated test route",
+      "transport": "IMAP APPEND + same-folder readback only"
+    },
     "outreach_delivery": {
       "workflow": ".github/workflows/outreach-smtp.yml",
       "requires_account": true,
@@ -100,6 +111,7 @@
     "Contact enrichment runs only after Leads qualification, inspects bounded official-site pages, never guesses an address and never creates send permission.",
     "Sender readiness is technical diagnostics only; it does not prove inbox placement or commercial permission.",
     "Inbox placement can send only manual controlled probes to at most five configured seed inboxes and never touches OutreachQueue recipients.",
+    "Mailbox draft testing is IMAP-only, self-addressed, explicitly triggered and never calls SMTP or changes Lead/Sheet state.",
     "Dashboard formulas are readout only and never mutate Leads decisions.",
     "Lead qualification, contact choice, compliance and copy remain owned by Leads, not by the repository runtime.",
     "The active direct SMTP route requires no Reoon dependency; legacy verification columns remain transport-compatible only.",
