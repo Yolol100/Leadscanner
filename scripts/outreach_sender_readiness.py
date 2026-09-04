@@ -184,6 +184,16 @@ def build_readiness_row(mailbox: MailboxConfig, *, outbound_ip: str = "", dnsbl_
     }
 
 
+def readiness_gate_error(rows: list[dict[str, str]], *, fail_on_blocked: bool, require_green: bool) -> str:
+    blocked = sum(1 for row in rows if row.get("state") == "blocked")
+    review = sum(1 for row in rows if row.get("state") == "review")
+    if require_green and (blocked or review):
+        return f"sender readiness must be green: blocked={blocked} review={review}"
+    if blocked and fail_on_blocked:
+        return f"{blocked} sender mailbox(es) have blocked readiness"
+    return ""
+
+
 def run() -> list[dict[str, str]]:
     spreadsheet_id = os.getenv("OUTREACH_SPREADSHEET_ID", "").strip()
     if not spreadsheet_id:
@@ -203,8 +213,13 @@ def run() -> list[dict[str, str]]:
     blocked = sum(1 for row in rows if row["state"] == "blocked")
     review = sum(1 for row in rows if row["state"] == "review")
     print(f"SENDER_READINESS=complete mailboxes={len(rows)} blocked={blocked} review={review}")
-    if blocked and env_bool("OUTREACH_READINESS_FAIL_ON_BLOCKED", True):
-        raise RuntimeError(f"{blocked} sender mailbox(es) have blocked readiness")
+    error = readiness_gate_error(
+        rows,
+        fail_on_blocked=env_bool("OUTREACH_READINESS_FAIL_ON_BLOCKED", True),
+        require_green=env_bool("OUTREACH_READINESS_REQUIRE_GREEN", False),
+    )
+    if error:
+        raise RuntimeError(error)
     return rows
 
 

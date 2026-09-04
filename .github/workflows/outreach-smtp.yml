@@ -160,6 +160,7 @@ jobs:
           OUTREACH_OUTBOUND_IP: ${{ vars.OUTREACH_OUTBOUND_IP }}
           OUTREACH_DNSBL_ZONES: ${{ vars.OUTREACH_DNSBL_ZONES }}
           OUTREACH_READINESS_FAIL_ON_BLOCKED: 'true'
+          OUTREACH_READINESS_REQUIRE_GREEN: 'true'
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           OUTREACH_MAIL_PASSWORD: ${{ steps.policy.outputs.effective_mode == 'live' && secrets.OUTREACH_MAIL_PASSWORD || '' }}
           OUTREACH_MAILBOXES_JSON: ${{ steps.policy.outputs.effective_mode == 'live' && secrets.OUTREACH_MAILBOXES_JSON || '' }}

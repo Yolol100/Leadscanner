@@ -8,10 +8,12 @@ WORKFLOW = ROOT / '.github' / 'workflows' / 'myhost-draft-test.yml'
 class MyhostDraftWorkflowTests(unittest.TestCase):
     def test_workflow_is_draft_only_and_explicit(self):
         text = WORKFLOW.read_text(encoding='utf-8')
-        self.assertIn('workflow_dispatch:', text)
-        self.assertIn('confirm_draft:', text)
-        self.assertIn('draft-test-request.txt', text)
-        self.assertNotIn('schedule:', text)
+        trigger = text.split('permissions:', 1)[0]
+        self.assertIn('workflow_dispatch:', trigger)
+        self.assertIn('confirm_draft:', trigger)
+        self.assertNotIn('push:', trigger)
+        self.assertNotIn('schedule:', trigger)
+        self.assertNotIn('draft-test-request.txt', text)
         self.assertNotIn('outreach_direct_smtp_runtime.py', text)
         self.assertNotIn('GOOGLE_SERVICE_ACCOUNT_JSON', text)
         self.assertIn("OUTREACH_DRAFT_SELF_ONLY: 'true'", text)

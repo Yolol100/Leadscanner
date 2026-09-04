@@ -54,6 +54,31 @@ class SenderReadinessTests(unittest.TestCase):
         row = m.build_readiness_row(self.mailbox(), outbound_ip="8.8.8.8", dnsbl_zones=["dnsbl.example"])
         self.assertEqual(row["state"], "blocked")
 
+    def test_monitor_allows_review_when_green_is_not_required(self):
+        error = m.readiness_gate_error(
+            [{"state": "review"}],
+            fail_on_blocked=True,
+            require_green=False,
+        )
+        self.assertEqual(error, "")
+
+    def test_live_gate_rejects_review_when_green_is_required(self):
+        error = m.readiness_gate_error(
+            [{"state": "review"}],
+            fail_on_blocked=True,
+            require_green=True,
+        )
+        self.assertIn("must be green", error)
+        self.assertIn("review=1", error)
+
+    def test_green_only_gate_accepts_green(self):
+        error = m.readiness_gate_error(
+            [{"state": "green"}],
+            fail_on_blocked=True,
+            require_green=True,
+        )
+        self.assertEqual(error, "")
+
 
 if __name__ == "__main__":
     unittest.main()
