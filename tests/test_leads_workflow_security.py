@@ -24,12 +24,14 @@ class LeadsWorkflowSecurityTests(unittest.TestCase):
     def test_outreach_order_is_fail_closed(self):
         text = (WORKFLOWS / "outreach-smtp.yml").read_text(encoding="utf-8")
         policy = text.index("- name: Resolve campaign pacing policy")
+        push_guard = text.index("- name: Assert push validation cannot become live")
         sender_preflight = text.index("- name: Run sender preflight")
         extended = text.index("- name: Run extended outreach contract preflight")
         compliance = text.index("- name: Run outreach compliance preflight")
         sender = text.index("- name: Process approved outreach queue")
         reporting = text.index("- name: Summarize outreach analytics")
-        self.assertLess(policy, sender_preflight)
+        self.assertLess(policy, push_guard)
+        self.assertLess(push_guard, sender_preflight)
         self.assertLess(sender_preflight, extended)
         self.assertLess(extended, compliance)
         self.assertLess(compliance, sender)
@@ -42,6 +44,23 @@ class LeadsWorkflowSecurityTests(unittest.TestCase):
         self.assertIn("- live", text)
         self.assertIn("default: validate", text)
         self.assertIn("vars.OUTREACH_ENABLED == 'true'", text)
+
+    def test_main_push_forces_validate_mode(self):
+        text = (WORKFLOWS / "outreach-smtp.yml").read_text(encoding="utf-8")
+        self.assertIn("push:", text)
+        self.assertIn("github.event_name == 'push'", text)
+        self.assertIn("github.event_name == 'push' && 'validate'", text)
+        self.assertIn("Assert push validation cannot become live", text)
+        self.assertIn('test "$OUTREACH_EFFECTIVE_MODE" = "validate"', text)
+
+    def test_non_live_outreach_does_not_receive_mailbox_secrets(self):
+        text = (WORKFLOWS / "outreach-smtp.yml").read_text(encoding="utf-8")
+        expected_password = "OUTREACH_MAIL_PASSWORD: ${{ steps.policy.outputs.effective_mode == 'live' && secrets.OUTREACH_MAIL_PASSWORD || '' }}"
+        expected_pool = "OUTREACH_MAILBOXES_JSON: ${{ steps.policy.outputs.effective_mode == 'live' && secrets.OUTREACH_MAILBOXES_JSON || '' }}"
+        self.assertEqual(text.count(expected_password), 2)
+        self.assertEqual(text.count(expected_pool), 2)
+        self.assertNotIn("OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}", text)
+        self.assertNotIn("OUTREACH_MAILBOXES_JSON: ${{ secrets.OUTREACH_MAILBOXES_JSON }}", text)
 
     def test_active_outreach_has_no_reoon_dependency(self):
         text = (WORKFLOWS / "outreach-smtp.yml").read_text(encoding="utf-8")
