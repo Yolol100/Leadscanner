@@ -1,9 +1,13 @@
 {
-  "version": "3.0",
+  "version": "3.1",
   "repository_role": "central_leads_github_runtime",
   "policy": {
     "website_scanner_read_only": true,
     "prospect_discovery_bounded": true,
+    "contact_enrichment_qualified_only": true,
+    "sender_readiness_diagnostic_only": true,
+    "inbox_placement_seed_only": true,
+    "dashboard_readout_only": true,
     "outreach_live_fail_closed": true,
     "changes_lead_fit_automatically": false,
     "changes_compliance_automatically": false,
@@ -18,14 +22,15 @@
       "role": "bounded_company_domain_discovery",
       "modes": ["validate", "bootstrap", "discover"],
       "writes": ["ProspectCandidates"],
-      "boundaries": [
-        "approved ProspectSources only",
-        "no contact harvesting",
-        "no lead score or qualification decision",
-        "no mail copy",
-        "no SMTP/IMAP credentials",
-        "no send permission"
-      ]
+      "boundaries": ["approved ProspectSources only", "no contact harvesting", "no lead score or qualification decision", "no mail copy", "no SMTP/IMAP credentials", "no send permission"]
+    },
+    "contact_enrichment": {
+      "workflow": ".github/workflows/contact-enrichment.yml",
+      "runtime": "python",
+      "role": "bounded_official_site_business_email_discovery",
+      "modes": ["validate", "discover"],
+      "writes": ["ContactCandidates"],
+      "boundaries": ["qualified ProspectCandidates only", "maximum 25 prospects per run", "maximum 3 contact-like pages per company", "no guessed or constructed email addresses", "no free-mail or no-reply addresses", "no mail credentials", "no send permission"]
     },
     "website_evidence_scan": {
       "workflow": ".github/workflows/scan.yml",
@@ -36,6 +41,23 @@
       "output": "scan-results/leads-handoff.json",
       "safe_boundary": "GET/HEAD only; no submit/order/payment/booking confirmation"
     },
+    "sender_readiness": {
+      "workflow": ".github/workflows/sender-readiness.yml",
+      "runtime": "python",
+      "role": "technical_sender_diagnostics",
+      "writes": ["SenderReadiness"],
+      "checks": ["SPF", "DKIM", "DMARC", "MX", "SMTP TLS", "IMAP TLS", "optional mailbox auth", "optional PTR/FCrDNS", "optional configured DNSBL zones"],
+      "send_permission": "none"
+    },
+    "inbox_placement": {
+      "workflow": ".github/workflows/inbox-placement.yml",
+      "runtime": "python",
+      "role": "manual_controlled_seed_placement_probe",
+      "modes": ["validate", "test"],
+      "manual_default": "validate",
+      "writes": ["InboxPlacement"],
+      "boundaries": ["workflow_dispatch only", "explicit confirmation required", "maximum 5 configured seed inboxes", "no OutreachQueue recipients", "no scheduled probes"]
+    },
     "outreach_delivery": {
       "workflow": ".github/workflows/outreach-smtp.yml",
       "runtime": "python",
@@ -44,31 +66,19 @@
       "manual_default": "validate",
       "transport": "direct mijn.host SMTP + IMAP readback",
       "external_email_verifier_required": false,
-      "boundaries": [
-        "Leads owns qualification/contact/compliance/copy",
-        "compliance preflight runs before SMTP",
-        "reply/bounce/opt-out stop sequences fail-closed",
-        "suppression checked before send",
-        "scheduled live requires explicit OUTREACH_ENABLED=true",
-        "no live send from CI"
-      ]
+      "boundaries": ["Leads owns qualification/contact/compliance/copy", "compliance preflight runs before SMTP", "reply/bounce/opt-out stop sequences fail-closed", "suppression checked before send", "scheduled live requires explicit OUTREACH_ENABLED=true", "no live send from CI"]
+    },
+    "dashboard": {
+      "surface": "Webactueel Leadlijst/Dashboard",
+      "role": "readout_only_pipeline_and_deliverability_summary",
+      "writes": [],
+      "send_permission": "none"
     }
   },
   "scanner_routing": {
     "why_it_exists": "Levert reproduceerbaar desktop/mobile browserbewijs voor expliciete audits of een specifiek technisch bewijs-gat dat Leads na de lichte officiële-sitecheck heeft vastgesteld.",
-    "use_when": [
-      "de gebruiker expliciet een website-audit vraagt",
-      "de gebruiker expliciet een technische scan of rescan vraagt",
-      "Leads heeft een specifiek technisch bewijs-gat dat niet eenvoudiger bewezen kan worden"
-    ],
-    "do_not_use_for": [
-      "prospect discovery",
-      "contactinformatie zoeken",
-      "compliance bepalen",
-      "leadscore bepalen",
-      "mailcopy genereren",
-      "SMTP/IMAP transport"
-    ]
+    "use_when": ["de gebruiker expliciet een website-audit vraagt", "de gebruiker expliciet een technische scan of rescan vraagt", "Leads heeft een specifiek technisch bewijs-gat dat niet eenvoudiger bewezen kan worden"],
+    "do_not_use_for": ["prospect discovery", "contactinformatie zoeken", "compliance bepalen", "leadscore bepalen", "mailcopy genereren", "SMTP/IMAP transport"]
   },
   "tools": {
     "crawlee": {"status":"existing","purpose":"bounded crawl orchestration","evidence_role":"orchestration_only"},
@@ -81,6 +91,10 @@
     "tech_detect": {"status":"enabled","purpose":"technology context for audit interpretation","evidence_role":"context_only"},
     "leads_handoff": {"status":"enabled","purpose":"normalize audit evidence for Leads readback","evidence_role":"handoff_adapter"},
     "prospect_discovery": {"status":"enabled","purpose":"bounded approved-source company/domain discovery","evidence_role":"lead_candidate_discovery"},
-    "outreach_transport": {"status":"enabled","purpose":"preflight, SMTP/IMAP, sequences, suppression and reporting","evidence_role":"transport_readback"}
+    "contact_enrichment": {"status":"enabled","purpose":"bounded official-site business-email lookup for qualified prospects","evidence_role":"contact_candidate_evidence"},
+    "sender_readiness": {"status":"enabled","purpose":"technical sender authentication/connectivity/reputation diagnostics","evidence_role":"deliverability_diagnostics"},
+    "inbox_placement": {"status":"manual_only","purpose":"controlled seed inbox/spam placement probe","evidence_role":"bounded_placement_sample"},
+    "outreach_transport": {"status":"enabled","purpose":"preflight, SMTP/IMAP, sequences, suppression and reporting","evidence_role":"transport_readback"},
+    "dashboard": {"status":"enabled","purpose":"single Sheet control-panel readout","evidence_role":"aggregate_readout"}
   }
 }

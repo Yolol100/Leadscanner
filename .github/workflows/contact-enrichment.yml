@@ -1,0 +1,58 @@
+name: Bounded Official-Site Contact Enrichment
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Validate Sheet contract or inspect qualified prospects
+        required: true
+        type: choice
+        options:
+          - validate
+          - discover
+        default: validate
+      max_per_run:
+        description: Maximum qualified prospects to inspect (hard max 25)
+        required: false
+        default: '10'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: contact-enrichment
+  cancel-in-progress: false
+
+jobs:
+  enrich:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-outreach.txt
+      - name: Install dependencies
+        run: python3 -m pip install --disable-pip-version-check --requirement requirements-outreach.txt
+      - name: Validate Sheet credential
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${GOOGLE_SERVICE_ACCOUNT_JSON:-}" || { echo "::error::GOOGLE_SERVICE_ACCOUNT_JSON is required."; exit 1; }
+      - name: Run bounded official-site contact enrichment
+        env:
+          CONTACT_ENRICHMENT_MODE: ${{ inputs.mode }}
+          CONTACT_ENRICHMENT_MAX_PER_RUN: ${{ inputs.max_per_run }}
+          CONTACT_ENRICHMENT_MIN_INTERVAL: ${{ vars.CONTACT_ENRICHMENT_MIN_INTERVAL || '0.5' }}
+          CONTACT_ENRICHMENT_TIMEOUT: ${{ vars.CONTACT_ENRICHMENT_TIMEOUT || '10' }}
+          OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python3 scripts/prospect_contact_enrichment.py

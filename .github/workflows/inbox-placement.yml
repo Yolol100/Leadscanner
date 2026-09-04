@@ -1,0 +1,72 @@
+name: Controlled Seed Inbox Placement
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Validate configuration or send a controlled seed probe
+        required: true
+        type: choice
+        options:
+          - validate
+          - test
+        default: validate
+      confirm_test_send:
+        description: Required confirmation for test mode; probes only configured seed inboxes
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: controlled-seed-inbox-placement
+  cancel-in-progress: false
+
+jobs:
+  placement:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-outreach.txt
+      - name: Install dependencies
+        run: python3 -m pip install --disable-pip-version-check --requirement requirements-outreach.txt
+      - name: Guard controlled seed test
+        if: inputs.mode == 'test'
+        env:
+          CONFIRM_TEST_SEND: ${{ inputs.confirm_test_send }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$CONFIRM_TEST_SEND" = "true" || { echo "::error::test mode requires confirm_test_send=true"; exit 1; }
+      - name: Run inbox placement capability
+        env:
+          OUTREACH_PLACEMENT_MODE: ${{ inputs.mode }}
+          OUTREACH_PLACEMENT_TEST_ENABLED: ${{ inputs.mode == 'test' && inputs.confirm_test_send && 'true' || 'false' }}
+          OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
+          OUTREACH_DAILY_LIMIT: ${{ vars.OUTREACH_DAILY_LIMIT || '20' }}
+          OUTREACH_SMTP_HOST: ${{ vars.OUTREACH_SMTP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_SMTP_PORT: ${{ vars.OUTREACH_SMTP_PORT || '587' }}
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME || 'Andrew Baeten' }}
+          OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
+          OUTREACH_DKIM_SELECTOR: ${{ vars.OUTREACH_DKIM_SELECTOR || 'x' }}
+          OUTREACH_REQUIRED_SPF_TOKEN: ${{ vars.OUTREACH_REQUIRED_SPF_TOKEN || 'include:spf.mijn.host' }}
+          OUTREACH_PLACEMENT_POLL_SECONDS: ${{ vars.OUTREACH_PLACEMENT_POLL_SECONDS || '10' }}
+          OUTREACH_PLACEMENT_MAX_WAIT_SECONDS: ${{ vars.OUTREACH_PLACEMENT_MAX_WAIT_SECONDS || '60' }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          OUTREACH_MAIL_PASSWORD: ${{ inputs.mode == 'test' && secrets.OUTREACH_MAIL_PASSWORD || '' }}
+          OUTREACH_SEED_INBOXES_JSON: ${{ inputs.mode == 'test' && secrets.OUTREACH_SEED_INBOXES_JSON || '' }}
+        run: python3 scripts/outreach_inbox_placement.py

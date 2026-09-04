@@ -1,5 +1,5 @@
 {
-  "schema_version": "2.0",
+  "schema_version": "2.1",
   "owner_skill": "leads",
   "project_id": "project-leads",
   "repository": "Yolol100/Leadscanner",
@@ -10,9 +10,19 @@
       "workflow": ".github/workflows/prospect-discovery.yml",
       "requires_account": true,
       "required_secrets": ["GOOGLE_SERVICE_ACCOUNT_JSON"],
-      "forbidden_secrets": ["OUTREACH_MAIL_PASSWORD", "OUTREACH_MAILBOXES_JSON", "REOON_API_KEY"],
+      "forbidden_secrets": ["OUTREACH_MAIL_PASSWORD", "OUTREACH_MAILBOXES_JSON", "OUTREACH_SEED_INBOXES_JSON", "REOON_API_KEY"],
       "modes": ["validate", "bootstrap", "discover"],
       "outputs": ["ProspectCandidates", "prospect-discovery-report.json"],
+      "send_permission": "none"
+    },
+    "contact_enrichment": {
+      "workflow": ".github/workflows/contact-enrichment.yml",
+      "requires_account": true,
+      "required_secrets": ["GOOGLE_SERVICE_ACCOUNT_JSON"],
+      "forbidden_secrets": ["OUTREACH_MAIL_PASSWORD", "OUTREACH_MAILBOXES_JSON", "OUTREACH_SEED_INBOXES_JSON", "REOON_API_KEY"],
+      "modes": ["validate", "discover"],
+      "input_boundary": "qualified ProspectCandidates only",
+      "outputs": ["ContactCandidates"],
       "send_permission": "none"
     },
     "website_evidence_scan": {
@@ -22,6 +32,26 @@
       "read_only": true,
       "normal_default_for_every_prospect": false,
       "outputs": ["scan-results/", "scan-results/leads-handoff.json"]
+    },
+    "sender_readiness": {
+      "workflow": ".github/workflows/sender-readiness.yml",
+      "requires_account": true,
+      "required_secrets": ["GOOGLE_SERVICE_ACCOUNT_JSON"],
+      "optional_secrets": ["OUTREACH_MAIL_PASSWORD", "OUTREACH_MAILBOXES_JSON"],
+      "optional_variables": ["OUTREACH_OUTBOUND_IP", "OUTREACH_DNSBL_ZONES"],
+      "outputs": ["SenderReadiness"],
+      "send_permission": "none"
+    },
+    "inbox_placement": {
+      "workflow": ".github/workflows/inbox-placement.yml",
+      "requires_account": true,
+      "manual_only": true,
+      "manual_default": "validate",
+      "required_secrets_validate": ["GOOGLE_SERVICE_ACCOUNT_JSON"],
+      "required_secrets_test": ["GOOGLE_SERVICE_ACCOUNT_JSON", "OUTREACH_MAIL_PASSWORD", "OUTREACH_SEED_INBOXES_JSON"],
+      "max_seed_inboxes": 5,
+      "outputs": ["InboxPlacement"],
+      "send_permission": "configured_seed_test_only"
     },
     "outreach_delivery": {
       "workflow": ".github/workflows/outreach-smtp.yml",
@@ -33,6 +63,12 @@
       "manual_default": "validate",
       "external_email_verifier": "none_required_for_active_direct_smtp_route",
       "outputs": ["OutreachQueue", "OutreachSequences", "ReplyInbox", "Suppression", "OutreachLog", "VariantAnalytics", "MailboxHealth"]
+    },
+    "dashboard": {
+      "surface": "Google Sheet Dashboard tab",
+      "role": "readout_only_aggregate_control_panel",
+      "inputs": ["ProspectCandidates", "ContactCandidates", "OutreachQueue", "MailboxHealth", "SenderReadiness", "InboxPlacement", "Suppression"],
+      "send_permission": "none"
     }
   },
   "scanner_tools": [
@@ -60,6 +96,10 @@
   "boundaries": [
     "The website scanner remains read-only and optional; it never changes lead fit, priority, compliance, send permission or outreach state.",
     "Prospect discovery finds approved-source company/domain candidates only and receives no mail credentials.",
+    "Contact enrichment runs only after Leads qualification, inspects bounded official-site pages, never guesses an address and never creates send permission.",
+    "Sender readiness is technical diagnostics only; it does not prove inbox placement or commercial permission.",
+    "Inbox placement can send only manual controlled probes to at most five configured seed inboxes and never touches OutreachQueue recipients.",
+    "Dashboard formulas are readout only and never mutate Leads decisions.",
     "Lead qualification, contact choice, compliance and copy remain owned by Leads, not by the repository runtime.",
     "The active direct SMTP route requires no Reoon dependency; legacy verification columns remain transport-compatible only.",
     "Live outreach is fail-closed and is never executed by CI.",
