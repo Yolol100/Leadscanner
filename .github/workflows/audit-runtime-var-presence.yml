@@ -1,0 +1,44 @@
+name: Audit Runtime Variable Presence
+
+on:
+  push:
+    branches:
+      - audit/repository-hygiene-vars-20260905
+    paths:
+      - '.github/workflows/audit-runtime-var-presence.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Classify non-secret runtime variable presence
+        env:
+          OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID }}
+          OUTREACH_TIMEZONE: ${{ vars.OUTREACH_TIMEZONE }}
+          OUTREACH_MAILBOX_ID: ${{ vars.OUTREACH_MAILBOX_ID }}
+          OUTREACH_SMTP_HOST: ${{ vars.OUTREACH_SMTP_HOST }}
+          OUTREACH_SMTP_PORT: ${{ vars.OUTREACH_SMTP_PORT }}
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER }}
+          OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME }}
+          OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL }}
+          OUTREACH_DKIM_SELECTOR: ${{ vars.OUTREACH_DKIM_SELECTOR }}
+          OUTREACH_REQUIRED_SPF_TOKEN: ${{ vars.OUTREACH_REQUIRED_SPF_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in \
+            OUTREACH_SPREADSHEET_ID OUTREACH_TIMEZONE OUTREACH_MAILBOX_ID \
+            OUTREACH_SMTP_HOST OUTREACH_SMTP_PORT OUTREACH_IMAP_HOST OUTREACH_IMAP_PORT \
+            OUTREACH_MAIL_USER OUTREACH_SENDER_NAME OUTREACH_SENDER_EMAIL \
+            OUTREACH_DKIM_SELECTOR OUTREACH_REQUIRED_SPF_TOKEN; do
+            if [ -n "${!name:-}" ]; then
+              printf '%s=present\n' "$name"
+            else
+              printf '%s=missing\n' "$name"
+            fi
+          done
