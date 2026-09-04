@@ -140,6 +140,14 @@ jobs:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: python3 scripts/outreach_extended_preflight.py
 
+      - name: Run LeadPromo copy preflight
+        if: steps.sheet_auth.outputs.available == 'true'
+        env:
+          OUTREACH_MODE: ${{ steps.policy.outputs.effective_mode }}
+          OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python3 scripts/outreach_copy_preflight.py
+
       - name: Run outreach compliance preflight
         if: steps.sheet_auth.outputs.available == 'true'
         env:
