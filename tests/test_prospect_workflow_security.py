@@ -28,9 +28,13 @@ class ProspectWorkflowSecurityTests(unittest.TestCase):
             self.assertNotIn(forbidden, text)
         self.assertIn("GOOGLE_SERVICE_ACCOUNT_JSON", text)
 
-    def test_scheduled_discovery_requires_explicit_enable_flag(self):
+    def test_scheduled_runs_validate_when_discovery_is_disabled(self):
         text = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("vars.PROSPECT_DISCOVERY_ENABLED == 'true'", text)
+        self.assertIn("DISCOVERY_ENABLED: ${{ vars.PROSPECT_DISCOVERY_ENABLED }}", text)
+        self.assertIn('elif [ "$DISCOVERY_ENABLED" = "true" ]; then', text)
+        self.assertIn('mode="discover"', text)
+        self.assertIn('mode="validate"', text)
+        self.assertNotIn("if: github.event_name == 'workflow_dispatch' || vars.PROSPECT_DISCOVERY_ENABLED == 'true'", text)
 
 
 if __name__ == "__main__": unittest.main()
