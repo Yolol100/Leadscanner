@@ -8,6 +8,8 @@ on:
       - 'toolkit-contract.json'
       - 'tool-registry.json'
       - 'LEADS-INTEGRATION.md'
+      - 'README.md'
+      - 'AGENTS.md'
       - 'package.json'
       - '.github/workflows/**'
       - 'src/**'
@@ -64,6 +66,7 @@ jobs:
           assert 'REOON_API_KEY' in outreach['forbidden_secrets']
           assert outreach['live_gate']=='sender_readiness before LeadPromo copy, compliance and SMTP'
           assert caps['dashboard']['send_permission']=='none'
+
           ids=[t['id'] for t in c['scanner_tools']]
           assert len(ids)==len(set(ids)), 'duplicate scanner tool ids'
           covered=set()
@@ -73,6 +76,7 @@ jobs:
               assert a['contains'] in p.read_text(encoding='utf-8'), f"{a['tool']} not wired in {p}"
               covered.add(a['tool'])
           assert covered==set(ids), f'unwired scanner tools: {set(ids)-covered}'
+
           for required in (
               '.github/workflows/prospect-discovery.yml',
               '.github/workflows/contact-enrichment.yml',
@@ -91,14 +95,17 @@ jobs:
               'scripts/outreach_replyhub.py',
           ):
               assert pathlib.Path(required).is_file(), f'missing Leads runtime file {required}'
+
           scan_workflow=pathlib.Path('.github/workflows/scan.yml').read_text(encoding='utf-8')
           assert "- 'sites.txt'" not in scan_workflow, 'sites.txt must not be a GitHub push trigger'
+
           draft_workflow=pathlib.Path('.github/workflows/myhost-draft-test.yml').read_text(encoding='utf-8')
           assert 'draft-test-request.txt' in draft_workflow
           assert 'OUTREACH_DRAFT_SELF_ONLY' in draft_workflow
           assert 'outreach_imap_draft.py' in draft_workflow
           assert 'GOOGLE_SERVICE_ACCOUNT_JSON' not in draft_workflow
           assert 'outreach_direct_smtp_runtime.py' not in draft_workflow
+
           outreach_workflow=pathlib.Path('.github/workflows/outreach-smtp.yml').read_text(encoding='utf-8')
           order=[
               'Run sender preflight',
@@ -111,8 +118,16 @@ jobs:
           positions=[outreach_workflow.index(name) for name in order]
           assert positions==sorted(positions), 'live outreach gate order drifted'
           assert "steps.policy.outputs.effective_mode == 'live'" in outreach_workflow
+
           integration=pathlib.Path('LEADS-INTEGRATION.md').read_text(encoding='utf-8')
+          assert '## Capability 6 — mailbox_draft' in integration, 'integration docs omit mailbox_draft'
           assert '-> live sender readiness gate\n-> LeadPromo copy preflight' in integration, 'integration docs omit live sender readiness gate'
+          for doc in ('README.md','AGENTS.md'):
+              text=pathlib.Path(doc).read_text(encoding='utf-8')
+              assert 'mailbox_draft' in text, f'{doc} omits mailbox_draft'
+              assert 'toolkit-contract.json' in text, f'{doc} does not point to machine contract'
+              assert 'LEADS-INTEGRATION.md' in text, f'{doc} does not point to human contract'
+
           registry=json.load(open('tool-registry.json', encoding='utf-8'))
           assert registry['repository_role']=='central_leads_github_runtime'
           assert set(registry['capabilities']) >= expected_caps
