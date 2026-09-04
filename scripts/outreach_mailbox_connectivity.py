@@ -118,5 +118,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-# Temporary no-op trigger for mailbox connectivity validation; remove after readback.
