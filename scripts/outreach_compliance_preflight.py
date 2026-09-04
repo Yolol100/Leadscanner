@@ -1,22 +1,35 @@
 from __future__ import annotations
 
+import re
+import unicodedata
+
 EEA_COUNTRIES = {
     "at","be","bg","hr","cy","cz","dk","ee","fi","fr","de","gr","hu","ie","it","lv","lt","lu","mt","nl","pl","pt","ro","sk","si","es","se","is","no","li",
-    "nederland","netherlands","belgie","belgium","duitsland","germany","frankrijk","france","spanje","spain","italie","italy","oostenrijk","austria","zweden","sweden","denemarken","denmark","finland","ierland","ireland","portugal","polen","poland","noorwegen","norway","ijsland","iceland","liechtenstein",
+    "nederland","netherlands","belgie","belgium","duitsland","deutschland","germany","frankrijk","france","spanje","spain","italie","italy","oostenrijk","austria","zweden","sweden","denemarken","denmark","finland","ierland","ireland","portugal","polen","poland","noorwegen","norway","ijsland","iceland","liechtenstein",
 }
 ALLOWED_BASES = {"consent", "existing_customer_similar", "other_verified_basis"}
 LIVE_CANDIDATE_STATUSES = {"approved"}
 
 
+def _country_tokens(country: str) -> set[str]:
+    raw = unicodedata.normalize("NFKD", str(country or "").casefold())
+    ascii_text = "".join(ch for ch in raw if not unicodedata.combining(ch))
+    return set(re.findall(r"[a-z]{2,}", ascii_text))
+
+
+def country_is_eea(country: str) -> bool:
+    return bool(_country_tokens(country) & EEA_COUNTRIES)
+
+
 def compliance_errors(row: dict[str, str]) -> list[str]:
-    country = str(row.get("country", "")).strip().casefold()
+    country = str(row.get("country", "")).strip()
     basis = str(row.get("compliance_basis", "")).strip().lower()
     errors: list[str] = []
     if not country:
         errors.append("missing country/jurisdiction")
     if basis not in ALLOWED_BASES:
         errors.append("missing or invalid compliance_basis")
-    elif country in EEA_COUNTRIES and basis not in {"consent", "existing_customer_similar"}:
+    elif country_is_eea(country) and basis not in {"consent", "existing_customer_similar"}:
         errors.append("NL/EEA live commercial email requires consent or existing_customer_similar")
     return errors
 

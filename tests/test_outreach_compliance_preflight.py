@@ -21,6 +21,23 @@ class CompliancePreflightTests(unittest.TestCase):
     def test_nl_other_basis_blocked(self):
         self.assertTrue(compliance_errors(row("Nederland", "other_verified_basis")))
 
+    def test_decorated_eea_country_variants_block_other_basis(self):
+        for country in (
+            "The Netherlands",
+            "Netherlands (NL)",
+            "Nederland (NL)",
+            "NL / Nederland",
+            "Belgium (BE)",
+            "Deutschland (DE)",
+        ):
+            with self.subTest(country=country):
+                self.assertTrue(compliance_errors(row(country, "other_verified_basis")))
+
+    def test_decorated_eea_country_variants_allow_consent(self):
+        for country in ("Netherlands (NL)", "Belgium (BE)", "Deutschland (DE)"):
+            with self.subTest(country=country):
+                self.assertEqual(compliance_errors(row(country, "consent")), [])
+
     def test_missing_country_blocked(self):
         self.assertTrue(compliance_errors(row("", "consent")))
 
