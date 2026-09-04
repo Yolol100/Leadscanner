@@ -30,6 +30,8 @@ class LeadsWorkflowSecurityTests(unittest.TestCase):
         manual_guard = text.index("- name: Require Sheet credential outside push validation")
         sender_preflight = text.index("- name: Run sender preflight")
         extended = text.index("- name: Run extended outreach contract preflight")
+        readiness = text.index("- name: Run live sender readiness gate")
+        copy = text.index("- name: Run LeadPromo copy preflight")
         compliance = text.index("- name: Run outreach compliance preflight")
         sender = text.index("- name: Process approved outreach queue")
         reporting = text.index("- name: Summarize outreach analytics")
@@ -39,7 +41,9 @@ class LeadsWorkflowSecurityTests(unittest.TestCase):
         self.assertLess(push_block, manual_guard)
         self.assertLess(manual_guard, sender_preflight)
         self.assertLess(sender_preflight, extended)
-        self.assertLess(extended, compliance)
+        self.assertLess(extended, readiness)
+        self.assertLess(readiness, copy)
+        self.assertLess(copy, compliance)
         self.assertLess(compliance, sender)
         self.assertLess(sender, reporting)
 
@@ -69,20 +73,37 @@ class LeadsWorkflowSecurityTests(unittest.TestCase):
         for step_name in (
             "Run sender preflight",
             "Run extended outreach contract preflight",
+            "Run LeadPromo copy preflight",
             "Run outreach compliance preflight",
             "Process approved outreach queue through mijn.host SMTP",
         ):
             section = text.split(f"- name: {step_name}", 1)[1]
             self.assertIn("if: steps.sheet_auth.outputs.available == 'true'", section.split("\n\n", 1)[0])
+        readiness = text.split("- name: Run live sender readiness gate", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("steps.sheet_auth.outputs.available == 'true'", readiness)
+        self.assertIn("steps.policy.outputs.effective_mode == 'live'", readiness)
 
     def test_non_live_outreach_does_not_receive_mailbox_secrets(self):
         text = (WORKFLOWS / "outreach-smtp.yml").read_text(encoding="utf-8")
         expected_password = "OUTREACH_MAIL_PASSWORD: ${{ steps.policy.outputs.effective_mode == 'live' && secrets.OUTREACH_MAIL_PASSWORD || '' }}"
         expected_pool = "OUTREACH_MAILBOXES_JSON: ${{ steps.policy.outputs.effective_mode == 'live' && secrets.OUTREACH_MAILBOXES_JSON || '' }}"
-        self.assertEqual(text.count(expected_password), 2)
-        self.assertEqual(text.count(expected_pool), 2)
+        self.assertEqual(text.count(expected_password), 3)
+        self.assertEqual(text.count(expected_pool), 3)
         self.assertNotIn("OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}", text)
         self.assertNotIn("OUTREACH_MAILBOXES_JSON: ${{ secrets.OUTREACH_MAILBOXES_JSON }}", text)
+
+    def test_live_sender_readiness_is_before_copy_compliance_and_send(self):
+        text = (WORKFLOWS / "outreach-smtp.yml").read_text(encoding="utf-8")
+        readiness = text.index("- name: Run live sender readiness gate")
+        copy = text.index("- name: Run LeadPromo copy preflight")
+        compliance = text.index("- name: Run outreach compliance preflight")
+        sender = text.index("- name: Process approved outreach queue")
+        self.assertLess(readiness, copy)
+        self.assertLess(readiness, compliance)
+        self.assertLess(readiness, sender)
+        section = text.split("- name: Run live sender readiness gate", 1)[1].split("- name: Run LeadPromo copy preflight", 1)[0]
+        self.assertIn("outreach_sender_readiness.py", section)
+        self.assertIn("OUTREACH_READINESS_FAIL_ON_BLOCKED: 'true'", section)
 
     def test_active_outreach_has_no_reoon_dependency(self):
         text = (WORKFLOWS / "outreach-smtp.yml").read_text(encoding="utf-8")
@@ -105,7 +126,7 @@ class LeadsWorkflowSecurityTests(unittest.TestCase):
 
     def test_sheet_only_preflights_do_not_receive_mail_credentials(self):
         text = (WORKFLOWS / "outreach-smtp.yml").read_text(encoding="utf-8")
-        extended = text.split("- name: Run extended outreach contract preflight", 1)[1].split("- name: Run outreach compliance preflight", 1)[0]
+        extended = text.split("- name: Run extended outreach contract preflight", 1)[1].split("- name: Run live sender readiness gate", 1)[0]
         compliance = text.split("- name: Run outreach compliance preflight", 1)[1].split("- name: Process approved outreach queue", 1)[0]
         for section in (extended, compliance):
             self.assertIn("GOOGLE_SERVICE_ACCOUNT_JSON", section)
