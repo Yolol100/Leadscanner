@@ -75,7 +75,39 @@ jobs:
           test "$OUTREACH_EFFECTIVE_MODE" = "validate"
           echo "PUSH_VALIDATE_ONLY=green"
 
+      - name: Classify Sheet credential availability
+        id: sheet_auth
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${GOOGLE_SERVICE_ACCOUNT_JSON:-}" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "SHEET_RUNTIME_AUTH=present"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "SHEET_RUNTIME_AUTH=missing"
+          fi
+
+      - name: Report blocked Sheet runtime on push
+        if: github.event_name == 'push' && steps.sheet_auth.outputs.available != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "RUNTIME_READINESS=blocked_missing_google_service_account"
+          echo "Push validation remains code-safe; run a manual validate after configuring the secret."
+
+      - name: Require Sheet credential outside push validation
+        if: github.event_name != 'push' && steps.sheet_auth.outputs.available != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::error::GOOGLE_SERVICE_ACCOUNT_JSON is required for manual/scheduled runtime validation."
+          exit 1
+
       - name: Run sender preflight
+        if: steps.sheet_auth.outputs.available == 'true'
         env:
           OUTREACH_MODE: ${{ steps.policy.outputs.effective_mode }}
           OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
@@ -102,12 +134,14 @@ jobs:
         run: python3 scripts/outreach_preflight.py
 
       - name: Run extended outreach contract preflight
+        if: steps.sheet_auth.outputs.available == 'true'
         env:
           OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: python3 scripts/outreach_extended_preflight.py
 
       - name: Run outreach compliance preflight
+        if: steps.sheet_auth.outputs.available == 'true'
         env:
           OUTREACH_MODE: ${{ steps.policy.outputs.effective_mode }}
           OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
@@ -115,6 +149,7 @@ jobs:
         run: python3 scripts/outreach_compliance_preflight.py
 
       - name: Process approved outreach queue through mijn.host SMTP
+        if: steps.sheet_auth.outputs.available == 'true'
         env:
           OUTREACH_MODE: ${{ steps.policy.outputs.effective_mode }}
           OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
@@ -146,7 +181,7 @@ jobs:
         run: python3 scripts/outreach_direct_smtp_runtime.py
 
       - name: Summarize outreach analytics
-        if: always()
+        if: always() && steps.sheet_auth.outputs.available == 'true'
         continue-on-error: true
         env:
           OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}

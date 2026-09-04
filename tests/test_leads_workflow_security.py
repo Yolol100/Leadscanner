@@ -25,13 +25,19 @@ class LeadsWorkflowSecurityTests(unittest.TestCase):
         text = (WORKFLOWS / "outreach-smtp.yml").read_text(encoding="utf-8")
         policy = text.index("- name: Resolve campaign pacing policy")
         push_guard = text.index("- name: Assert push validation cannot become live")
+        sheet_auth = text.index("- name: Classify Sheet credential availability")
+        push_block = text.index("- name: Report blocked Sheet runtime on push")
+        manual_guard = text.index("- name: Require Sheet credential outside push validation")
         sender_preflight = text.index("- name: Run sender preflight")
         extended = text.index("- name: Run extended outreach contract preflight")
         compliance = text.index("- name: Run outreach compliance preflight")
         sender = text.index("- name: Process approved outreach queue")
         reporting = text.index("- name: Summarize outreach analytics")
         self.assertLess(policy, push_guard)
-        self.assertLess(push_guard, sender_preflight)
+        self.assertLess(push_guard, sheet_auth)
+        self.assertLess(sheet_auth, push_block)
+        self.assertLess(push_block, manual_guard)
+        self.assertLess(manual_guard, sender_preflight)
         self.assertLess(sender_preflight, extended)
         self.assertLess(extended, compliance)
         self.assertLess(compliance, sender)
@@ -52,6 +58,22 @@ class LeadsWorkflowSecurityTests(unittest.TestCase):
         self.assertIn("github.event_name == 'push' && 'validate'", text)
         self.assertIn("Assert push validation cannot become live", text)
         self.assertIn('test "$OUTREACH_EFFECTIVE_MODE" = "validate"', text)
+
+    def test_push_without_sheet_secret_is_blocked_not_failed_runtime(self):
+        text = (WORKFLOWS / "outreach-smtp.yml").read_text(encoding="utf-8")
+        self.assertIn("Classify Sheet credential availability", text)
+        self.assertIn("Report blocked Sheet runtime on push", text)
+        self.assertIn("RUNTIME_READINESS=blocked_missing_google_service_account", text)
+        self.assertIn("github.event_name == 'push' && steps.sheet_auth.outputs.available != 'true'", text)
+        self.assertIn("github.event_name != 'push' && steps.sheet_auth.outputs.available != 'true'", text)
+        for step_name in (
+            "Run sender preflight",
+            "Run extended outreach contract preflight",
+            "Run outreach compliance preflight",
+            "Process approved outreach queue through mijn.host SMTP",
+        ):
+            section = text.split(f"- name: {step_name}", 1)[1]
+            self.assertIn("if: steps.sheet_auth.outputs.available == 'true'", section.split("\n\n", 1)[0])
 
     def test_non_live_outreach_does_not_receive_mailbox_secrets(self):
         text = (WORKFLOWS / "outreach-smtp.yml").read_text(encoding="utf-8")
