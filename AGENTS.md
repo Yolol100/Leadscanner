@@ -1,19 +1,48 @@
 # Leadscanner repository instructions
 
 ## Scope
-- This private repository is a conditional read-only technical browser evidence adapter for `leads`; it is not a leadfinding, scoring, outreach, compliance or campaign owner.
-- `leads` owns lead fit, official-site evidence, the chosen outreach angle, personalization and provider-readback interpretation.
+- This private repository is the central GitHub runtime for `leads`.
+- It contains three separate capability classes: `prospect_discovery`, optional read-only `website_evidence_scan`, and controlled `outreach_delivery`.
+- `leads` still owns company realness, Customer Potential/qualification, contact choice, compliance basis/status, mailcopy and interpretation of provider/readback outcomes.
 - `webactueel-workflow` remains controller for cross-skill routing, source selection, repository selection, handoffs and total workflow closure.
-- Prefer native browser/Site Tool evidence when it can satisfy the same bounded evidence class. Use this repository only when a specific technical proof gap remains or the user explicitly requests a technical scan/rescan.
+- Do not make the website scanner a default step for every prospect.
+
+## Capability boundaries
+
+### Prospect discovery
+- Use only approved `ProspectSources` and write discovered company/domain candidates to `ProspectCandidates`.
+- Preserve robots, public-network/SSRF blocking, pacing, timeout, byte and candidate limits.
+- Never harvest contacts, score leads, create copy, decide compliance or receive SMTP/IMAP credentials.
+
+### Website evidence scan
+- Preserve the existing Node/Crawlee/Playwright/Axe/Lighthouse/Linkinator/tech-detect stack.
+- It remains read-only: GET/HEAD only, public official sites only, no login/forms/orders/payments/bookings or other state changes.
+- Output is evidence only, primarily `scan-results/leads-handoff.json`.
+- Scanner output never changes lead fit, priority, compliance or send permission automatically.
+
+### Outreach delivery
+- Accept only previously reviewed/approved Leads transport state.
+- Preserve sender preflight, Sheet contract checks, compliance preflight, suppression, mailbox pacing, sequences/threading, SMTP, IMAP reply/bounce/opt-out readback and reporting.
+- Manual workflow default is `validate`; live requires an explicit `live` selection. Scheduled live additionally requires `OUTREACH_ENABLED=true`.
+- CI must never receive production mailbox/service-account secrets and must never send email.
+- The active direct SMTP runtime has no Reoon dependency. Do not add `REOON_API_KEY` unless a future explicit, tested runtime route genuinely requires it.
+- Reply, bounce and opt-out stop further sequence activity fail-closed.
+
+## Secret boundaries
+- Never commit, print, log or artifact secret values.
+- Discovery may receive `GOOGLE_SERVICE_ACCOUNT_JSON` only; it must never receive mailbox or verifier credentials.
+- Sheet-only extended/compliance preflights must not receive mailbox credentials.
+- Reporting must not receive mailbox credentials.
+- SMTP/IMAP secrets are scoped only to steps that require mailbox transport/authentication.
 
 ## Before changing files
-- Read `README.md`, `package.json`, `requests/scan.json` contract handling and `.github/workflows/scan.yml` before changing runtime behavior.
-- Keep `main` generic. Concrete request state belongs only on temporary `runtime/**` branches or explicit workflow-dispatch input; run evidence remains in short-lived Actions artifacts.
-- Preserve the single-target requirement, public-official-site restriction, GET/HEAD-only behavior, page/rate bounds and privacy boundaries.
-- Never add leadfinding, e-mail discovery, send-permission logic, mailcopy, campaign management, follow-ups, arbitrary shell/proxy behavior or production-site mutations.
+- For scanner behavior, read `README.md`, `package.json`, `requests/scan.json` handling and `.github/workflows/scan.yml`.
+- For Leads Python runtime, read `LEADS-INTEGRATION.md`, `toolkit-contract.json`, the relevant production workflow and the direct import closure under `scripts/`.
+- Keep `main` generic. Concrete request state belongs only on temporary runtime branches or explicit workflow inputs; run evidence remains in short-lived Actions artifacts/Sheets.
+- Do not introduce a dependency on `Yolol100/Orchestrator`; Leadscanner must remain standalone for Leads GitHub execution.
 
 ## Validation
-Use the locked dependency graph and the repository's existing checks. At minimum for runtime or workflow changes:
+For scanner/runtime changes, preserve existing Node checks:
 
 ```bash
 npm ci
@@ -22,10 +51,19 @@ npm run check:crawler
 npm run check:tools
 ```
 
-Run the smallest matching scan fixture/workflow path when request validation, browser evidence, handoff output or workflow behavior changes.
+For Leads Python changes:
+
+```bash
+python3 -m pip install -r requirements-outreach.txt
+python3 -m compileall -q scripts
+PYTHONPATH=scripts python3 -m unittest discover -s tests -p 'test_*.py' -v
+```
+
+Do not use production credentials or `live` mode in tests. Workflow/security tests must keep discovery credential isolation and the outreach fail-closed order intact.
 
 ## Evidence boundaries
-- Scanner output is candidate technical/browser evidence only. It never proves lead fit, priority, send permission, conversion impact, WCAG conformance or campaign outcome.
-- Lighthouse is lab evidence; axe findings are automated accessibility signals, not complete conformance proof.
-- A successful Action proves only the executed bounded scan. `leads` must interpret the evidence and return completion state to `webactueel-workflow`.
-- Do not merge, send outreach or mutate a customer website solely because scanner checks are green.
+- Discovery creates candidates, not approved leads.
+- Scanner output is candidate technical/browser evidence only; Lighthouse is lab evidence and axe findings are automated accessibility signals, not full conformance proof.
+- SMTP acceptance is not proof of inbox placement or business outcome.
+- Reporting/ReplyInbox classifications are evidence for Leads/operator review and may not autonomously rewrite copy or sales truth.
+- Green repository tests prove the tested code/contracts only; live mailbox/Sheet readiness requires separate configured preflight/readback.

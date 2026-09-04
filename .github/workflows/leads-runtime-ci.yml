@@ -1,0 +1,70 @@
+name: Leads Runtime CI
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/prospect-discovery.yml'
+      - '.github/workflows/outreach-smtp.yml'
+      - '.github/workflows/leads-runtime-ci.yml'
+      - 'scripts/*.py'
+      - 'tests/**/*.py'
+      - 'requirements-outreach.txt'
+      - 'README.md'
+      - 'AGENTS.md'
+      - 'LEADS-INTEGRATION.md'
+      - 'tool-registry.json'
+      - 'toolkit-contract.json'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/prospect-discovery.yml'
+      - '.github/workflows/outreach-smtp.yml'
+      - '.github/workflows/leads-runtime-ci.yml'
+      - 'scripts/*.py'
+      - 'tests/**/*.py'
+      - 'requirements-outreach.txt'
+      - 'README.md'
+      - 'AGENTS.md'
+      - 'LEADS-INTEGRATION.md'
+      - 'tool-registry.json'
+      - 'toolkit-contract.json'
+
+permissions:
+  contents: read
+
+jobs:
+  python-leads-runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-outreach.txt
+
+      - name: Install isolated Python dependencies
+        run: python3 -m pip install --disable-pip-version-check --requirement requirements-outreach.txt
+
+      - name: Compile Leads Python runtime
+        run: python3 -m compileall -q scripts
+
+      - name: Run migrated Leads tests
+        env:
+          PYTHONPATH: scripts
+        run: python3 -m unittest discover -s tests -p 'test_*.py' -v
+
+      - name: Assert CI cannot send mail
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "${OUTREACH_MAIL_PASSWORD:-}"
+          test -z "${OUTREACH_MAILBOXES_JSON:-}"
+          test -z "${GOOGLE_SERVICE_ACCOUNT_JSON:-}"
+          echo "CI_SAFE_MODE=green"

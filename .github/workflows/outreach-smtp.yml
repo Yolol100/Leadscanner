@@ -1,0 +1,140 @@
+name: Controlled mijn.host SMTP Outreach
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Validate transport or run a controlled live send
+        required: true
+        type: choice
+        options:
+          - validate
+          - live
+        default: validate
+  schedule:
+    - cron: '7,22,37,52 6-18 * * 1-5'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: controlled-smtp-outreach
+  cancel-in-progress: false
+
+jobs:
+  outreach:
+    if: github.event_name == 'workflow_dispatch' || vars.OUTREACH_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-outreach.txt
+
+      - name: Install outreach runtime dependencies
+        run: python3 -m pip install --disable-pip-version-check --requirement requirements-outreach.txt
+
+      - name: Resolve campaign pacing policy
+        id: policy
+        env:
+          OUTREACH_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || vars.OUTREACH_MODE || 'validate' }}
+          OUTREACH_TIMEZONE: ${{ vars.OUTREACH_TIMEZONE || 'Europe/Amsterdam' }}
+          OUTREACH_DAILY_LIMIT: ${{ vars.OUTREACH_DAILY_LIMIT }}
+          OUTREACH_MAX_SENDS_PER_RUN: ${{ vars.OUTREACH_MAX_SENDS_PER_RUN }}
+          OUTREACH_NATURAL_PACING: ${{ vars.OUTREACH_NATURAL_PACING }}
+          OUTREACH_CAMPAIGN_START_DATE: ${{ vars.OUTREACH_CAMPAIGN_START_DATE }}
+          OUTREACH_CAMPAIGN_END_DATE: ${{ vars.OUTREACH_CAMPAIGN_END_DATE }}
+          OUTREACH_SLOW_RAMP_ENABLED: ${{ vars.OUTREACH_SLOW_RAMP_ENABLED }}
+          OUTREACH_RAMP_START_DATE: ${{ vars.OUTREACH_RAMP_START_DATE }}
+          OUTREACH_RAMP_START_LIMIT: ${{ vars.OUTREACH_RAMP_START_LIMIT }}
+          OUTREACH_RAMP_INCREMENT_PER_DAY: ${{ vars.OUTREACH_RAMP_INCREMENT_PER_DAY }}
+        run: python3 scripts/outreach_campaign_policy.py
+
+      - name: Run sender preflight
+        env:
+          OUTREACH_MODE: ${{ steps.policy.outputs.effective_mode }}
+          OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
+          OUTREACH_TIMEZONE: ${{ vars.OUTREACH_TIMEZONE || 'Europe/Amsterdam' }}
+          OUTREACH_SEND_WINDOW_START: ${{ vars.OUTREACH_SEND_WINDOW_START }}
+          OUTREACH_SEND_WINDOW_END: ${{ vars.OUTREACH_SEND_WINDOW_END }}
+          OUTREACH_DAILY_LIMIT: ${{ steps.policy.outputs.effective_daily_limit }}
+          OUTREACH_MAX_SENDS_PER_RUN: ${{ steps.policy.outputs.effective_max_sends_per_run }}
+          OUTREACH_MAILBOX_ID: ${{ vars.OUTREACH_MAILBOX_ID || 'primary' }}
+          OUTREACH_MAILBOX_DAILY_LIMIT: ${{ vars.OUTREACH_MAILBOX_DAILY_LIMIT }}
+          OUTREACH_MAILBOX_MIN_WAIT_MINUTES: ${{ vars.OUTREACH_MAILBOX_MIN_WAIT_MINUTES }}
+          OUTREACH_SMTP_HOST: ${{ vars.OUTREACH_SMTP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_SMTP_PORT: ${{ vars.OUTREACH_SMTP_PORT || '587' }}
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME || 'Andrew Baeten' }}
+          OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
+          OUTREACH_DKIM_SELECTOR: ${{ vars.OUTREACH_DKIM_SELECTOR || 'x' }}
+          OUTREACH_REQUIRED_SPF_TOKEN: ${{ vars.OUTREACH_REQUIRED_SPF_TOKEN || 'include:spf.mijn.host' }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_MAILBOXES_JSON: ${{ secrets.OUTREACH_MAILBOXES_JSON }}
+        run: python3 scripts/outreach_preflight.py
+
+      - name: Run extended outreach contract preflight
+        env:
+          OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python3 scripts/outreach_extended_preflight.py
+
+      - name: Run outreach compliance preflight
+        env:
+          OUTREACH_MODE: ${{ steps.policy.outputs.effective_mode }}
+          OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python3 scripts/outreach_compliance_preflight.py
+
+      - name: Process approved outreach queue through mijn.host SMTP
+        env:
+          OUTREACH_MODE: ${{ steps.policy.outputs.effective_mode }}
+          OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
+          OUTREACH_TIMEZONE: ${{ vars.OUTREACH_TIMEZONE || 'Europe/Amsterdam' }}
+          OUTREACH_SEND_WINDOW_START: ${{ vars.OUTREACH_SEND_WINDOW_START }}
+          OUTREACH_SEND_WINDOW_END: ${{ vars.OUTREACH_SEND_WINDOW_END }}
+          OUTREACH_DAILY_LIMIT: ${{ steps.policy.outputs.effective_daily_limit }}
+          OUTREACH_MAX_SENDS_PER_RUN: ${{ steps.policy.outputs.effective_max_sends_per_run }}
+          OUTREACH_MAX_NEW_LEADS_PER_DAY: ${{ vars.OUTREACH_MAX_NEW_LEADS_PER_DAY }}
+          OUTREACH_PRIORITIZE_NEW_LEADS: ${{ vars.OUTREACH_PRIORITIZE_NEW_LEADS }}
+          OUTREACH_RANDOM_JITTER_MINUTES: ${{ vars.OUTREACH_RANDOM_JITTER_MINUTES }}
+          OUTREACH_REPLY_LOOKBACK_DAYS: ${{ vars.OUTREACH_REPLY_LOOKBACK_DAYS }}
+          OUTREACH_CAPTURE_OTHER_MAIL: ${{ vars.OUTREACH_CAPTURE_OTHER_MAIL }}
+          OUTREACH_MAILBOX_ID: ${{ vars.OUTREACH_MAILBOX_ID || 'primary' }}
+          OUTREACH_MAILBOX_DAILY_LIMIT: ${{ vars.OUTREACH_MAILBOX_DAILY_LIMIT }}
+          OUTREACH_MAILBOX_MIN_WAIT_MINUTES: ${{ vars.OUTREACH_MAILBOX_MIN_WAIT_MINUTES }}
+          OUTREACH_SMTP_HOST: ${{ vars.OUTREACH_SMTP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_SMTP_PORT: ${{ vars.OUTREACH_SMTP_PORT || '587' }}
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME || 'Andrew Baeten' }}
+          OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
+          OUTREACH_DKIM_SELECTOR: ${{ vars.OUTREACH_DKIM_SELECTOR || 'x' }}
+          OUTREACH_REQUIRED_SPF_TOKEN: ${{ vars.OUTREACH_REQUIRED_SPF_TOKEN || 'include:spf.mijn.host' }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_MAILBOXES_JSON: ${{ secrets.OUTREACH_MAILBOXES_JSON }}
+        run: python3 scripts/outreach_direct_smtp_runtime.py
+
+      - name: Summarize outreach analytics
+        if: always()
+        continue-on-error: true
+        env:
+          OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
+          OUTREACH_TIMEZONE: ${{ vars.OUTREACH_TIMEZONE || 'Europe/Amsterdam' }}
+          OUTREACH_VARIANT_MIN_SAMPLES: ${{ vars.OUTREACH_VARIANT_MIN_SAMPLES }}
+          OUTREACH_MAILBOX_BOUNCE_ALERT_RATE: ${{ vars.OUTREACH_MAILBOX_BOUNCE_ALERT_RATE }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python3 scripts/outreach_reporting.py

@@ -1,0 +1,76 @@
+import re
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+WORKFLOWS = ROOT / ".github" / "workflows"
+FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
+
+
+class LeadsWorkflowSecurityTests(unittest.TestCase):
+    def test_leads_remote_actions_are_sha_pinned(self):
+        for filename in ("prospect-discovery.yml", "outreach-smtp.yml"):
+            text = (WORKFLOWS / filename).read_text(encoding="utf-8")
+            for raw in text.splitlines():
+                stripped = raw.strip()
+                if not stripped.startswith("uses:"):
+                    continue
+                target = stripped.split("uses:", 1)[1].strip().split()[0]
+                if target.startswith("./"):
+                    continue
+                self.assertIn("@", target)
+                self.assertRegex(target.rsplit("@", 1)[1], FULL_SHA)
+
+    def test_outreach_order_is_fail_closed(self):
+        text = (WORKFLOWS / "outreach-smtp.yml").read_text(encoding="utf-8")
+        policy = text.index("- name: Resolve campaign pacing policy")
+        sender_preflight = text.index("- name: Run sender preflight")
+        extended = text.index("- name: Run extended outreach contract preflight")
+        compliance = text.index("- name: Run outreach compliance preflight")
+        sender = text.index("- name: Process approved outreach queue")
+        reporting = text.index("- name: Summarize outreach analytics")
+        self.assertLess(policy, sender_preflight)
+        self.assertLess(sender_preflight, extended)
+        self.assertLess(extended, compliance)
+        self.assertLess(compliance, sender)
+        self.assertLess(sender, reporting)
+
+    def test_manual_outreach_defaults_to_validate(self):
+        text = (WORKFLOWS / "outreach-smtp.yml").read_text(encoding="utf-8")
+        self.assertIn("type: choice", text)
+        self.assertIn("- validate", text)
+        self.assertIn("- live", text)
+        self.assertIn("default: validate", text)
+        self.assertIn("vars.OUTREACH_ENABLED == 'true'", text)
+
+    def test_active_outreach_has_no_reoon_dependency(self):
+        text = (WORKFLOWS / "outreach-smtp.yml").read_text(encoding="utf-8")
+        self.assertNotIn("REOON_API_KEY", text)
+        self.assertNotIn("outreach_verifier.py", text)
+        self.assertIn("outreach_direct_smtp_runtime.py", text)
+
+    def test_discovery_never_receives_mail_credentials(self):
+        text = (WORKFLOWS / "prospect-discovery.yml").read_text(encoding="utf-8")
+        self.assertIn("GOOGLE_SERVICE_ACCOUNT_JSON", text)
+        for forbidden in ("OUTREACH_MAIL_PASSWORD", "OUTREACH_MAILBOXES_JSON", "REOON_API_KEY"):
+            self.assertNotIn(forbidden, text)
+
+    def test_reporting_never_receives_mail_credentials(self):
+        text = (WORKFLOWS / "outreach-smtp.yml").read_text(encoding="utf-8")
+        reporting = text.split("- name: Summarize outreach analytics", 1)[1]
+        self.assertNotIn("OUTREACH_MAIL_PASSWORD", reporting)
+        self.assertNotIn("OUTREACH_MAILBOXES_JSON", reporting)
+        self.assertNotIn("REOON_API_KEY", reporting)
+
+    def test_sheet_only_preflights_do_not_receive_mail_credentials(self):
+        text = (WORKFLOWS / "outreach-smtp.yml").read_text(encoding="utf-8")
+        extended = text.split("- name: Run extended outreach contract preflight", 1)[1].split("- name: Run outreach compliance preflight", 1)[0]
+        compliance = text.split("- name: Run outreach compliance preflight", 1)[1].split("- name: Process approved outreach queue", 1)[0]
+        for section in (extended, compliance):
+            self.assertIn("GOOGLE_SERVICE_ACCOUNT_JSON", section)
+            self.assertNotIn("OUTREACH_MAIL_PASSWORD", section)
+            self.assertNotIn("OUTREACH_MAILBOXES_JSON", section)
+
+
+if __name__ == "__main__":
+    unittest.main()
