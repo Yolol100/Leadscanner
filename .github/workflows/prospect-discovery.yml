@@ -1,0 +1,97 @@
+name: Controlled Prospect Discovery
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'validate, bootstrap, or discover'
+        required: true
+        default: validate
+        type: choice
+        options:
+          - validate
+          - bootstrap
+          - discover
+  schedule:
+    - cron: '43 5 * * 1-5'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: controlled-prospect-discovery
+  cancel-in-progress: false
+
+jobs:
+  prospect-discovery:
+    if: github.event_name == 'workflow_dispatch' || vars.PROSPECT_DISCOVERY_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-outreach.txt
+
+      - name: Install prospect runtime dependencies
+        run: python3 -m pip install --disable-pip-version-check --requirement requirements-outreach.txt
+
+      - name: Resolve discovery mode
+        id: mode
+        shell: bash
+        env:
+          REQUESTED_MODE: ${{ inputs.mode }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            mode="${REQUESTED_MODE:-validate}"
+          else
+            mode="discover"
+          fi
+          case "$mode" in
+            validate|bootstrap|discover) ;;
+            *) echo "unsupported mode: $mode" >&2; exit 2 ;;
+          esac
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+
+      - name: Run bounded public prospect discovery
+        env:
+          PROSPECT_DISCOVERY_MODE: ${{ steps.mode.outputs.mode }}
+          OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID }}
+          PROSPECT_DISCOVERY_MAX_TOTAL: ${{ vars.PROSPECT_DISCOVERY_MAX_TOTAL }}
+          PROSPECT_DISCOVERY_TIMEOUT_SECONDS: ${{ vars.PROSPECT_DISCOVERY_TIMEOUT_SECONDS }}
+          PROSPECT_DISCOVERY_MAX_BYTES: ${{ vars.PROSPECT_DISCOVERY_MAX_BYTES }}
+          PROSPECT_DISCOVERY_MIN_INTERVAL_SECONDS: ${{ vars.PROSPECT_DISCOVERY_MIN_INTERVAL_SECONDS }}
+          PROSPECT_DISCOVERY_USER_AGENT: ${{ vars.PROSPECT_DISCOVERY_USER_AGENT }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python3 scripts/prospect_discovery_runtime.py --mode "$PROSPECT_DISCOVERY_MODE" --report prospect-discovery-report.json
+
+      - name: Write discovery summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Prospect discovery"
+            echo
+            echo "- mode: \`${{ steps.mode.outputs.mode }}\`"
+            echo "- controller: \`leads\`"
+            echo "- transport/send permission: \`none\`"
+            echo
+            echo "A discovered candidate is not an approved lead. Leads must still verify official-site evidence, fit, contact source, compliance and approved transport state before SMTP."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload discovery receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: prospect-discovery-${{ github.run_id }}
+          path: prospect-discovery-report.json
+          if-no-files-found: error
+          retention-days: 14
