@@ -24,7 +24,6 @@ concurrency:
 
 jobs:
   prospect-discovery:
-    if: github.event_name == 'workflow_dispatch' || vars.PROSPECT_DISCOVERY_ENABLED == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -48,12 +47,15 @@ jobs:
         shell: bash
         env:
           REQUESTED_MODE: ${{ inputs.mode }}
+          DISCOVERY_ENABLED: ${{ vars.PROSPECT_DISCOVERY_ENABLED }}
         run: |
           set -euo pipefail
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
             mode="${REQUESTED_MODE:-validate}"
-          else
+          elif [ "$DISCOVERY_ENABLED" = "true" ]; then
             mode="discover"
+          else
+            mode="validate"
           fi
           case "$mode" in
             validate|bootstrap|discover) ;;
