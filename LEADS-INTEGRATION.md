@@ -99,12 +99,15 @@ Actieve volgorde:
 campaign policy
 -> sender preflight
 -> extended Sheet contract preflight
+-> live sender readiness gate
 -> LeadPromo copy preflight
 -> compliance preflight
 -> direct mijn.host SMTP runtime
 -> IMAP reply/bounce/opt-out readback
 -> reporting
 ```
+
+De sender-readinessstap draait alleen voor een effectieve `live`-run. `validate` en main-pushes krijgen die live mailboxsecretlaag niet en verzenden niets.
 
 Handmatige workflowruns hebben `validate` als standaard. `live` is een expliciete keuze. Geplande runs kunnen alleen live wanneer `OUTREACH_ENABLED=true` is gezet. CI bevat geen production secrets en voert geen live workflow uit.
 
@@ -114,7 +117,7 @@ De huidige actieve direct-SMTP-route heeft geen Reoon-dependency. `REOON_API_KEY
 
 De Google Sheet `Webactueel Leadlijst` bevat één `Dashboard`-tab als eenvoudige control panel. Dit voorkomt dat een tweede SaaS-interface nodig is.
 
-Het Dashboard aggregeert alleen read-only formules uit pipeline-, contact-, outreach-, suppression-, sender-readiness- en placement-tabs. Een lege readiness/placementbron wordt `not_tested`, nooit automatisch `green`. Het Dashboard mag geen prospect, score, contact, compliance, copy of transportstate herschrijven.
+Het Dashboard aggregeert alleen read-only formules uit pipeline-, contact-, outreach-, suppression-, sender-readiness- en placement-tabs. Een lege readiness-, placement- of mailbox-healthbron wordt `not_tested`, nooit automatisch `green`. Placement `missing` en `error` worden als unresolved/review-signaal behandeld. Het Dashboard mag geen prospect, score, contact, compliance, copy of transportstate herschrijven.
 
 ### Data-contracten
 
