@@ -1,0 +1,106 @@
+name: mijn.host Draft Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_draft:
+        description: 'Create one self-addressed draft in the configured mijn.host mailbox'
+        required: true
+        default: false
+        type: boolean
+  push:
+    branches:
+      - main
+    paths:
+      - 'draft-test-request.txt'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: myhost-draft-test
+  cancel-in-progress: false
+
+jobs:
+  draft:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Resolve explicit draft trigger
+        id: trigger
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          MANUAL_CONFIRM: ${{ inputs.confirm_draft || false }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          enabled=false
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$MANUAL_CONFIRM" = "true" ]; then
+            enabled=true
+          elif [ "$EVENT_NAME" = "push" ] && [ -f draft-test-request.txt ]; then
+            enabled=true
+          fi
+          echo "enabled=$enabled" >> "$GITHUB_OUTPUT"
+          if [ "$enabled" != "true" ]; then
+            echo 'MYHOST_DRAFT=skipped_no_explicit_request' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Classify mijn.host mailbox credential availability
+        if: steps.trigger.outputs.enabled == 'true'
+        id: auth
+        env:
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$OUTREACH_MAIL_PASSWORD" ]; then
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+            echo 'MYHOST_DRAFT=blocked_missing_outreach_mail_password' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Append and verify self-addressed draft through mijn.host IMAP
+        if: steps.trigger.outputs.enabled == 'true' && steps.auth.outputs.available == 'true'
+        env:
+          OUTREACH_DAILY_LIMIT: '20'
+          OUTREACH_MAILBOX_ID: ${{ vars.OUTREACH_MAILBOX_ID || 'primary' }}
+          OUTREACH_DRAFT_MAILBOX_ID: ${{ vars.OUTREACH_MAILBOX_ID || 'primary' }}
+          OUTREACH_SMTP_HOST: ${{ vars.OUTREACH_SMTP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_SMTP_PORT: ${{ vars.OUTREACH_SMTP_PORT || '587' }}
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME || 'Andrew Baeten' }}
+          OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_MAILBOXES_JSON: ${{ secrets.OUTREACH_MAILBOXES_JSON }}
+          OUTREACH_DRAFT_CONFIRM: 'true'
+          OUTREACH_DRAFT_SELF_ONLY: 'true'
+          OUTREACH_DRAFT_TO: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
+          OUTREACH_DRAFT_TEST_ID: webactueel-${{ github.run_id }}-${{ github.run_attempt }}
+          OUTREACH_DRAFT_SUBJECT: TEST - Leads mijn.host end-to-end draft
+          OUTREACH_DRAFT_BODY: >-
+            Dit is een gecontroleerde end-to-end test van de Leads/Leadscanner mijn.host conceptroute.
+            Dit bericht is via IMAP als concept opgeslagen en is niet via SMTP verzonden.
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/outreach_imap_draft.py | tee myhost-draft.txt
+          grep -q '^MYHOST_DRAFT=green ' myhost-draft.txt
+          {
+            echo '## mijn.host draft readback'
+            echo '```text'
+            cat myhost-draft.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
