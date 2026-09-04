@@ -1,5 +1,5 @@
 {
-  "version": "3.1",
+  "version": "3.2",
   "repository_role": "central_leads_github_runtime",
   "policy": {
     "website_scanner_read_only": true,
@@ -66,7 +66,8 @@
       "manual_default": "validate",
       "transport": "direct mijn.host SMTP + IMAP readback",
       "external_email_verifier_required": false,
-      "boundaries": ["Leads owns qualification/contact/compliance/copy", "compliance preflight runs before SMTP", "reply/bounce/opt-out stop sequences fail-closed", "suppression checked before send", "scheduled live requires explicit OUTREACH_ENABLED=true", "no live send from CI"]
+      "live_gate": "sender_readiness before LeadPromo copy, compliance and SMTP",
+      "boundaries": ["Leads owns qualification/contact/compliance/copy", "live sender readiness gate runs before copy/compliance/SMTP", "compliance preflight runs before SMTP", "reply/bounce/opt-out stop sequences fail-closed", "suppression checked before send", "scheduled live requires explicit OUTREACH_ENABLED=true", "no live send from CI"]
     },
     "dashboard": {
       "surface": "Webactueel Leadlijst/Dashboard",
