@@ -62,6 +62,7 @@
       "modes": ["validate", "live"],
       "manual_default": "validate",
       "external_email_verifier": "none_required_for_active_direct_smtp_route",
+      "live_gate": "sender_readiness before LeadPromo copy, compliance and SMTP",
       "outputs": ["OutreachQueue", "OutreachSequences", "ReplyInbox", "Suppression", "OutreachLog", "VariantAnalytics", "MailboxHealth"]
     },
     "dashboard": {
@@ -102,7 +103,7 @@
     "Dashboard formulas are readout only and never mutate Leads decisions.",
     "Lead qualification, contact choice, compliance and copy remain owned by Leads, not by the repository runtime.",
     "The active direct SMTP route requires no Reoon dependency; legacy verification columns remain transport-compatible only.",
-    "Live outreach is fail-closed and is never executed by CI.",
+    "Live outreach runs sender readiness before LeadPromo copy, compliance and SMTP, remains fail-closed, and is never executed by CI.",
     "Reply, bounce and opt-out readback stop follow-up state and maintain suppression evidence.",
     "No secret value belongs in repository files, logs, test fixtures or artifacts."
   ]
