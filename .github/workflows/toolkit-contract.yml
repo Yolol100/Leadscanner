@@ -34,7 +34,7 @@ jobs:
           caps=c['capabilities']
           expected_caps={
               'prospect_discovery','contact_enrichment','website_evidence_scan',
-              'sender_readiness','inbox_placement','outreach_delivery','dashboard',
+              'sender_readiness','inbox_placement','mailbox_draft','outreach_delivery','dashboard',
           }
           assert set(caps) >= expected_caps, f'missing capabilities: {expected_caps-set(caps)}'
           scanner=caps['website_evidence_scan']
@@ -54,6 +54,11 @@ jobs:
           assert placement['manual_only'] is True
           assert placement['manual_default']=='validate'
           assert placement['max_seed_inboxes']==5
+          draft=caps['mailbox_draft']
+          assert draft['manual_only'] is True
+          assert draft['send_permission']=='none'
+          assert draft['recipient_boundary']=='self_only for automated test route'
+          assert draft['transport']=='IMAP APPEND + same-folder readback only'
           outreach=caps['outreach_delivery']
           assert outreach['manual_default']=='validate'
           assert 'REOON_API_KEY' in outreach['forbidden_secrets']
@@ -73,12 +78,14 @@ jobs:
               '.github/workflows/contact-enrichment.yml',
               '.github/workflows/sender-readiness.yml',
               '.github/workflows/inbox-placement.yml',
+              '.github/workflows/myhost-draft-test.yml',
               '.github/workflows/outreach-smtp.yml',
               'scripts/prospect_discovery.py',
               'scripts/prospect_discovery_runtime.py',
               'scripts/prospect_contact_enrichment.py',
               'scripts/outreach_sender_readiness.py',
               'scripts/outreach_inbox_placement.py',
+              'scripts/outreach_imap_draft.py',
               'scripts/outreach_direct_smtp_runtime.py',
               'scripts/outreach_compliance_preflight.py',
               'scripts/outreach_replyhub.py',
@@ -86,6 +93,12 @@ jobs:
               assert pathlib.Path(required).is_file(), f'missing Leads runtime file {required}'
           scan_workflow=pathlib.Path('.github/workflows/scan.yml').read_text(encoding='utf-8')
           assert "- 'sites.txt'" not in scan_workflow, 'sites.txt must not be a GitHub push trigger'
+          draft_workflow=pathlib.Path('.github/workflows/myhost-draft-test.yml').read_text(encoding='utf-8')
+          assert 'draft-test-request.txt' in draft_workflow
+          assert 'OUTREACH_DRAFT_SELF_ONLY' in draft_workflow
+          assert 'outreach_imap_draft.py' in draft_workflow
+          assert 'GOOGLE_SERVICE_ACCOUNT_JSON' not in draft_workflow
+          assert 'outreach_direct_smtp_runtime.py' not in draft_workflow
           outreach_workflow=pathlib.Path('.github/workflows/outreach-smtp.yml').read_text(encoding='utf-8')
           order=[
               'Run sender preflight',
@@ -104,6 +117,7 @@ jobs:
           assert registry['repository_role']=='central_leads_github_runtime'
           assert set(registry['capabilities']) >= expected_caps
           assert registry['capabilities']['website_evidence_scan']['read_only'] is True
+          assert registry['capabilities']['mailbox_draft']['send_permission']=='none'
           assert registry['capabilities']['outreach_delivery']['live_gate']=='sender_readiness before LeadPromo copy, compliance and SMTP'
           assert registry['tools']['axe_core']['automatic_score_effect'] is False
           print('toolkit-contract: OK')
