@@ -1,0 +1,36 @@
+import re
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+WORKFLOW = ROOT / ".github" / "workflows" / "prospect-discovery.yml"
+FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
+
+
+class ProspectWorkflowSecurityTests(unittest.TestCase):
+    def test_workflow_is_read_only_at_github_permission_layer(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("\npermissions:\n  contents: read\n", text)
+        self.assertNotIn("write-all", text)
+
+    def test_remote_actions_are_sha_pinned(self):
+        for raw in WORKFLOW.read_text(encoding="utf-8").splitlines():
+            stripped = raw.strip()
+            if not stripped.startswith("uses:"):
+                continue
+            target = stripped.split("uses:", 1)[1].strip().split()[0]
+            ref = target.rsplit("@", 1)[1]
+            self.assertRegex(ref, FULL_SHA)
+
+    def test_discovery_never_receives_mail_or_verifier_secrets(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        for forbidden in ("OUTREACH_MAIL_PASSWORD", "OUTREACH_MAILBOXES_JSON", "REOON_API_KEY"):
+            self.assertNotIn(forbidden, text)
+        self.assertIn("GOOGLE_SERVICE_ACCOUNT_JSON", text)
+
+    def test_scheduled_discovery_requires_explicit_enable_flag(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("vars.PROSPECT_DISCOVERY_ENABLED == 'true'", text)
+
+
+if __name__ == "__main__": unittest.main()
