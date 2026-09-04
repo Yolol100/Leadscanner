@@ -11,6 +11,7 @@ on:
       - '.github/workflows/**'
       - 'src/**'
       - 'scripts/**'
+      - 'tests/**'
 
 permissions:
   contents: read
@@ -20,25 +21,52 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Validate registered toolkit is accountless and wired
+        with:
+          persist-credentials: false
+      - name: Validate standalone Leads toolkit contract
         run: |
           python3 - <<'PY'
           import json, pathlib
           c=json.load(open('toolkit-contract.json', encoding='utf-8'))
-          for key in ('requires_account','requires_api_key','requires_mcp'):
-              assert c.get(key) is False, f'{key} must be false'
-          ids=[t['id'] for t in c['tools']]
-          assert len(ids)==len(set(ids)), 'duplicate tool ids'
+          assert c['repository']=='Yolol100/Leadscanner'
+          assert c['repository_role']=='central_leads_github_runtime'
+          caps=c['capabilities']
+          assert set(caps) >= {'prospect_discovery','website_evidence_scan','outreach_delivery'}
+          scanner=caps['website_evidence_scan']
+          assert scanner['read_only'] is True
+          assert scanner['requires_account'] is False
+          assert scanner['requires_api_key'] is False
+          discovery=caps['prospect_discovery']
+          assert discovery['send_permission']=='none'
+          for key in ('OUTREACH_MAIL_PASSWORD','OUTREACH_MAILBOXES_JSON','REOON_API_KEY'):
+              assert key in discovery['forbidden_secrets']
+          outreach=caps['outreach_delivery']
+          assert outreach['manual_default']=='validate'
+          assert 'REOON_API_KEY' in outreach['forbidden_secrets']
+          ids=[t['id'] for t in c['scanner_tools']]
+          assert len(ids)==len(set(ids)), 'duplicate scanner tool ids'
           covered=set()
           for a in c['usage_assertions']:
               assert a['tool'] in ids
               p=pathlib.Path(a['path']); assert p.is_file(), f'missing {p}'
               assert a['contains'] in p.read_text(encoding='utf-8'), f"{a['tool']} not wired in {p}"
               covered.add(a['tool'])
-          assert covered==set(ids), f'unwired tools: {set(ids)-covered}'
-          workflow=pathlib.Path('.github/workflows/scan.yml').read_text(encoding='utf-8')
-          assert "- 'sites.txt'" not in workflow, 'sites.txt must not be a GitHub push trigger'
+          assert covered==set(ids), f'unwired scanner tools: {set(ids)-covered}'
+          for required in (
+              '.github/workflows/prospect-discovery.yml',
+              '.github/workflows/outreach-smtp.yml',
+              'scripts/prospect_discovery.py',
+              'scripts/prospect_discovery_runtime.py',
+              'scripts/outreach_direct_smtp_runtime.py',
+              'scripts/outreach_compliance_preflight.py',
+              'scripts/outreach_replyhub.py',
+          ):
+              assert pathlib.Path(required).is_file(), f'missing Leads runtime file {required}'
+          scan_workflow=pathlib.Path('.github/workflows/scan.yml').read_text(encoding='utf-8')
+          assert "- 'sites.txt'" not in scan_workflow, 'sites.txt must not be a GitHub push trigger'
           registry=json.load(open('tool-registry.json', encoding='utf-8'))
+          assert registry['repository_role']=='central_leads_github_runtime'
+          assert registry['capabilities']['website_evidence_scan']['read_only'] is True
           assert registry['tools']['axe_core']['automatic_score_effect'] is False
           print('toolkit-contract: OK')
           PY
