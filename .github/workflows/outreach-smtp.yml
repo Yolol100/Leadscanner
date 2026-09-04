@@ -11,6 +11,13 @@ on:
           - validate
           - live
         default: validate
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/outreach-smtp.yml'
+      - 'requirements-outreach.txt'
+      - 'scripts/outreach_*.py'
   schedule:
     - cron: '7,22,37,52 6-18 * * 1-5'
 
@@ -23,7 +30,7 @@ concurrency:
 
 jobs:
   outreach:
-    if: github.event_name == 'workflow_dispatch' || vars.OUTREACH_ENABLED == 'true'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || vars.OUTREACH_ENABLED == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -45,7 +52,7 @@ jobs:
       - name: Resolve campaign pacing policy
         id: policy
         env:
-          OUTREACH_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || vars.OUTREACH_MODE || 'validate' }}
+          OUTREACH_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || github.event_name == 'push' && 'validate' || vars.OUTREACH_MODE || 'validate' }}
           OUTREACH_TIMEZONE: ${{ vars.OUTREACH_TIMEZONE || 'Europe/Amsterdam' }}
           OUTREACH_DAILY_LIMIT: ${{ vars.OUTREACH_DAILY_LIMIT }}
           OUTREACH_MAX_SENDS_PER_RUN: ${{ vars.OUTREACH_MAX_SENDS_PER_RUN }}
@@ -57,6 +64,16 @@ jobs:
           OUTREACH_RAMP_START_LIMIT: ${{ vars.OUTREACH_RAMP_START_LIMIT }}
           OUTREACH_RAMP_INCREMENT_PER_DAY: ${{ vars.OUTREACH_RAMP_INCREMENT_PER_DAY }}
         run: python3 scripts/outreach_campaign_policy.py
+
+      - name: Assert push validation cannot become live
+        if: github.event_name == 'push'
+        env:
+          OUTREACH_EFFECTIVE_MODE: ${{ steps.policy.outputs.effective_mode }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$OUTREACH_EFFECTIVE_MODE" = "validate"
+          echo "PUSH_VALIDATE_ONLY=green"
 
       - name: Run sender preflight
         env:
@@ -80,8 +97,8 @@ jobs:
           OUTREACH_DKIM_SELECTOR: ${{ vars.OUTREACH_DKIM_SELECTOR || 'x' }}
           OUTREACH_REQUIRED_SPF_TOKEN: ${{ vars.OUTREACH_REQUIRED_SPF_TOKEN || 'include:spf.mijn.host' }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
-          OUTREACH_MAILBOXES_JSON: ${{ secrets.OUTREACH_MAILBOXES_JSON }}
+          OUTREACH_MAIL_PASSWORD: ${{ steps.policy.outputs.effective_mode == 'live' && secrets.OUTREACH_MAIL_PASSWORD || '' }}
+          OUTREACH_MAILBOXES_JSON: ${{ steps.policy.outputs.effective_mode == 'live' && secrets.OUTREACH_MAILBOXES_JSON || '' }}
         run: python3 scripts/outreach_preflight.py
 
       - name: Run extended outreach contract preflight
@@ -124,8 +141,8 @@ jobs:
           OUTREACH_DKIM_SELECTOR: ${{ vars.OUTREACH_DKIM_SELECTOR || 'x' }}
           OUTREACH_REQUIRED_SPF_TOKEN: ${{ vars.OUTREACH_REQUIRED_SPF_TOKEN || 'include:spf.mijn.host' }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
-          OUTREACH_MAILBOXES_JSON: ${{ secrets.OUTREACH_MAILBOXES_JSON }}
+          OUTREACH_MAIL_PASSWORD: ${{ steps.policy.outputs.effective_mode == 'live' && secrets.OUTREACH_MAIL_PASSWORD || '' }}
+          OUTREACH_MAILBOXES_JSON: ${{ steps.policy.outputs.effective_mode == 'live' && secrets.OUTREACH_MAILBOXES_JSON || '' }}
         run: python3 scripts/outreach_direct_smtp_runtime.py
 
       - name: Summarize outreach analytics
