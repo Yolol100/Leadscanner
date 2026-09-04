@@ -1,14 +1,41 @@
 {
-  "schema_version": "1.2",
+  "schema_version": "2.0",
   "owner_skill": "leads",
   "project_id": "project-leads",
   "repository": "Yolol100/Leadscanner",
-  "evidence_role": "optional_controlled_website_audit_evidence",
-  "requires_account": false,
-  "requires_api_key": false,
+  "repository_role": "central_leads_github_runtime",
   "requires_mcp": false,
-  "normal_starteractie_route": false,
-  "tools": [
+  "capabilities": {
+    "prospect_discovery": {
+      "workflow": ".github/workflows/prospect-discovery.yml",
+      "requires_account": true,
+      "required_secrets": ["GOOGLE_SERVICE_ACCOUNT_JSON"],
+      "forbidden_secrets": ["OUTREACH_MAIL_PASSWORD", "OUTREACH_MAILBOXES_JSON", "REOON_API_KEY"],
+      "modes": ["validate", "bootstrap", "discover"],
+      "outputs": ["ProspectCandidates", "prospect-discovery-report.json"],
+      "send_permission": "none"
+    },
+    "website_evidence_scan": {
+      "workflow": ".github/workflows/scan.yml",
+      "requires_account": false,
+      "requires_api_key": false,
+      "read_only": true,
+      "normal_default_for_every_prospect": false,
+      "outputs": ["scan-results/", "scan-results/leads-handoff.json"]
+    },
+    "outreach_delivery": {
+      "workflow": ".github/workflows/outreach-smtp.yml",
+      "requires_account": true,
+      "required_secrets": ["GOOGLE_SERVICE_ACCOUNT_JSON", "OUTREACH_MAIL_PASSWORD"],
+      "optional_secrets": ["OUTREACH_MAILBOXES_JSON"],
+      "forbidden_secrets": ["REOON_API_KEY"],
+      "modes": ["validate", "live"],
+      "manual_default": "validate",
+      "external_email_verifier": "none_required_for_active_direct_smtp_route",
+      "outputs": ["OutreachQueue", "OutreachSequences", "ReplyInbox", "Suppression", "OutreachLog", "VariantAnalytics", "MailboxHealth"]
+    }
+  },
+  "scanner_tools": [
     {"id":"crawlee","version":"3.18.0","trigger_when":"explicit website audit or Leads technical evidence-gap crawl orchestration is needed","outputs":["scan-results/"]},
     {"id":"playwright","version":"1.62.1","trigger_when":"explicit audit or Leads technical evidence-gap desktop/mobile browser evidence is needed","outputs":["scan-results/"]},
     {"id":"axe-core","version":"4.13.0","trigger_when":"homepage audit evidence is collected","outputs":["finding_candidates"]},
@@ -31,11 +58,12 @@
     {"tool":"leads-handoff","path":"package.json","contains":"handoff:leads"}
   ],
   "boundaries": [
-    "Never run as a default or batch-wide step in the normal Instantly/Leads flow.",
-    "May run automatically only when Leads identifies a specific technical evidence gap after lightweight official-site review and no equally strong simpler proven angle is available.",
-    "No scanner signal automatically changes lead fit, priority, compliance, send permission or outreach state.",
-    "GitHub/Chat scans use requests/scan.json or explicit workflow_dispatch; sites.txt is local-manual only.",
-    "Instantly lead/contact/campaign data is not scanner input and must not be persisted in this repository.",
-    "Accessibility findings are candidate signals, not a conformance claim."
+    "The website scanner remains read-only and optional; it never changes lead fit, priority, compliance, send permission or outreach state.",
+    "Prospect discovery finds approved-source company/domain candidates only and receives no mail credentials.",
+    "Lead qualification, contact choice, compliance and copy remain owned by Leads, not by the repository runtime.",
+    "The active direct SMTP route requires no Reoon dependency; legacy verification columns remain transport-compatible only.",
+    "Live outreach is fail-closed and is never executed by CI.",
+    "Reply, bounce and opt-out readback stop follow-up state and maintain suppression evidence.",
+    "No secret value belongs in repository files, logs, test fixtures or artifacts."
   ]
 }
