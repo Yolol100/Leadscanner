@@ -8,11 +8,6 @@ on:
         required: true
         default: false
         type: boolean
-  push:
-    branches:
-      - main
-    paths:
-      - 'draft-test-request.txt'
 
 permissions:
   contents: read
@@ -31,29 +26,25 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.12'
-
       - name: Resolve explicit draft trigger
         id: trigger
         env:
-          EVENT_NAME: ${{ github.event_name }}
           MANUAL_CONFIRM: ${{ inputs.confirm_draft || false }}
         shell: bash
         run: |
           set -euo pipefail
-          enabled=false
-          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$MANUAL_CONFIRM" = "true" ]; then
-            enabled=true
-          elif [ "$EVENT_NAME" = "push" ] && [ -f draft-test-request.txt ]; then
-            enabled=true
-          fi
-          echo "enabled=$enabled" >> "$GITHUB_OUTPUT"
-          if [ "$enabled" != "true" ]; then
+          if [ "$MANUAL_CONFIRM" = "true" ]; then
+            echo 'enabled=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'enabled=false' >> "$GITHUB_OUTPUT"
             echo 'MYHOST_DRAFT=skipped_no_explicit_request' >> "$GITHUB_STEP_SUMMARY"
           fi
+
+      - name: Set up Python
+        if: steps.trigger.outputs.enabled == 'true'
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
 
       - name: Classify mijn.host mailbox credential availability
         if: steps.trigger.outputs.enabled == 'true'
