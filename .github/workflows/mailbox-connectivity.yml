@@ -2,6 +2,12 @@ name: Mailbox Connectivity Check
 
 on:
   workflow_dispatch:
+    inputs:
+      require_auth:
+        description: 'Fail if mailbox authentication cannot be proven'
+        required: false
+        default: true
+        type: boolean
   push:
     branches:
       - main
@@ -38,8 +44,9 @@ jobs:
       - name: Install outreach runtime dependencies
         run: python3 -m pip install --disable-pip-version-check --requirement requirements-outreach.txt
 
-      - name: Authenticate to SMTP and IMAP without sending
+      - name: Probe encrypted transport and authenticate when credentials exist
         env:
+          OUTREACH_CONNECTIVITY_REQUIRE_AUTH: ${{ github.event_name == 'workflow_dispatch' && inputs.require_auth && 'true' || 'false' }}
           OUTREACH_DAILY_LIMIT: ${{ vars.OUTREACH_DAILY_LIMIT || '20' }}
           OUTREACH_MAILBOX_ID: ${{ vars.OUTREACH_MAILBOX_ID || 'primary' }}
           OUTREACH_SMTP_HOST: ${{ vars.OUTREACH_SMTP_HOST || 'mail.andrewbaeten.nl' }}
@@ -52,4 +59,13 @@ jobs:
           OUTREACH_DKIM_SELECTOR: ${{ vars.OUTREACH_DKIM_SELECTOR || 'x' }}
           OUTREACH_REQUIRED_SPF_TOKEN: ${{ vars.OUTREACH_REQUIRED_SPF_TOKEN || 'include:spf.mijn.host' }}
           OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
-        run: python3 scripts/outreach_mailbox_connectivity.py
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/outreach_mailbox_connectivity.py | tee mailbox-connectivity.txt
+          {
+            echo '## Mailbox connectivity'
+            echo '```text'
+            cat mailbox-connectivity.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
