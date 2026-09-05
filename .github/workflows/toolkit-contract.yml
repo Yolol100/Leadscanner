@@ -33,6 +33,7 @@ jobs:
           c=json.load(open('toolkit-contract.json', encoding='utf-8'))
           assert c['repository']=='Yolol100/Leadscanner'
           assert c['repository_role']=='central_leads_github_runtime'
+          assert c['schema_version']=='2.7'
           caps=c['capabilities']
           expected_caps={
               'prospect_discovery','prospect_intelligence','prospect_signal_discovery',
@@ -51,6 +52,7 @@ jobs:
           assert discovery['default_preferred_countries'][:2]==['US','NL']
           assert discovery['agency_exclusion_default'] is True
           assert 'directory_sitemap' in discovery['source_types']
+          assert 'source_semantic_filter' in discovery
           for key in ('OUTREACH_MAIL_PASSWORD','OUTREACH_MAILBOXES_JSON','OUTREACH_SEED_INBOXES_JSON','REOON_API_KEY'):
               assert key in discovery['forbidden_secrets']
           qualification=caps['prospect_qualification']
@@ -58,6 +60,8 @@ jobs:
           assert qualification['automatic_score_effect'] is True
           assert qualification['compliance_effect'] is False
           assert qualification['max_candidates_per_run']==25
+          assert qualification['default_recheck_days']==30
+          assert 'UNSCORED' in ' '.join(qualification['quality_rules'])
           assert 'ProspectQualifications' in qualification['outputs']
           for key in ('OUTREACH_MAIL_PASSWORD','OUTREACH_MAILBOXES_JSON','OUTREACH_SEED_INBOXES_JSON','REOON_API_KEY'):
               assert key in qualification['forbidden_secrets']
@@ -67,9 +71,14 @@ jobs:
           prepare=caps['zero_touch_prepare']
           assert prepare['send_permission']=='none'
           assert prepare['scheduled_default']=='prepare'
+          assert 'prospect_candidate_sanitizer' in prepare['flow']
+          assert 'private_outreach_config' in prepare['flow']
           assert 'status=prepared' in prepare['queue_contract']
           assert 'manual_review' in prepare['queue_contract']
+          assert 'reconciled' in prepare['queue_contract']
           assert prepare['required_secrets']==['GOOGLE_SERVICE_ACCOUNT_JSON']
+          assert 'OUTREACH_CONFIG_SPREADSHEET_ID' in prepare['optional_variables']
+          assert 'private' in prepare['private_config_contract'].lower()
           for key in ('OUTREACH_MAIL_PASSWORD','OUTREACH_MAILBOXES_JSON','OUTREACH_SEED_INBOXES_JSON','REOON_API_KEY'):
               assert key in prepare['forbidden_secrets']
           readiness=caps['sender_readiness']
@@ -88,7 +97,9 @@ jobs:
           assert outreach['manual_default']=='validate'
           assert 'REOON_API_KEY' in outreach['forbidden_secrets']
           assert outreach['live_gate']=='sender_readiness -> website target/evidence -> LeadPromo copy -> compliance -> SMTP'
-          assert 'OUTREACH_POSTAL_ADDRESS' in outreach['optional_variables']
+          assert 'OUTREACH_CONFIG_SPREADSHEET_ID' in outreach['optional_variables']
+          assert 'OUTREACH_POSTAL_ADDRESS' not in outreach['optional_variables']
+          assert 'private' in outreach['private_config_contract'].lower()
           assert 'website_scan' in outreach['target_evidence_contract']
           assert caps['dashboard']['send_permission']=='none'
 
@@ -112,9 +123,12 @@ jobs:
               '.github/workflows/outreach-smtp.yml',
               'scripts/prospect_discovery.py',
               'scripts/prospect_discovery_runtime.py',
+              'scripts/prospect_source_semantics.py',
+              'scripts/prospect_candidate_sanitizer.py',
               'scripts/prospect_target_policy.py',
               'scripts/prospect_qualification.py',
               'scripts/prospect_contact_enrichment.py',
+              'scripts/outreach_private_config.py',
               'scripts/outreach_prepare.py',
               'scripts/outreach_sender_readiness.py',
               'scripts/outreach_inbox_placement.py',
@@ -135,31 +149,51 @@ jobs:
           assert "PROSPECT_DISCOVERY_PREFERRED_COUNTRIES" in discovery_workflow
           assert "US,NL,GB" in discovery_workflow
           assert "PROSPECT_DISCOVERY_EXCLUDE_AGENCIES" in discovery_workflow
+          discovery_runtime=pathlib.Path('scripts/prospect_discovery_runtime.py').read_text(encoding='utf-8')
+          assert 'source_semantic_target_check' in discovery_runtime
+          assert 'filtered_semantic' in discovery_runtime
+          sanitizer=pathlib.Path('scripts/prospect_candidate_sanitizer.py').read_text(encoding='utf-8')
+          assert 'source_semantic_target_policy' in sanitizer
+          semantics=pathlib.Path('scripts/prospect_source_semantics.py').read_text(encoding='utf-8')
+          assert 'directory provider infrastructure/domain' in semantics
+          assert 'manufacturing-directory candidate lacks manufacturing/industrial self-description' in semantics
 
           autopilot=pathlib.Path('.github/workflows/leads-autopilot.yml').read_text(encoding='utf-8')
           autopilot_trigger=autopilot.split('permissions:', 1)[0]
           assert 'workflow_dispatch:' in autopilot_trigger
           assert 'schedule:' in autopilot_trigger
           assert 'ops/leads-autopilot-request.txt' in autopilot_trigger
+          assert 'scripts/prospect_candidate_sanitizer.py' in autopilot
           assert 'scripts/prospect_qualification.py' in autopilot
           assert 'scripts/prospect_contact_enrichment.py' in autopilot
+          assert 'scripts/outreach_private_config.py' in autopilot
           assert 'scripts/outreach_prepare.py' in autopilot
           assert 'outreach_direct_smtp_runtime.py' not in autopilot
           assert 'OUTREACH_MAIL_PASSWORD' not in autopilot
           assert 'OUTREACH_MAILBOXES_JSON' not in autopilot
           assert 'OUTREACH_SEED_INBOXES_JSON' not in autopilot
+          assert 'vars.OUTREACH_POSTAL_ADDRESS' not in autopilot
           assert 'send permission:' in autopilot and 'none' in autopilot
+
+          private_config=pathlib.Path('scripts/outreach_private_config.py').read_text(encoding='utf-8')
+          assert '::add-mask::' in private_config
+          assert 'GITHUB_ENV' in private_config
+          assert 'OUTREACH_POSTAL_ADDRESS' in private_config
+          assert 'PRIVATE_OUTREACH_CONFIG=green postal_address=present' in private_config
 
           prepare_runtime=pathlib.Path('scripts/outreach_prepare.py').read_text(encoding='utf-8')
           assert '"status": "prepared"' in prepare_runtime
           assert '"compliance_status": "manual_review"' in prepare_runtime
           assert '"compliance_basis": ""' in prepare_runtime
+          assert 'zero_touch_prepare_reconciled' in prepare_runtime
           assert 'smtplib' not in prepare_runtime
 
           qualification_runtime=pathlib.Path('scripts/prospect_qualification.py').read_text(encoding='utf-8')
           assert 'QUALIFICATION_SHEET = "ProspectQualifications"' in qualification_runtime
           assert 'OPPORTUNITY_WEIGHT' in qualification_runtime
-          assert 'STRONG_SHOP_HINTS' in qualification_runtime
+          assert 'MANUFACTURER_HINTS' in qualification_runtime
+          assert 'UNSCORED' in qualification_runtime
+          assert 'PROSPECT_QUALIFICATION_RECHECK_DAYS' in qualification_runtime
           assert 'send_permission' in qualification_runtime
 
           draft_workflow=pathlib.Path('.github/workflows/myhost-draft-test.yml').read_text(encoding='utf-8')
@@ -187,7 +221,8 @@ jobs:
           assert positions==sorted(positions), 'live outreach gate order drifted'
           assert "steps.policy.outputs.effective_mode == 'live'" in outreach_workflow
           assert "OUTREACH_READINESS_REQUIRE_GREEN: 'true'" in outreach_workflow
-          assert 'OUTREACH_POSTAL_ADDRESS' in outreach_workflow
+          assert 'scripts/outreach_private_config.py' in outreach_workflow
+          assert 'vars.OUTREACH_POSTAL_ADDRESS' not in outreach_workflow
           assert 'outreach_target_evidence_preflight.py' in outreach_workflow
 
           integration=pathlib.Path('LEADS-INTEGRATION.md').read_text(encoding='utf-8')
