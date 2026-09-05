@@ -45,9 +45,9 @@ class FakeClient:
 
 
 class TargetEvidencePreflightTests(unittest.TestCase):
-    def test_netherlands_is_blocked(self):
+    def test_netherlands_is_not_country_blocked(self):
         errors = p.metadata_errors(row(country="NL"), postal_address="123 Main Street, Example City")
-        self.assertTrue(any("NL target" in item for item in errors))
+        self.assertFalse(any("NL target" in item for item in errors))
 
     def test_webactueel_self_target_is_blocked_before_send(self):
         evidence = source(evidence_url="https://webactueel.nl/")
