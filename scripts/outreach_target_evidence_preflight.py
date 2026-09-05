@@ -14,7 +14,7 @@ from outreach_sender import (
     rows_from_values,
 )
 from prospect_discovery import BoundedHttpClient, DiscoveryError, host_key, match_terms, normalize_url, parse_page, root_url
-from prospect_target_policy import DEFAULT_AGENCY_EXCLUDE_TERMS, canonical_country
+from prospect_target_policy import DEFAULT_AGENCY_EXCLUDE_TERMS, canonical_country, is_excluded_domain
 
 EVIDENCE_PREFIX = "website_scan:"
 LIVE_CANDIDATE_STATUSES = {"approved"}
@@ -54,6 +54,8 @@ def metadata_errors(row: dict[str, str], *, postal_address: str = "") -> list[st
     if not normalize_url(website, require_path=True):
         errors.append("missing or invalid official website")
         return errors
+    if is_excluded_domain(website):
+        errors.append("Webactueel/self domain is excluded from prospect outreach")
     try:
         evidence = parse_evidence_source(row.get("source", ""))
     except ValueError as exc:
@@ -101,6 +103,8 @@ def website_target_errors(row: dict[str, str], client: BoundedHttpClient) -> lis
     website = root_url(row.get("website", ""))
     if not website:
         return ["invalid website for target check"]
+    if is_excluded_domain(website):
+        return ["Webactueel/self domain is excluded from prospect outreach"]
     try:
         page = parse_page(client.fetch_text(website), website)
     except DiscoveryError as exc:
@@ -108,7 +112,7 @@ def website_target_errors(row: dict[str, str], client: BoundedHttpClient) -> lis
     haystack = f"{page.title} {page.site_name} {page.text}"
     accepted, _ = match_terms(haystack, (), DEFAULT_AGENCY_EXCLUDE_TERMS)
     if not accepted:
-        return ["target appears to be a web/design/development/marketing/advertising/SEO/digital agency or comparable provider"]
+        return ["target appears to be a web/design/development/app/software/UX/marketing/advertising/SEO/digital agency or comparable provider"]
     return []
 
 
