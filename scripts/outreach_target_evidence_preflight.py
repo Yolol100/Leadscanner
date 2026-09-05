@@ -48,8 +48,6 @@ def parse_evidence_source(raw: object) -> dict[str, str]:
 def metadata_errors(row: dict[str, str], *, postal_address: str = "") -> list[str]:
     errors: list[str] = []
     country = canonical_country(row.get("country", ""))
-    if country == "NL":
-        errors.append("NL target is excluded by current prospect policy")
     website = row.get("website", "")
     if not normalize_url(website, require_path=True):
         errors.append("missing or invalid official website")
