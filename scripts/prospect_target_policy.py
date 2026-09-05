@@ -87,7 +87,8 @@ def canonical_country(value: object) -> str:
     for canonical, aliases in COUNTRY_ALIASES.items():
         for alias in aliases:
             alias_norm = _normalized(alias)
-            if raw == alias_norm or alias_norm in tokens or alias_norm in raw:
+            phrase_match = len(alias_norm) > 3 and alias_norm in raw
+            if raw == alias_norm or alias_norm in tokens or phrase_match:
                 return canonical
     return raw
 
