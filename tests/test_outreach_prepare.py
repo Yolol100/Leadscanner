@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import json
 import unittest
 
 from outreach_copy_preflight import followup_copy_errors, initial_copy_errors
-from outreach_prepare import build_copy, build_prepared_row
+from outreach_prepare import AUTOMATION_ID, _prepare_eligible, _zero_touch_row, build_copy, build_prepared_row
 
 
 class OutreachPrepareTests(unittest.TestCase):
@@ -26,7 +27,7 @@ class OutreachPrepareTests(unittest.TestCase):
             company="Example Products",
             country="US",
             fact="The bounded homepage check for Example Products found no clear internal contact or quote link.",
-            idea="Add one persistent contact or quote call-to-action on the homepage of Example Products so visitors can respond in one step.",
+            idea="Add one persistent contact or quote call-to-action to the homepage of Example Products so visitors can respond in one step.",
             analysis_type="website",
             postal_address=address,
         )
@@ -41,11 +42,11 @@ class OutreachPrepareTests(unittest.TestCase):
                 company="Example Products",
                 country="US",
                 fact="The bounded homepage check for Example Products found no clear internal contact or quote link.",
-                idea="Add one persistent contact or quote call-to-action on the homepage of Example Products so visitors can respond in one step.",
+                idea="Add one persistent contact or quote call-to-action to the homepage of Example Products so visitors can respond in one step.",
                 analysis_type="website",
             )
 
-    def test_prepared_row_never_auto_approves_or_sends(self):
+    def _ready_inputs(self):
         candidate = {
             "candidate_id": "prospect-1",
             "company": "Voorbeeld Winkel",
@@ -67,12 +68,35 @@ class OutreachPrepareTests(unittest.TestCase):
             "email": "info@voorbeeld.nl",
             "status": "ready",
         }
+        return candidate, qualification, contact
+
+    def test_prepared_row_never_auto_approves_or_sends(self):
+        candidate, qualification, contact = self._ready_inputs()
         row = build_prepared_row(candidate, qualification, contact)
         self.assertEqual(row["status"], "prepared")
         self.assertEqual(row["compliance_status"], "manual_review")
         self.assertEqual(row["compliance_basis"], "")
         self.assertEqual(row["opt_out_mode"], "reply_optout")
         self.assertTrue(row["source"].startswith("website_scan:"))
+        metadata = json.loads(row["source"].split(":", 1)[1])
+        self.assertEqual(metadata["automation"], AUTOMATION_ID)
+        self.assertTrue(_zero_touch_row(row))
+
+    def test_prepare_eligibility_fails_closed_after_requalification(self):
+        candidate, qualification, contact = self._ready_inputs()
+        self.assertTrue(_prepare_eligible(candidate, qualification, contact))
+        qualification["tier"] = "B"
+        qualification["status"] = "hold"
+        candidate["status"] = "hold"
+        self.assertFalse(_prepare_eligible(candidate, qualification, contact))
+
+    def test_legacy_zero_touch_prepared_row_is_recognized_for_reconciliation(self):
+        candidate, qualification, contact = self._ready_inputs()
+        row = build_prepared_row(candidate, qualification, contact)
+        metadata = json.loads(row["source"].split(":", 1)[1])
+        metadata.pop("automation")
+        row["source"] = "website_scan:" + json.dumps(metadata, separators=(",", ":"))
+        self.assertTrue(_zero_touch_row(row))
 
     def test_non_a_or_non_ready_contact_is_rejected(self):
         candidate = {
