@@ -65,6 +65,7 @@
       "reads": ["ProspectCandidates", "ProspectSignals"],
       "writes": ["ProspectCandidates", "ProspectQualifications"],
       "max_candidates_per_run": 25,
+      "send_permission": "none",
       "score_contract": "ICP 0-3 + evidence-bound website opportunity 0-3 + active signal 0-2 + offer fit 0-2; A=8-10, B=6-7, C=0-5",
       "boundaries": ["discovered/hold candidates only", "official homepage evidence only", "strong shop context required before checkout-gap claims", "one primary opportunity severity is scored rather than summing generic gaps", "fact and idea are bound to official-page evidence", "agency/provider and self targets fail closed", "no contact harvesting", "no compliance mutation", "no queue approval", "no mail credentials", "no send permission"]
     },
@@ -82,6 +83,7 @@
       "runtime": "python",
       "role": "scheduled_bounded_discovery_qualification_contact_and_leadpromo_prepare_pipeline",
       "modes": ["validate", "prepare"],
+      "send_permission": "none",
       "flow": "prospect_discovery -> prospect_signal_discovery -> prospect_qualification -> contact_enrichment -> prospect_intelligence -> outreach_prepare",
       "reads": ["ProspectSources", "ProspectCandidates", "ProspectSignals", "ProspectQualifications", "ContactCandidates", "Leadlijst", "OutreachQueue"],
       "writes": ["ProspectCandidates", "ProspectObservations", "ProspectSourceRuns", "ProspectSignals", "ProspectQualifications", "ContactCandidates", "ProspectEntities", "ProspectSourceMetrics", "ProspectEvidence", "ProspectLookalikes", "Leadlijst", "OutreachQueue"],
