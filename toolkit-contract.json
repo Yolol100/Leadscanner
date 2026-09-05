@@ -1,5 +1,5 @@
 {
-  "schema_version": "2.1",
+  "schema_version": "2.2",
   "owner_skill": "leads",
   "project_id": "project-leads",
   "repository": "Yolol100/Leadscanner",
@@ -14,7 +14,23 @@
       "modes": ["validate", "bootstrap", "discover"],
       "scheduled_default": "validate",
       "scheduled_discover_gate": "PROSPECT_DISCOVERY_ENABLED=true",
-      "outputs": ["ProspectCandidates", "prospect-discovery-report.json"],
+      "optional_variables": ["PROSPECT_DISCOVERY_TARGET_NEW"],
+      "target_fill": "bounded by PROSPECT_DISCOVERY_MAX_TOTAL and processed in approved ProspectSources row order",
+      "outputs": ["ProspectCandidates", "ProspectObservations", "prospect-discovery-report.json"],
+      "send_permission": "none"
+    },
+    "prospect_intelligence": {
+      "workflow": ".github/workflows/prospect-intelligence.yml",
+      "requires_account": true,
+      "required_secrets": ["GOOGLE_SERVICE_ACCOUNT_JSON"],
+      "forbidden_secrets": ["OUTREACH_MAIL_PASSWORD", "OUTREACH_MAILBOXES_JSON", "OUTREACH_SEED_INBOXES_JSON", "REOON_API_KEY"],
+      "modes": ["validate", "bootstrap", "refresh"],
+      "scheduled_default": "validate",
+      "scheduled_refresh_gate": "PROSPECT_INTELLIGENCE_ENABLED=true",
+      "optional_variables": ["PROSPECT_INTELLIGENCE_STALE_DAYS"],
+      "inputs": ["ProspectSources", "ProspectCandidates", "ProspectObservations", "ProspectSignals", "ContactCandidates", "Leadlijst"],
+      "outputs": ["ProspectEntities", "ProspectSourceMetrics", "ProspectEvidence", "ProspectLookalikes", "prospect-intelligence-report.json"],
+      "automatic_score_effect": false,
       "send_permission": "none"
     },
     "contact_enrichment": {
@@ -110,7 +126,11 @@
   "boundaries": [
     "The website scanner remains read-only and optional; it never changes lead fit, priority, compliance, send permission or outreach state.",
     "Prospect discovery finds approved-source company/domain candidates only and receives no mail credentials.",
+    "Prospect target-fill is bounded by the existing discovery hard cap; failure to reach the requested target is reported as a target gap, never fabricated as completion.",
+    "Prospect observations record discovery provenance and rediscovery freshness only; they never approve, qualify or enrich a lead.",
     "Scheduled prospect discovery remains validate-only unless PROSPECT_DISCOVERY_ENABLED=true explicitly promotes the scheduled run to discover mode.",
+    "Prospect intelligence is derived/advisory only; signals, entities, freshness, source metrics, evidence edges and lookalikes never change Customer Potential, compliance, contact promotion, copy or send permission.",
+    "Scheduled prospect intelligence remains validate-only unless PROSPECT_INTELLIGENCE_ENABLED=true explicitly promotes the scheduled run to refresh mode.",
     "Contact enrichment runs only after Leads qualification, inspects bounded official-site pages, never guesses an address and never creates send permission.",
     "Sender readiness is technical diagnostics only; it does not prove inbox placement or commercial permission.",
     "Inbox placement can send only manual controlled probes to at most five configured seed inboxes and never touches OutreachQueue recipients.",
