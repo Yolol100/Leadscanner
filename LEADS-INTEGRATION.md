@@ -2,29 +2,31 @@
 
 `Yolol100/Leadscanner` is de enige GitHub-runtime voor de repository-capabilities van Leads. Dit bestand is de **menselijke canonieke integratiebron**; `toolkit-contract.json` is de machineleesbare canonieke bron. README en AGENTS verwijzen hiernaar en herhalen de volledige contractdetails niet.
 
-Leads/ChatGPT blijft eigenaar van bedrijfsrealness, Customer Potential, contactkeuze/promotie, compliancebasis/status, mailcopy en interpretatie van resultaten. Repositorycapabilities leveren alleen discovery, evidence, afgeleide prospectintelligentie, technische diagnostiek, testtransport en readback.
+De Leads-policy blijft de bron van waarheid voor bedrijfsrealness, Customer Potential, kwalificatiegrenzen, contactbewijs, LeadPromo-copy, compliance en verzendgates. De repository mag die policy nu voor een **begrensde zero-touch prepare-route** deterministisch uitvoeren: officiële-sitebewijs verzamelen, Customer Potential berekenen, A/B/C classificeren, een brongebonden contact zoeken en LeadPromo-copy voorbereiden. Deze automatisering mag **nooit** zelfstandig een compliancebasis verzinnen, `compliance_status=approved` zetten of live verzendpermission creëren.
+
+De zichtbare keten blijft:
+
+`VIND -> KWALIFICEER -> CONTACT + MAIL -> VERSTUUR + LEER`
+
+De zero-touch automatisering loopt zelfstandig tot en met **prepare**. `VERSTUUR + LEER` blijft een aparte fail-closed transportroute met eigen live-gates.
 
 ## Capability 1 — prospect_discovery
 
 Workflow: `.github/workflows/prospect-discovery.yml`.
 
 - Leest alleen expliciet goedgekeurde `ProspectSources`.
-- Ondersteunt `seed_site`, `directory_page`, `directory_index` en `directory_sitemap` als expliciete source-adapters.
+- Ondersteunt `seed_site`, `directory_page`, `directory_index` en `directory_sitemap`.
 - `directory_sitemap` accepteert alleen begrensde publieke XML `urlset`/`sitemapindex`-bronnen, volgt uitsluitend same-host profiel-URLs en maximaal drie same-host child-sitemaps; externe child-sitemaps worden genegeerd.
 - XML blijft onder dezelfde robots-, public-network/SSRF-, timeout-, pacing- en bytegrenzen als HTML discovery; DTD/entity-declaraties worden geblokkeerd.
-- Huidig targetbeleid laat `NL` standaard toe. De standaard bronprioriteit is `US` eerst, `NL` tweede en daarna de overige geconfigureerde landen. `webactueel.nl` en alle subdomeinen blijven self-excluded. Deze bronprioriteit is discoveryvolgorde, geen compliancebewijs.
-- Agency-/concurrentfilter staat standaard aan via `PROSPECT_DISCOVERY_EXCLUDE_AGENCIES=true` en voegt meertalige sterke self-description-termen toe voor webdesign, website/webdevelopment, app/mobile-app, software-development, UX/UI/product-design, marketing, advertising, SEO, branding, creative/digital, WordPress/WooCommerce/Shopify en vergelijkbare bureaus. Bestaande source-specifieke `exclude_terms` blijven behouden; extra termen kunnen alleen aanvullend via `PROSPECT_DISCOVERY_EXTRA_EXCLUDE_TERMS` worden gezet.
-- Schrijft nieuwe company/domain-kandidaten naar `ProspectCandidates`.
-- Kan met `PROSPECT_DISCOVERY_TARGET_NEW` een begrensd doelvolume over meerdere goedgekeurde bronnen proberen te vullen; `PROSPECT_DISCOVERY_MAX_TOTAL` blijft de bovengrens.
-- Rapporteert `target_met` en `target_gap`; een niet gehaald doel wordt nooit als succesvolle vulling verzonnen.
-- Schrijft, wanneer `ProspectObservations` bestaat, per verwerkte company/domain-herwaarneming provenance naar die tab. `new` en `duplicate` zijn observatie-uitkomsten, geen kwalificatiebesluiten.
-- Schrijft, wanneer `ProspectSourceRuns` bestaat, per werkelijk verwerkte bron `status`, `seen`, `new`, `duplicates`, `duration_ms` en begrensde fouttekst. Dit is run-/bronbewijs en nooit kwalificatie of send permission.
-- Behoudt robots.txt, pacing, timeouts, byte/kandidaatlimieten en private-network/SSRF-blokkering.
-- Verzamelt geen contactadressen, bepaalt geen Customer Potential/compliance, maakt geen copy en ontvangt geen mailboxcredentials.
-- Modi: `validate`, `bootstrap`, `discover`.
-- `bootstrap` kan de optionele evidence-tabs `ProspectObservations` en `ProspectSourceRuns` aanmaken; bestaande validate/discover blijft compatibel wanneer die tabs nog ontbreken.
-- Handmatige default: `validate`.
-- Geplande weekday-runs blijven actief voor contractvalidatie en draaien standaard `validate`; alleen `PROSPECT_DISCOVERY_ENABLED=true` promoveert een geplande run naar `discover`.
+- Huidig targetbeleid laat `NL` standaard toe. De standaard bronprioriteit is `US` eerst, `NL` tweede en daarna de overige geconfigureerde landen.
+- `webactueel.nl` en alle subdomeinen blijven self-excluded.
+- Agency-/concurrentfilter staat standaard aan voor duidelijke web/design/development/app/software/UX/marketing/advertising/SEO/branding/digital/commerce providers.
+- Schrijft alleen company/domain-kandidaten naar `ProspectCandidates`; geen contactharvesting, Customer Potential, compliance of mailcopy.
+- `PROSPECT_DISCOVERY_TARGET_NEW` probeert begrensd een doelvolume te vullen; `PROSPECT_DISCOVERY_MAX_TOTAL` blijft hard bovengrens.
+- `ProspectObservations` bewaart verwerkings/provenancebewijs en rediscovery-freshness.
+- `ProspectSourceRuns` bewaart per werkelijk verwerkte bron status, seen, new, duplicates, duration en begrensde fouttekst.
+- Modi: `validate`, `bootstrap`, `discover`. De losse weekday schedule blijft `validate` tenzij `PROSPECT_DISCOVERY_ENABLED=true`.
+- Ontvangt `GOOGLE_SERVICE_ACCOUNT_JSON`, maar nooit mailbox-, SMTP/IMAP-, seed- of verifiersecrets.
 
 ## Capability 2 — contact_enrichment
 
@@ -33,22 +35,23 @@ Workflow: `.github/workflows/contact-enrichment.yml`.
 - Draait uitsluitend op `ProspectCandidates.status=qualified`.
 - Inspecteert begrensd de officiële homepage plus maximaal drie contact/about/team-achtige pagina's.
 - Raad, construeer of extrapoleer nooit een e-mailadres.
-- Blokkeer no-reply/systeem/free-mail; controleer domeinalignment en MX.
-- Schrijft alleen `ContactCandidates`; `ready` is contactbewijs, nooit commerciële toestemming of send permission.
-- Standaard max 10 kandidaten per handmatige run, hard max 25.
+- Blokkeert no-reply/systeem/free-mail en controleert domeinalignment + MX.
+- `ContactCandidates.ready` betekent uitsluitend officieel-sitecontactbewijs; het is nooit commerciële toestemming of send permission.
+- Standaard maximaal 10 kandidaten, hard maximaal 25 per run.
+- Ontvangt uitsluitend Sheetcredential, geen mailboxcredentials.
 
 ## Capability 3 — website_evidence_scan
 
 Workflow: `.github/workflows/scan.yml`.
 
-Optioneel read-only bewijs voor een expliciete website-audit of een specifiek technisch bewijs-gat.
+Optioneel read-only browser/crawlbewijs voor een expliciete website-audit of een concreet technisch bewijs-gat.
 
 - Publieke officiële website vereist.
-- GET/HEAD-only; geen login, formulieren, bestelling, betaling, boeking of andere state-changing actie.
-- Behoud private/link-local/metadata-blokkering, TLS en robots/sitemapgrenzen.
+- GET/HEAD-only; geen login, formulier, bestelling, betaling, boeking of andere state-changing actie.
+- Private/link-local/metadata-adressen, onveilige redirects en relevante robots/TLS-grenzen blijven geblokkeerd.
 - `401`, `403` en `429` zijn toegangsblokkades, geen salesbevindingen.
 - Uitvoer: `scan-results/leads-handoff.json` plus run-scoped evidence.
-- Scannerbevindingen veranderen nooit zelfstandig fit, prioriteit, compliance, copy of send permission.
+- Scannerbevindingen veranderen nooit zelfstandig compliance of transportpermission.
 
 ## Capability 4 — sender_readiness
 
@@ -58,48 +61,40 @@ Technische diagnostiek per ingeschakelde mailbox:
 
 - SPF, DKIM, DMARC en MX;
 - SMTP-TLS/STARTTLS en IMAP-TLS;
-- mailboxauth wanneer secret aanwezig is;
-- optioneel PTR/FCrDNS via `OUTREACH_OUTBOUND_IP`;
-- optioneel configureerbare DNSBL-zones via `OUTREACH_DNSBL_ZONES`.
+- mailboxauth wanneer het secret aanwezig is;
+- exact PTR/FCrDNS via een expliciet `OUTREACH_OUTBOUND_IP`;
+- configureerbare IPv4 DNSBL-zones via `OUTREACH_DNSBL_ZONES` wanneer een expliciet IP beschikbaar is.
 
-`green` betekent alleen dat de beschikbare vereiste technische bewijslagen groen zijn. Ontbrekende optionele externe bewijzen blijven `review/not_configured`; harde DNS/auth/TLS/PTR/FCrDNS/DNSBL-fouten worden `blocked`. Readiness is geen commerciële toestemming en geen globale placementgarantie.
+Voor mijn.host is daarnaast shared-relay-bewijs ingebouwd. Wanneer `OUTREACH_REQUIRED_SPF_TOKEN=include:spf.mijn.host` aantoonbaar via SPF groen is en geen expliciet vast uitgaand IP is geconfigureerd, wordt het netwerkdeel als `provider_managed` vastgelegd. Dit betekent alleen: de uitgaande relaypool wordt door mijn.host beheerd en één vast egress-IP kan vooraf niet eerlijk worden geclaimd. Het betekent **niet** dat per-IP reputatie, DNSBL-clearance of globale inboxplaatsing bewezen is. Een expliciet `OUTREACH_OUTBOUND_IP` heeft altijd voorrang en activeert de exacte PTR/FCrDNS/DNSBL-route. Een onbekende andere provider zonder IP blijft `review/not_configured`.
+
+Een harde DNS/auth/TLS/PTR/FCrDNS/DNSBL-fout blokkeert. Sender readiness is nooit compliancebewijs.
 
 ## Capability 5 — inbox_placement
 
 Workflow: `.github/workflows/inbox-placement.yml`.
 
-Dit is geen warmup-netwerk maar een handmatige gecontroleerde seedtest.
-
-- Alleen `workflow_dispatch`.
+- Handmatige seedtest, geen warmup-netwerk.
 - Default `validate`; dan wordt niets verzonden.
-- `test` vereist expliciet `confirm_test_send=true` en `OUTREACH_PLACEMENT_TEST_ENABLED=true`.
-- Maximaal vijf vooraf geconfigureerde seed-inboxen uit `OUTREACH_SEED_INBOXES_JSON`.
-- Nooit `OutreachQueue`-ontvangers.
+- `test` vereist expliciete bevestiging, `OUTREACH_PLACEMENT_TEST_ENABLED=true`, mailboxauth en `OUTREACH_SEED_INBOXES_JSON`.
+- Maximaal vijf vooraf geconfigureerde seed-inboxen; nooit `OutreachQueue`-ontvangers.
 - Readback: `inbox | spam | missing | error` naar `InboxPlacement`.
-- Eén seedtest is nooit bewijs voor globale placement.
+- Eén seedresultaat is geen globale placementgarantie.
 
 ## Capability 6 — mailbox_draft
 
 Workflow: `.github/workflows/myhost-draft-test.yml`.
 
-Deze capability bewijst dat een concept **in de geconfigureerde mijn.host-mailbox zelf** kan worden opgeslagen zonder te verzenden.
-
-- Alleen expliciete handmatige bevestiging of een éénmalige request-trigger.
-- Self-addressed testboundary; geen prospectrecipient.
-- Alleen IMAP `APPEND` met `\\Draft`; er wordt geen SMTP-verbinding geopend.
-- Detecteer eerst de IMAP special-use `\\Drafts`-map; gebruik alleen een ondubbelzinnige Drafts/Concepten-fallback of expliciet bestaande `OUTREACH_DRAFT_FOLDER`.
-- Elk concept krijgt een unieke `X-Webactueel-Draft-Test-ID`.
-- Na APPEND moet dezelfde map read-only worden geselecteerd en moet die ID worden teruggevonden; zonder readback geen `MYHOST_DRAFT=green`.
-- Geen Google Sheet-toegang, geen Leadstate-mutatie, geen schedule en `send_permission=none`.
-- Een Outlook-concept is geen geldig substituut voor deze mijn.host-readback.
+- Expliciete self-only testcapability voor een concept in de echte mijn.host-mailbox.
+- Uitsluitend IMAP `APPEND` met de `\Draft`-flag; er wordt geen SMTP-send uitgevoerd.
+- Detecteert eerst special-use `\Drafts`, daarna alleen ondubbelzinnige `Drafts`/`Concepten` fallback of een expliciet bestaande `OUTREACH_DRAFT_FOLDER`.
+- Elk concept krijgt een unieke `X-Webactueel-Draft-Test-ID`; dezelfde map moet die ID read-only terugvinden.
+- Geen Sheetmutatie, geen Leadstate, geen schedule en `send_permission=none`.
 
 ## Capability 7 — outreach_delivery
 
 Workflow: `.github/workflows/outreach-smtp.yml`.
 
-De runtime accepteert alleen reeds door Leads beoordeelde transportstate. Zij genereert geen nieuwe prospectkeuze of verzendgrond; de copy moet vóór queue-promotie uit het officiële website-/webshopbewijs zijn opgebouwd.
-
-Actieve live-volgorde:
+De runtime accepteert alleen vooraf voorbereide én afzonderlijk goedgekeurde transportstate. De live-volgorde is:
 
 ```text
 campaign policy
@@ -115,63 +110,100 @@ campaign policy
 ```
 
 - Handmatige default: `validate`.
-- `live` is expliciet; scheduled live vereist daarnaast `OUTREACH_ENABLED=true`.
-- Push/CI mag nooit naar live promoveren en krijgt geen production mailboxsecret.
-- Iedere `approved` queue-row moet `source` als `website_scan:<JSON>` dragen. Verplicht: een `evidence_url` op het officiële prospectdomein, `analysis_type=website|webshop` en een concrete `idea` die exact in de mailtekst terugkomt. Dit maakt de scan->copy-binding machinecontroleerbaar zonder scannerbevindingen automatisch tot score of permission te promoveren.
-- De target/evidence-preflight herleest de officiële homepage begrensd en blokkeert agency-/bureauachtige targets en `webactueel.nl`/subdomeinen opnieuw vóór SMTP. `NL` is toegestaan als target, maar Nederland/EER blijft voor live commerciële e-mail fail-closed zonder aantoonbaar geldige compliancebasis.
-- Voor `US` vereist de target/evidence-preflight een geconfigureerde `OUTREACH_POSTAL_ADDRESS`, aanwezigheid van dat fysieke postadres in de mail en duidelijke aanduiding als commerciële/advertentieboodschap. Dit is aanvullend op accurate afzender/onderwerpdata, opt-out en suppression.
-- Voor `GB` wordt unsolicited live alleen toegelaten wanneer de evidence metadata `subscriber_type=corporate` bevat én de bedrijfsnaam een duidelijke corporate-vorm (`Ltd`, `Limited`, `LLP`, `PLC`) toont; onzekere/sole-traderdoelen blijven fail-closed.
-- LeadPromo-copy accepteert naast de bestaande Nederlandse champion nu een gecontroleerde Engelse champion/follow-up voor internationale doelen. Talen mogen niet binnen één CTA/opt-out/signaturecontract worden gemengd.
-- Suppression wordt vóór send gecontroleerd; reply, bounce en opt-out stoppen vervolgstate fail-closed.
-- Mailboxpool, limits, minimum waits, send windows, slow ramp, pacing, jitter, sticky sender en threading blijven actief.
-- De actieve direct-SMTP-route vereist geen Reoon. Legacy `verification_status`/`verification_checked_at` blijven alleen providercompatibele velden.
+- `live` is expliciet; scheduled live vereist bovendien `OUTREACH_ENABLED=true`.
+- Push naar `main` wordt hard naar `validate` geforceerd en krijgt geen production mailboxsecret.
+- Iedere `approved` queue-row moet `source=website_scan:<JSON>` bevatten met een officiële same-domain `evidence_url`, `analysis_type=website|webshop` en een concrete `idea` die exact in de mailtekst terugkomt.
+- De officiële target-homepage wordt vóór SMTP opnieuw begrensd gecontroleerd op self-/agencyprovideruitsluiting.
+- Nederland/EER blijft live fail-closed zonder aantoonbare geldige compliancebasis.
+- `US` vereist fysiek postadres, aanwezigheid van dezelfde geconfigureerde adreswaarde in de mail en duidelijke commercial/advertising-identificatie.
+- `GB` unsolicited route vereist bewezen corporate subscriber-context plus een duidelijke Ltd/Limited/LLP/PLC-vorm; onzekerheid blokkeert.
+- LeadPromo-copy blijft NL/EN gecontroleerd, CTA A/B, initial + één canonieke follow-up, geen gemengde CTA/opt-out/signaturetaal.
+- Suppression wordt vóór send gecontroleerd; reply, bounce en opt-out stoppen vervolg fail-closed.
+- Direct SMTP vereist geen Reoon.
 
 ## Capability 8 — dashboard
 
 De Google Sheet `Webactueel Leadlijst` bevat één read-only `Dashboard`.
 
 - Aggregatie uit ProspectCandidates, ContactCandidates, OutreachQueue, Suppression, MailboxHealth, SenderReadiness en InboxPlacement.
-- Lege readiness-, placement- of mailbox-healthbron = `not_tested`, nooit automatisch `green`.
-- Placement `missing` en `error` = unresolved/review.
-- Dashboardformules mogen geen Lead- of transportstate muteren.
+- Lege readiness/placement/mailbox-healthbron = `not_tested`, nooit automatisch `green`.
+- Dashboardformules muteren geen Lead-, kwalificatie-, compliance- of transportstate.
 
 ## Capability 9 — prospect_intelligence
 
 Workflow: `.github/workflows/prospect-intelligence.yml`.
 
-Deze capability vormt de afgeleide data-/learninglaag tussen discoverybewijs en menselijke/Leads-beslissingen.
-
-- Modi: `validate`, `bootstrap`, `refresh`; handmatige default = `validate`.
-- Geplande runs blijven standaard `validate`; alleen `PROSPECT_INTELLIGENCE_ENABLED=true` promoveert een schedule naar `refresh`.
-- Krijgt alleen `GOOGLE_SERVICE_ACCOUNT_JSON`; geen SMTP-, IMAP-, seed- of verifiersecret.
-- `ProspectObservations` bewaart discovery/herontdekkingsbewijs en maakt `first_seen`, `last_seen` en freshness berekenbaar.
-- `ProspectSignals` is een evidence-bound inputcontract. Elke signal row verwijst naar een bestaande `candidate_id`; signalen met onbekende kandidaat, ongeldige timestamp, ongeldige URL, ongeldige strength of confidence blokkeren fail-closed.
-- Signal `strength` is alleen `0|1|2`; dit is een bewijssamenvatting, geen Customer Potential-score.
-- `ProspectEntities` normaliseert kandidaten naar een deterministische domein-entiteit, aliases, source provenance en freshness.
-- `ProspectSourceMetrics` koppelt per bron kandidaatstatus, sterke signalen, contact-ready evidence en minimale Leadlijst-outcomes voor bronrendement.
-- `ProspectEvidence` bouwt reproduceerbare edges `source -> candidate/entity -> signal/contact/outcome` zodat prioriteitsbewijs traceerbaar blijft.
-- `ProspectLookalikes` gebruikt alleen bewezen `klant/customer`-seeds uit de minimale Leadlijst en bestaande candidate terms/country voor een adviserend similarity-resultaat.
-- Lookalikes, freshness, signals en source metrics wijzigen nooit zelfstandig Customer Potential, `qualified/hold/rejected`, contactpromotie, compliancebasis, copy, queue of send permission.
-- `refresh` herbouwt alleen de afgeleide tabs deterministisch; `ProspectSignals` en `ProspectObservations` blijven input/evidence en worden niet door refresh herschreven.
+- Modi: `validate`, `bootstrap`, `refresh`; losse weekday schedule blijft `validate` tenzij `PROSPECT_INTELLIGENCE_ENABLED=true`.
+- Krijgt alleen `GOOGLE_SERVICE_ACCOUNT_JSON`.
+- `ProspectObservations` levert provenance/freshnessinput.
+- `ProspectSignals` is evidence-bound input; onbekende kandidaat, ongeldige timestamp/URL/strength/confidence faalt gesloten.
+- `ProspectEntities` normaliseert domeinentiteiten en aliases.
+- `ProspectSourceMetrics` koppelt bronrendement aan bestaande kandidaat/contact/outcome-evidence.
+- `ProspectEvidence` bouwt reproduceerbare source -> candidate/entity -> signal/contact/outcome edges.
+- `ProspectLookalikes` gebruikt uitsluitend bewezen klantseeds.
+- Deze laag is adviserend en wijzigt niet zelfstandig Customer Potential, compliance, contactpromotie, copy of send permission.
 
 ## Capability 10 — prospect_signal_discovery
 
 Workflow: `.github/workflows/prospect-signal-discovery.yml`.
 
-Deze capability verzamelt een kleine, reproduceerbare set signalen rechtstreeks van het officiële prospectdomein.
+- Modi: `validate`, `discover`; losse weekday schedule blijft `validate` tenzij `PROSPECT_SIGNAL_DISCOVERY_ENABLED=true`.
+- Alleen bestaande `discovered`, `qualified` of `hold` candidates; `rejected` wordt niet gescand.
+- Standaard maximaal 10, hard maximaal 25 kandidaten per run.
+- Zelfde robots-, public-network-, pacing-, timeout- en bytegrenzen als bounded discovery.
+- Detecteert alleen evidence-bound `hiring`, `technology_wordpress`, `technology_woocommerce`.
+- Externe joblinks gelden niet als official-site hiringbewijs.
+- Signal `strength` is 0/1/2 bewijscontext, nooit zelfstandig toestemming.
+- De collector mag alleen eigen `source_id=official-site-signal` rows lifecycle-beheren.
 
-- Modi: `validate` en `discover`; handmatige default = `validate`.
-- Geplande runs blijven `validate`; alleen `PROSPECT_SIGNAL_DISCOVERY_ENABLED=true` promoveert het schedule naar `discover`.
-- Krijgt alleen `GOOGLE_SERVICE_ACCOUNT_JSON`; geen mailbox-, seed- of verifiersecret.
-- Behandelt uitsluitend bestaande `discovered`, `qualified` of `hold` candidates; `rejected` wordt niet gescand.
-- Standaard maximaal 10 kandidaten, hard maximaal 25 per run.
-- Behoudt dezelfde robots-, public-network-, pacing-, timeout- en bytegrenzen als de bounded prospect discovery HTTP-client.
-- Detecteert alleen evidence-bound `hiring`, `technology_wordpress` en `technology_woocommerce`.
-- Hiring moet via een interne link op het officiële domein worden gevonden. Een externe jobs-link is geen official-site hiringbewijs.
-- WordPress/WooCommerce worden alleen op deterministische runtime-markers vastgelegd; dit is tech-evidence en geen koopintentieclaim.
-- Bestaande eigen `official-site-signal`-rijen worden bij herdetectie bijgewerkt. Een eerder actief eigen signaal mag alleen na een succesvolle scan van dezelfde kandidaat als `expired` worden gemarkeerd wanneer het niet opnieuw is aangetroffen.
-- Extern aangeleverde signalen met een andere `source_id` worden nooit door deze collector herschreven of verlopen gemaakt.
-- Signal `strength` 0/1/2 blijft een bewijssamenvatting. De collector wijzigt nooit Customer Potential, `qualified/hold/rejected`, contactpromotie, compliancebasis, copy, queue of send permission.
+## Capability 11 — prospect_qualification
+
+Script: `scripts/prospect_qualification.py`; georkestreerd door `.github/workflows/leads-autopilot.yml`.
+
+Dit sluit de eerdere handmatige kloof tussen discovery en contact op een fail-closed manier.
+
+- Alleen `discovered`/`hold` kandidaten komen in aanmerking.
+- De officiële homepage wordt met de bestaande bounded HTTP/robots/SSRF-laag gelezen.
+- Selftargets en duidelijke agency/providers worden opnieuw geblokkeerd.
+- Customer Potential blijft exact: `ICP 0-3 + bewezen websitekans 0-3 + recent signaal 0-2 + aanbod/prijsfit 0-2`.
+- A=8-10 -> `qualified`; B=6-7 -> `hold`; C=0-5 -> `rejected`.
+- De websitekans gebruikt één primaire evidence-severity; generieke kleine hiaten worden niet opgeteld om kunstmatig 3 punten te maken.
+- Een ontbrekende checkout telt alleen zwaar wanneer de homepage eerst duidelijke webshop/shoppingcontext bewijst; alleen het woord “product” is daarvoor onvoldoende.
+- A vereist een concrete officiële-page `fact` én `idea`; zonder brongebonden idee wordt niet automatisch A-gekwalificeerd.
+- `ProspectQualifications` bewaart per kandidaat alle vier componenten, totaalscore, tier, evidence URL, fact, idea, analysis type, status en reden.
+- Deze capability mag kwalificatiestatus automatiseren, maar wijzigt nooit compliance, contactpermission of send permission.
+
+`ProspectQualifications` contract:
+
+`candidate_id | assessed_at | company | website | country | icp_score | website_opportunity_score | signal_score | offer_fit_score | customer_potential | tier | evidence_url | fact | idea | analysis_type | status | reason`
+
+## Capability 12 — zero_touch_prepare
+
+Workflow: `.github/workflows/leads-autopilot.yml`.
+
+Dit is de automatische prepare-controller:
+
+```text
+prospect_discovery
+-> prospect_signal_discovery
+-> prospect_qualification
+-> contact_enrichment
+-> prospect_intelligence
+-> outreach_prepare
+```
+
+- Handmatig: `validate|prepare`, default `validate`.
+- Weekday schedule draait automatisch in `prepare`-modus.
+- Een gecontroleerde eenmalige `ops/leads-autopilot-request.txt` push kan `prepare` activeren wanneer een connector geen workflow-dispatch ondersteunt.
+- Ontvangt alleen `GOOGLE_SERVICE_ACCOUNT_JSON` en gewone niet-geheime configuratie.
+- Ontvangt **geen** `OUTREACH_MAIL_PASSWORD`, `OUTREACH_MAILBOXES_JSON` of seedsecret.
+- Roept nooit `outreach_direct_smtp_runtime.py` aan en heeft `send_permission=none`.
+- Alleen A-qualified + `ContactCandidates.ready` kan mailcopy opleveren.
+- `scripts/outreach_prepare.py` maakt uitsluitend deterministic LeadPromo NL/EN copy en valideert die opnieuw met de bestaande copy-preflightfuncties.
+- Nieuwe queue-state is altijd `status=prepared`, `compliance_status=manual_review`, lege `compliance_basis` en dus niet sendable.
+- US prepare vereist `OUTREACH_POSTAL_ADDRESS` en voegt een duidelijke commercial-message-identificatie plus het geconfigureerde adres toe.
+- Prepared leads worden minimaal in `Leadlijst` vastgelegd als `gevonden` als het domein nog niet bestaat.
+- Alleen de aparte outreach_delivery-route kan later na actuele compliance- en sendergates naar live.
 
 ## Data-contracten
 
@@ -183,6 +215,7 @@ Minimaal bewaakt:
 - `ProspectObservations`
 - `ProspectSourceRuns`
 - `ProspectSignals`
+- `ProspectQualifications`
 - `ProspectEntities`
 - `ProspectSourceMetrics`
 - `ProspectEvidence`
@@ -199,52 +232,56 @@ Minimaal bewaakt:
 - `InboxPlacement`
 - `Dashboard`
 
-`mailbox_draft` schrijft bewust niet naar de Sheet; de bewijslaag is de IMAP same-folder readback in de workflowrun.
+`mailbox_draft` schrijft bewust niet naar de Sheet; de bewijslaag is de IMAP same-folder readback.
 
 ## Compliance- en transportgrenzen
 
-- Leads bezit `country/jurisdiction`, `compliance_basis`, `compliance_status`, contactbron en mailcopy.
-- Nederland/EER blijft fail-closed: een openbaar zakelijk adres, `ContactCandidates.ready`, sender-readiness, seed-placement, prospect-intelligence/signal-uitvoer of draft-readback is nooit zelfstandig toestemming voor commerciële outreach.
-- Verenigde Staten: CAN-SPAM-content/opt-out/postadresgates zijn aanvullend; een technische green senderstatus vervangt deze niet.
-- Verenigd Koninkrijk: alleen aantoonbare corporate-subscriberroute kan zonder PECR-consent worden voorbereid; persoonsgegevens, lawful basis en opt-outs blijven afzonderlijk relevant. Sole traders/onzekere typen worden als individueel behandeld en blijven fail-closed zonder geldige basis.
-- Compliance-, target/evidence-, copy-, suppression- en sendergates blijven vóór live SMTP.
-- Creatorvideo's/comments zijn adviserend bewijs. Actuele wet/providerregels en echte Webactueel-resultaten hebben voorrang.
+- Leads-policy bezit de geldige waarden en regels voor `country/jurisdiction`, `compliance_basis`, `compliance_status` en LeadPromo-copy.
+- De repository mag de score/copyregels deterministisch uitvoeren, maar mag nooit een ontbrekende juridische basis invullen op basis van alleen een openbaar e-mailadres, land of technisch signaal.
+- Nederland/EER blijft fail-closed: `ContactCandidates.ready`, qualification A, sender-readiness, seed-placement, prospect-intelligence of prepared copy is nooit zelfstandig toestemming voor commerciële outreach.
+- Verenigde Staten: CAN-SPAM-content/opt-out/postadresgates zijn aanvullend; technische sender-green vervangt die niet.
+- Verenigd Koninkrijk: corporate-subscribermetadata is een extra targetgate en vervangt geen overige toepasselijke privacy/lawful-basisverplichtingen.
+- Creatorvideo's/comments zijn adviserend; actuele primaire regels en echte provider-/klantreadback hebben voorrang.
 
 ## GitHub Actions Secrets
 
 Secretwaarden horen nooit in code, logs of artifacts.
 
-- `GOOGLE_SERVICE_ACCOUNT_JSON` — nodig voor de capabilities die de operationele Sheet lezen/schrijven.
-- `OUTREACH_MAIL_PASSWORD` — mailboxauth voor live SMTP/IMAP, mailbox-connectivity, `mailbox_draft` en de single-mailbox seedtest waar van toepassing.
-- `OUTREACH_MAILBOXES_JSON` — optioneel voor multi-mailboxconfiguratie.
-- `OUTREACH_SEED_INBOXES_JSON` — alleen voor de expliciete seed-placementtest.
+- `GOOGLE_SERVICE_ACCOUNT_JSON` — nodig voor capabilities die de operationele Sheet lezen/schrijven.
+- `OUTREACH_MAIL_PASSWORD` — uitsluitend live SMTP/IMAP, mailbox-connectivity, mailbox_draft en geconfigureerde seedtest.
+- `OUTREACH_MAILBOXES_JSON` — optioneel voor multi-mailbox, nooit voor discovery/qualification/prepare.
+- `OUTREACH_SEED_INBOXES_JSON` — uitsluitend voor expliciete seed-placement.
 - `REOON_API_KEY` — niet gebruikt door de actieve direct-SMTP-route.
-
-Belangrijk: `mailbox_draft` krijgt **geen** `GOOGLE_SERVICE_ACCOUNT_JSON`; discovery, prospect intelligence, prospect signal discovery en contact-only routes krijgen **geen** mailboxsecrets.
 
 ## Belangrijkste variabelen
 
-De workflows bevatten veilige projectdefaults waar die al bestonden. Relevante variabelen zijn onder meer:
+- Sheet: `OUTREACH_SPREADSHEET_ID`.
+- Discovery: `PROSPECT_DISCOVERY_*`.
+- Signals: `PROSPECT_SIGNAL_*`.
+- Qualification: `PROSPECT_QUALIFICATION_MAX_PER_RUN`, `PROSPECT_QUALIFICATION_TIMEOUT_SECONDS`, `PROSPECT_QUALIFICATION_MAX_BYTES`, `PROSPECT_QUALIFICATION_MIN_INTERVAL_SECONDS`, `PROSPECT_QUALIFICATION_USER_AGENT`.
+- Contact: `CONTACT_ENRICHMENT_*`.
+- Prepare: `OUTREACH_PREPARE_MAX_PER_RUN`, `OUTREACH_POSTAL_ADDRESS`, sender-id vars zonder password.
+- Intelligence: `PROSPECT_INTELLIGENCE_*`.
+- Sender readiness: `OUTREACH_OUTBOUND_IP`, `OUTREACH_DNSBL_ZONES`; deze zijn optioneel voor mijn.host provider-managed shared-relaymode.
+- Outreach: `OUTREACH_ENABLED`, mode, timezone/sendwindow, limits, pacing/ramp/jitter, SMTP/IMAP/DKIM/SPF-config.
 
-- discovery: `PROSPECT_DISCOVERY_*`, inclusief `PROSPECT_DISCOVERY_TARGET_NEW`, `PROSPECT_DISCOVERY_EXCLUDE_COUNTRIES`, `PROSPECT_DISCOVERY_PREFERRED_COUNTRIES`, `PROSPECT_DISCOVERY_EXCLUDE_AGENCIES`, `PROSPECT_DISCOVERY_EXTRA_EXCLUDE_TERMS`, plus `OUTREACH_SPREADSHEET_ID`;
-- prospect intelligence: `PROSPECT_INTELLIGENCE_ENABLED`, `PROSPECT_INTELLIGENCE_STALE_DAYS`, `OUTREACH_SPREADSHEET_ID`;
-- prospect signals: `PROSPECT_SIGNAL_DISCOVERY_ENABLED`, `PROSPECT_SIGNAL_MAX_CANDIDATES`, `PROSPECT_SIGNAL_TIMEOUT_SECONDS`, `PROSPECT_SIGNAL_MAX_BYTES`, `PROSPECT_SIGNAL_MIN_INTERVAL_SECONDS`, `PROSPECT_SIGNAL_USER_AGENT`;
-- contact enrichment: `CONTACT_ENRICHMENT_*`, `OUTREACH_SPREADSHEET_ID`;
-- sender readiness: `SENDER_READINESS_ENABLED`, `OUTREACH_OUTBOUND_IP`, `OUTREACH_DNSBL_ZONES`;
-- placement: `OUTREACH_PLACEMENT_POLL_SECONDS`, `OUTREACH_PLACEMENT_MAX_WAIT_SECONDS`;
-- mailbox draft: `OUTREACH_DRAFT_FOLDER`, plus de gewone IMAP/mailboxconfiguratie;
-- outreach: `OUTREACH_ENABLED`, `OUTREACH_MODE`, `OUTREACH_POSTAL_ADDRESS`, timezone/sendwindow, daily/run/new-lead limits, pacing/ramp/jitter, mailbox/sender SMTP/IMAP- en DKIM/SPF-instellingen.
-
-Gebruik de workflows zelf als waarheid voor exacte defaults en bounds; kopieer die lijsten niet naar extra docs.
+Gebruik de workflows zelf als waarheid voor exacte defaults en harde bounds.
 
 ## Runtime ownership en hygiene
 
 - Leads gebruikt voor GitHub-uitvoering uitsluitend `Yolol100/Leadscanner`; `Yolol100/Orchestrator` is geen technische dependency.
-- Klant-, request-, secret- en run-specifieke state blijft buiten `main` of run-scoped.
-- GitHub Actions-evidence blijft in artifacts/Sheets; commit geen runtime-output naar `main`.
-- `ProspectSignals` is evidence-intake, geen tweede score- of permissionlaag.
-- `ProspectSourceRuns` is historische discovery-/bronkwaliteitsevidence en geen Leadstatus of permissionlaag.
-- `ProspectSourceMetrics` en `ProspectLookalikes` zijn adviserend; Leads blijft de enige eigenaar van kwalificatie en promotie.
-- De official-site signal collector mag alleen eigen `source_id=official-site-signal` rows lifecycle-beheren.
-- Verwijder capabilities alleen wanneer machinecontract, callsites en tests aantonen dat ze werkelijk ongebruikt zijn.
-- Bestaande Node/scanner-CI en Python Leads-runtime-CI moeten groen zijn vóór merge/releaseclaims.
+- Klant-, request-, secret- en run-specifieke state blijft buiten permanente broncode of run-scoped.
+- GitHub Actions-evidence blijft in artifacts/Sheets; runtime-output wordt niet naar `main` teruggecommit.
+- Relevante main pushes blijven veilig validate-only voor outreach.
+- Bestaande Node/scanner-CI, Python Leads-runtime-CI en Toolkit Contract moeten groen zijn vóór releaseclaims.
+- Repository-branchprotection is change-control-hygiene en staat los van de inhoudelijke sendgates; runtimeveiligheid mag er nooit van afhangen.
+
+## Live activering
+
+1. Zero-touch prepare mag zelfstandig blijven draaien; dit verzendt niets.
+2. Houd `OUTREACH_ENABLED=false` zolang live niet expliciet gewenst is.
+3. Vereis actuele `SenderReadiness` en mailboxauth.
+4. Vereis per rij aantoonbare geldige `compliance_basis` + `compliance_status=approved`.
+5. Draai `outreach-smtp.yml` eerst in `validate` en controleer target/evidence + LeadPromo + compliance.
+6. Start alleen na expliciete live/autopilot-sendopdracht een gecontroleerde live-run.
+7. Accepteer alleen echte SMTP acceptance + IMAP/reply/bounce/opt-out readback als transportbewijs.
