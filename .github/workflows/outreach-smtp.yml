@@ -106,6 +106,13 @@ jobs:
           echo "::error::GOOGLE_SERVICE_ACCOUNT_JSON is required for manual/scheduled runtime validation."
           exit 1
 
+      - name: Load private outreach config
+        if: steps.sheet_auth.outputs.available == 'true'
+        env:
+          OUTREACH_CONFIG_SPREADSHEET_ID: ${{ vars.OUTREACH_CONFIG_SPREADSHEET_ID || '1panRChrQAL-Fe067swRGUCP3mxdyXA6hmvUUwdmQxfI' }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python3 scripts/outreach_private_config.py
+
       - name: Run sender preflight
         if: steps.sheet_auth.outputs.available == 'true'
         env:
@@ -171,7 +178,6 @@ jobs:
         env:
           OUTREACH_MODE: ${{ steps.policy.outputs.effective_mode }}
           OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
-          OUTREACH_POSTAL_ADDRESS: ${{ vars.OUTREACH_POSTAL_ADDRESS }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: python3 scripts/outreach_target_evidence_preflight.py
 
