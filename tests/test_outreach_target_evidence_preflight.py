@@ -8,12 +8,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import outreach_target_evidence_preflight as p
 
 
+FACT = "Example sells handmade lighting and home accessories through its online store."
 IDEA = "Make the mobile category navigation visible above the product grid so shoppers can reach the right collection faster."
 
 
 def source(**extra):
     payload = {
         "evidence_url": "https://shop.example.com/collections",
+        "fact": FACT,
         "idea": IDEA,
         "analysis_type": "webshop",
     }
@@ -27,7 +29,7 @@ def row(country="US", company="Example Inc", **overrides):
         "website": "https://shop.example.com/",
         "country": country,
         "source": source(),
-        "body": f"Hi Example team,\n\nOne idea: {IDEA}\n\nThis is a commercial message from Webactueel.\n123 Main Street, Example City\n\nBest regards,\nAndrew Baeten",
+        "body": f"Hi Example team,\n\n{FACT}\n\nOne idea: {IDEA}\n\nThis is a commercial message from Webactueel.\n123 Main Street, Example City\n\nBest regards,\nAndrew Baeten",
         "status": "approved",
     }
     base.update(overrides)
@@ -65,11 +67,14 @@ class TargetEvidencePreflightTests(unittest.TestCase):
         errors = p.metadata_errors(row(source=bad_source), postal_address="123 Main Street, Example City")
         self.assertTrue(any("official prospect domain" in item for item in errors))
 
+    def test_exact_scan_fact_must_be_in_mail(self):
+        body = row()["body"].replace(FACT, "A generic compliment.")
+        errors = p.metadata_errors(row(body=body), postal_address="123 Main Street, Example City")
+        self.assertTrue(any("exact website_scan fact" in item for item in errors))
+
     def test_exact_scan_idea_must_be_in_mail(self):
-        errors = p.metadata_errors(
-            row(body="This is a commercial message from Webactueel. 123 Main Street, Example City"),
-            postal_address="123 Main Street, Example City",
-        )
+        body = row()["body"].replace(IDEA, "A generic redesign idea.")
+        errors = p.metadata_errors(row(body=body), postal_address="123 Main Street, Example City")
         self.assertTrue(any("exact website_scan idea" in item for item in errors))
 
     def test_uk_requires_verified_corporate_subscriber(self):
