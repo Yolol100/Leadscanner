@@ -1,0 +1,77 @@
+name: Temporary Prospect Source Diagnostic
+
+on:
+  push:
+    branches:
+      - ops/leads-live-proof-20260905
+    paths:
+      - ops/prospect-diagnostic-request.txt
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-outreach.txt
+      - name: Install dependencies
+        run: python3 -m pip install --disable-pip-version-check --requirement requirements-outreach.txt
+      - name: Diagnose approved prospect sources read-only
+        env:
+          OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH=scripts python3 - <<'PY'
+          import json, os
+          from prospect_discovery_runtime import load_google_service, get_values
+          from prospect_discovery import SOURCE_HEADERS, rows_to_dicts, SourceSpec, BoundedHttpClient, discover_source, DiscoveryError
+
+          service = load_google_service()
+          rows = rows_to_dicts(get_values(service, os.environ['OUTREACH_SPREADSHEET_ID'], "'ProspectSources'!A:I"), SOURCE_HEADERS)
+          client = BoundedHttpClient(min_interval=0.1)
+          results = []
+          for row in rows:
+              source = SourceSpec.from_row(row)
+              if not source.enabled or not source.approved:
+                  continue
+              item = {'source_id': source.source_id, 'source_type': source.source_type, 'source_url': source.source_url}
+              try:
+                  text = client.fetch_text(source.source_url)
+                  item['source_fetch'] = 'green'
+                  item['source_bytes'] = len(text.encode('utf-8'))
+              except DiscoveryError as exc:
+                  item['source_fetch'] = 'blocked'
+                  item['source_error'] = str(exc)[:400]
+                  results.append(item)
+                  continue
+              try:
+                  candidates = discover_source(source, client.fetch_text)
+                  item['candidate_count'] = len(candidates)
+                  item['candidate_hosts'] = [c.website for c in candidates]
+              except DiscoveryError as exc:
+                  item['discover_error'] = str(exc)[:400]
+              results.append(item)
+          with open('prospect-source-diagnostic.json', 'w', encoding='utf-8') as handle:
+              json.dump({'results': results}, handle, ensure_ascii=False, indent=2)
+          print(json.dumps({'source_count': len(results), 'states': [{'source_id': x['source_id'], 'source_fetch': x.get('source_fetch'), 'candidate_count': x.get('candidate_count'), 'source_error': x.get('source_error'), 'discover_error': x.get('discover_error')} for x in results]}, ensure_ascii=False))
+          PY
+      - name: Upload diagnostic
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: prospect-source-diagnostic-${{ github.run_id }}
+          path: prospect-source-diagnostic.json
+          if-no-files-found: error
+          retention-days: 7
