@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import json
 import os
 import sys
 from typing import Mapping, Sequence
@@ -49,13 +48,14 @@ def sanitize_rows(
     for row in rows:
         if checked >= max_checks:
             break
-        if _text(row.get("status")).casefold() == "rejected":
+        current_status = _text(row.get("status")).casefold()
+        if current_status == "rejected":
             continue
         company = _text(row.get("company"))
         website = _text(row.get("website"))
         source_id = _text(row.get("source_id"))
         source_url = _text(row.get("source_url"))
-        direct_reason = obvious_non_target(company, website)
+        direct_reason = obvious_non_target(company, website, source_url)
         if direct_reason:
             row["status"] = "rejected"
             row["reason"] = f"source_semantic_target_policy: {direct_reason}"
