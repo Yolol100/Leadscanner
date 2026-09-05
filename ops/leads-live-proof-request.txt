@@ -1,1 +1,1 @@
-discovery-validate
+discovery-run
