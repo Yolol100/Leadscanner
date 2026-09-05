@@ -45,8 +45,8 @@ jobs:
           assert scanner['requires_api_key'] is False
           discovery=caps['prospect_discovery']
           assert discovery['send_permission']=='none'
-          assert 'NL' in discovery['default_excluded_countries']
-          assert discovery['default_preferred_countries'][0]=='US'
+          assert discovery['default_excluded_countries']==[]
+          assert discovery['default_preferred_countries'][:2]==['US','NL']
           assert discovery['agency_exclusion_default'] is True
           for key in ('OUTREACH_MAIL_PASSWORD','OUTREACH_MAILBOXES_JSON','OUTREACH_SEED_INBOXES_JSON','REOON_API_KEY'):
               assert key in discovery['forbidden_secrets']
@@ -108,8 +108,9 @@ jobs:
 
           discovery_workflow=pathlib.Path('.github/workflows/prospect-discovery.yml').read_text(encoding='utf-8')
           assert "PROSPECT_DISCOVERY_EXCLUDE_COUNTRIES" in discovery_workflow
-          assert "|| 'NL'" in discovery_workflow
+          assert "|| 'NL'" not in discovery_workflow
           assert "PROSPECT_DISCOVERY_PREFERRED_COUNTRIES" in discovery_workflow
+          assert "US,NL,GB" in discovery_workflow
           assert "PROSPECT_DISCOVERY_EXCLUDE_AGENCIES" in discovery_workflow
 
           draft_workflow=pathlib.Path('.github/workflows/myhost-draft-test.yml').read_text(encoding='utf-8')
@@ -143,7 +144,9 @@ jobs:
           integration=pathlib.Path('LEADS-INTEGRATION.md').read_text(encoding='utf-8')
           assert '## Capability 6 — mailbox_draft' in integration, 'integration docs omit mailbox_draft'
           assert '-> live sender readiness gate\n-> website target + evidence preflight\n-> LeadPromo copy preflight' in integration, 'integration docs omit website target/evidence gate'
-          assert 'NL` standaard uit' in integration
+          assert 'laat `NL` standaard toe' in integration
+          assert '`US` eerst, `NL` tweede' in integration
+          assert 'webactueel.nl' in integration
           assert 'website_scan:<JSON>' in integration
           for doc in ('README.md','AGENTS.md'):
               text=pathlib.Path(doc).read_text(encoding='utf-8')

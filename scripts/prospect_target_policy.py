@@ -6,9 +6,9 @@ from typing import Iterable
 
 from prospect_discovery import SourceSpec, host_key, split_terms
 
-DEFAULT_EXCLUDED_COUNTRIES = ("NL", "NLD", "NETHERLANDS", "NEDERLAND")
+DEFAULT_EXCLUDED_COUNTRIES: tuple[str, ...] = ()
 DEFAULT_PREFERRED_COUNTRIES = (
-    "US", "GB", "DE", "FR", "BE", "ES", "IT", "SE", "DK", "NO", "FI",
+    "US", "NL", "GB", "DE", "FR", "BE", "ES", "IT", "SE", "DK", "NO", "FI",
     "AT", "CH", "IE", "PT", "PL", "CZ",
 )
 DEFAULT_SELF_EXCLUDED_DOMAINS = ("webactueel.nl",)
