@@ -73,6 +73,10 @@ jobs:
           PROSPECT_DISCOVERY_MAX_BYTES: ${{ vars.PROSPECT_DISCOVERY_MAX_BYTES || '2097152' }}
           PROSPECT_DISCOVERY_MIN_INTERVAL_SECONDS: ${{ vars.PROSPECT_DISCOVERY_MIN_INTERVAL_SECONDS }}
           PROSPECT_DISCOVERY_USER_AGENT: ${{ vars.PROSPECT_DISCOVERY_USER_AGENT }}
+          PROSPECT_DISCOVERY_EXCLUDE_COUNTRIES: ${{ vars.PROSPECT_DISCOVERY_EXCLUDE_COUNTRIES || 'NL' }}
+          PROSPECT_DISCOVERY_PREFERRED_COUNTRIES: ${{ vars.PROSPECT_DISCOVERY_PREFERRED_COUNTRIES || 'US,GB,DE,FR,BE,ES,IT,SE,DK,NO,FI,AT,CH,IE,PT,PL,CZ' }}
+          PROSPECT_DISCOVERY_EXCLUDE_AGENCIES: ${{ vars.PROSPECT_DISCOVERY_EXCLUDE_AGENCIES || 'true' }}
+          PROSPECT_DISCOVERY_EXTRA_EXCLUDE_TERMS: ${{ vars.PROSPECT_DISCOVERY_EXTRA_EXCLUDE_TERMS }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: python3 scripts/prospect_discovery_runtime.py --mode "$PROSPECT_DISCOVERY_MODE" --report prospect-discovery-report.json
 
@@ -86,9 +90,11 @@ jobs:
             echo "- mode: \`${{ steps.mode.outputs.mode }}\`"
             echo "- controller: \`leads\`"
             echo "- target-fill: \`PROSPECT_DISCOVERY_TARGET_NEW\` (bounded by hard max total)"
+            echo "- default geography: NL excluded; US first, then configured non-NL European sources"
+            echo "- competitor policy: web/design/development/marketing/advertising/SEO/branding/digital/commerce agencies excluded by default"
             echo "- transport/send permission: \`none\`"
             echo
-            echo "A discovered candidate is not an approved lead. Leads must still verify official-site evidence, fit, contact source, compliance and approved transport state before SMTP."
+            echo "A discovered candidate is not an approved lead. Leads must still scan and verify official-site evidence, fit, contact source, jurisdiction/compliance and approved transport state before SMTP."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload discovery receipt
