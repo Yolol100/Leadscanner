@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import re
-from urllib.parse import urlparse
 
 from outreach_sender import (
     QUEUE_HEADERS,
@@ -62,12 +61,18 @@ def metadata_errors(row: dict[str, str], *, postal_address: str = "") -> list[st
         return errors
 
     evidence_url = evidence.get("evidence_url", "")
+    fact = _text(evidence.get("fact", ""))
     idea = _text(evidence.get("idea", ""))
+    body_text = _text(row.get("body", ""))
     if not evidence_url or not _same_domain(website, evidence_url):
         errors.append("website_scan evidence_url must be on the official prospect domain")
+    if len(fact) < 15:
+        errors.append("website_scan fact must contain a concise evidence-bound company fact")
+    elif fact.casefold() not in body_text.casefold():
+        errors.append("mail body must contain the exact website_scan fact")
     if len(idea) < 20:
         errors.append("website_scan idea must contain a concrete evidence-bound improvement")
-    elif idea.casefold() not in _text(row.get("body", "")).casefold():
+    elif idea.casefold() not in body_text.casefold():
         errors.append("mail body must contain the exact website_scan idea")
 
     analysis_type = evidence.get("analysis_type", "").casefold()
