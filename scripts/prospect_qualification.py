@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 from outreach_sender import build_sheets_service, ensure_expected_headers, get_values, rows_from_values
 from prospect_discovery import BoundedHttpClient, DiscoveryError, match_terms, parse_page, root_url
 from prospect_intelligence import SIGNAL_HEADERS
+from prospect_source_semantics import obvious_non_target, source_semantic_target_check
 from prospect_target_policy import DEFAULT_AGENCY_EXCLUDE_TERMS, canonical_country, is_excluded_domain
 
 PROSPECT_SHEET = "ProspectCandidates"
@@ -210,11 +211,32 @@ def assess_candidate(
     candidate_id = _text(row.get("candidate_id"))
     company = _text(row.get("company"))
     website = root_url(_text(row.get("website")))
+    source_url = _text(row.get("source_url"))
+    source_id = _text(row.get("source_id"))
     country = canonical_country(_text(row.get("country")))
     if not candidate_id or not company or not website:
         return Assessment(0, 0, 0, 0, 0, "C", website, "", "", "website", "rejected", "missing candidate identity or official website")
     if is_excluded_domain(website):
         return Assessment(0, 0, 0, 0, 0, "C", website, "", "", "website", "rejected", "self/excluded domain")
+
+    direct_semantic_reason = obvious_non_target(company, website, source_url)
+    if direct_semantic_reason:
+        return Assessment(
+            0, 0, 0, 0, 0, "C", website, "", "", "website", "rejected",
+            f"source_semantic_target_policy: {direct_semantic_reason}",
+        )
+    semantic_allowed, semantic_reason = source_semantic_target_check(
+        source_id=source_id,
+        source_url=source_url,
+        company=company,
+        website=website,
+        html=html,
+    )
+    if not semantic_allowed:
+        return Assessment(
+            0, 0, 0, 0, 0, "C", website, "", "", "website", "rejected",
+            f"source_semantic_target_policy: {semantic_reason}",
+        )
 
     page = parse_page(html, website)
     haystack = f"{page.title} {page.site_name} {page.text} {html[:100000]}"
@@ -427,15 +449,26 @@ def run(mode: str, report_path: str) -> int:
         if not candidate_id or not website:
             continue
         assessed += 1
-        try:
-            html = client.fetch_text(website)
-            assessment = assess_candidate(candidate, html, signals)
-        except (DiscoveryError, RuntimeError, ValueError) as exc:
+        direct_semantic_reason = obvious_non_target(
+            _text(candidate.get("company")),
+            website,
+            _text(candidate.get("source_url")),
+        )
+        if direct_semantic_reason:
             assessment = Assessment(
-                0, 0, _active_signal_score(candidate_id, signals), 0, 0, "UNSCORED", website,
-                "", "", "website", "hold", f"qualification fetch/evidence unavailable: {type(exc).__name__}: {_text(exc)[:180]}",
+                0, 0, 0, 0, 0, "C", website, "", "", "website", "rejected",
+                f"source_semantic_target_policy: {direct_semantic_reason}",
             )
-            unscored += 1
+        else:
+            try:
+                html = client.fetch_text(website)
+                assessment = assess_candidate(candidate, html, signals)
+            except (DiscoveryError, RuntimeError, ValueError) as exc:
+                assessment = Assessment(
+                    0, 0, _active_signal_score(candidate_id, signals), 0, 0, "UNSCORED", website,
+                    "", "", "website", "hold", f"qualification fetch/evidence unavailable: {type(exc).__name__}: {_text(exc)[:180]}",
+                )
+                unscored += 1
 
         candidate["status"] = assessment.status
         candidate["reason"] = assessment.reason
@@ -479,7 +512,7 @@ def run(mode: str, report_path: str) -> int:
         "force_recheck": force_recheck,
         "recheck_days": recheck_days,
         "send_permission": "none",
-        "note": "Qualification is deterministic, evidence-bound, conservative and bounded. It never grants compliance or send permission.",
+        "note": "Qualification is deterministic, evidence-bound, conservative and bounded. Source-semantic rejects are rechecked fail-closed and can never become qualified merely through scoring. It never grants compliance or send permission.",
     })
     print(
         f"PROSPECT_QUALIFICATION=complete assessed={assessed} qualified={qualified} "
