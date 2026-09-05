@@ -9,13 +9,18 @@ Leads/ChatGPT blijft eigenaar van bedrijfsrealness, Customer Potential, contactk
 Workflow: `.github/workflows/prospect-discovery.yml`.
 
 - Leest alleen expliciet goedgekeurde `ProspectSources`.
+- Ondersteunt `seed_site`, `directory_page`, `directory_index` en `directory_sitemap` als expliciete source-adapters.
+- `directory_sitemap` accepteert alleen begrensde publieke XML `urlset`/`sitemapindex`-bronnen, volgt uitsluitend same-host profiel-URLs en maximaal drie same-host child-sitemaps; externe child-sitemaps worden genegeerd.
+- XML blijft onder dezelfde robots-, public-network/SSRF-, timeout-, pacing- en bytegrenzen als HTML discovery; DTD/entity-declaraties worden geblokkeerd.
 - Schrijft nieuwe company/domain-kandidaten naar `ProspectCandidates`.
 - Kan met `PROSPECT_DISCOVERY_TARGET_NEW` een begrensd doelvolume over meerdere goedgekeurde bronnen in Sheet-volgorde proberen te vullen; `PROSPECT_DISCOVERY_MAX_TOTAL` blijft de bovengrens.
 - Rapporteert `target_met` en `target_gap`; een niet gehaald doel wordt nooit als succesvolle vulling verzonnen.
 - Schrijft, wanneer `ProspectObservations` bestaat, per verwerkte company/domain-herwaarneming provenance naar die tab. `new` en `duplicate` zijn observatie-uitkomsten, geen kwalificatiebesluiten.
+- Schrijft, wanneer `ProspectSourceRuns` bestaat, per werkelijk verwerkte bron `status`, `seen`, `new`, `duplicates`, `duration_ms` en begrensde fouttekst. Dit is run-/bronbewijs en nooit kwalificatie of send permission.
 - Behoudt robots.txt, pacing, timeouts, byte/kandidaatlimieten en private-network/SSRF-blokkering.
 - Verzamelt geen contactadressen, bepaalt geen Customer Potential/compliance, maakt geen copy en ontvangt geen mailboxcredentials.
 - Modi: `validate`, `bootstrap`, `discover`.
+- `bootstrap` kan de optionele evidence-tabs `ProspectObservations` en `ProspectSourceRuns` aanmaken; bestaande validate/discover blijft compatibel wanneer die tabs nog ontbreken.
 - Handmatige default: `validate`.
 - Geplande weekday-runs blijven actief voor contractvalidatie en draaien standaard `validate`; alleen `PROSPECT_DISCOVERY_ENABLED=true` promoveert een geplande run naar `discover`.
 
@@ -168,6 +173,7 @@ Minimaal bewaakt:
 - `ProspectSources`
 - `ProspectCandidates`
 - `ProspectObservations`
+- `ProspectSourceRuns`
 - `ProspectSignals`
 - `ProspectEntities`
 - `ProspectSourceMetrics`
@@ -227,6 +233,7 @@ Gebruik de workflows zelf als waarheid voor exacte defaults en bounds; kopieer d
 - Klant-, request-, secret- en run-specifieke state blijft buiten `main` of run-scoped.
 - GitHub Actions-evidence blijft in artifacts/Sheets; commit geen runtime-output naar `main`.
 - `ProspectSignals` is evidence-intake, geen tweede score- of permissionlaag.
+- `ProspectSourceRuns` is historische discovery-/bronkwaliteitsevidence en geen Leadstatus of permissionlaag.
 - `ProspectSourceMetrics` en `ProspectLookalikes` zijn adviserend; Leads blijft de enige eigenaar van kwalificatie en promotie.
 - De official-site signal collector mag alleen eigen `source_id=official-site-signal` rows lifecycle-beheren.
 - Verwijder capabilities alleen wanneer machinecontract, callsites en tests aantonen dat ze werkelijk ongebruikt zijn.
