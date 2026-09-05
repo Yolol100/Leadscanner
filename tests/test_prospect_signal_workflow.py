@@ -6,6 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "prospect-signal-discovery.yml"
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
+CANONICAL_SHEET_ID = "1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI"
 
 
 class ProspectSignalWorkflowTests(unittest.TestCase):
@@ -31,6 +32,14 @@ class ProspectSignalWorkflowTests(unittest.TestCase):
         self.assertIn('elif [ "$SIGNAL_DISCOVERY_ENABLED" = "true" ]; then', text)
         self.assertIn('mode="discover"', text)
         self.assertIn('mode="validate"', text)
+
+    def test_standalone_runtime_has_safe_canonical_defaults(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn(f"OUTREACH_SPREADSHEET_ID: ${{{{ vars.OUTREACH_SPREADSHEET_ID || '{CANONICAL_SHEET_ID}' }}}}", text)
+        self.assertIn("PROSPECT_SIGNAL_MAX_CANDIDATES: ${{ vars.PROSPECT_SIGNAL_MAX_CANDIDATES || '10' }}", text)
+        self.assertIn("PROSPECT_SIGNAL_TIMEOUT_SECONDS: ${{ vars.PROSPECT_SIGNAL_TIMEOUT_SECONDS || '10' }}", text)
+        self.assertIn("PROSPECT_SIGNAL_MAX_BYTES: ${{ vars.PROSPECT_SIGNAL_MAX_BYTES || '524288' }}", text)
+        self.assertIn("PROSPECT_SIGNAL_MIN_INTERVAL_SECONDS: ${{ vars.PROSPECT_SIGNAL_MIN_INTERVAL_SECONDS || '0.5' }}", text)
 
     def test_runtime_is_advisory_and_bounded(self):
         runtime = (ROOT / "scripts" / "prospect_signal_discovery_runtime.py").read_text(encoding="utf-8")
