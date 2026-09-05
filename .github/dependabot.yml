@@ -8,8 +8,6 @@ updates:
       time: '06:00'
       timezone: Europe/Amsterdam
     open-pull-requests-limit: 5
-    labels:
-      - dependencies
     commit-message:
       prefix: deps
 
@@ -21,8 +19,6 @@ updates:
       time: '06:10'
       timezone: Europe/Amsterdam
     open-pull-requests-limit: 5
-    labels:
-      - dependencies
     commit-message:
       prefix: deps
 
@@ -34,7 +30,5 @@ updates:
       time: '06:20'
       timezone: Europe/Amsterdam
     open-pull-requests-limit: 5
-    labels:
-      - dependencies
     commit-message:
       prefix: ci
