@@ -66,8 +66,8 @@ jobs:
       - name: Run prospect intelligence
         env:
           PROSPECT_INTELLIGENCE_MODE: ${{ steps.mode.outputs.mode }}
-          OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID }}
-          PROSPECT_INTELLIGENCE_STALE_DAYS: ${{ vars.PROSPECT_INTELLIGENCE_STALE_DAYS }}
+          OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
+          PROSPECT_INTELLIGENCE_STALE_DAYS: ${{ vars.PROSPECT_INTELLIGENCE_STALE_DAYS || '30' }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: python3 scripts/prospect_intelligence_runtime.py --mode "$PROSPECT_INTELLIGENCE_MODE" --report prospect-intelligence-report.json
 
