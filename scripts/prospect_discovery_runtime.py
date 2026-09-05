@@ -24,7 +24,7 @@ from prospect_discovery import (
     SourceSpec,
     clamp_float,
     clamp_int,
-    discover_source,
+    discover_source_with_stats,
     existing_domains,
     host_key,
     rows_to_dicts,
@@ -267,7 +267,9 @@ def run(mode: str, report_path: str) -> int:
             continue
         started = time.monotonic()
         try:
-            items = discover_source(source, client.fetch_text)
+            items, skipped_known = discover_source_with_stats(
+                source, client.fetch_text, known_hosts=known
+            )
         except DiscoveryError as exc:
             duration_ms = round((time.monotonic() - started) * 1000)
             error = str(exc)[:300]
@@ -287,9 +289,9 @@ def run(mode: str, report_path: str) -> int:
                 seen=0, new_count=0, duplicate_count=0, duration_ms=duration_ms, error=error,
             ))
             continue
-        seen = 0
+        seen = skipped_known
         new_count = 0
-        duplicate_count = 0
+        duplicate_count = skipped_known
         for item in items:
             domain = host_key(item.website)
             if not domain:
@@ -359,7 +361,7 @@ def run(mode: str, report_path: str) -> int:
         "source_runs_persisted": source_runs_persisted,
         "observation_rows": len(observations),
         "observations_persisted": observation_persisted,
-        "note": "Candidates remain discovered-only; NL/default excluded countries and agency-like providers are filtered before candidate creation. Contact lookup is deferred to Leads, which must review fit, website evidence, compliance and approved transport state before SMTP.",
+        "note": "Candidates remain discovered-only; configured excluded countries and agency-like providers are filtered before candidate creation. Contact lookup is deferred to Leads, which must review fit, website evidence, compliance and approved transport state before SMTP.",
     }
     report.update(target_summary(len(discovered), target_new))
     write_report(report_path, report)
