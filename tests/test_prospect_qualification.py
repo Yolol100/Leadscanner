@@ -71,6 +71,29 @@ class ProspectQualificationTests(unittest.TestCase):
         self.assertFalse(result.fact)
         self.assertFalse(result.idea)
 
+    def test_product_word_alone_does_not_turn_manufacturer_into_webshop(self):
+        html = """
+        <html><head><title>Industrial Components Manufacturer</title>
+        <meta name='description' content='Industrial products for OEM customers'>
+        <meta name='viewport' content='width=device-width, initial-scale=1'>
+        </head><body><h1>Industrial Components</h1>
+        <p>We manufacture products and components for industrial customers.</p>
+        <a href='/contact'>Contact</a><a href='/products'>Products</a></body></html>
+        """
+        result = assess_candidate(self._candidate(company="Industrial Components"), html, [])
+        self.assertEqual(result.analysis_type, "website")
+        self.assertNotIn("shop_no_checkout", result.reason)
+
+    def test_generic_small_gaps_do_not_stack_into_three_point_opportunity(self):
+        html = """
+        <html><head><title>Example Maintenance</title></head>
+        <body><p>Professional maintenance services for business clients.</p></body></html>
+        """
+        result = assess_candidate(self._candidate(company="Example Maintenance"), html, [])
+        self.assertEqual(result.analysis_type, "website")
+        self.assertEqual(result.website_opportunity_score, 2)
+        self.assertIn("primary_evidence=no_contact_link", result.reason)
+
     def test_autopilot_workflow_has_no_mailbox_or_seed_secrets(self):
         workflow = pathlib.Path(".github/workflows/leads-autopilot.yml").read_text(encoding="utf-8")
         self.assertNotIn("OUTREACH_MAIL_PASSWORD", workflow)
@@ -79,6 +102,14 @@ class ProspectQualificationTests(unittest.TestCase):
         self.assertNotIn("outreach_direct_smtp_runtime.py", workflow)
         self.assertIn("send permission:", workflow)
         self.assertIn("none", workflow)
+
+    def test_sender_readiness_workflow_run_only_accepts_green_main_push_from_same_repo(self):
+        workflow = pathlib.Path(".github/workflows/sender-readiness.yml").read_text(encoding="utf-8")
+        self.assertIn("workflow_run:", workflow)
+        self.assertIn("github.event.workflow_run.conclusion == 'success'", workflow)
+        self.assertIn("github.event.workflow_run.event == 'push'", workflow)
+        self.assertIn("github.event.workflow_run.head_branch == 'main'", workflow)
+        self.assertIn("github.event.workflow_run.head_repository.full_name == github.repository", workflow)
 
 
 if __name__ == "__main__":
