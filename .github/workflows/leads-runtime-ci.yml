@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/prospect-discovery.yml'
+      - '.github/workflows/prospect-intelligence.yml'
       - '.github/workflows/contact-enrichment.yml'
       - '.github/workflows/sender-readiness.yml'
       - '.github/workflows/inbox-placement.yml'
@@ -22,6 +23,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/prospect-discovery.yml'
+      - '.github/workflows/prospect-intelligence.yml'
       - '.github/workflows/contact-enrichment.yml'
       - '.github/workflows/sender-readiness.yml'
       - '.github/workflows/inbox-placement.yml'
