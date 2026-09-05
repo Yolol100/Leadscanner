@@ -22,6 +22,8 @@ SENDER_READINESS_HEADERS = [
 ]
 TRUE_VALUES = {"1", "true", "yes", "on"}
 FALSE_VALUES = {"0", "false", "no", "off", ""}
+MIJN_HOST_SPF_TOKEN = "include:spf.mijn.host"
+PROVIDER_MANAGED_STATE = "provider_managed"
 
 
 @dataclass(frozen=True)
@@ -128,6 +130,45 @@ def _dns_auth_state(mailbox: MailboxConfig) -> tuple[dict[str, str], list[str]]:
     return states, errors
 
 
+def provider_managed_relay(mailbox: MailboxConfig, dns_states: dict[str, str]) -> str:
+    """Return the known shared relay provider only after its SPF delegation is proven."""
+    token = (mailbox.required_spf_token or "").strip().lower()
+    if token == MIJN_HOST_SPF_TOKEN and dns_states.get("spf") == "green":
+        return "mijn.host"
+    return ""
+
+
+def _relay_network_evidence(
+    mailbox: MailboxConfig,
+    dns_states: dict[str, str],
+    *,
+    outbound_ip: str,
+    dnsbl_zones: list[str],
+) -> tuple[PtrReport, str, str, str]:
+    """Resolve relay-network evidence without pretending a shared pool is one static IP."""
+    outbound_ip = (outbound_ip or "").strip()
+    if outbound_ip:
+        ptr_report = check_ptr_fcrdns(outbound_ip)
+        dnsbl, dnsbl_detail = check_dnsbl(outbound_ip, dnsbl_zones)
+        return ptr_report, dnsbl, dnsbl_detail, "explicit_ip"
+
+    provider = provider_managed_relay(mailbox, dns_states)
+    if provider:
+        detail = (
+            f"{provider} shared relay pool is provider-managed; exact egress IP is selected at delivery time"
+        )
+        return (
+            PtrReport(PROVIDER_MANAGED_STATE, PROVIDER_MANAGED_STATE, detail),
+            PROVIDER_MANAGED_STATE,
+            f"{provider} shared relay pool; no per-egress-IP DNSBL clearance is claimed before delivery",
+            f"provider_managed:{provider}",
+        )
+
+    ptr_report = check_ptr_fcrdns("")
+    dnsbl, dnsbl_detail = check_dnsbl("", dnsbl_zones)
+    return ptr_report, dnsbl, dnsbl_detail, "unconfigured"
+
+
 def build_readiness_row(mailbox: MailboxConfig, *, outbound_ip: str = "", dnsbl_zones: list[str] | None = None, generated_at: str | None = None) -> dict[str, str]:
     generated_at = generated_at or utc_iso()
     dnsbl_zones = dnsbl_zones or []
@@ -160,18 +201,32 @@ def build_readiness_row(mailbox: MailboxConfig, *, outbound_ip: str = "", dnsbl_
     else:
         auth = "blocked_missing_secret"
         notes.append("mailbox authentication not proven because password secret is absent")
-    ptr_report = check_ptr_fcrdns(outbound_ip)
-    dnsbl, dnsbl_detail = check_dnsbl(outbound_ip, dnsbl_zones)
+
+    ptr_report, dnsbl, dnsbl_detail, relay_mode = _relay_network_evidence(
+        mailbox,
+        dns_states,
+        outbound_ip=outbound_ip,
+        dnsbl_zones=dnsbl_zones,
+    )
+    notes.append(f"Relay mode: {relay_mode}")
     notes.append(f"PTR/FCrDNS: {ptr_report.detail}")
     notes.append(f"DNSBL: {dnsbl_detail}")
+    if relay_mode.startswith("provider_managed:"):
+        notes.append(
+            "Provider-managed status is not proof of one fixed egress IP, per-IP reputation, or global inbox placement"
+        )
+
     hard_blockers = [
         dns_states["spf"] == "blocked", dns_states["dkim"] == "blocked", dns_states["dmarc"] == "blocked",
         mx == "blocked", smtp_tls == "blocked", imap_tls == "blocked", auth == "blocked",
         ptr_report.ptr == "blocked", ptr_report.fcrdns == "blocked", dnsbl == "listed", bool(static_errors),
     ]
+    ptr_ok = ptr_report.ptr in {"green", PROVIDER_MANAGED_STATE}
+    fcrdns_ok = ptr_report.fcrdns in {"green", PROVIDER_MANAGED_STATE}
+    dnsbl_ok = dnsbl in {"clear", PROVIDER_MANAGED_STATE}
     if any(hard_blockers):
         state = "blocked"
-    elif auth != "green" or ptr_report.ptr != "green" or ptr_report.fcrdns != "green" or dnsbl in {"unknown", "not_configured"} or mx == "unknown":
+    elif auth != "green" or not ptr_ok or not fcrdns_ok or not dnsbl_ok or mx == "unknown":
         state = "review"
     else:
         state = "green"
