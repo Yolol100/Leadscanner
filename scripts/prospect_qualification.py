@@ -7,7 +7,7 @@ import os
 import re
 import sys
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Mapping, Sequence
 from urllib.parse import urlparse
 
@@ -29,22 +29,28 @@ QUALIFICATION_HEADERS = [
     "customer_potential", "tier", "evidence_url", "fact", "idea",
     "analysis_type", "status", "reason",
 ]
-ELIGIBLE_STATUSES = {"discovered", "hold"}
+RECHECKABLE_STATUSES = {"discovered", "hold", "qualified", "rejected"}
 HARD_MAX_PER_RUN = 25
 DEFAULT_MAX_PER_RUN = 10
+DEFAULT_RECHECK_DAYS = 30
 
 CONTACT_HINTS = (
     "contact", "contacteer", "contact-us", "get-in-touch", "offerte", "quote",
-    "afspraak", "enquiry", "inquiry",
+    "afspraak", "enquiry", "inquiry", "request pricing", "request a quote",
 )
 STRONG_SHOP_HINTS = (
-    "woocommerce", "shopify", "winkelwagen", "checkout", "add to cart", "cart",
-    "bestellen", "order now", "webshop", "online shop", "shop online", "buy now",
+    "woocommerce", "shopify", "winkelwagen", "checkout", "add to cart",
+    "your cart", "bestellen", "order now", "webshop", "online shop",
+    "shop online", "buy now",
 )
 SHOP_PATH_RE = re.compile(r"/(?:shop|store|webshop|winkel)(?:/|$)", re.I)
 COMMERCIAL_HINTS = (
     "diensten", "services", "producten", "products", "shop", "webshop", "offerte",
     "quote", "contact", "pricing", "prijzen", "solutions", "oplossingen",
+)
+MANUFACTURER_HINTS = (
+    "manufacturer", "manufacturing", "manufactured", "manufacturer of", "oem",
+    "factory", "industrial manufacturer", "production facility", "manufacturing facility",
 )
 META_DESCRIPTION_RE = re.compile(
     r"<meta\b[^>]*\bname\s*=\s*(['\"])description\1[^>]*\bcontent\s*=\s*(['\"])(.*?)\2",
@@ -53,10 +59,9 @@ META_DESCRIPTION_RE = re.compile(
 VIEWPORT_RE = re.compile(r"<meta\b[^>]*\bname\s*=\s*(['\"])viewport\1", re.I | re.S)
 H1_RE = re.compile(r"<h1\b", re.I)
 OPPORTUNITY_WEIGHT = {
-    "shop_no_checkout": 3,
+    "no_viewport": 3,
     "no_contact_link": 2,
     "no_meta_description": 1,
-    "no_viewport": 1,
     "no_h1": 1,
 }
 
@@ -93,6 +98,18 @@ def clamp_int(raw: object, default: int, low: int, high: int) -> int:
     return max(low, min(value, high))
 
 
+def env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    value = raw.strip().casefold()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off", ""}:
+        return False
+    raise ValueError(f"{name} must be true or false")
+
+
 def _language(country: str) -> str:
     return "nl" if canonical_country(country) in {"NL", "BE"} else "en"
 
@@ -111,15 +128,6 @@ def _contact_link_present(page) -> bool:
     return False
 
 
-def _checkout_link_present(page) -> bool:
-    for target, label in page.links:
-        parsed = urlparse(target)
-        context = f"{parsed.path} {label}".casefold()
-        if any(hint in context for hint in ("cart", "checkout", "winkelwagen", "afrekenen", "basket")):
-            return True
-    return False
-
-
 def _explicit_shop_context(page, html: str) -> bool:
     haystack = f"{page.title} {page.site_name} {page.text} {html[:100000]}"
     if _contains_any(haystack, STRONG_SHOP_HINTS):
@@ -128,8 +136,7 @@ def _explicit_shop_context(page, html: str) -> bool:
         parsed = urlparse(target)
         if SHOP_PATH_RE.search(parsed.path or ""):
             return True
-        label_text = _text(label).casefold()
-        if label_text in {"shop", "store", "webshop", "winkel"}:
+        if _text(label).casefold() in {"shop", "store", "webshop", "winkel"}:
             return True
     return False
 
@@ -155,10 +162,6 @@ def _fact_and_idea(issue: str, company: str, language: str, page_title: str = ""
     if language == "nl":
         title_context = f" op de pagina ‘{page_title}’" if page_title else ""
         pairs = {
-            "shop_no_checkout": (
-                f"De homepage van {company}{title_context} toont duidelijke winkelcontext, maar in de begrensde homepagecheck is geen duidelijke winkelwagen- of checkoutlink gevonden.",
-                f"Maak vanuit de homepage van {company} één zichtbare route naar winkelwagen of checkout, zodat bezoekers vanuit deze concrete winkelroute direct een volgende koopstap kunnen zetten.",
-            ),
             "no_contact_link": (
                 f"In de begrensde homepagecheck van {company}{title_context} is geen duidelijke interne contact- of offertelink gevonden.",
                 f"Voeg op de homepage van {company} één vaste contact- of offerteknop toe die aansluit op de huidige pagina-inhoud, zodat bezoekers in één stap kunnen reageren.",
@@ -179,10 +182,6 @@ def _fact_and_idea(issue: str, company: str, language: str, page_title: str = ""
     else:
         title_context = f" on the page ‘{page_title}’" if page_title else ""
         pairs = {
-            "shop_no_checkout": (
-                f"The homepage of {company}{title_context} shows clear shopping context, but the bounded homepage check found no clear cart or checkout link.",
-                f"Add one visible cart or checkout path from the homepage of {company} so visitors on this specific shopping route can take the next purchase step directly.",
-            ),
             "no_contact_link": (
                 f"The bounded homepage check for {company}{title_context} found no clear internal contact or quote link.",
                 f"Add one persistent contact or quote call-to-action to the homepage of {company} that fits the current page content so visitors can respond in one step.",
@@ -225,12 +224,11 @@ def assess_candidate(
 
     language = _language(country)
     is_shop = _explicit_shop_context(page, html)
-    commercial = is_shop or _contains_any(haystack, COMMERCIAL_HINTS)
+    is_manufacturer = _contains_any(haystack, MANUFACTURER_HINTS)
+    commercial = is_shop or is_manufacturer or _contains_any(haystack, COMMERCIAL_HINTS)
     analysis_type = "webshop" if is_shop else "website"
 
     issues: list[str] = []
-    if is_shop and not _checkout_link_present(page):
-        issues.append("shop_no_checkout")
     if not _contact_link_present(page):
         issues.append("no_contact_link")
     if not META_DESCRIPTION_RE.search(html or ""):
@@ -242,10 +240,14 @@ def assess_candidate(
 
     primary_issue = max(issues, key=lambda issue: OPPORTUNITY_WEIGHT[issue], default="")
     website_opportunity_score = OPPORTUNITY_WEIGHT.get(primary_issue, 0)
-    icp_score = 3 if commercial else 2
+    if is_manufacturer and not is_shop:
+        icp_score = 2
+        offer_fit_score = 1
+    else:
+        icp_score = 3 if commercial else 2
+        offer_fit_score = 2 if commercial else 1
     if not _text(page.title) and not commercial:
         icp_score = 1
-    offer_fit_score = 2 if commercial else 1
     signal_score = _active_signal_score(candidate_id, signals)
     total = max(0, min(icp_score + website_opportunity_score + signal_score + offer_fit_score, 10))
     tier = "A" if total >= 8 else "B" if total >= 6 else "C"
@@ -256,13 +258,13 @@ def assess_candidate(
         fact, idea = _fact_and_idea(primary_issue, company, language, _text(page.title))
     reason = (
         f"customer_potential={total}; icp={icp_score}; opportunity={website_opportunity_score}; "
-        f"signal={signal_score}; offer_fit={offer_fit_score}; primary_evidence={primary_issue or 'no_concrete_gap'}; "
+        f"signal={signal_score}; offer_fit={offer_fit_score}; manufacturer={str(is_manufacturer).lower()}; "
+        f"primary_evidence={primary_issue or 'no_concrete_gap'}; "
         f"supporting_evidence={','.join(issues[:5]) if issues else 'none'}"
     )
-    if not fact or not idea:
-        if tier == "A":
-            tier, status = "B", "hold"
-            reason += "; downgraded=no evidence-bound fact/idea"
+    if tier == "A" and (not fact or not idea):
+        tier, status = "B", "hold"
+        reason += "; downgraded=no evidence-bound fact/idea"
     return Assessment(
         icp_score,
         website_opportunity_score,
@@ -329,6 +331,43 @@ def _replace_rows(service, spreadsheet_id: str, sheet: str, headers: Sequence[st
     ).execute()
 
 
+def _parse_iso(raw: object) -> datetime | None:
+    value = _text(raw)
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def _eligible_candidates(
+    candidates: Sequence[dict[str, object]],
+    existing_by_id: Mapping[str, Mapping[str, object]],
+    *,
+    force_recheck: bool,
+    recheck_days: int,
+) -> list[dict[str, object]]:
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=recheck_days)
+    ranked: list[tuple[int, datetime, int, dict[str, object]]] = []
+    for index, candidate in enumerate(candidates):
+        status = _text(candidate.get("status")).casefold()
+        if status not in RECHECKABLE_STATUSES:
+            continue
+        candidate_id = _text(candidate.get("candidate_id"))
+        previous = existing_by_id.get(candidate_id)
+        assessed_at = _parse_iso(previous.get("assessed_at")) if previous else None
+        if previous and not force_recheck and assessed_at and assessed_at > cutoff:
+            continue
+        new_rank = 0 if previous is None else 1
+        age_rank = assessed_at or datetime.min.replace(tzinfo=timezone.utc)
+        ranked.append((new_rank, age_rank, index, candidate))
+    ranked.sort(key=lambda item: (item[0], item[1], item[2]))
+    return [candidate for _, _, _, candidate in ranked]
+
+
 def _write_report(path: str, payload: Mapping[str, object]) -> None:
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(payload, handle, ensure_ascii=False, indent=2, sort_keys=True)
@@ -366,6 +405,14 @@ def run(mode: str, report_path: str) -> int:
     ensure_expected_headers(existing_headers, QUALIFICATION_HEADERS, QUALIFICATION_SHEET)
     existing_by_id = {_text(row.get("candidate_id")): dict(row) for row in existing if _text(row.get("candidate_id"))}
     max_rows = clamp_int(os.getenv("PROSPECT_QUALIFICATION_MAX_PER_RUN", ""), DEFAULT_MAX_PER_RUN, 1, HARD_MAX_PER_RUN)
+    recheck_days = clamp_int(os.getenv("PROSPECT_QUALIFICATION_RECHECK_DAYS", ""), DEFAULT_RECHECK_DAYS, 1, 365)
+    force_recheck = env_bool("PROSPECT_QUALIFICATION_FORCE_RECHECK", False)
+    candidate_pool = _eligible_candidates(
+        candidates,
+        existing_by_id,
+        force_recheck=force_recheck,
+        recheck_days=recheck_days,
+    )
     client = BoundedHttpClient(
         user_agent=os.getenv("PROSPECT_QUALIFICATION_USER_AGENT", "WebactueelQualification/1.0 (+https://andrewbaeten.nl)"),
         timeout=float(os.getenv("PROSPECT_QUALIFICATION_TIMEOUT_SECONDS", "10") or "10"),
@@ -373,13 +420,8 @@ def run(mode: str, report_path: str) -> int:
         min_interval=float(os.getenv("PROSPECT_QUALIFICATION_MIN_INTERVAL_SECONDS", "0.5") or "0.5"),
     )
 
-    assessed = qualified = held = rejected = 0
-    for candidate in candidates:
-        if assessed >= max_rows:
-            break
-        current_status = _text(candidate.get("status")).casefold()
-        if current_status not in ELIGIBLE_STATUSES:
-            continue
+    assessed = qualified = held = rejected = unscored = 0
+    for candidate in candidate_pool[:max_rows]:
         candidate_id = _text(candidate.get("candidate_id"))
         website = root_url(_text(candidate.get("website")))
         if not candidate_id or not website:
@@ -390,9 +432,10 @@ def run(mode: str, report_path: str) -> int:
             assessment = assess_candidate(candidate, html, signals)
         except (DiscoveryError, RuntimeError, ValueError) as exc:
             assessment = Assessment(
-                0, 0, _active_signal_score(candidate_id, signals), 0, 0, "B", website,
+                0, 0, _active_signal_score(candidate_id, signals), 0, 0, "UNSCORED", website,
                 "", "", "website", "hold", f"qualification fetch/evidence unavailable: {type(exc).__name__}: {_text(exc)[:180]}",
             )
+            unscored += 1
 
         candidate["status"] = assessment.status
         candidate["reason"] = assessment.reason
@@ -432,10 +475,16 @@ def run(mode: str, report_path: str) -> int:
         "qualified": qualified,
         "hold": held,
         "rejected": rejected,
+        "unscored": unscored,
+        "force_recheck": force_recheck,
+        "recheck_days": recheck_days,
         "send_permission": "none",
-        "note": "Qualification is deterministic, evidence-bound and bounded. It never grants compliance or send permission.",
+        "note": "Qualification is deterministic, evidence-bound, conservative and bounded. It never grants compliance or send permission.",
     })
-    print(f"PROSPECT_QUALIFICATION=complete assessed={assessed} qualified={qualified} hold={held} rejected={rejected}")
+    print(
+        f"PROSPECT_QUALIFICATION=complete assessed={assessed} qualified={qualified} "
+        f"hold={held} rejected={rejected} unscored={unscored} force_recheck={str(force_recheck).lower()}"
+    )
     return 0
 
 
