@@ -6,6 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "prospect-intelligence.yml"
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
+CANONICAL_SHEET_ID = "1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI"
 
 
 class ProspectIntelligenceWorkflowTests(unittest.TestCase):
@@ -31,6 +32,11 @@ class ProspectIntelligenceWorkflowTests(unittest.TestCase):
         self.assertIn('elif [ "$INTELLIGENCE_ENABLED" = "true" ]; then', text)
         self.assertIn('mode="refresh"', text)
         self.assertIn('mode="validate"', text)
+
+    def test_standalone_runtime_has_safe_canonical_defaults(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn(f"OUTREACH_SPREADSHEET_ID: ${{{{ vars.OUTREACH_SPREADSHEET_ID || '{CANONICAL_SHEET_ID}' }}}}", text)
+        self.assertIn("PROSPECT_INTELLIGENCE_STALE_DAYS: ${{ vars.PROSPECT_INTELLIGENCE_STALE_DAYS || '30' }}", text)
 
     def test_intelligence_does_not_invoke_delivery_runtime(self):
         text = WORKFLOW.read_text(encoding="utf-8")
