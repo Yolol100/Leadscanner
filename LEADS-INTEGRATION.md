@@ -13,6 +13,8 @@ Workflow: `.github/workflows/prospect-discovery.yml`.
 - Behoudt robots.txt, pacing, timeouts, byte/kandidaatlimieten en private-network/SSRF-blokkering.
 - Verzamelt geen contactadressen, bepaalt geen Customer Potential/compliance, maakt geen copy en ontvangt geen mailboxcredentials.
 - Modi: `validate`, `bootstrap`, `discover`.
+- Handmatige default: `validate`.
+- Geplande weekday-runs blijven actief voor contractvalidatie en draaien standaard `validate`; alleen `PROSPECT_DISCOVERY_ENABLED=true` promoveert een geplande run naar `discover`.
 
 ## Capability 2 — contact_enrichment
 

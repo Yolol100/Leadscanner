@@ -12,6 +12,8 @@
       "required_secrets": ["GOOGLE_SERVICE_ACCOUNT_JSON"],
       "forbidden_secrets": ["OUTREACH_MAIL_PASSWORD", "OUTREACH_MAILBOXES_JSON", "OUTREACH_SEED_INBOXES_JSON", "REOON_API_KEY"],
       "modes": ["validate", "bootstrap", "discover"],
+      "scheduled_default": "validate",
+      "scheduled_discover_gate": "PROSPECT_DISCOVERY_ENABLED=true",
       "outputs": ["ProspectCandidates", "prospect-discovery-report.json"],
       "send_permission": "none"
     },
@@ -108,6 +110,7 @@
   "boundaries": [
     "The website scanner remains read-only and optional; it never changes lead fit, priority, compliance, send permission or outreach state.",
     "Prospect discovery finds approved-source company/domain candidates only and receives no mail credentials.",
+    "Scheduled prospect discovery remains validate-only unless PROSPECT_DISCOVERY_ENABLED=true explicitly promotes the scheduled run to discover mode.",
     "Contact enrichment runs only after Leads qualification, inspects bounded official-site pages, never guesses an address and never creates send permission.",
     "Sender readiness is technical diagnostics only; it does not prove inbox placement or commercial permission.",
     "Inbox placement can send only manual controlled probes to at most five configured seed inboxes and never touches OutreachQueue recipients.",
