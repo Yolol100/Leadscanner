@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from datetime import datetime, timezone
 from typing import Mapping, Sequence
 
@@ -29,6 +30,11 @@ from prospect_discovery import (
     rows_to_dicts,
 )
 from prospect_intelligence import OBSERVATION_HEADERS, clamp_target, make_observation_row, target_summary
+
+SOURCE_RUN_HEADERS = [
+    "run_id", "run_at", "source_id", "source_type", "source_url", "status",
+    "seen", "new", "duplicates", "duration_ms", "error",
+]
 
 
 def load_google_service():
@@ -78,7 +84,10 @@ def ensure_tabs(service, spreadsheet_id: str, *, create: bool) -> set[str]:
         for item in metadata.get("sheets", [])
     }
     required = {"ProspectSources": SOURCE_HEADERS, "ProspectCandidates": CANDIDATE_HEADERS}
-    optional_on_bootstrap = {"ProspectObservations": OBSERVATION_HEADERS}
+    optional_on_bootstrap = {
+        "ProspectObservations": OBSERVATION_HEADERS,
+        "ProspectSourceRuns": SOURCE_RUN_HEADERS,
+    }
     missing_required = [title for title in required if title not in sheets]
     if missing_required and not create:
         raise DiscoveryError("missing spreadsheet tabs: " + ", ".join(missing_required))
@@ -114,6 +123,25 @@ def write_report(path: str, payload: Mapping[str, object]) -> None:
         handle.write("\n")
 
 
+def source_run_row(
+    *, run_id: str, run_at: str, source: SourceSpec, status: str,
+    seen: int, new_count: int, duplicate_count: int, duration_ms: int, error: str = "",
+) -> list[object]:
+    return [
+        run_id,
+        run_at,
+        source.source_id,
+        source.source_type,
+        source.source_url,
+        status,
+        max(0, int(seen)),
+        max(0, int(new_count)),
+        max(0, int(duplicate_count)),
+        max(0, int(duration_ms)),
+        str(error or "")[:300],
+    ]
+
+
 def run(mode: str, report_path: str) -> int:
     mode = mode.casefold().strip()
     if mode not in {"validate", "bootstrap", "discover"}:
@@ -127,7 +155,9 @@ def run(mode: str, report_path: str) -> int:
         write_report(report_path, {
             "mode": mode,
             "status": "ready",
-            "created_or_validated_tabs": ["ProspectSources", "ProspectCandidates", "ProspectObservations"],
+            "created_or_validated_tabs": [
+                "ProspectSources", "ProspectCandidates", "ProspectObservations", "ProspectSourceRuns"
+            ],
         })
         return 0
 
@@ -163,6 +193,7 @@ def run(mode: str, report_path: str) -> int:
             "existing_candidates": len(candidate_rows),
             "existing_leads": len(lead_rows),
             "observations_available": "ProspectObservations" in sheet_titles,
+            "source_runs_available": "ProspectSourceRuns" in sheet_titles,
         })
         return 0
 
@@ -180,6 +211,7 @@ def run(mode: str, report_path: str) -> int:
     discovered = []
     failures = []
     source_results = []
+    source_run_rows = []
     observations = []
     observation_ids = set()
     discovered_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
@@ -188,17 +220,26 @@ def run(mode: str, report_path: str) -> int:
     for source in sources:
         if not source.approved:
             continue
+        started = time.monotonic()
         try:
             items = discover_source(source, client.fetch_text)
         except DiscoveryError as exc:
-            failures.append({"source_id": source.source_id, "error": str(exc)[:300]})
+            duration_ms = round((time.monotonic() - started) * 1000)
+            error = str(exc)[:300]
+            failures.append({"source_id": source.source_id, "error": error})
             source_results.append({
                 "source_id": source.source_id,
+                "source_type": source.source_type,
                 "seen": 0,
                 "new": 0,
                 "duplicates": 0,
+                "duration_ms": duration_ms,
                 "status": "error",
             })
+            source_run_rows.append(source_run_row(
+                run_id=run_id, run_at=discovered_at, source=source, status="error",
+                seen=0, new_count=0, duplicate_count=0, duration_ms=duration_ms, error=error,
+            ))
             continue
         seen = 0
         new_count = 0
@@ -226,13 +267,20 @@ def run(mode: str, report_path: str) -> int:
             new_count += 1
             if len(discovered) >= target_new:
                 break
+        duration_ms = round((time.monotonic() - started) * 1000)
         source_results.append({
             "source_id": source.source_id,
+            "source_type": source.source_type,
             "seen": seen,
             "new": new_count,
             "duplicates": duplicate_count,
+            "duration_ms": duration_ms,
             "status": "ok",
         })
+        source_run_rows.append(source_run_row(
+            run_id=run_id, run_at=discovered_at, source=source, status="ok",
+            seen=seen, new_count=new_count, duplicate_count=duplicate_count, duration_ms=duration_ms,
+        ))
         if len(discovered) >= target_new:
             break
 
@@ -243,6 +291,9 @@ def run(mode: str, report_path: str) -> int:
     observation_persisted = "ProspectObservations" in sheet_titles
     if observation_persisted:
         append_rows(service, spreadsheet_id, "'ProspectObservations'!A:K", observations)
+    source_runs_persisted = "ProspectSourceRuns" in sheet_titles
+    if source_runs_persisted:
+        append_rows(service, spreadsheet_id, "'ProspectSourceRuns'!A:K", source_run_rows)
 
     report = {
         "mode": mode,
@@ -253,6 +304,8 @@ def run(mode: str, report_path: str) -> int:
         "dedupe_domains_after_run": len(known),
         "source_failures": failures,
         "source_results": source_results,
+        "source_run_rows": len(source_run_rows),
+        "source_runs_persisted": source_runs_persisted,
         "observation_rows": len(observations),
         "observations_persisted": observation_persisted,
         "note": "Candidates remain discovered-only; contact lookup is deferred to Leads, which must review fit, evidence, compliance and approved transport state before SMTP.",
@@ -264,7 +317,7 @@ def run(mode: str, report_path: str) -> int:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Discover public business domains from explicitly approved source pages."
+        description="Discover public business domains from explicitly approved source pages, directory indexes or directory sitemaps."
     )
     parser.add_argument(
         "--mode", default=os.environ.get("PROSPECT_DISCOVERY_MODE", "validate"),
