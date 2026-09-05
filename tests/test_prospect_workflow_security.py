@@ -8,6 +8,7 @@ WORKFLOW = ROOT / ".github" / "workflows" / "prospect-discovery.yml"
 DISCOVERY = ROOT / "scripts" / "prospect_discovery.py"
 CONTRACT = ROOT / "toolkit-contract.json"
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
+CANONICAL_SHEET_ID = "1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI"
 
 
 class ProspectWorkflowSecurityTests(unittest.TestCase):
@@ -38,6 +39,14 @@ class ProspectWorkflowSecurityTests(unittest.TestCase):
         self.assertIn('mode="discover"', text)
         self.assertIn('mode="validate"', text)
         self.assertNotIn("if: github.event_name == 'workflow_dispatch' || vars.PROSPECT_DISCOVERY_ENABLED == 'true'", text)
+
+    def test_standalone_runtime_has_safe_canonical_defaults(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn(f"OUTREACH_SPREADSHEET_ID: ${{{{ vars.OUTREACH_SPREADSHEET_ID || '{CANONICAL_SHEET_ID}' }}}}", text)
+        self.assertIn("PROSPECT_DISCOVERY_MAX_TOTAL: ${{ vars.PROSPECT_DISCOVERY_MAX_TOTAL || '25' }}", text)
+        self.assertIn("PROSPECT_DISCOVERY_TARGET_NEW: ${{ vars.PROSPECT_DISCOVERY_TARGET_NEW || '10' }}", text)
+        self.assertIn("PROSPECT_DISCOVERY_TIMEOUT_SECONDS: ${{ vars.PROSPECT_DISCOVERY_TIMEOUT_SECONDS || '10' }}", text)
+        self.assertIn("PROSPECT_DISCOVERY_MIN_INTERVAL_SECONDS: ${{ vars.PROSPECT_DISCOVERY_MIN_INTERVAL_SECONDS || '0.5' }}", text)
 
     def test_discovery_byte_default_stays_inside_existing_hard_cap(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
