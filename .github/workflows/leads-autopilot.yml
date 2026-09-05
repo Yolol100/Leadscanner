@@ -42,6 +42,8 @@ jobs:
           REQUESTED_MODE: ${{ inputs.mode }}
         run: |
           set -euo pipefail
+          mode="validate"
+          recheck="false"
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
             mode="${REQUESTED_MODE:-validate}"
           elif [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
@@ -50,14 +52,15 @@ jobs:
             requested="$(tr -d '\r\n ' < ops/leads-autopilot-request.txt | tr '[:upper:]' '[:lower:]')"
             case "$requested" in
               prepare) mode="prepare" ;;
+              prepare-recheck) mode="prepare"; recheck="true" ;;
               validate|'') mode="validate" ;;
               *) echo "unsupported request file mode: $requested" >&2; exit 2 ;;
             esac
-          else
-            mode="validate"
           fi
           echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "recheck=$recheck" >> "$GITHUB_OUTPUT"
           echo "LEADS_AUTOPILOT_MODE=$mode"
+          echo "LEADS_AUTOPILOT_RECHECK=$recheck"
 
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -110,6 +113,8 @@ jobs:
       - name: Qualify evidence-bound prospects
         env:
           PROSPECT_QUALIFICATION_MODE: ${{ steps.mode.outputs.mode == 'prepare' && 'qualify' || 'validate' }}
+          PROSPECT_QUALIFICATION_FORCE_RECHECK: ${{ steps.mode.outputs.recheck }}
+          PROSPECT_QUALIFICATION_RECHECK_DAYS: ${{ vars.PROSPECT_QUALIFICATION_RECHECK_DAYS || '30' }}
           OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
           PROSPECT_QUALIFICATION_MAX_PER_RUN: ${{ vars.PROSPECT_QUALIFICATION_MAX_PER_RUN || '10' }}
           PROSPECT_QUALIFICATION_TIMEOUT_SECONDS: ${{ vars.PROSPECT_QUALIFICATION_TIMEOUT_SECONDS || '10' }}
@@ -158,6 +163,7 @@ jobs:
             echo "## Leads zero-touch prepare"
             echo
             echo "- mode: \`${{ steps.mode.outputs.mode }}\`"
+            echo "- force-recheck: \`${{ steps.mode.outputs.recheck }}\`"
             echo "- owner: \`leads\`"
             echo "- flow: \`VIND -> KWALIFICEER -> CONTACT + MAIL\`"
             echo "- compliance: \`manual_review/fail-closed until an evidenced basis exists\`"
