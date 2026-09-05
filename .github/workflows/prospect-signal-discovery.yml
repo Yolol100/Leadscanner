@@ -1,0 +1,98 @@
+name: Prospect Signal Discovery
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'validate or discover'
+        required: true
+        default: validate
+        type: choice
+        options:
+          - validate
+          - discover
+  schedule:
+    - cron: '29 7 * * 1-5'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prospect-signal-discovery
+  cancel-in-progress: false
+
+jobs:
+  prospect-signal-discovery:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-outreach.txt
+
+      - name: Install signal runtime dependencies
+        run: python3 -m pip install --disable-pip-version-check --requirement requirements-outreach.txt
+
+      - name: Resolve signal mode
+        id: mode
+        shell: bash
+        env:
+          REQUESTED_MODE: ${{ inputs.mode }}
+          SIGNAL_DISCOVERY_ENABLED: ${{ vars.PROSPECT_SIGNAL_DISCOVERY_ENABLED }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            mode="${REQUESTED_MODE:-validate}"
+          elif [ "$SIGNAL_DISCOVERY_ENABLED" = "true" ]; then
+            mode="discover"
+          else
+            mode="validate"
+          fi
+          case "$mode" in
+            validate|discover) ;;
+            *) echo "unsupported mode: $mode" >&2; exit 2 ;;
+          esac
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+
+      - name: Run bounded official-site signal discovery
+        env:
+          PROSPECT_SIGNAL_MODE: ${{ steps.mode.outputs.mode }}
+          OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID }}
+          PROSPECT_SIGNAL_MAX_CANDIDATES: ${{ vars.PROSPECT_SIGNAL_MAX_CANDIDATES }}
+          PROSPECT_SIGNAL_TIMEOUT_SECONDS: ${{ vars.PROSPECT_SIGNAL_TIMEOUT_SECONDS }}
+          PROSPECT_SIGNAL_MAX_BYTES: ${{ vars.PROSPECT_SIGNAL_MAX_BYTES }}
+          PROSPECT_SIGNAL_MIN_INTERVAL_SECONDS: ${{ vars.PROSPECT_SIGNAL_MIN_INTERVAL_SECONDS }}
+          PROSPECT_SIGNAL_USER_AGENT: ${{ vars.PROSPECT_SIGNAL_USER_AGENT }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python3 scripts/prospect_signal_discovery_runtime.py --mode "$PROSPECT_SIGNAL_MODE" --report prospect-signal-report.json
+
+      - name: Write signal summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Prospect signal discovery"
+            echo
+            echo "- mode: \`${{ steps.mode.outputs.mode }}\`"
+            echo "- owner: \`leads\`"
+            echo "- send permission: \`none\`"
+            echo
+            echo "Official-site hiring and technology evidence is advisory only and never changes Customer Potential, qualification, compliance, contact promotion, copy or transport permission."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload signal receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: prospect-signal-${{ github.run_id }}
+          path: prospect-signal-report.json
+          if-no-files-found: error
+          retention-days: 14

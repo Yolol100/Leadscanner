@@ -141,6 +141,25 @@ Deze capability vormt de afgeleide data-/learninglaag tussen discoverybewijs en 
 - Lookalikes, freshness, signals en source metrics wijzigen nooit zelfstandig Customer Potential, `qualified/hold/rejected`, contactpromotie, compliancebasis, copy, queue of send permission.
 - `refresh` herbouwt alleen de afgeleide tabs deterministisch; `ProspectSignals` en `ProspectObservations` blijven input/evidence en worden niet door refresh herschreven.
 
+## Capability 10 — prospect_signal_discovery
+
+Workflow: `.github/workflows/prospect-signal-discovery.yml`.
+
+Deze capability verzamelt een kleine, reproduceerbare set signalen rechtstreeks van het officiële prospectdomein.
+
+- Modi: `validate` en `discover`; handmatige default = `validate`.
+- Geplande runs blijven `validate`; alleen `PROSPECT_SIGNAL_DISCOVERY_ENABLED=true` promoveert het schedule naar `discover`.
+- Krijgt alleen `GOOGLE_SERVICE_ACCOUNT_JSON`; geen mailbox-, seed- of verifiersecret.
+- Behandelt uitsluitend bestaande `discovered`, `qualified` of `hold` candidates; `rejected` wordt niet gescand.
+- Standaard maximaal 10 kandidaten, hard maximaal 25 per run.
+- Behoudt dezelfde robots-, public-network-, pacing-, timeout- en bytegrenzen als de bounded prospect discovery HTTP-client.
+- Detecteert alleen evidence-bound `hiring`, `technology_wordpress` en `technology_woocommerce`.
+- Hiring moet via een interne link op het officiële domein worden gevonden. Een externe jobs-link is geen official-site hiringbewijs.
+- WordPress/WooCommerce worden alleen op deterministische runtime-markers vastgelegd; dit is tech-evidence en geen koopintentieclaim.
+- Bestaande eigen `official-site-signal`-rijen worden bij herdetectie bijgewerkt. Een eerder actief eigen signaal mag alleen na een succesvolle scan van dezelfde kandidaat als `expired` worden gemarkeerd wanneer het niet opnieuw is aangetroffen.
+- Extern aangeleverde signalen met een andere `source_id` worden nooit door deze collector herschreven of verlopen gemaakt.
+- Signal `strength` 0/1/2 blijft een bewijssamenvatting. De collector wijzigt nooit Customer Potential, `qualified/hold/rejected`, contactpromotie, compliancebasis, copy, queue of send permission.
+
 ## Data-contracten
 
 Minimaal bewaakt:
@@ -171,7 +190,7 @@ Minimaal bewaakt:
 ## Compliance- en transportgrenzen
 
 - Leads bezit `country/jurisdiction`, `compliance_basis`, `compliance_status`, contactbron en mailcopy.
-- Nederland/EER blijft fail-closed: een openbaar zakelijk adres, `ContactCandidates.ready`, sender-readiness, seed-placement, prospect-intelligence-uitvoer of draft-readback is nooit zelfstandig toestemming voor commerciële outreach.
+- Nederland/EER blijft fail-closed: een openbaar zakelijk adres, `ContactCandidates.ready`, sender-readiness, seed-placement, prospect-intelligence/signal-uitvoer of draft-readback is nooit zelfstandig toestemming voor commerciële outreach.
 - Compliance-, copy-, suppression- en sendergates blijven vóór live SMTP.
 - Creatorvideo's/comments zijn adviserend bewijs. Actuele wet/providerregels en echte Webactueel-resultaten hebben voorrang.
 
@@ -185,7 +204,7 @@ Secretwaarden horen nooit in code, logs of artifacts.
 - `OUTREACH_SEED_INBOXES_JSON` — alleen voor de expliciete seed-placementtest.
 - `REOON_API_KEY` — niet gebruikt door de actieve direct-SMTP-route.
 
-Belangrijk: `mailbox_draft` krijgt **geen** `GOOGLE_SERVICE_ACCOUNT_JSON`; discovery, prospect intelligence en contact-only routes krijgen **geen** mailboxsecrets.
+Belangrijk: `mailbox_draft` krijgt **geen** `GOOGLE_SERVICE_ACCOUNT_JSON`; discovery, prospect intelligence, prospect signal discovery en contact-only routes krijgen **geen** mailboxsecrets.
 
 ## Belangrijkste variabelen
 
@@ -193,6 +212,7 @@ De workflows bevatten veilige projectdefaults waar die al bestonden. Relevante v
 
 - discovery: `PROSPECT_DISCOVERY_*`, inclusief `PROSPECT_DISCOVERY_TARGET_NEW`, plus `OUTREACH_SPREADSHEET_ID`;
 - prospect intelligence: `PROSPECT_INTELLIGENCE_ENABLED`, `PROSPECT_INTELLIGENCE_STALE_DAYS`, `OUTREACH_SPREADSHEET_ID`;
+- prospect signals: `PROSPECT_SIGNAL_DISCOVERY_ENABLED`, `PROSPECT_SIGNAL_MAX_CANDIDATES`, `PROSPECT_SIGNAL_TIMEOUT_SECONDS`, `PROSPECT_SIGNAL_MAX_BYTES`, `PROSPECT_SIGNAL_MIN_INTERVAL_SECONDS`, `PROSPECT_SIGNAL_USER_AGENT`;
 - contact enrichment: `CONTACT_ENRICHMENT_*`, `OUTREACH_SPREADSHEET_ID`;
 - sender readiness: `SENDER_READINESS_ENABLED`, `OUTREACH_OUTBOUND_IP`, `OUTREACH_DNSBL_ZONES`;
 - placement: `OUTREACH_PLACEMENT_POLL_SECONDS`, `OUTREACH_PLACEMENT_MAX_WAIT_SECONDS`;
@@ -208,5 +228,6 @@ Gebruik de workflows zelf als waarheid voor exacte defaults en bounds; kopieer d
 - GitHub Actions-evidence blijft in artifacts/Sheets; commit geen runtime-output naar `main`.
 - `ProspectSignals` is evidence-intake, geen tweede score- of permissionlaag.
 - `ProspectSourceMetrics` en `ProspectLookalikes` zijn adviserend; Leads blijft de enige eigenaar van kwalificatie en promotie.
+- De official-site signal collector mag alleen eigen `source_id=official-site-signal` rows lifecycle-beheren.
 - Verwijder capabilities alleen wanneer machinecontract, callsites en tests aantonen dat ze werkelijk ongebruikt zijn.
 - Bestaande Node/scanner-CI en Python Leads-runtime-CI moeten groen zijn vóór merge/releaseclaims.
