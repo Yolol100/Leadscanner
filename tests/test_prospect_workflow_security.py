@@ -5,6 +5,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "prospect-discovery.yml"
+DISCOVERY = ROOT / "scripts" / "prospect_discovery.py"
 CONTRACT = ROOT / "toolkit-contract.json"
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 
@@ -37,6 +38,12 @@ class ProspectWorkflowSecurityTests(unittest.TestCase):
         self.assertIn('mode="discover"', text)
         self.assertIn('mode="validate"', text)
         self.assertNotIn("if: github.event_name == 'workflow_dispatch' || vars.PROSPECT_DISCOVERY_ENABLED == 'true'", text)
+
+    def test_discovery_byte_default_stays_inside_existing_hard_cap(self):
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        discovery = DISCOVERY.read_text(encoding="utf-8")
+        self.assertIn("PROSPECT_DISCOVERY_MAX_BYTES: ${{ vars.PROSPECT_DISCOVERY_MAX_BYTES || '2097152' }}", workflow)
+        self.assertIn("HARD_MAX_BYTES = 2_097_152", discovery)
 
     def test_machine_contract_matches_scheduled_discovery_gate(self):
         contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
