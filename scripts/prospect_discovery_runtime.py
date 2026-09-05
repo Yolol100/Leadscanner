@@ -30,6 +30,7 @@ from prospect_discovery import (
     rows_to_dicts,
 )
 from prospect_intelligence import OBSERVATION_HEADERS, clamp_target, make_observation_row, target_summary
+from prospect_source_semantics import source_semantic_target_check
 from prospect_target_policy import (
     DEFAULT_EXCLUDED_COUNTRIES,
     DEFAULT_PREFERRED_COUNTRIES,
@@ -248,6 +249,13 @@ def run(mode: str, report_path: str) -> int:
         max_bytes=clamp_int(os.environ.get("PROSPECT_DISCOVERY_MAX_BYTES"), DEFAULT_MAX_BYTES, 16_384, HARD_MAX_BYTES),
         min_interval=clamp_float(os.environ.get("PROSPECT_DISCOVERY_MIN_INTERVAL_SECONDS"), 0.25, 0.0, 5.0),
     )
+    page_cache: dict[str, str] = {}
+
+    def cached_fetch(url: str) -> str:
+        if url not in page_cache:
+            page_cache[url] = client.fetch_text(url)
+        return page_cache[url]
+
     max_total = clamp_int(
         os.environ.get("PROSPECT_DISCOVERY_MAX_TOTAL"), DEFAULT_MAX_TOTAL, 1, HARD_MAX_TOTAL
     )
@@ -268,7 +276,7 @@ def run(mode: str, report_path: str) -> int:
         started = time.monotonic()
         try:
             items, skipped_known = discover_source_with_stats(
-                source, client.fetch_text, known_hosts=known
+                source, cached_fetch, known_hosts=known
             )
         except DiscoveryError as exc:
             duration_ms = round((time.monotonic() - started) * 1000)
@@ -281,6 +289,7 @@ def run(mode: str, report_path: str) -> int:
                 "seen": 0,
                 "new": 0,
                 "duplicates": 0,
+                "filtered_semantic": 0,
                 "duration_ms": duration_ms,
                 "status": "error",
             })
@@ -289,7 +298,29 @@ def run(mode: str, report_path: str) -> int:
                 seen=0, new_count=0, duplicate_count=0, duration_ms=duration_ms, error=error,
             ))
             continue
-        seen = skipped_known
+
+        semantic_items = []
+        semantic_rejected = 0
+        for item in items:
+            try:
+                html = cached_fetch(item.website)
+            except DiscoveryError:
+                semantic_rejected += 1
+                continue
+            allowed, _ = source_semantic_target_check(
+                source_id=source.source_id,
+                source_url=source.source_url,
+                company=item.company,
+                website=item.website,
+                html=html,
+            )
+            if allowed:
+                semantic_items.append(item)
+            else:
+                semantic_rejected += 1
+        items = semantic_items
+
+        seen = skipped_known + semantic_rejected
         new_count = 0
         duplicate_count = skipped_known
         for item in items:
@@ -323,6 +354,7 @@ def run(mode: str, report_path: str) -> int:
             "seen": seen,
             "new": new_count,
             "duplicates": duplicate_count,
+            "filtered_semantic": semantic_rejected,
             "duration_ms": duration_ms,
             "status": "ok",
         })
@@ -361,7 +393,7 @@ def run(mode: str, report_path: str) -> int:
         "source_runs_persisted": source_runs_persisted,
         "observation_rows": len(observations),
         "observations_persisted": observation_persisted,
-        "note": "Candidates remain discovered-only; configured excluded countries and agency-like providers are filtered before candidate creation. Contact lookup is deferred to Leads, which must review fit, website evidence, compliance and approved transport state before SMTP.",
+        "note": "Candidates remain discovered-only; configured country/agency policy and source-semantic target checks run before candidate writes. Contact lookup is deferred until qualification. No discovery result creates compliance or send permission.",
     }
     report.update(target_summary(len(discovered), target_new))
     write_report(report_path, report)
