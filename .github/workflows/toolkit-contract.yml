@@ -35,8 +35,10 @@ jobs:
           assert c['repository_role']=='central_leads_github_runtime'
           caps=c['capabilities']
           expected_caps={
-              'prospect_discovery','contact_enrichment','website_evidence_scan',
-              'sender_readiness','inbox_placement','mailbox_draft','outreach_delivery','dashboard',
+              'prospect_discovery','prospect_intelligence','prospect_signal_discovery',
+              'prospect_qualification','contact_enrichment','zero_touch_prepare',
+              'website_evidence_scan','sender_readiness','inbox_placement',
+              'mailbox_draft','outreach_delivery','dashboard',
           }
           assert set(caps) >= expected_caps, f'missing capabilities: {expected_caps-set(caps)}'
           scanner=caps['website_evidence_scan']
@@ -48,13 +50,31 @@ jobs:
           assert discovery['default_excluded_countries']==[]
           assert discovery['default_preferred_countries'][:2]==['US','NL']
           assert discovery['agency_exclusion_default'] is True
+          assert 'directory_sitemap' in discovery['source_types']
           for key in ('OUTREACH_MAIL_PASSWORD','OUTREACH_MAILBOXES_JSON','OUTREACH_SEED_INBOXES_JSON','REOON_API_KEY'):
               assert key in discovery['forbidden_secrets']
+          qualification=caps['prospect_qualification']
+          assert qualification['send_permission']=='none'
+          assert qualification['automatic_score_effect'] is True
+          assert qualification['compliance_effect'] is False
+          assert qualification['max_candidates_per_run']==25
+          assert 'ProspectQualifications' in qualification['outputs']
+          for key in ('OUTREACH_MAIL_PASSWORD','OUTREACH_MAILBOXES_JSON','OUTREACH_SEED_INBOXES_JSON','REOON_API_KEY'):
+              assert key in qualification['forbidden_secrets']
           contact=caps['contact_enrichment']
           assert contact['send_permission']=='none'
           assert contact['input_boundary']=='qualified ProspectCandidates only'
+          prepare=caps['zero_touch_prepare']
+          assert prepare['send_permission']=='none'
+          assert prepare['scheduled_default']=='prepare'
+          assert 'status=prepared' in prepare['queue_contract']
+          assert 'manual_review' in prepare['queue_contract']
+          assert prepare['required_secrets']==['GOOGLE_SERVICE_ACCOUNT_JSON']
+          for key in ('OUTREACH_MAIL_PASSWORD','OUTREACH_MAILBOXES_JSON','OUTREACH_SEED_INBOXES_JSON','REOON_API_KEY'):
+              assert key in prepare['forbidden_secrets']
           readiness=caps['sender_readiness']
           assert readiness['send_permission']=='none'
+          assert 'provider_managed' in readiness['provider_managed_relay']
           placement=caps['inbox_placement']
           assert placement['manual_only'] is True
           assert placement['manual_default']=='validate'
@@ -84,6 +104,7 @@ jobs:
 
           for required in (
               '.github/workflows/prospect-discovery.yml',
+              '.github/workflows/leads-autopilot.yml',
               '.github/workflows/contact-enrichment.yml',
               '.github/workflows/sender-readiness.yml',
               '.github/workflows/inbox-placement.yml',
@@ -92,7 +113,9 @@ jobs:
               'scripts/prospect_discovery.py',
               'scripts/prospect_discovery_runtime.py',
               'scripts/prospect_target_policy.py',
+              'scripts/prospect_qualification.py',
               'scripts/prospect_contact_enrichment.py',
+              'scripts/outreach_prepare.py',
               'scripts/outreach_sender_readiness.py',
               'scripts/outreach_inbox_placement.py',
               'scripts/outreach_imap_draft.py',
@@ -112,6 +135,32 @@ jobs:
           assert "PROSPECT_DISCOVERY_PREFERRED_COUNTRIES" in discovery_workflow
           assert "US,NL,GB" in discovery_workflow
           assert "PROSPECT_DISCOVERY_EXCLUDE_AGENCIES" in discovery_workflow
+
+          autopilot=pathlib.Path('.github/workflows/leads-autopilot.yml').read_text(encoding='utf-8')
+          autopilot_trigger=autopilot.split('permissions:', 1)[0]
+          assert 'workflow_dispatch:' in autopilot_trigger
+          assert 'schedule:' in autopilot_trigger
+          assert 'ops/leads-autopilot-request.txt' in autopilot_trigger
+          assert 'scripts/prospect_qualification.py' in autopilot
+          assert 'scripts/prospect_contact_enrichment.py' in autopilot
+          assert 'scripts/outreach_prepare.py' in autopilot
+          assert 'outreach_direct_smtp_runtime.py' not in autopilot
+          assert 'OUTREACH_MAIL_PASSWORD' not in autopilot
+          assert 'OUTREACH_MAILBOXES_JSON' not in autopilot
+          assert 'OUTREACH_SEED_INBOXES_JSON' not in autopilot
+          assert 'send permission:' in autopilot and 'none' in autopilot
+
+          prepare_runtime=pathlib.Path('scripts/outreach_prepare.py').read_text(encoding='utf-8')
+          assert '"status": "prepared"' in prepare_runtime
+          assert '"compliance_status": "manual_review"' in prepare_runtime
+          assert '"compliance_basis": ""' in prepare_runtime
+          assert 'smtplib' not in prepare_runtime
+
+          qualification_runtime=pathlib.Path('scripts/prospect_qualification.py').read_text(encoding='utf-8')
+          assert 'QUALIFICATION_SHEET = "ProspectQualifications"' in qualification_runtime
+          assert 'OPPORTUNITY_WEIGHT' in qualification_runtime
+          assert 'STRONG_SHOP_HINTS' in qualification_runtime
+          assert 'send_permission' in qualification_runtime
 
           draft_workflow=pathlib.Path('.github/workflows/myhost-draft-test.yml').read_text(encoding='utf-8')
           draft_trigger=draft_workflow.split('permissions:', 1)[0]
@@ -143,11 +192,15 @@ jobs:
 
           integration=pathlib.Path('LEADS-INTEGRATION.md').read_text(encoding='utf-8')
           assert '## Capability 6 — mailbox_draft' in integration, 'integration docs omit mailbox_draft'
+          assert '## Capability 11 — prospect_qualification' in integration
+          assert '## Capability 12 — zero_touch_prepare' in integration
           assert '-> live sender readiness gate\n-> website target + evidence preflight\n-> LeadPromo copy preflight' in integration, 'integration docs omit website target/evidence gate'
           assert 'laat `NL` standaard toe' in integration
           assert '`US` eerst, `NL` tweede' in integration
           assert 'webactueel.nl' in integration
           assert 'website_scan:<JSON>' in integration
+          assert 'provider_managed' in integration
+          assert 'ProspectQualifications' in integration
           for doc in ('README.md','AGENTS.md'):
               text=pathlib.Path(doc).read_text(encoding='utf-8')
               assert 'mailbox_draft' in text, f'{doc} omits mailbox_draft'
@@ -158,9 +211,15 @@ jobs:
           assert registry['repository_role']=='central_leads_github_runtime'
           assert set(registry['capabilities']) >= expected_caps
           assert registry['capabilities']['website_evidence_scan']['read_only'] is True
+          assert registry['capabilities']['prospect_qualification']['max_candidates_per_run']==25
+          assert registry['capabilities']['zero_touch_prepare']['send_permission']=='none'
           assert registry['capabilities']['mailbox_draft']['send_permission']=='none'
           assert registry['capabilities']['outreach_delivery']['live_gate']=='sender_readiness -> website target/evidence -> LeadPromo copy -> compliance -> SMTP'
           assert registry['policy']['prospect_target_policy_enforced'] is True
+          assert registry['policy']['prospect_qualification_evidence_bound'] is True
+          assert registry['policy']['zero_touch_prepare_no_send'] is True
+          assert registry['policy']['changes_compliance_automatically'] is False
+          assert registry['policy']['prepared_copy_never_send_permission'] is True
           assert registry['policy']['outreach_requires_website_scan_evidence'] is True
           assert registry['tools']['axe_core']['automatic_score_effect'] is False
           print('toolkit-contract: OK')
