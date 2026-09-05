@@ -1,5 +1,5 @@
 {
-  "version": "3.4",
+  "version": "3.5",
   "repository_role": "central_leads_github_runtime",
   "policy": {
     "website_scanner_read_only": true,
@@ -22,10 +22,11 @@
     "prospect_discovery": {
       "workflow": ".github/workflows/prospect-discovery.yml",
       "runtime": "python",
-      "role": "bounded_company_domain_discovery_with_target_fill",
+      "role": "bounded_company_domain_discovery_with_target_fill_and_source_run_evidence",
       "modes": ["validate", "bootstrap", "discover"],
-      "writes": ["ProspectCandidates", "ProspectObservations"],
-      "boundaries": ["approved ProspectSources only", "bounded target-fill only", "target gaps are reported honestly", "observations are provenance/freshness only", "no contact harvesting", "no lead score or qualification decision", "no mail copy", "no SMTP/IMAP credentials", "no send permission"]
+      "source_types": ["seed_site", "directory_page", "directory_index", "directory_sitemap"],
+      "writes": ["ProspectCandidates", "ProspectObservations", "ProspectSourceRuns"],
+      "boundaries": ["approved ProspectSources only", "bounded target-fill only", "target gaps are reported honestly", "directory_sitemap follows at most 3 same-host sitemap-index children", "external sitemap-index children are ignored", "XML remains byte/timeout/robots/public-network bounded", "source-run history is evidence only", "observations are provenance/freshness only", "no contact harvesting", "no lead score or qualification decision", "no mail copy", "no SMTP/IMAP credentials", "no send permission"]
     },
     "prospect_intelligence": {
       "workflow": ".github/workflows/prospect-intelligence.yml",
@@ -123,7 +124,8 @@
     "languagetool": {"status":"optional_local","purpose":"optional Dutch language signals","evidence_role":"supplemental_candidate_signal"},
     "tech_detect": {"status":"enabled","purpose":"technology context for audit interpretation","evidence_role":"context_only"},
     "leads_handoff": {"status":"enabled","purpose":"normalize audit evidence for Leads readback","evidence_role":"handoff_adapter"},
-    "prospect_discovery": {"status":"enabled","purpose":"bounded approved-source company/domain discovery with target-fill and observation provenance","evidence_role":"lead_candidate_discovery"},
+    "prospect_discovery": {"status":"enabled","purpose":"bounded approved-source company/domain discovery with target-fill, observation provenance and historical source-run evidence","evidence_role":"lead_candidate_discovery"},
+    "directory_sitemap_adapter": {"status":"enabled","purpose":"consume bounded public directory sitemap/urlset sources and follow same-host profile pages to official company domains","evidence_role":"source_mesh_adapter","automatic_score_effect":false},
     "prospect_intelligence": {"status":"enabled","purpose":"derive entity/freshness, source-performance, evidence-graph and lookalike views from evidence-bound Sheet state","evidence_role":"derived_prospect_intelligence","automatic_score_effect":false},
     "prospect_signal_discovery": {"status":"enabled","purpose":"collect bounded official-site hiring and WordPress/WooCommerce evidence for existing candidates","evidence_role":"advisory_signal_evidence","automatic_score_effect":false},
     "contact_enrichment": {"status":"enabled","purpose":"bounded official-site business-email lookup for qualified prospects","evidence_role":"contact_candidate_evidence"},
