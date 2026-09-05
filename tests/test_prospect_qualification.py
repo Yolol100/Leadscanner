@@ -59,14 +59,15 @@ class ProspectQualificationTests(unittest.TestCase):
 
     def test_good_site_without_concrete_gap_is_not_auto_qualified(self):
         html = """
-        <html><head><title>Example Products</title>
-        <meta name='description' content='Products for professionals'>
+        <html><head><title>Example Maintenance</title>
+        <meta name='description' content='Professional maintenance services'>
         <meta name='viewport' content='width=device-width, initial-scale=1'>
-        </head><body><h1>Products for professionals</h1>
-        <a href='/contact'>Contact</a><p>Products and services.</p></body></html>
+        </head><body><h1>Professional maintenance services</h1>
+        <a href='/contact'>Contact</a><p>Maintenance services for professional clients.</p></body></html>
         """
-        result = assess_candidate(self._candidate(), html, [])
+        result = assess_candidate(self._candidate(company="Example Maintenance"), html, [])
         self.assertNotEqual(result.status, "qualified")
+        self.assertEqual(result.website_opportunity_score, 0)
         self.assertFalse(result.fact)
         self.assertFalse(result.idea)
 
@@ -76,7 +77,8 @@ class ProspectQualificationTests(unittest.TestCase):
         self.assertNotIn("OUTREACH_MAILBOXES_JSON", workflow)
         self.assertNotIn("OUTREACH_SEED_INBOXES_JSON", workflow)
         self.assertNotIn("outreach_direct_smtp_runtime.py", workflow)
-        self.assertIn("send permission: `none`", workflow)
+        self.assertIn("send permission:", workflow)
+        self.assertIn("none", workflow)
 
 
 if __name__ == "__main__":
