@@ -14,6 +14,7 @@ class ProspectSourceSemanticTests(unittest.TestCase):
             ("City of Greer", "https://city.example.org/"),
             ("[[Organization]]", "https://directory.example.org/"),
             ("Home", "https://manufacturer.example.com/"),
+            ("Homepage", "https://manufacturer.example.com/"),
             ("Greenwood Village Official Website", "https://greenwood.example.com/"),
         ):
             self.assertTrue(obvious_non_target(company, website), company)
