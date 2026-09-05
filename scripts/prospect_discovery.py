@@ -11,6 +11,7 @@ import ipaddress
 import re
 import socket
 import time
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from typing import Callable, Mapping, Sequence
@@ -26,6 +27,7 @@ DEFAULT_MAX_TOTAL = 50
 HARD_MAX_TOTAL = 200
 HARD_MAX_BYTES = 2_097_152
 HARD_TIMEOUT = 30.0
+HARD_MAX_SITEMAP_CHILDREN = 3
 SOURCE_HEADERS = [
     "source_id", "source_type", "source_url", "country", "include_terms",
     "exclude_terms", "max_candidates", "approved", "enabled",
@@ -35,7 +37,7 @@ CANDIDATE_HEADERS = [
     "source_id", "source_type", "country", "matched_terms", "status", "reason",
 ]
 LEAD_HEADERS = ["Bedrijf", "Website", "E-mail", "Status"]
-ALLOWED_SOURCE_TYPES = {"directory_page", "directory_index", "seed_site"}
+ALLOWED_SOURCE_TYPES = {"directory_page", "directory_index", "directory_sitemap", "seed_site"}
 SKIP_HOST_SUFFIXES = {
     "facebook.com", "instagram.com", "linkedin.com", "twitter.com", "x.com",
     "youtube.com", "youtu.be", "tiktok.com", "pinterest.com", "google.com",
@@ -235,6 +237,27 @@ def parse_page(content: str, base_url: str) -> ParsedPage:
     return parser.parsed()
 
 
+def parse_sitemap_locations(content: str) -> tuple[str, list[str]]:
+    prefix = content[:4096].casefold()
+    if "<!doctype" in prefix or "<!entity" in prefix:
+        raise DiscoveryError("DTD/entity declarations are not allowed in sitemap sources")
+    try:
+        root = ET.fromstring(content)
+    except ET.ParseError as exc:
+        raise DiscoveryError("invalid sitemap XML") from exc
+    kind = root.tag.rsplit("}", 1)[-1].casefold()
+    if kind not in {"urlset", "sitemapindex"}:
+        raise DiscoveryError(f"unsupported sitemap root: {kind}")
+    output: list[str] = []
+    for element in root.iter():
+        if element.tag.rsplit("}", 1)[-1].casefold() != "loc":
+            continue
+        url = normalize_url(element.text or "", require_path=True)
+        if url and url not in output:
+            output.append(url)
+    return kind, output
+
+
 class SafeRedirectHandler(HTTPRedirectHandler):
     def __init__(self, validator: Callable[[str], None]):
         super().__init__()
@@ -274,11 +297,19 @@ class BoundedHttpClient:
             if wait > 0:
                 self.sleeper(wait)
         self.last_request[host] = time.monotonic()
-        request = Request(url, headers={"User-Agent": self.user_agent, "Accept": "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.1"})
+        request = Request(
+            url,
+            headers={
+                "User-Agent": self.user_agent,
+                "Accept": "text/html,application/xhtml+xml,application/xml,text/xml,text/plain;q=0.9,*/*;q=0.1",
+            },
+        )
         try:
             with build_opener(SafeRedirectHandler(self._assert_public)).open(request, timeout=self.timeout) as response:
                 content_type = (response.headers.get("Content-Type") or "").casefold()
-                if not any(token in content_type for token in ("text/html", "application/xhtml+xml", "text/plain")):
+                if not any(token in content_type for token in (
+                    "text/html", "application/xhtml+xml", "application/xml", "text/xml", "text/plain"
+                )):
                     raise DiscoveryError(f"unsupported content type: {content_type or 'unknown'}")
                 payload = response.read(self.max_bytes + 1)
                 if len(payload) > self.max_bytes:
@@ -357,6 +388,69 @@ def source_candidate_urls(source: SourceSpec, page: ParsedPage) -> list[tuple[st
     return output
 
 
+def directory_sitemap_profile_urls(source: SourceSpec, fetch: Callable[[str], str]) -> list[str]:
+    source_host = host_key(source.source_url)
+    kind, locations = parse_sitemap_locations(fetch(source.source_url))
+    profiles: list[str] = []
+
+    def add_profiles(urls: Sequence[str]) -> None:
+        for target in urls:
+            profile = normalize_url(target, require_path=True)
+            if not profile or host_key(profile) != source_host or profile == source.source_url or profile in profiles:
+                continue
+            profiles.append(profile)
+            if len(profiles) >= source.max_candidates:
+                return
+
+    if kind == "urlset":
+        add_profiles(locations)
+        return profiles
+
+    children: list[str] = []
+    for target in locations:
+        child = normalize_url(target, require_path=True)
+        if not child or host_key(child) != source_host or child == source.source_url or child in children:
+            continue
+        children.append(child)
+        if len(children) >= HARD_MAX_SITEMAP_CHILDREN:
+            break
+    for child in children:
+        try:
+            child_kind, child_locations = parse_sitemap_locations(fetch(child))
+        except DiscoveryError:
+            continue
+        if child_kind != "urlset":
+            continue
+        add_profiles(child_locations)
+        if len(profiles) >= source.max_candidates:
+            break
+    return profiles
+
+
+def directory_profile_candidates(source: SourceSpec, profiles: Sequence[str], fetch: Callable[[str], str]) -> list[tuple[str, str]]:
+    candidate_links: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for profile in profiles:
+        try:
+            page = parse_page(fetch(profile), profile)
+        except DiscoveryError:
+            continue
+        proxy = SourceSpec(
+            source.source_id, "directory_page", profile, source.country,
+            source.include_terms, source.exclude_terms, source.max_candidates, True, True,
+        )
+        for website, label in source_candidate_urls(proxy, page):
+            host = host_key(website)
+            if host and host not in seen:
+                seen.add(host)
+                candidate_links.append((website, f"{label} {page.text}"))
+            if len(candidate_links) >= source.max_candidates:
+                break
+        if len(candidate_links) >= source.max_candidates:
+            break
+    return candidate_links
+
+
 def discover_candidate(source: SourceSpec, website: str, context: str, fetch: Callable[[str], str]) -> Candidate | None:
     website = root_url(website)
     if not website or is_skipped_host(host_key(website)):
@@ -379,36 +473,24 @@ def discover_candidate(source: SourceSpec, website: str, context: str, fetch: Ca
 def discover_source(source: SourceSpec, fetch: Callable[[str], str]) -> list[Candidate]:
     if not source.enabled or not source.approved:
         return []
-    source_page = parse_page(fetch(source.source_url), source.source_url)
     candidate_links: list[tuple[str, str]] = []
-    if source.source_type == "directory_index":
-        source_host = host_key(source.source_url)
-        profiles: list[str] = []
-        for target, _ in source_page.links:
-            profile = normalize_url(target, require_path=True)
-            if profile and host_key(profile) == source_host and profile != source.source_url and profile not in profiles:
-                profiles.append(profile)
-            if len(profiles) >= source.max_candidates:
-                break
-        seen: set[str] = set()
-        for profile in profiles:
-            try:
-                page = parse_page(fetch(profile), profile)
-            except DiscoveryError:
-                continue
-            proxy = SourceSpec(source.source_id, "directory_page", profile, source.country,
-                               source.include_terms, source.exclude_terms, source.max_candidates, True, True)
-            for website, label in source_candidate_urls(proxy, page):
-                host = host_key(website)
-                if host and host not in seen:
-                    seen.add(host)
-                    candidate_links.append((website, f"{label} {page.text}"))
-                if len(candidate_links) >= source.max_candidates:
-                    break
-            if len(candidate_links) >= source.max_candidates:
-                break
+    if source.source_type == "directory_sitemap":
+        profiles = directory_sitemap_profile_urls(source, fetch)
+        candidate_links = directory_profile_candidates(source, profiles, fetch)
     else:
-        candidate_links = source_candidate_urls(source, source_page)
+        source_page = parse_page(fetch(source.source_url), source.source_url)
+        if source.source_type == "directory_index":
+            source_host = host_key(source.source_url)
+            profiles: list[str] = []
+            for target, _ in source_page.links:
+                profile = normalize_url(target, require_path=True)
+                if profile and host_key(profile) == source_host and profile != source.source_url and profile not in profiles:
+                    profiles.append(profile)
+                if len(profiles) >= source.max_candidates:
+                    break
+            candidate_links = directory_profile_candidates(source, profiles, fetch)
+        else:
+            candidate_links = source_candidate_urls(source, source_page)
     output: list[Candidate] = []
     for website, context in candidate_links:
         candidate = discover_candidate(source, website, context, fetch)
