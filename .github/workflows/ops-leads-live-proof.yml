@@ -1,0 +1,167 @@
+name: Temporary Leads Live Proof
+
+on:
+  push:
+    branches:
+      - ops/leads-live-proof-20260905
+    paths:
+      - ops/leads-live-proof-request.txt
+
+permissions:
+  contents: read
+
+concurrency:
+  group: temporary-leads-live-proof
+  cancel-in-progress: false
+
+jobs:
+  proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Resolve bounded proof action
+        id: request
+        shell: bash
+        run: |
+          set -euo pipefail
+          action="$(tr -d '\r\n ' < ops/leads-live-proof-request.txt)"
+          case "$action" in
+            discovery-validate|discovery-run|sender-readiness|inbox-validate|inbox-test|draft) ;;
+            *) echo "unsupported proof action" >&2; exit 2 ;;
+          esac
+          echo "action=$action" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-outreach.txt
+
+      - name: Install runtime dependencies
+        run: python3 -m pip install --disable-pip-version-check --requirement requirements-outreach.txt
+
+      - name: Validate live prospect discovery contract
+        if: steps.request.outputs.action == 'discovery-validate'
+        env:
+          OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -euo pipefail
+          python3 scripts/prospect_discovery_runtime.py --mode validate --report prospect-discovery-report.json
+          cat prospect-discovery-report.json
+
+      - name: Run bounded live prospect discovery
+        if: steps.request.outputs.action == 'discovery-run'
+        env:
+          OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
+          PROSPECT_DISCOVERY_MAX_TOTAL: '6'
+          PROSPECT_DISCOVERY_TIMEOUT_SECONDS: ${{ vars.PROSPECT_DISCOVERY_TIMEOUT_SECONDS }}
+          PROSPECT_DISCOVERY_MAX_BYTES: ${{ vars.PROSPECT_DISCOVERY_MAX_BYTES }}
+          PROSPECT_DISCOVERY_MIN_INTERVAL_SECONDS: ${{ vars.PROSPECT_DISCOVERY_MIN_INTERVAL_SECONDS }}
+          PROSPECT_DISCOVERY_USER_AGENT: ${{ vars.PROSPECT_DISCOVERY_USER_AGENT }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -euo pipefail
+          python3 scripts/prospect_discovery_runtime.py --mode discover --report prospect-discovery-report.json
+          cat prospect-discovery-report.json
+
+      - name: Run sender readiness diagnostics
+        if: steps.request.outputs.action == 'sender-readiness'
+        env:
+          OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
+          OUTREACH_DAILY_LIMIT: ${{ vars.OUTREACH_DAILY_LIMIT || '20' }}
+          OUTREACH_MAILBOX_ID: ${{ vars.OUTREACH_MAILBOX_ID || 'primary' }}
+          OUTREACH_MAILBOX_DAILY_LIMIT: ${{ vars.OUTREACH_MAILBOX_DAILY_LIMIT }}
+          OUTREACH_MAILBOX_MIN_WAIT_MINUTES: ${{ vars.OUTREACH_MAILBOX_MIN_WAIT_MINUTES }}
+          OUTREACH_SMTP_HOST: ${{ vars.OUTREACH_SMTP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_SMTP_PORT: ${{ vars.OUTREACH_SMTP_PORT || '587' }}
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME || 'Andrew Baeten' }}
+          OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
+          OUTREACH_DKIM_SELECTOR: ${{ vars.OUTREACH_DKIM_SELECTOR || 'x' }}
+          OUTREACH_REQUIRED_SPF_TOKEN: ${{ vars.OUTREACH_REQUIRED_SPF_TOKEN || 'include:spf.mijn.host' }}
+          OUTREACH_OUTBOUND_IP: ${{ vars.OUTREACH_OUTBOUND_IP }}
+          OUTREACH_DNSBL_ZONES: ${{ vars.OUTREACH_DNSBL_ZONES }}
+          OUTREACH_READINESS_FAIL_ON_BLOCKED: 'true'
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_MAILBOXES_JSON: ${{ secrets.OUTREACH_MAILBOXES_JSON }}
+        run: python3 scripts/outreach_sender_readiness.py
+
+      - name: Validate inbox placement configuration
+        if: steps.request.outputs.action == 'inbox-validate'
+        env:
+          OUTREACH_PLACEMENT_MODE: 'validate'
+          OUTREACH_PLACEMENT_TEST_ENABLED: 'false'
+          OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
+          OUTREACH_DAILY_LIMIT: ${{ vars.OUTREACH_DAILY_LIMIT || '20' }}
+          OUTREACH_SMTP_HOST: ${{ vars.OUTREACH_SMTP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_SMTP_PORT: ${{ vars.OUTREACH_SMTP_PORT || '587' }}
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME || 'Andrew Baeten' }}
+          OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
+          OUTREACH_DKIM_SELECTOR: ${{ vars.OUTREACH_DKIM_SELECTOR || 'x' }}
+          OUTREACH_REQUIRED_SPF_TOKEN: ${{ vars.OUTREACH_REQUIRED_SPF_TOKEN || 'include:spf.mijn.host' }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python3 scripts/outreach_inbox_placement.py
+
+      - name: Run controlled seed-only inbox placement test
+        if: steps.request.outputs.action == 'inbox-test'
+        env:
+          OUTREACH_PLACEMENT_MODE: 'test'
+          OUTREACH_PLACEMENT_TEST_ENABLED: 'true'
+          OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
+          OUTREACH_DAILY_LIMIT: ${{ vars.OUTREACH_DAILY_LIMIT || '20' }}
+          OUTREACH_SMTP_HOST: ${{ vars.OUTREACH_SMTP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_SMTP_PORT: ${{ vars.OUTREACH_SMTP_PORT || '587' }}
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME || 'Andrew Baeten' }}
+          OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
+          OUTREACH_DKIM_SELECTOR: ${{ vars.OUTREACH_DKIM_SELECTOR || 'x' }}
+          OUTREACH_REQUIRED_SPF_TOKEN: ${{ vars.OUTREACH_REQUIRED_SPF_TOKEN || 'include:spf.mijn.host' }}
+          OUTREACH_PLACEMENT_POLL_SECONDS: ${{ vars.OUTREACH_PLACEMENT_POLL_SECONDS || '10' }}
+          OUTREACH_PLACEMENT_MAX_WAIT_SECONDS: ${{ vars.OUTREACH_PLACEMENT_MAX_WAIT_SECONDS || '60' }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_SEED_INBOXES_JSON: ${{ secrets.OUTREACH_SEED_INBOXES_JSON }}
+        run: python3 scripts/outreach_inbox_placement.py
+
+      - name: Append and verify one self-only mijn.host draft
+        if: steps.request.outputs.action == 'draft'
+        env:
+          OUTREACH_DAILY_LIMIT: '20'
+          OUTREACH_MAILBOX_ID: ${{ vars.OUTREACH_MAILBOX_ID || 'primary' }}
+          OUTREACH_DRAFT_MAILBOX_ID: ${{ vars.OUTREACH_MAILBOX_ID || 'primary' }}
+          OUTREACH_SMTP_HOST: ${{ vars.OUTREACH_SMTP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_SMTP_PORT: ${{ vars.OUTREACH_SMTP_PORT || '587' }}
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME || 'Andrew Baeten' }}
+          OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_MAILBOXES_JSON: ${{ secrets.OUTREACH_MAILBOXES_JSON }}
+          OUTREACH_DRAFT_CONFIRM: 'true'
+          OUTREACH_DRAFT_SELF_ONLY: 'true'
+          OUTREACH_DRAFT_TO: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
+          OUTREACH_DRAFT_TEST_ID: webactueel-ops-${{ github.run_id }}-${{ github.run_attempt }}
+          OUTREACH_DRAFT_SUBJECT: TEST - Leads mijn.host end-to-end draft
+          OUTREACH_DRAFT_BODY: >-
+            Dit is een gecontroleerde end-to-end test van de Leads/Leadscanner mijn.host conceptroute.
+            Dit bericht is via IMAP als concept opgeslagen en is niet via SMTP verzonden.
+        run: |
+          set -euo pipefail
+          python3 scripts/outreach_imap_draft.py | tee myhost-draft.txt
+          grep -q '^MYHOST_DRAFT=green ' myhost-draft.txt
