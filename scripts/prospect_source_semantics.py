@@ -12,7 +12,7 @@ MANUFACTURING_TERMS = (
     "fabrikant", "productie", "fabricage",
 )
 INSTITUTION_NAME_PATTERNS = (
-    re.compile(r"^home$", re.I),
+    re.compile(r"^(?:home|homepage|welcome)$", re.I),
     re.compile(r"^\[\[.+\]\]$", re.I),
     re.compile(r"\bjob\s*board\b", re.I),
     re.compile(r"\bchamber\b", re.I),
