@@ -109,7 +109,7 @@ jobs:
       - name: Load private outreach config
         if: steps.sheet_auth.outputs.available == 'true'
         env:
-          OUTREACH_CONFIG_SPREADSHEET_ID: ${{ vars.OUTREACH_CONFIG_SPREADSHEET_ID || '1panRChrQAL-Fe067swRGUCP3mxdyXA6hmvUUwdmQxfI' }}
+          OUTREACH_CONFIG_SPREADSHEET_ID: ${{ vars.OUTREACH_CONFIG_SPREADSHEET_ID || '1iOBCaBq3MpsrYQiESAhjS1NMRQDXAWmkTh-U-63qzs4' }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: python3 scripts/outreach_private_config.py
 
