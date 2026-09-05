@@ -1,1 +1,1 @@
-prepare-recheck
+validate
