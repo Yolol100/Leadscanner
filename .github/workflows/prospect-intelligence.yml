@@ -1,0 +1,95 @@
+name: Prospect Intelligence
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'validate, bootstrap, or refresh'
+        required: true
+        default: validate
+        type: choice
+        options:
+          - validate
+          - bootstrap
+          - refresh
+  schedule:
+    - cron: '17 6 * * 1-5'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prospect-intelligence
+  cancel-in-progress: false
+
+jobs:
+  prospect-intelligence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-outreach.txt
+
+      - name: Install prospect intelligence dependencies
+        run: python3 -m pip install --disable-pip-version-check --requirement requirements-outreach.txt
+
+      - name: Resolve intelligence mode
+        id: mode
+        shell: bash
+        env:
+          REQUESTED_MODE: ${{ inputs.mode }}
+          INTELLIGENCE_ENABLED: ${{ vars.PROSPECT_INTELLIGENCE_ENABLED }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            mode="${REQUESTED_MODE:-validate}"
+          elif [ "$INTELLIGENCE_ENABLED" = "true" ]; then
+            mode="refresh"
+          else
+            mode="validate"
+          fi
+          case "$mode" in
+            validate|bootstrap|refresh) ;;
+            *) echo "unsupported mode: $mode" >&2; exit 2 ;;
+          esac
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+
+      - name: Run prospect intelligence
+        env:
+          PROSPECT_INTELLIGENCE_MODE: ${{ steps.mode.outputs.mode }}
+          OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID }}
+          PROSPECT_INTELLIGENCE_STALE_DAYS: ${{ vars.PROSPECT_INTELLIGENCE_STALE_DAYS }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python3 scripts/prospect_intelligence_runtime.py --mode "$PROSPECT_INTELLIGENCE_MODE" --report prospect-intelligence-report.json
+
+      - name: Write intelligence summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Prospect intelligence"
+            echo
+            echo "- mode: \`${{ steps.mode.outputs.mode }}\`"
+            echo "- owner: \`leads\`"
+            echo "- send permission: \`none\`"
+            echo
+            echo "Derived entity, freshness, source-performance, signal, lookalike and evidence views remain advisory and never promote a lead or enable SMTP."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload intelligence receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: prospect-intelligence-${{ github.run_id }}
+          path: prospect-intelligence-report.json
+          if-no-files-found: error
+          retention-days: 14
