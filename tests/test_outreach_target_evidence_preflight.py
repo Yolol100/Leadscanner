@@ -49,6 +49,19 @@ class TargetEvidencePreflightTests(unittest.TestCase):
         errors = p.metadata_errors(row(country="NL"), postal_address="123 Main Street, Example City")
         self.assertTrue(any("NL target" in item for item in errors))
 
+    def test_webactueel_self_target_is_blocked_before_send(self):
+        evidence = source(evidence_url="https://webactueel.nl/")
+        errors = p.metadata_errors(
+            row(website="https://webactueel.nl/", source=evidence),
+            postal_address="123 Main Street, Example City",
+        )
+        self.assertTrue(any("self domain" in item.lower() for item in errors))
+        live_errors = p.website_target_errors(
+            row(website="https://sub.webactueel.nl/", source=evidence),
+            FakeClient("<html><body>Webactueel</body></html>"),
+        )
+        self.assertTrue(any("self domain" in item.lower() for item in live_errors))
+
     def test_us_requires_postal_address_and_commercial_identification(self):
         errors = p.metadata_errors(row(country="US"), postal_address="")
         self.assertTrue(any("OUTREACH_POSTAL_ADDRESS" in item for item in errors))
@@ -90,11 +103,17 @@ class TargetEvidencePreflightTests(unittest.TestCase):
         self.assertTrue(any("corporate subscriber" in item for item in errors))
 
     def test_live_target_check_rejects_agency_homepage(self):
-        errors = p.website_target_errors(
-            row(country="US"),
-            FakeClient("<html><title>Example</title><body>We are a digital marketing agency for growing brands.</body></html>"),
-        )
-        self.assertTrue(any("agency" in item for item in errors))
+        for copy in (
+            "We are a digital marketing agency for growing brands.",
+            "We are a mobile app development agency for startups.",
+            "We are a software development agency creating custom platforms.",
+            "We are a UX agency for digital product teams.",
+        ):
+            errors = p.website_target_errors(
+                row(country="US"),
+                FakeClient(f"<html><title>Example</title><body>{copy}</body></html>"),
+            )
+            self.assertTrue(any("agency" in item for item in errors))
 
     def test_live_target_check_accepts_normal_webshop(self):
         errors = p.website_target_errors(
