@@ -1,9 +1,10 @@
 {
-  "version": "3.5",
+  "version": "3.6",
   "repository_role": "central_leads_github_runtime",
   "policy": {
     "website_scanner_read_only": true,
     "prospect_discovery_bounded": true,
+    "prospect_target_policy_enforced": true,
     "prospect_intelligence_advisory_only": true,
     "prospect_signal_discovery_advisory_only": true,
     "contact_enrichment_qualified_only": true,
@@ -12,6 +13,7 @@
     "mailbox_draft_imap_only": true,
     "dashboard_readout_only": true,
     "outreach_live_fail_closed": true,
+    "outreach_requires_website_scan_evidence": true,
     "changes_lead_fit_automatically": false,
     "changes_compliance_automatically": false,
     "generates_mailcopy": false,
@@ -22,11 +24,11 @@
     "prospect_discovery": {
       "workflow": ".github/workflows/prospect-discovery.yml",
       "runtime": "python",
-      "role": "bounded_company_domain_discovery_with_target_fill_and_source_run_evidence",
+      "role": "bounded_international_company_domain_discovery_with_target_fill_and_source_run_evidence",
       "modes": ["validate", "bootstrap", "discover"],
       "source_types": ["seed_site", "directory_page", "directory_index", "directory_sitemap"],
       "writes": ["ProspectCandidates", "ProspectObservations", "ProspectSourceRuns"],
-      "boundaries": ["approved ProspectSources only", "bounded target-fill only", "target gaps are reported honestly", "directory_sitemap follows at most 3 same-host sitemap-index children", "external sitemap-index children are ignored", "XML remains byte/timeout/robots/public-network bounded", "source-run history is evidence only", "observations are provenance/freshness only", "no contact harvesting", "no lead score or qualification decision", "no mail copy", "no SMTP/IMAP credentials", "no send permission"]
+      "boundaries": ["approved ProspectSources only", "NL excluded by default", "US prioritized before configured non-NL European sources", "web/design/development/marketing/advertising/SEO/branding/digital/commerce agencies excluded by default", "bounded target-fill only", "target gaps are reported honestly", "directory_sitemap follows at most 3 same-host sitemap-index children", "external sitemap-index children are ignored", "XML remains byte/timeout/robots/public-network bounded", "source-run history is evidence only", "observations are provenance/freshness only", "no contact harvesting", "no lead score or qualification decision", "no mail copy", "no SMTP/IMAP credentials", "no send permission"]
     },
     "prospect_intelligence": {
       "workflow": ".github/workflows/prospect-intelligence.yml",
@@ -94,13 +96,13 @@
     "outreach_delivery": {
       "workflow": ".github/workflows/outreach-smtp.yml",
       "runtime": "python",
-      "role": "controlled_transport_for_preapproved_leads_state",
+      "role": "controlled_transport_for_preapproved_evidence_bound_leads_state",
       "modes": ["validate", "live"],
       "manual_default": "validate",
       "transport": "direct mijn.host SMTP + IMAP readback",
       "external_email_verifier_required": false,
-      "live_gate": "sender_readiness before LeadPromo copy, compliance and SMTP",
-      "boundaries": ["Leads owns qualification/contact/compliance/copy", "live sender readiness gate runs before copy/compliance/SMTP", "compliance preflight runs before SMTP", "reply/bounce/opt-out stop sequences fail-closed", "suppression checked before send", "scheduled live requires explicit OUTREACH_ENABLED=true", "no live send from CI"]
+      "live_gate": "sender_readiness -> website target/evidence -> LeadPromo copy -> compliance -> SMTP",
+      "boundaries": ["Leads owns qualification/contact/compliance/copy", "live sender readiness gate runs before target/evidence/copy/compliance/SMTP", "approved rows require website_scan JSON with same-domain evidence_url and exact idea present in body", "NL targets blocked by current policy", "official homepage is rechecked against agency/provider terms before SMTP", "US targets require configured physical postal address plus commercial-message identification", "UK unsolicited route requires verified corporate subscriber metadata and clear Ltd/Limited/LLP/PLC company form", "controlled English LeadPromo copy is allowed for international targets without mixing CTA/opt-out/signature languages", "compliance preflight runs before SMTP", "reply/bounce/opt-out stop sequences fail-closed", "suppression checked before send", "scheduled live requires explicit OUTREACH_ENABLED=true", "no live send from CI"]
     },
     "dashboard": {
       "surface": "Webactueel Leadlijst/Dashboard",
@@ -124,7 +126,8 @@
     "languagetool": {"status":"optional_local","purpose":"optional Dutch language signals","evidence_role":"supplemental_candidate_signal"},
     "tech_detect": {"status":"enabled","purpose":"technology context for audit interpretation","evidence_role":"context_only"},
     "leads_handoff": {"status":"enabled","purpose":"normalize audit evidence for Leads readback","evidence_role":"handoff_adapter"},
-    "prospect_discovery": {"status":"enabled","purpose":"bounded approved-source company/domain discovery with target-fill, observation provenance and historical source-run evidence","evidence_role":"lead_candidate_discovery"},
+    "prospect_discovery": {"status":"enabled","purpose":"bounded approved-source international company/domain discovery with target-fill, country/agency policy, observation provenance and historical source-run evidence","evidence_role":"lead_candidate_discovery"},
+    "prospect_target_policy": {"status":"enabled","purpose":"exclude NL by default, prioritize US/non-NL European sources and add multilingual agency/provider exclusions","evidence_role":"discovery_target_policy","automatic_score_effect":false},
     "directory_sitemap_adapter": {"status":"enabled","purpose":"consume bounded public directory sitemap/urlset sources and follow same-host profile pages to official company domains","evidence_role":"source_mesh_adapter","automatic_score_effect":false},
     "prospect_intelligence": {"status":"enabled","purpose":"derive entity/freshness, source-performance, evidence-graph and lookalike views from evidence-bound Sheet state","evidence_role":"derived_prospect_intelligence","automatic_score_effect":false},
     "prospect_signal_discovery": {"status":"enabled","purpose":"collect bounded official-site hiring and WordPress/WooCommerce evidence for existing candidates","evidence_role":"advisory_signal_evidence","automatic_score_effect":false},
@@ -132,6 +135,7 @@
     "sender_readiness": {"status":"enabled","purpose":"technical sender authentication/connectivity/reputation diagnostics","evidence_role":"deliverability_diagnostics"},
     "inbox_placement": {"status":"manual_only","purpose":"controlled seed inbox/spam placement probe","evidence_role":"bounded_placement_sample"},
     "mailbox_draft": {"status":"manual_test_only","purpose":"append and verify one self-addressed concept through mijn.host IMAP","evidence_role":"mailbox_draft_readback"},
+    "outreach_target_evidence": {"status":"enabled","purpose":"recheck approved targets, require same-domain website_scan evidence and enforce international target/compliance metadata before copy and SMTP","evidence_role":"pre_send_target_and_copy_provenance"},
     "outreach_transport": {"status":"enabled","purpose":"preflight, SMTP/IMAP, sequences, suppression and reporting","evidence_role":"transport_readback"},
     "dashboard": {"status":"enabled","purpose":"single Sheet control-panel readout","evidence_role":"aggregate_readout"}
   }
