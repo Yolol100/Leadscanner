@@ -18,6 +18,22 @@ class ProspectSourceSemanticTests(unittest.TestCase):
         ):
             self.assertTrue(obvious_non_target(company, website), company)
 
+    def test_directory_provider_subdomain_is_not_a_prospect(self):
+        reason = obvious_non_target(
+            "Inloggen WebwinkelKeur",
+            "https://dashboard.webwinkelkeur.nl/",
+            "https://www.webwinkelkeur.nl/webshops/overview/city/Winkel/region%3Anl",
+        )
+        self.assertIn("directory provider", reason)
+
+    def test_trustmark_review_provider_identity_is_blocked(self):
+        self.assertTrue(
+            obvious_non_target(
+                "Webshop Trustmark & Webshop Reviews: Starting from €6 per month",
+                "https://www.valuedshops.com/",
+            )
+        )
+
     def test_manufacturing_directory_requires_official_site_category_evidence(self):
         allowed, reason = source_semantic_target_check(
             source_id="us-greer-manufacturers",
