@@ -22,9 +22,9 @@ Workflow: `.github/workflows/prospect-discovery.yml`.
 - `webactueel.nl` en alle subdomeinen blijven self-excluded.
 - Agency-/concurrentfilter staat standaard aan voor duidelijke web/design/development/app/software/UX/marketing/advertising/SEO/branding/digital/commerce providers.
 - Schrijft alleen company/domain-kandidaten naar `ProspectCandidates`; geen contactharvesting, Customer Potential, compliance of mailcopy.
-- `PROSPECT_DISCOVERY_TARGET_NEW` probeert begrensd een doelvolume te vullen; `PROSPECT_DISCOVERY_MAX_TOTAL` blijft hard bovengrens.
+- `PROSPECT_DISCOVERY_TARGET_NEW` probeert begrensd een doelvolume te vullen; `PROSPECT_DISCOVERY_MAX_TOTAL` blijft hard bovengrens. Het report bewaart `target_met` en `target_gap`; een `target_gap` wordt expliciet gerapporteerd en nooit als succesvolle vulling verzonnen.
 - `ProspectObservations` bewaart verwerkings/provenancebewijs en rediscovery-freshness.
-- `ProspectSourceRuns` bewaart per werkelijk verwerkte bron status, seen, new, duplicates, duration en begrensde fouttekst.
+- `ProspectSourceRuns` bewaart per werkelijk verwerkte bron status, seen, new, duplicates, duration en begrensde fouttekst. Deze bronhistorie is bewijscontext en is nooit kwalificatie of send permission.
 - Modi: `validate`, `bootstrap`, `discover`. De losse weekday schedule blijft `validate` tenzij `PROSPECT_DISCOVERY_ENABLED=true`.
 - Ontvangt `GOOGLE_SERVICE_ACCOUNT_JSON`, maar nooit mailbox-, SMTP/IMAP-, seed- of verifiersecrets.
 
@@ -141,7 +141,7 @@ Workflow: `.github/workflows/prospect-intelligence.yml`.
 - `ProspectSourceMetrics` koppelt bronrendement aan bestaande kandidaat/contact/outcome-evidence.
 - `ProspectEvidence` bouwt reproduceerbare source -> candidate/entity -> signal/contact/outcome edges.
 - `ProspectLookalikes` gebruikt uitsluitend bewezen klantseeds.
-- Deze laag is adviserend en wijzigt niet zelfstandig Customer Potential, compliance, contactpromotie, copy of send permission.
+- Deze afgeleide views wijzigen nooit zelfstandig Customer Potential, compliance, contactpromotie, copy of send permission.
 
 ## Capability 10 — prospect_signal_discovery
 
