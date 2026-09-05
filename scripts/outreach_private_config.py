@@ -6,7 +6,7 @@ import sys
 
 from outreach_sender import build_sheets_service, get_values
 
-DEFAULT_CONFIG_SPREADSHEET_ID = "1panRChrQAL-Fe067swRGUCP3mxdyXA6hmvUUwdmQxfI"
+DEFAULT_CONFIG_SPREADSHEET_ID = "1iOBCaBq3MpsrYQiESAhjS1NMRQDXAWmkTh-U-63qzs4"
 CONFIG_SHEET = "Config"
 POSTAL_KEY = "OUTREACH_POSTAL_ADDRESS"
 
