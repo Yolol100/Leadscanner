@@ -98,6 +98,17 @@ jobs:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: python3 scripts/prospect_discovery_runtime.py --mode "$PROSPECT_DISCOVERY_MODE" --report prospect-discovery-report.json
 
+      - name: Sanitize stale directory candidates
+        if: steps.mode.outputs.mode == 'prepare'
+        env:
+          OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
+          PROSPECT_QUALIFICATION_TIMEOUT_SECONDS: ${{ vars.PROSPECT_QUALIFICATION_TIMEOUT_SECONDS || '10' }}
+          PROSPECT_QUALIFICATION_MAX_BYTES: ${{ vars.PROSPECT_QUALIFICATION_MAX_BYTES || '524288' }}
+          PROSPECT_QUALIFICATION_MIN_INTERVAL_SECONDS: ${{ vars.PROSPECT_QUALIFICATION_MIN_INTERVAL_SECONDS || '0.5' }}
+          PROSPECT_QUALIFICATION_USER_AGENT: ${{ vars.PROSPECT_QUALIFICATION_USER_AGENT }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python3 scripts/prospect_candidate_sanitizer.py
+
       - name: Collect bounded official-site signals
         env:
           PROSPECT_SIGNAL_MODE: ${{ steps.mode.outputs.mode == 'prepare' && 'discover' || 'validate' }}
@@ -116,7 +127,7 @@ jobs:
           PROSPECT_QUALIFICATION_FORCE_RECHECK: ${{ steps.mode.outputs.recheck }}
           PROSPECT_QUALIFICATION_RECHECK_DAYS: ${{ vars.PROSPECT_QUALIFICATION_RECHECK_DAYS || '30' }}
           OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
-          PROSPECT_QUALIFICATION_MAX_PER_RUN: ${{ vars.PROSPECT_QUALIFICATION_MAX_PER_RUN || '10' }}
+          PROSPECT_QUALIFICATION_MAX_PER_RUN: ${{ steps.mode.outputs.recheck == 'true' && '25' || vars.PROSPECT_QUALIFICATION_MAX_PER_RUN || '10' }}
           PROSPECT_QUALIFICATION_TIMEOUT_SECONDS: ${{ vars.PROSPECT_QUALIFICATION_TIMEOUT_SECONDS || '10' }}
           PROSPECT_QUALIFICATION_MAX_BYTES: ${{ vars.PROSPECT_QUALIFICATION_MAX_BYTES || '524288' }}
           PROSPECT_QUALIFICATION_MIN_INTERVAL_SECONDS: ${{ vars.PROSPECT_QUALIFICATION_MIN_INTERVAL_SECONDS || '0.5' }}
@@ -165,11 +176,11 @@ jobs:
             echo "- mode: \`${{ steps.mode.outputs.mode }}\`"
             echo "- force-recheck: \`${{ steps.mode.outputs.recheck }}\`"
             echo "- owner: \`leads\`"
-            echo "- flow: \`VIND -> KWALIFICEER -> CONTACT + MAIL\`"
+            echo "- flow: \`VIND -> SANITIZE -> KWALIFICEER -> CONTACT + MAIL\`"
             echo "- compliance: \`manual_review/fail-closed until an evidenced basis exists\`"
             echo "- send permission: \`none\`"
             echo
-            echo "This workflow may discover, score, enrich and prepare bounded evidence-bound lead state. It never receives mailbox credentials and never calls SMTP."
+            echo "This workflow may discover, sanitize, score, enrich and prepare bounded evidence-bound lead state. It never receives mailbox credentials and never calls SMTP."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload prepare receipts
