@@ -35,54 +35,67 @@ COUNTRY_ALIASES = {
 }
 
 # Strong self-description phrases for providers that substantially overlap with
-# Webactueel's own website/webshop/app/marketing delivery. They are deliberately
-# more specific than generic words like "marketing" or "software" so normal
-# retailers and product companies are not rejected because one broad term is
-# present in a footer, job title or product description.
+# Webactueel's own website/webshop/app/software/design/marketing delivery. They
+# are deliberately more specific than generic words like "marketing",
+# "software" or "design" so normal retailers and product companies are not
+# rejected because one broad term appears in a footer, job title or product.
 DEFAULT_AGENCY_EXCLUDE_TERMS = (
     # English
     "web design agency", "website design agency", "web development agency",
-    "website development agency", "app development agency", "mobile app development agency",
-    "software development agency", "software agency", "product development agency",
-    "ux agency", "ui ux agency", "ux design agency", "digital agency",
-    "digital marketing agency", "marketing agency", "advertising agency", "ad agency",
-    "seo agency", "branding agency", "creative agency", "ecommerce agency",
-    "e-commerce agency", "wordpress agency", "woocommerce agency", "shopify agency",
+    "website development agency", "web and app agency", "web & app agency",
+    "app development agency", "mobile app development agency", "mobile app agency",
+    "software development agency", "software agency", "custom software agency",
+    "product development agency", "product design agency", "digital product agency",
+    "ux agency", "ui agency", "ui ux agency", "ux/ui agency", "ux ui agency",
+    "ux design agency", "ui design agency", "digital agency", "digital marketing agency",
+    "marketing agency", "advertising agency", "ad agency", "seo agency",
+    "branding agency", "creative agency", "ecommerce agency", "e-commerce agency",
+    "wordpress agency", "woocommerce agency", "shopify agency",
     "full-service agency", "full service agency",
     # Dutch
     "webdesign bureau", "webdesignbureau", "website bureau", "webbureau",
     "internetbureau", "app bureau", "appbureau", "app ontwikkelbureau",
-    "software bureau", "softwarebureau", "ux bureau", "ui ux bureau",
-    "marketingbureau", "marketing bureau", "reclamebureau", "reclame bureau",
-    "advertentiebureau", "online marketing bureau", "seo bureau", "seo-bureau",
-    "branding bureau", "creatief bureau", "communicatiebureau", "wordpress bureau",
-    "woocommerce bureau", "webshop bureau",
+    "software bureau", "softwarebureau", "maatwerk software bureau",
+    "ux bureau", "ui bureau", "ui ux bureau", "ux/ui bureau", "product design bureau",
+    "digital product bureau", "designbureau", "marketingbureau", "marketing bureau",
+    "reclamebureau", "reclame bureau", "advertentiebureau", "online marketing bureau",
+    "seo bureau", "seo-bureau", "branding bureau", "creatief bureau",
+    "communicatiebureau", "digital bureau", "wordpress bureau", "woocommerce bureau",
+    "webshop bureau",
     # German
-    "webdesign agentur", "webagentur", "app agentur", "software agentur",
-    "marketingagentur", "werbeagentur", "seo agentur", "seo-agentur",
+    "webdesign agentur", "webagentur", "app agentur", "mobile app agentur",
+    "software agentur", "softwareentwicklungsagentur", "ux agentur", "ui agentur",
+    "designagentur", "marketingagentur", "werbeagentur", "seo agentur", "seo-agentur",
     "digitalagentur", "wordpress agentur",
     # French
     "agence web", "agence digitale", "agence application mobile", "agence mobile",
-    "agence développement logiciel", "agence marketing", "agence de marketing",
+    "agence développement logiciel", "agence de développement logiciel", "agence ux",
+    "agence ui", "agence design produit", "agence marketing", "agence de marketing",
     "agence seo", "agence de publicité", "agence publicitaire",
     "agence de communication", "agence wordpress",
     # Spanish
-    "agencia web", "agencia digital", "agencia de aplicaciones", "agencia de software",
-    "agencia de marketing", "agencia seo", "agencia de publicidad",
-    "agencia de comunicación", "agencia wordpress",
+    "agencia web", "agencia digital", "agencia de aplicaciones",
+    "agencia de desarrollo de aplicaciones", "agencia de aplicaciones móviles",
+    "agencia de software", "agencia de desarrollo de software", "agencia ux",
+    "agencia ui", "agencia de diseño de producto", "agencia de marketing",
+    "agencia seo", "agencia de publicidad", "agencia de comunicación", "agencia wordpress",
     # Italian
-    "agenzia web", "agenzia digitale", "agenzia app", "agenzia software",
-    "agenzia marketing", "agenzia seo", "agenzia pubblicitaria",
+    "agenzia web", "agenzia digitale", "agenzia app", "agenzia sviluppo app",
+    "agenzia software", "agenzia sviluppo software", "agenzia ux", "agenzia ui",
+    "agenzia product design", "agenzia marketing", "agenzia seo", "agenzia pubblicitaria",
     "agenzia di comunicazione", "agenzia wordpress",
     # Portuguese
     "agência web", "agencia web", "agência digital", "agencia digital",
-    "agência de aplicativos", "agencia de aplicativos", "agência de software",
-    "agencia de software", "agência de marketing", "agencia de marketing",
-    "agência seo", "agencia seo", "agência de publicidade", "agencia de publicidade",
+    "agência de aplicativos", "agencia de aplicativos", "agência de desenvolvimento de apps",
+    "agencia de desenvolvimento de apps", "agência de software", "agencia de software",
+    "agência de desenvolvimento de software", "agencia de desenvolvimento de software",
+    "agência ux", "agencia ux", "agência ui", "agencia ui",
+    "agência de marketing", "agencia de marketing", "agência seo", "agencia seo",
+    "agência de publicidade", "agencia de publicidade",
     # Nordic common self-descriptions
-    "webbyrå", "digitalbyrå", "appbyrå", "mjukvarubyrå", "marknadsföringsbyrå",
-    "reklambyrå", "digitalt bureau", "webbureau", "app bureau", "software bureau",
-    "reklamebureau",
+    "webbyrå", "digitalbyrå", "appbyrå", "mjukvarubyrå", "designbyrå",
+    "marknadsföringsbyrå", "reklambyrå", "digitalt bureau", "webbureau",
+    "app bureau", "software bureau", "softwarebureau", "designbureau", "reklamebureau",
 )
 
 
