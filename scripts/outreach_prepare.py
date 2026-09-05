@@ -217,15 +217,15 @@ def run(mode: str, report_path: str) -> int:
         raise ValueError("GOOGLE_SERVICE_ACCOUNT_JSON is required")
 
     service = build_sheets_service()
-    candidate_headers, candidates = rows_from_values(get_values(service, spreadsheet_id, f"'{PROSPECT_SHEET}'!A:K"))
+    candidate_headers, candidates = rows_from_values(get_values(service, spreadsheet_id, PROSPECT_SHEET))
     ensure_expected_headers(candidate_headers, PROSPECT_HEADERS, PROSPECT_SHEET)
-    qualification_headers, qualifications = rows_from_values(get_values(service, spreadsheet_id, f"'{QUALIFICATION_SHEET}'!A:Q"))
+    qualification_headers, qualifications = rows_from_values(get_values(service, spreadsheet_id, QUALIFICATION_SHEET))
     ensure_expected_headers(qualification_headers, QUALIFICATION_HEADERS, QUALIFICATION_SHEET)
-    contact_headers, contacts = rows_from_values(get_values(service, spreadsheet_id, f"'{CONTACT_SHEET}'!A:K"))
+    contact_headers, contacts = rows_from_values(get_values(service, spreadsheet_id, CONTACT_SHEET))
     ensure_expected_headers(contact_headers, CONTACT_HEADERS, CONTACT_SHEET)
-    queue_headers, queue = rows_from_values(get_values(service, spreadsheet_id, f"'{QUEUE_SHEET}'!A:AC"))
+    queue_headers, queue = rows_from_values(get_values(service, spreadsheet_id, QUEUE_SHEET))
     ensure_expected_headers(queue_headers, FULL_QUEUE_HEADERS, QUEUE_SHEET)
-    lead_headers, leads = rows_from_values(get_values(service, spreadsheet_id, f"'{LEAD_SHEET}'!A:D"))
+    lead_headers, leads = rows_from_values(get_values(service, spreadsheet_id, LEAD_SHEET))
     ensure_expected_headers(lead_headers, LEAD_HEADERS, LEAD_SHEET)
 
     if mode == "validate":
