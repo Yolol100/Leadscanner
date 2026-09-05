@@ -1,5 +1,5 @@
 {
-  "schema_version": "2.3",
+  "schema_version": "2.4",
   "owner_skill": "leads",
   "project_id": "project-leads",
   "repository": "Yolol100/Leadscanner",
@@ -15,8 +15,11 @@
       "scheduled_default": "validate",
       "scheduled_discover_gate": "PROSPECT_DISCOVERY_ENABLED=true",
       "optional_variables": ["PROSPECT_DISCOVERY_TARGET_NEW"],
+      "source_types": ["seed_site", "directory_page", "directory_index", "directory_sitemap"],
+      "directory_sitemap_child_hard_cap": 3,
       "target_fill": "bounded by PROSPECT_DISCOVERY_MAX_TOTAL and processed in approved ProspectSources row order",
-      "outputs": ["ProspectCandidates", "ProspectObservations", "prospect-discovery-report.json"],
+      "source_run_history": "ProspectSourceRuns records processed-source status, yield, duplicates, duration and bounded error text when the optional bootstrap tab exists",
+      "outputs": ["ProspectCandidates", "ProspectObservations", "ProspectSourceRuns", "prospect-discovery-report.json"],
       "send_permission": "none"
     },
     "prospect_intelligence": {
@@ -142,6 +145,8 @@
   "boundaries": [
     "The website scanner remains read-only and optional; it never changes lead fit, priority, compliance, send permission or outreach state.",
     "Prospect discovery finds approved-source company/domain candidates only and receives no mail credentials.",
+    "Directory sitemap sources accept only bounded public XML sitemap/urlset data; same-host sitemap-index children are capped at three and external child sitemaps are ignored.",
+    "Prospect source runs are provenance/health evidence only; their status, yield, duplicates, duration or errors never qualify a lead or create send permission.",
     "Prospect target-fill is bounded by the existing discovery hard cap; failure to reach the requested target is reported as a target gap, never fabricated as completion.",
     "Prospect observations record discovery provenance and rediscovery freshness only; they never approve, qualify or enrich a lead.",
     "Scheduled prospect discovery remains validate-only unless PROSPECT_DISCOVERY_ENABLED=true explicitly promotes the scheduled run to discover mode.",
