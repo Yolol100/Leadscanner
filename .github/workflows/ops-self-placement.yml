@@ -33,6 +33,9 @@ jobs:
           OUTREACH_PLACEMENT_TEST_ENABLED: 'true'
           OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
           OUTREACH_DAILY_LIMIT: ${{ vars.OUTREACH_DAILY_LIMIT || '20' }}
+          OUTREACH_MAILBOX_ID: ${{ vars.OUTREACH_MAILBOX_ID || 'primary' }}
+          OUTREACH_MAILBOX_DAILY_LIMIT: ${{ vars.OUTREACH_MAILBOX_DAILY_LIMIT || '20' }}
+          OUTREACH_MAILBOX_MIN_WAIT_MINUTES: ${{ vars.OUTREACH_MAILBOX_MIN_WAIT_MINUTES || '1' }}
           OUTREACH_SMTP_HOST: ${{ vars.OUTREACH_SMTP_HOST || 'mail.andrewbaeten.nl' }}
           OUTREACH_SMTP_PORT: ${{ vars.OUTREACH_SMTP_PORT || '587' }}
           OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
@@ -40,11 +43,12 @@ jobs:
           OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
           OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME || 'Andrew Baeten' }}
           OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
+          OUTREACH_DKIM_SELECTOR: ${{ vars.OUTREACH_DKIM_SELECTOR || 'x' }}
+          OUTREACH_REQUIRED_SPF_TOKEN: ${{ vars.OUTREACH_REQUIRED_SPF_TOKEN || 'include:spf.mijn.host' }}
           OUTREACH_PLACEMENT_POLL_SECONDS: '5'
           OUTREACH_PLACEMENT_MAX_WAIT_SECONDS: '60'
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
-          OUTREACH_MAILBOXES_JSON: ${{ secrets.OUTREACH_MAILBOXES_JSON }}
         shell: bash
         run: |
           set -euo pipefail
