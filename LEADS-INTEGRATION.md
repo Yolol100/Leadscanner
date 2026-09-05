@@ -2,14 +2,17 @@
 
 `Yolol100/Leadscanner` is de enige GitHub-runtime voor de repository-capabilities van Leads. Dit bestand is de **menselijke canonieke integratiebron**; `toolkit-contract.json` is de machineleesbare canonieke bron. README en AGENTS verwijzen hiernaar en herhalen de volledige contractdetails niet.
 
-Leads/ChatGPT blijft eigenaar van bedrijfsrealness, Customer Potential, contactkeuze/promotie, compliancebasis/status, mailcopy en interpretatie van resultaten. Repositorycapabilities leveren alleen discovery, evidence, technische diagnostiek, testtransport en readback.
+Leads/ChatGPT blijft eigenaar van bedrijfsrealness, Customer Potential, contactkeuze/promotie, compliancebasis/status, mailcopy en interpretatie van resultaten. Repositorycapabilities leveren alleen discovery, evidence, afgeleide prospectintelligentie, technische diagnostiek, testtransport en readback.
 
 ## Capability 1 — prospect_discovery
 
 Workflow: `.github/workflows/prospect-discovery.yml`.
 
 - Leest alleen expliciet goedgekeurde `ProspectSources`.
-- Schrijft company/domain-kandidaten naar `ProspectCandidates`.
+- Schrijft nieuwe company/domain-kandidaten naar `ProspectCandidates`.
+- Kan met `PROSPECT_DISCOVERY_TARGET_NEW` een begrensd doelvolume over meerdere goedgekeurde bronnen in Sheet-volgorde proberen te vullen; `PROSPECT_DISCOVERY_MAX_TOTAL` blijft de bovengrens.
+- Rapporteert `target_met` en `target_gap`; een niet gehaald doel wordt nooit als succesvolle vulling verzonnen.
+- Schrijft, wanneer `ProspectObservations` bestaat, per verwerkte company/domain-herwaarneming provenance naar die tab. `new` en `duplicate` zijn observatie-uitkomsten, geen kwalificatiebesluiten.
 - Behoudt robots.txt, pacing, timeouts, byte/kandidaatlimieten en private-network/SSRF-blokkering.
 - Verzamelt geen contactadressen, bepaalt geen Customer Potential/compliance, maakt geen copy en ontvangt geen mailboxcredentials.
 - Modi: `validate`, `bootstrap`, `discover`.
@@ -119,6 +122,25 @@ De Google Sheet `Webactueel Leadlijst` bevat één read-only `Dashboard`.
 - Placement `missing` en `error` = unresolved/review.
 - Dashboardformules mogen geen Lead- of transportstate muteren.
 
+## Capability 9 — prospect_intelligence
+
+Workflow: `.github/workflows/prospect-intelligence.yml`.
+
+Deze capability vormt de afgeleide data-/learninglaag tussen discoverybewijs en menselijke/Leads-beslissingen.
+
+- Modi: `validate`, `bootstrap`, `refresh`; handmatige default = `validate`.
+- Geplande runs blijven standaard `validate`; alleen `PROSPECT_INTELLIGENCE_ENABLED=true` promoveert een schedule naar `refresh`.
+- Krijgt alleen `GOOGLE_SERVICE_ACCOUNT_JSON`; geen SMTP-, IMAP-, seed- of verifiersecret.
+- `ProspectObservations` bewaart discovery/herontdekkingsbewijs en maakt `first_seen`, `last_seen` en freshness berekenbaar.
+- `ProspectSignals` is een evidence-bound inputcontract. Elke signal row verwijst naar een bestaande `candidate_id`; signalen met onbekende kandidaat, ongeldige timestamp, ongeldige URL, ongeldige strength of confidence blokkeren fail-closed.
+- Signal `strength` is alleen `0|1|2`; dit is een bewijssamenvatting, geen Customer Potential-score.
+- `ProspectEntities` normaliseert kandidaten naar een deterministische domein-entiteit, aliases, source provenance en freshness.
+- `ProspectSourceMetrics` koppelt per bron kandidaatstatus, sterke signalen, contact-ready evidence en minimale Leadlijst-outcomes voor bronrendement.
+- `ProspectEvidence` bouwt reproduceerbare edges `source -> candidate/entity -> signal/contact/outcome` zodat prioriteitsbewijs traceerbaar blijft.
+- `ProspectLookalikes` gebruikt alleen bewezen `klant/customer`-seeds uit de minimale Leadlijst en bestaande candidate terms/country voor een adviserend similarity-resultaat.
+- Lookalikes, freshness, signals en source metrics wijzigen nooit zelfstandig Customer Potential, `qualified/hold/rejected`, contactpromotie, compliancebasis, copy, queue of send permission.
+- `refresh` herbouwt alleen de afgeleide tabs deterministisch; `ProspectSignals` en `ProspectObservations` blijven input/evidence en worden niet door refresh herschreven.
+
 ## Data-contracten
 
 Minimaal bewaakt:
@@ -126,6 +148,12 @@ Minimaal bewaakt:
 - `Leadlijst`: `Bedrijf | Website | E-mail | Status`
 - `ProspectSources`
 - `ProspectCandidates`
+- `ProspectObservations`
+- `ProspectSignals`
+- `ProspectEntities`
+- `ProspectSourceMetrics`
+- `ProspectEvidence`
+- `ProspectLookalikes`
 - `ContactCandidates`
 - `OutreachQueue`
 - `OutreachSequences`
@@ -143,7 +171,7 @@ Minimaal bewaakt:
 ## Compliance- en transportgrenzen
 
 - Leads bezit `country/jurisdiction`, `compliance_basis`, `compliance_status`, contactbron en mailcopy.
-- Nederland/EER blijft fail-closed: een openbaar zakelijk adres, `ContactCandidates.ready`, sender-readiness, seed-placement of draft-readback is nooit zelfstandig toestemming voor commerciële outreach.
+- Nederland/EER blijft fail-closed: een openbaar zakelijk adres, `ContactCandidates.ready`, sender-readiness, seed-placement, prospect-intelligence-uitvoer of draft-readback is nooit zelfstandig toestemming voor commerciële outreach.
 - Compliance-, copy-, suppression- en sendergates blijven vóór live SMTP.
 - Creatorvideo's/comments zijn adviserend bewijs. Actuele wet/providerregels en echte Webactueel-resultaten hebben voorrang.
 
@@ -157,13 +185,14 @@ Secretwaarden horen nooit in code, logs of artifacts.
 - `OUTREACH_SEED_INBOXES_JSON` — alleen voor de expliciete seed-placementtest.
 - `REOON_API_KEY` — niet gebruikt door de actieve direct-SMTP-route.
 
-Belangrijk: `mailbox_draft` krijgt **geen** `GOOGLE_SERVICE_ACCOUNT_JSON`; discovery/contact-only routes krijgen **geen** mailboxsecrets.
+Belangrijk: `mailbox_draft` krijgt **geen** `GOOGLE_SERVICE_ACCOUNT_JSON`; discovery, prospect intelligence en contact-only routes krijgen **geen** mailboxsecrets.
 
 ## Belangrijkste variabelen
 
 De workflows bevatten veilige projectdefaults waar die al bestonden. Relevante variabelen zijn onder meer:
 
-- discovery: `PROSPECT_DISCOVERY_*`, `OUTREACH_SPREADSHEET_ID`;
+- discovery: `PROSPECT_DISCOVERY_*`, inclusief `PROSPECT_DISCOVERY_TARGET_NEW`, plus `OUTREACH_SPREADSHEET_ID`;
+- prospect intelligence: `PROSPECT_INTELLIGENCE_ENABLED`, `PROSPECT_INTELLIGENCE_STALE_DAYS`, `OUTREACH_SPREADSHEET_ID`;
 - contact enrichment: `CONTACT_ENRICHMENT_*`, `OUTREACH_SPREADSHEET_ID`;
 - sender readiness: `SENDER_READINESS_ENABLED`, `OUTREACH_OUTBOUND_IP`, `OUTREACH_DNSBL_ZONES`;
 - placement: `OUTREACH_PLACEMENT_POLL_SECONDS`, `OUTREACH_PLACEMENT_MAX_WAIT_SECONDS`;
@@ -177,5 +206,7 @@ Gebruik de workflows zelf als waarheid voor exacte defaults en bounds; kopieer d
 - Leads gebruikt voor GitHub-uitvoering uitsluitend `Yolol100/Leadscanner`; `Yolol100/Orchestrator` is geen technische dependency.
 - Klant-, request-, secret- en run-specifieke state blijft buiten `main` of run-scoped.
 - GitHub Actions-evidence blijft in artifacts/Sheets; commit geen runtime-output naar `main`.
+- `ProspectSignals` is evidence-intake, geen tweede score- of permissionlaag.
+- `ProspectSourceMetrics` en `ProspectLookalikes` zijn adviserend; Leads blijft de enige eigenaar van kwalificatie en promotie.
 - Verwijder capabilities alleen wanneer machinecontract, callsites en tests aantonen dat ze werkelijk ongebruikt zijn.
 - Bestaande Node/scanner-CI en Python Leads-runtime-CI moeten groen zijn vóór merge/releaseclaims.
