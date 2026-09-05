@@ -302,7 +302,7 @@ def ensure_qualification_tab(service, spreadsheet_id: str, *, create: bool) -> b
             body={"values": [QUALIFICATION_HEADERS]},
         ).execute()
         return True
-    values = get_values(service, spreadsheet_id, f"'{QUALIFICATION_SHEET}'!1:1")
+    values = get_values(service, spreadsheet_id, QUALIFICATION_SHEET)
     current = [str(value).strip() for value in values[0]] if values else []
     if not current and create:
         service.spreadsheets().values().update(
@@ -311,7 +311,7 @@ def ensure_qualification_tab(service, spreadsheet_id: str, *, create: bool) -> b
             valueInputOption="RAW",
             body={"values": [QUALIFICATION_HEADERS]},
         ).execute()
-    elif current and current != QUALIFICATION_HEADERS:
+    elif current and current[:len(QUALIFICATION_HEADERS)] != QUALIFICATION_HEADERS:
         raise DiscoveryError(f"{QUALIFICATION_SHEET} headers do not match the required contract")
     return True
 
@@ -346,9 +346,9 @@ def run(mode: str, report_path: str) -> int:
         raise DiscoveryError("GOOGLE_SERVICE_ACCOUNT_JSON is required")
 
     service = build_sheets_service()
-    headers, candidates = rows_from_values(get_values(service, spreadsheet_id, f"'{PROSPECT_SHEET}'!A:K"))
+    headers, candidates = rows_from_values(get_values(service, spreadsheet_id, PROSPECT_SHEET))
     ensure_expected_headers(headers, PROSPECT_HEADERS, PROSPECT_SHEET)
-    signal_headers, signals = rows_from_values(get_values(service, spreadsheet_id, f"'{SIGNAL_SHEET}'!A:K"))
+    signal_headers, signals = rows_from_values(get_values(service, spreadsheet_id, SIGNAL_SHEET))
     ensure_expected_headers(signal_headers, SIGNAL_HEADERS, SIGNAL_SHEET)
     qualification_exists = ensure_qualification_tab(service, spreadsheet_id, create=(mode == "qualify"))
 
@@ -362,7 +362,7 @@ def run(mode: str, report_path: str) -> int:
         print(f"PROSPECT_QUALIFICATION=validated qualification_tab_present={str(qualification_exists).lower()}")
         return 0
 
-    existing_headers, existing = rows_from_values(get_values(service, spreadsheet_id, f"'{QUALIFICATION_SHEET}'!A:Q"))
+    existing_headers, existing = rows_from_values(get_values(service, spreadsheet_id, QUALIFICATION_SHEET))
     ensure_expected_headers(existing_headers, QUALIFICATION_HEADERS, QUALIFICATION_SHEET)
     existing_by_id = {_text(row.get("candidate_id")): dict(row) for row in existing if _text(row.get("candidate_id"))}
     max_rows = clamp_int(os.getenv("PROSPECT_QUALIFICATION_MAX_PER_RUN", ""), DEFAULT_MAX_PER_RUN, 1, HARD_MAX_PER_RUN)
