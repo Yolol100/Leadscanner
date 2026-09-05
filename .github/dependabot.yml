@@ -13,12 +13,25 @@ updates:
     commit-message:
       prefix: deps
 
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:10'
+      timezone: Europe/Amsterdam
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    commit-message:
+      prefix: deps
+
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
       day: monday
-      time: '06:15'
+      time: '06:20'
       timezone: Europe/Amsterdam
     open-pull-requests-limit: 5
     labels:
