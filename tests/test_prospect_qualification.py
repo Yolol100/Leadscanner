@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import pathlib
 import unittest
+from datetime import datetime, timedelta, timezone
 
-from prospect_qualification import assess_candidate
+from prospect_qualification import _eligible_candidates, assess_candidate
 
 
 class ProspectQualificationTests(unittest.TestCase):
@@ -18,7 +19,7 @@ class ProspectQualificationTests(unittest.TestCase):
         row.update(overrides)
         return row
 
-    def test_evidence_bound_shop_can_reach_a_without_fake_signal(self):
+    def test_severe_mobile_gap_can_reach_a_without_fake_signal(self):
         html = """
         <html><head><title>Example Products Shop</title></head>
         <body><p>Browse our products and shop online.</p><a href='/products'>Products</a></body></html>
@@ -30,7 +31,7 @@ class ProspectQualificationTests(unittest.TestCase):
         self.assertEqual(result.customer_potential, 8)
         self.assertEqual(result.tier, "A")
         self.assertEqual(result.status, "qualified")
-        self.assertTrue(result.fact)
+        self.assertIn("viewport", result.fact.lower())
         self.assertTrue(result.idea)
 
     def test_agency_target_is_rejected_fail_closed(self):
@@ -45,8 +46,8 @@ class ProspectQualificationTests(unittest.TestCase):
 
     def test_signal_strength_is_bounded_to_two(self):
         html = """
-        <html><head><title>Example Products</title></head>
-        <body><p>Products and services.</p></body></html>
+        <html><head><title>Example Products</title><meta name='viewport' content='width=device-width'></head>
+        <body><h1>Products</h1><a href='/contact'>Contact</a><p>Products and services.</p></body></html>
         """
         signals = [{
             "candidate_id": "prospect-1",
@@ -82,17 +83,45 @@ class ProspectQualificationTests(unittest.TestCase):
         """
         result = assess_candidate(self._candidate(company="Industrial Components"), html, [])
         self.assertEqual(result.analysis_type, "website")
-        self.assertNotIn("shop_no_checkout", result.reason)
+        self.assertEqual(result.icp_score, 2)
+        self.assertEqual(result.offer_fit_score, 1)
+        self.assertNotEqual(result.status, "qualified")
 
     def test_generic_small_gaps_do_not_stack_into_three_point_opportunity(self):
         html = """
-        <html><head><title>Example Maintenance</title></head>
-        <body><p>Professional maintenance services for business clients.</p></body></html>
+        <html><head><title>Example Maintenance</title>
+        <meta name='viewport' content='width=device-width, initial-scale=1'>
+        </head><body><p>Professional maintenance services for business clients.</p></body></html>
         """
         result = assess_candidate(self._candidate(company="Example Maintenance"), html, [])
         self.assertEqual(result.analysis_type, "website")
         self.assertEqual(result.website_opportunity_score, 2)
         self.assertIn("primary_evidence=no_contact_link", result.reason)
+
+    def test_recent_assessed_rows_do_not_starve_new_candidates(self):
+        now = datetime.now(timezone.utc)
+        candidates = [
+            self._candidate(candidate_id="old-hold", status="hold"),
+            self._candidate(candidate_id="new-prospect", status="discovered", company="New Prospect"),
+        ]
+        existing = {
+            "old-hold": {"assessed_at": (now - timedelta(days=1)).isoformat()},
+        }
+        eligible = _eligible_candidates(candidates, existing, force_recheck=False, recheck_days=30)
+        self.assertEqual([row["candidate_id"] for row in eligible], ["new-prospect"])
+
+    def test_force_recheck_includes_recent_qualified_and_rejected(self):
+        now = datetime.now(timezone.utc).isoformat()
+        candidates = [
+            self._candidate(candidate_id="qualified-1", status="qualified"),
+            self._candidate(candidate_id="rejected-1", status="rejected"),
+        ]
+        existing = {
+            "qualified-1": {"assessed_at": now},
+            "rejected-1": {"assessed_at": now},
+        }
+        eligible = _eligible_candidates(candidates, existing, force_recheck=True, recheck_days=30)
+        self.assertEqual({row["candidate_id"] for row in eligible}, {"qualified-1", "rejected-1"})
 
     def test_autopilot_workflow_has_no_mailbox_or_seed_secrets(self):
         workflow = pathlib.Path(".github/workflows/leads-autopilot.yml").read_text(encoding="utf-8")
