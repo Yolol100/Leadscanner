@@ -167,10 +167,10 @@
     }
   },
   "scanner_tools": [
-    {"id":"crawlee","version":"3.18.0","trigger_when":"explicit website audit or Leads technical evidence-gap crawl orchestration is needed","outputs":["scan-results/"]},
+    {"id":"crawlee","version":"3.18.1","trigger_when":"explicit website audit or Leads technical evidence-gap crawl orchestration is needed","outputs":["scan-results/"]},
     {"id":"playwright","version":"1.62.1","trigger_when":"explicit audit or Leads technical evidence-gap desktop/mobile browser evidence is needed","outputs":["scan-results/"]},
     {"id":"axe-core","version":"4.13.0","trigger_when":"homepage audit evidence is collected","outputs":["finding_candidates"]},
-    {"id":"linkinator","version":"8.0.3","trigger_when":"supplemental link signals are needed for the scoped evidence question","outputs":["supplemental signals"]},
+    {"id":"linkinator","version":"8.1.0","trigger_when":"supplemental link signals are needed for the scoped evidence question","outputs":["supplemental signals"]},
     {"id":"lighthouse","version":"13.4.1","trigger_when":"performance context is the scoped evidence question","outputs":["supplemental signals"]},
     {"id":"languagetool","version":"pinned-local-script","trigger_when":"Dutch language signals are requested","outputs":["supplemental signals"]},
     {"id":"sitemap-robots","version":"repo","trigger_when":"route discovery is needed","outputs":["route discovery"]},
