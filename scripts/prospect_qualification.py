@@ -12,7 +12,7 @@ from typing import Mapping, Sequence
 from urllib.parse import urlparse
 
 from outreach_sender import build_sheets_service, ensure_expected_headers, get_values, rows_from_values
-from prospect_discovery import BoundedHttpClient, DiscoveryError, match_terms, normalize_url, parse_page, root_url
+from prospect_discovery import BoundedHttpClient, DiscoveryError, match_terms, parse_page, root_url
 from prospect_intelligence import SIGNAL_HEADERS
 from prospect_target_policy import DEFAULT_AGENCY_EXCLUDE_TERMS, canonical_country, is_excluded_domain
 
@@ -37,10 +37,11 @@ CONTACT_HINTS = (
     "contact", "contacteer", "contact-us", "get-in-touch", "offerte", "quote",
     "afspraak", "enquiry", "inquiry",
 )
-SHOP_HINTS = (
+STRONG_SHOP_HINTS = (
     "woocommerce", "shopify", "winkelwagen", "checkout", "add to cart", "cart",
-    "product", "producten", "products", "bestellen", "order now", "webshop", "shop",
+    "bestellen", "order now", "webshop", "online shop", "shop online", "buy now",
 )
+SHOP_PATH_RE = re.compile(r"/(?:shop|store|webshop|winkel)(?:/|$)", re.I)
 COMMERCIAL_HINTS = (
     "diensten", "services", "producten", "products", "shop", "webshop", "offerte",
     "quote", "contact", "pricing", "prijzen", "solutions", "oplossingen",
@@ -51,6 +52,13 @@ META_DESCRIPTION_RE = re.compile(
 )
 VIEWPORT_RE = re.compile(r"<meta\b[^>]*\bname\s*=\s*(['\"])viewport\1", re.I | re.S)
 H1_RE = re.compile(r"<h1\b", re.I)
+OPPORTUNITY_WEIGHT = {
+    "shop_no_checkout": 3,
+    "no_contact_link": 2,
+    "no_meta_description": 1,
+    "no_viewport": 1,
+    "no_h1": 1,
+}
 
 
 @dataclass(frozen=True)
@@ -112,6 +120,20 @@ def _checkout_link_present(page) -> bool:
     return False
 
 
+def _explicit_shop_context(page, html: str) -> bool:
+    haystack = f"{page.title} {page.site_name} {page.text} {html[:100000]}"
+    if _contains_any(haystack, STRONG_SHOP_HINTS):
+        return True
+    for target, label in page.links:
+        parsed = urlparse(target)
+        if SHOP_PATH_RE.search(parsed.path or ""):
+            return True
+        label_text = _text(label).casefold()
+        if label_text in {"shop", "store", "webshop", "winkel"}:
+            return True
+    return False
+
+
 def _active_signal_score(candidate_id: str, signals: Sequence[Mapping[str, object]]) -> int:
     score = 0
     for row in signals:
@@ -127,52 +149,55 @@ def _active_signal_score(candidate_id: str, signals: Sequence[Mapping[str, objec
     return score
 
 
-def _fact_and_idea(issue: str, company: str, language: str) -> tuple[str, str]:
+def _fact_and_idea(issue: str, company: str, language: str, page_title: str = "") -> tuple[str, str]:
     company = _text(company)
+    page_title = _text(page_title)[:120]
     if language == "nl":
+        title_context = f" op de pagina ‘{page_title}’" if page_title else ""
         pairs = {
             "shop_no_checkout": (
-                f"De homepage van {company} toont winkel- of productcontent, maar in de begrensde homepagecheck is geen duidelijke winkelwagen- of checkoutlink gevonden.",
-                f"Maak op de homepage van {company} één zichtbare route van product naar winkelwagen, zodat bezoekers direct een volgende koopstap kunnen zetten.",
+                f"De homepage van {company}{title_context} toont duidelijke winkelcontext, maar in de begrensde homepagecheck is geen duidelijke winkelwagen- of checkoutlink gevonden.",
+                f"Maak vanuit de homepage van {company} één zichtbare route naar winkelwagen of checkout, zodat bezoekers vanuit deze concrete winkelroute direct een volgende koopstap kunnen zetten.",
             ),
             "no_contact_link": (
-                f"In de begrensde homepagecheck van {company} is geen duidelijke interne contact- of offertelink gevonden.",
-                f"Voeg op de homepage van {company} één vaste contact- of offerteknop toe, zodat bezoekers in één stap kunnen reageren.",
+                f"In de begrensde homepagecheck van {company}{title_context} is geen duidelijke interne contact- of offertelink gevonden.",
+                f"Voeg op de homepage van {company} één vaste contact- of offerteknop toe die aansluit op de huidige pagina-inhoud, zodat bezoekers in één stap kunnen reageren.",
             ),
             "no_meta_description": (
-                f"De homepage van {company} bevat in de opgehaalde HTML geen meta description.",
-                f"Voeg voor {company} een korte, specifieke meta description toe die het aanbod samenvat en zoekers naar de belangrijkste bezoekersactie leidt.",
+                f"De homepage van {company}{title_context} bevat in de opgehaalde HTML geen meta description.",
+                f"Voeg voor de huidige homepage van {company} een korte, specifieke meta description toe die het getoonde aanbod samenvat en zoekers naar de belangrijkste bezoekersactie leidt.",
             ),
             "no_viewport": (
-                f"De homepage van {company} bevat in de opgehaalde HTML geen viewport-metatag.",
-                f"Voeg voor {company} een correcte responsive viewport-instelling toe en controleer daarna de belangrijkste mobiele bezoekersroute.",
+                f"De homepage van {company}{title_context} bevat in de opgehaalde HTML geen viewport-metatag.",
+                f"Voeg voor de huidige homepage van {company} een correcte responsive viewport-instelling toe en controleer daarna de belangrijkste mobiele bezoekersroute.",
             ),
             "no_h1": (
-                f"De homepage van {company} bevat in de opgehaalde HTML geen H1-element.",
-                f"Geef de homepage van {company} één duidelijke H1 die het primaire aanbod benoemt en bezoekers naar de belangrijkste actie stuurt.",
+                f"De homepage van {company}{title_context} bevat in de opgehaalde HTML geen H1-element.",
+                f"Geef de huidige homepage van {company} één duidelijke H1 die het primaire aanbod van deze pagina benoemt en bezoekers naar de belangrijkste actie stuurt.",
             ),
         }
     else:
+        title_context = f" on the page ‘{page_title}’" if page_title else ""
         pairs = {
             "shop_no_checkout": (
-                f"The homepage of {company} shows shop or product content, but the bounded homepage check found no clear cart or checkout link.",
-                f"Add one visible product-to-cart path on the homepage of {company} so visitors can take the next purchase step directly.",
+                f"The homepage of {company}{title_context} shows clear shopping context, but the bounded homepage check found no clear cart or checkout link.",
+                f"Add one visible cart or checkout path from the homepage of {company} so visitors on this specific shopping route can take the next purchase step directly.",
             ),
             "no_contact_link": (
-                f"The bounded homepage check for {company} found no clear internal contact or quote link.",
-                f"Add one persistent contact or quote call-to-action on the homepage of {company} so visitors can respond in one step.",
+                f"The bounded homepage check for {company}{title_context} found no clear internal contact or quote link.",
+                f"Add one persistent contact or quote call-to-action to the homepage of {company} that fits the current page content so visitors can respond in one step.",
             ),
             "no_meta_description": (
-                f"The fetched homepage HTML for {company} contains no meta description.",
-                f"Add a concise, company-specific meta description for {company} that summarizes the offer and points searchers toward the primary visitor action.",
+                f"The fetched homepage HTML for {company}{title_context} contains no meta description.",
+                f"Add a concise, company-specific meta description for the current homepage of {company} that summarizes the displayed offer and points searchers toward the primary visitor action.",
             ),
             "no_viewport": (
-                f"The fetched homepage HTML for {company} contains no viewport meta tag.",
-                f"Add a correct responsive viewport configuration for {company} and then verify the primary mobile visitor path.",
+                f"The fetched homepage HTML for {company}{title_context} contains no viewport meta tag.",
+                f"Add a correct responsive viewport configuration for the current homepage of {company} and then verify the primary mobile visitor path.",
             ),
             "no_h1": (
-                f"The fetched homepage HTML for {company} contains no H1 element.",
-                f"Give the homepage of {company} one clear H1 that names the primary offer and directs visitors toward the main action.",
+                f"The fetched homepage HTML for {company}{title_context} contains no H1 element.",
+                f"Give the current homepage of {company} one clear H1 that names the page's primary offer and directs visitors toward the main action.",
             ),
         }
     return pairs[issue]
@@ -199,7 +224,7 @@ def assess_candidate(
         return Assessment(0, 0, 0, 0, 0, "C", website, "", "", "website", "rejected", "agency/provider target policy blocked")
 
     language = _language(country)
-    is_shop = _contains_any(haystack, SHOP_HINTS)
+    is_shop = _explicit_shop_context(page, html)
     commercial = is_shop or _contains_any(haystack, COMMERCIAL_HINTS)
     analysis_type = "webshop" if is_shop else "website"
 
@@ -215,7 +240,8 @@ def assess_candidate(
     if not H1_RE.search(html or ""):
         issues.append("no_h1")
 
-    website_opportunity_score = min(3, len(issues))
+    primary_issue = max(issues, key=lambda issue: OPPORTUNITY_WEIGHT[issue], default="")
+    website_opportunity_score = OPPORTUNITY_WEIGHT.get(primary_issue, 0)
     icp_score = 3 if commercial else 2
     if not _text(page.title) and not commercial:
         icp_score = 1
@@ -226,11 +252,12 @@ def assess_candidate(
     status = "qualified" if tier == "A" else "hold" if tier == "B" else "rejected"
 
     fact = idea = ""
-    if issues:
-        fact, idea = _fact_and_idea(issues[0], company, language)
+    if primary_issue:
+        fact, idea = _fact_and_idea(primary_issue, company, language, _text(page.title))
     reason = (
         f"customer_potential={total}; icp={icp_score}; opportunity={website_opportunity_score}; "
-        f"signal={signal_score}; offer_fit={offer_fit_score}; evidence={issues[0] if issues else 'no_concrete_gap'}"
+        f"signal={signal_score}; offer_fit={offer_fit_score}; primary_evidence={primary_issue or 'no_concrete_gap'}; "
+        f"supporting_evidence={','.join(issues[:5]) if issues else 'none'}"
     )
     if not fact or not idea:
         if tier == "A":
