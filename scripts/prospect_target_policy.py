@@ -4,13 +4,14 @@ from dataclasses import replace
 import re
 from typing import Iterable
 
-from prospect_discovery import SourceSpec, split_terms
+from prospect_discovery import SourceSpec, host_key, split_terms
 
 DEFAULT_EXCLUDED_COUNTRIES = ("NL", "NLD", "NETHERLANDS", "NEDERLAND")
 DEFAULT_PREFERRED_COUNTRIES = (
     "US", "GB", "DE", "FR", "BE", "ES", "IT", "SE", "DK", "NO", "FI",
     "AT", "CH", "IE", "PT", "PL", "CZ",
 )
+DEFAULT_SELF_EXCLUDED_DOMAINS = ("webactueel.nl",)
 
 COUNTRY_ALIASES = {
     "NL": {"NL", "NLD", "NETHERLANDS", "NEDERLAND"},
@@ -34,44 +35,54 @@ COUNTRY_ALIASES = {
 }
 
 # Strong self-description phrases for providers that substantially overlap with
-# Webactueel's own website/webshop/marketing delivery. They are deliberately
-# more specific than generic words like "marketing" so normal retailers are
-# not rejected because a footer, job title or product description contains one
-# broad term.
+# Webactueel's own website/webshop/app/marketing delivery. They are deliberately
+# more specific than generic words like "marketing" or "software" so normal
+# retailers and product companies are not rejected because one broad term is
+# present in a footer, job title or product description.
 DEFAULT_AGENCY_EXCLUDE_TERMS = (
     # English
     "web design agency", "website design agency", "web development agency",
-    "website development agency", "digital agency", "digital marketing agency",
-    "marketing agency", "advertising agency", "ad agency", "seo agency",
-    "branding agency", "creative agency", "ecommerce agency", "e-commerce agency",
-    "wordpress agency", "woocommerce agency", "shopify agency",
+    "website development agency", "app development agency", "mobile app development agency",
+    "software development agency", "software agency", "product development agency",
+    "ux agency", "ui ux agency", "ux design agency", "digital agency",
+    "digital marketing agency", "marketing agency", "advertising agency", "ad agency",
+    "seo agency", "branding agency", "creative agency", "ecommerce agency",
+    "e-commerce agency", "wordpress agency", "woocommerce agency", "shopify agency",
     "full-service agency", "full service agency",
     # Dutch
     "webdesign bureau", "webdesignbureau", "website bureau", "webbureau",
-    "internetbureau", "marketingbureau", "marketing bureau", "reclamebureau",
-    "reclame bureau", "advertentiebureau", "online marketing bureau", "seo bureau",
-    "seo-bureau", "branding bureau", "creatief bureau", "communicatiebureau",
-    "wordpress bureau", "woocommerce bureau", "webshop bureau",
+    "internetbureau", "app bureau", "appbureau", "app ontwikkelbureau",
+    "software bureau", "softwarebureau", "ux bureau", "ui ux bureau",
+    "marketingbureau", "marketing bureau", "reclamebureau", "reclame bureau",
+    "advertentiebureau", "online marketing bureau", "seo bureau", "seo-bureau",
+    "branding bureau", "creatief bureau", "communicatiebureau", "wordpress bureau",
+    "woocommerce bureau", "webshop bureau",
     # German
-    "webdesign agentur", "webagentur", "marketingagentur", "werbeagentur",
-    "seo agentur", "seo-agentur", "digitalagentur", "wordpress agentur",
+    "webdesign agentur", "webagentur", "app agentur", "software agentur",
+    "marketingagentur", "werbeagentur", "seo agentur", "seo-agentur",
+    "digitalagentur", "wordpress agentur",
     # French
-    "agence web", "agence digitale", "agence marketing", "agence de marketing",
+    "agence web", "agence digitale", "agence application mobile", "agence mobile",
+    "agence développement logiciel", "agence marketing", "agence de marketing",
     "agence seo", "agence de publicité", "agence publicitaire",
     "agence de communication", "agence wordpress",
     # Spanish
-    "agencia web", "agencia digital", "agencia de marketing", "agencia seo",
-    "agencia de publicidad", "agencia de comunicación", "agencia wordpress",
+    "agencia web", "agencia digital", "agencia de aplicaciones", "agencia de software",
+    "agencia de marketing", "agencia seo", "agencia de publicidad",
+    "agencia de comunicación", "agencia wordpress",
     # Italian
-    "agenzia web", "agenzia digitale", "agenzia marketing", "agenzia seo",
-    "agenzia pubblicitaria", "agenzia di comunicazione", "agenzia wordpress",
+    "agenzia web", "agenzia digitale", "agenzia app", "agenzia software",
+    "agenzia marketing", "agenzia seo", "agenzia pubblicitaria",
+    "agenzia di comunicazione", "agenzia wordpress",
     # Portuguese
     "agência web", "agencia web", "agência digital", "agencia digital",
-    "agência de marketing", "agencia de marketing", "agência seo", "agencia seo",
-    "agência de publicidade", "agencia de publicidade",
+    "agência de aplicativos", "agencia de aplicativos", "agência de software",
+    "agencia de software", "agência de marketing", "agencia de marketing",
+    "agência seo", "agencia seo", "agência de publicidade", "agencia de publicidade",
     # Nordic common self-descriptions
-    "webbyrå", "digitalbyrå", "marknadsföringsbyrå", "reklambyrå",
-    "digitalt bureau", "webbureau", "reklamebureau",
+    "webbyrå", "digitalbyrå", "appbyrå", "mjukvarubyrå", "marknadsföringsbyrå",
+    "reklambyrå", "digitalt bureau", "webbureau", "app bureau", "software bureau",
+    "reklamebureau",
 )
 
 
@@ -109,15 +120,29 @@ def is_excluded_country(country: object, excluded: Iterable[str]) -> bool:
     return bool(canonical and canonical in {canonical_country(item) for item in excluded})
 
 
+def is_excluded_domain(url_or_host: object, excluded_domains: Iterable[str] = DEFAULT_SELF_EXCLUDED_DOMAINS) -> bool:
+    raw = str(url_or_host or "").strip()
+    host = host_key(raw) if "://" in raw or "/" in raw else raw.casefold().strip(".")
+    host = host[4:] if host.startswith("www.") else host
+    for item in excluded_domains:
+        blocked = str(item or "").casefold().strip().strip(".")
+        if blocked and (host == blocked or host.endswith("." + blocked)):
+            return True
+    return False
+
+
 def apply_source_policy(
     source: SourceSpec,
     *,
     excluded_countries: Iterable[str] = DEFAULT_EXCLUDED_COUNTRIES,
+    excluded_domains: Iterable[str] = DEFAULT_SELF_EXCLUDED_DOMAINS,
     exclude_agencies: bool = True,
     extra_exclude_terms: object = "",
 ) -> tuple[SourceSpec | None, str]:
     if is_excluded_country(source.country, excluded_countries):
         return None, "country_excluded"
+    if is_excluded_domain(source.source_url, excluded_domains):
+        return None, "self_domain_excluded"
     if not exclude_agencies:
         return source, ""
     merged: list[str] = []
@@ -125,7 +150,7 @@ def apply_source_policy(
         normalized = re.sub(r"\s+", " ", str(term)).strip().casefold()
         if normalized and normalized not in merged:
             merged.append(normalized)
-    return replace(source, exclude_terms=tuple(merged[:200])), ""
+    return replace(source, exclude_terms=tuple(merged[:250])), ""
 
 
 def prioritize_sources(sources: Iterable[SourceSpec], preferred_countries: Iterable[str]) -> list[SourceSpec]:
