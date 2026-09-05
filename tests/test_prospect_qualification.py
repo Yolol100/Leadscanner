@@ -44,6 +44,34 @@ class ProspectQualificationTests(unittest.TestCase):
         self.assertEqual(result.customer_potential, 0)
         self.assertIn("agency/provider", result.reason)
 
+    def test_directory_provider_candidate_cannot_be_resurrected_by_scoring(self):
+        row = self._candidate(
+            company="Inloggen WebwinkelKeur",
+            website="https://dashboard.webwinkelkeur.nl/",
+            source_url="https://www.webwinkelkeur.nl/webshops/overview/city/Winkel/region%3Anl",
+            source_id="dir-webwinkelkeur-winkel-20260905",
+            status="rejected",
+        )
+        html = "<html><head><title>Products Shop</title></head><body><p>Products shop online contact pricing.</p></body></html>"
+        result = assess_candidate(row, html, [])
+        self.assertEqual(result.status, "rejected")
+        self.assertEqual(result.customer_potential, 0)
+        self.assertIn("source_semantic_target_policy", result.reason)
+
+    def test_manufacturing_directory_noise_cannot_be_resurrected_by_scoring(self):
+        row = self._candidate(
+            company="Example Community Event",
+            website="https://event.example/",
+            source_url="https://directory-provider.example/Manufacturers",
+            source_id="us-greer-manufacturers",
+            status="rejected",
+        )
+        html = "<html><head><title>Community Festival</title></head><body><p>Food, arts, tickets and contact information.</p></body></html>"
+        result = assess_candidate(row, html, [])
+        self.assertEqual(result.status, "rejected")
+        self.assertEqual(result.customer_potential, 0)
+        self.assertIn("lacks manufacturing", result.reason)
+
     def test_signal_strength_is_bounded_to_two(self):
         html = """
         <html><head><title>Example Products</title><meta name='viewport' content='width=device-width'></head>
