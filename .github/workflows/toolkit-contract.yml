@@ -45,6 +45,9 @@ jobs:
           assert scanner['requires_api_key'] is False
           discovery=caps['prospect_discovery']
           assert discovery['send_permission']=='none'
+          assert 'NL' in discovery['default_excluded_countries']
+          assert discovery['default_preferred_countries'][0]=='US'
+          assert discovery['agency_exclusion_default'] is True
           for key in ('OUTREACH_MAIL_PASSWORD','OUTREACH_MAILBOXES_JSON','OUTREACH_SEED_INBOXES_JSON','REOON_API_KEY'):
               assert key in discovery['forbidden_secrets']
           contact=caps['contact_enrichment']
@@ -64,7 +67,9 @@ jobs:
           outreach=caps['outreach_delivery']
           assert outreach['manual_default']=='validate'
           assert 'REOON_API_KEY' in outreach['forbidden_secrets']
-          assert outreach['live_gate']=='sender_readiness before LeadPromo copy, compliance and SMTP'
+          assert outreach['live_gate']=='sender_readiness -> website target/evidence -> LeadPromo copy -> compliance -> SMTP'
+          assert 'OUTREACH_POSTAL_ADDRESS' in outreach['optional_variables']
+          assert 'website_scan' in outreach['target_evidence_contract']
           assert caps['dashboard']['send_permission']=='none'
 
           ids=[t['id'] for t in c['scanner_tools']]
@@ -86,10 +91,12 @@ jobs:
               '.github/workflows/outreach-smtp.yml',
               'scripts/prospect_discovery.py',
               'scripts/prospect_discovery_runtime.py',
+              'scripts/prospect_target_policy.py',
               'scripts/prospect_contact_enrichment.py',
               'scripts/outreach_sender_readiness.py',
               'scripts/outreach_inbox_placement.py',
               'scripts/outreach_imap_draft.py',
+              'scripts/outreach_target_evidence_preflight.py',
               'scripts/outreach_direct_smtp_runtime.py',
               'scripts/outreach_compliance_preflight.py',
               'scripts/outreach_replyhub.py',
@@ -98,6 +105,12 @@ jobs:
 
           scan_workflow=pathlib.Path('.github/workflows/scan.yml').read_text(encoding='utf-8')
           assert "- 'sites.txt'" not in scan_workflow, 'sites.txt must not be a GitHub push trigger'
+
+          discovery_workflow=pathlib.Path('.github/workflows/prospect-discovery.yml').read_text(encoding='utf-8')
+          assert "PROSPECT_DISCOVERY_EXCLUDE_COUNTRIES" in discovery_workflow
+          assert "|| 'NL'" in discovery_workflow
+          assert "PROSPECT_DISCOVERY_PREFERRED_COUNTRIES" in discovery_workflow
+          assert "PROSPECT_DISCOVERY_EXCLUDE_AGENCIES" in discovery_workflow
 
           draft_workflow=pathlib.Path('.github/workflows/myhost-draft-test.yml').read_text(encoding='utf-8')
           draft_trigger=draft_workflow.split('permissions:', 1)[0]
@@ -115,6 +128,7 @@ jobs:
               'Run sender preflight',
               'Run extended outreach contract preflight',
               'Run live sender readiness gate',
+              'Run website target and evidence preflight',
               'Run LeadPromo copy preflight',
               'Run outreach compliance preflight',
               'Process approved outreach queue through mijn.host SMTP',
@@ -123,10 +137,14 @@ jobs:
           assert positions==sorted(positions), 'live outreach gate order drifted'
           assert "steps.policy.outputs.effective_mode == 'live'" in outreach_workflow
           assert "OUTREACH_READINESS_REQUIRE_GREEN: 'true'" in outreach_workflow
+          assert 'OUTREACH_POSTAL_ADDRESS' in outreach_workflow
+          assert 'outreach_target_evidence_preflight.py' in outreach_workflow
 
           integration=pathlib.Path('LEADS-INTEGRATION.md').read_text(encoding='utf-8')
           assert '## Capability 6 — mailbox_draft' in integration, 'integration docs omit mailbox_draft'
-          assert '-> live sender readiness gate\n-> LeadPromo copy preflight' in integration, 'integration docs omit live sender readiness gate'
+          assert '-> live sender readiness gate\n-> website target + evidence preflight\n-> LeadPromo copy preflight' in integration, 'integration docs omit website target/evidence gate'
+          assert 'NL` standaard uit' in integration
+          assert 'website_scan:<JSON>' in integration
           for doc in ('README.md','AGENTS.md'):
               text=pathlib.Path(doc).read_text(encoding='utf-8')
               assert 'mailbox_draft' in text, f'{doc} omits mailbox_draft'
@@ -138,7 +156,9 @@ jobs:
           assert set(registry['capabilities']) >= expected_caps
           assert registry['capabilities']['website_evidence_scan']['read_only'] is True
           assert registry['capabilities']['mailbox_draft']['send_permission']=='none'
-          assert registry['capabilities']['outreach_delivery']['live_gate']=='sender_readiness before LeadPromo copy, compliance and SMTP'
+          assert registry['capabilities']['outreach_delivery']['live_gate']=='sender_readiness -> website target/evidence -> LeadPromo copy -> compliance -> SMTP'
+          assert registry['policy']['prospect_target_policy_enforced'] is True
+          assert registry['policy']['outreach_requires_website_scan_evidence'] is True
           assert registry['tools']['axe_core']['automatic_score_effect'] is False
           print('toolkit-contract: OK')
           PY

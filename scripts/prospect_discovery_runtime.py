@@ -30,11 +30,25 @@ from prospect_discovery import (
     rows_to_dicts,
 )
 from prospect_intelligence import OBSERVATION_HEADERS, clamp_target, make_observation_row, target_summary
+from prospect_target_policy import (
+    DEFAULT_EXCLUDED_COUNTRIES,
+    DEFAULT_PREFERRED_COUNTRIES,
+    apply_source_policy,
+    parse_country_list,
+    prioritize_sources,
+)
 
 SOURCE_RUN_HEADERS = [
     "run_id", "run_at", "source_id", "source_type", "source_url", "status",
     "seen", "new", "duplicates", "duration_ms", "error",
 ]
+
+
+def env_enabled(name: str, default: bool = True) -> bool:
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    return raw.strip().casefold() in {"1", "true", "yes", "ja", "y", "on"}
 
 
 def load_google_service():
@@ -170,18 +184,45 @@ def run(mode: str, report_path: str) -> int:
     lead_rows = rows_to_dicts(
         get_values(service, spreadsheet_id, "'Leadlijst'!A:D"), LEAD_HEADERS
     )
+
+    excluded_countries = parse_country_list(
+        os.environ.get("PROSPECT_DISCOVERY_EXCLUDE_COUNTRIES"), DEFAULT_EXCLUDED_COUNTRIES
+    )
+    preferred_countries = parse_country_list(
+        os.environ.get("PROSPECT_DISCOVERY_PREFERRED_COUNTRIES"), DEFAULT_PREFERRED_COUNTRIES
+    )
+    exclude_agencies = env_enabled("PROSPECT_DISCOVERY_EXCLUDE_AGENCIES", True)
+    extra_exclude_terms = os.environ.get("PROSPECT_DISCOVERY_EXTRA_EXCLUDE_TERMS", "")
+
     sources = []
     errors = []
+    policy_excluded_sources = []
     for index, row in enumerate(source_rows, start=2):
         try:
             source = SourceSpec.from_row(row)
         except DiscoveryError as exc:
             errors.append(f"ProspectSources row {index}: {exc}")
             continue
-        if source.enabled:
-            sources.append(source)
+        if not source.enabled:
+            continue
+        source, policy_reason = apply_source_policy(
+            source,
+            excluded_countries=excluded_countries,
+            exclude_agencies=exclude_agencies,
+            extra_exclude_terms=extra_exclude_terms,
+        )
+        if source is None:
+            policy_excluded_sources.append({
+                "row": index,
+                "source_id": str(row.get("source_id") or ""),
+                "country": str(row.get("country") or ""),
+                "reason": policy_reason,
+            })
+            continue
+        sources.append(source)
     if errors:
         raise DiscoveryError("; ".join(errors))
+    sources = prioritize_sources(sources, preferred_countries)
     unapproved = [source.source_id for source in sources if not source.approved]
     if mode == "validate":
         write_report(report_path, {
@@ -190,6 +231,10 @@ def run(mode: str, report_path: str) -> int:
             "enabled_sources": len(sources),
             "approved_sources": len(sources) - len(unapproved),
             "unapproved_sources": unapproved,
+            "policy_excluded_sources": policy_excluded_sources,
+            "excluded_countries": list(excluded_countries),
+            "preferred_countries": list(preferred_countries),
+            "agency_exclusion_enabled": exclude_agencies,
             "existing_candidates": len(candidate_rows),
             "existing_leads": len(lead_rows),
             "observations_available": "ProspectObservations" in sheet_titles,
@@ -230,6 +275,7 @@ def run(mode: str, report_path: str) -> int:
             source_results.append({
                 "source_id": source.source_id,
                 "source_type": source.source_type,
+                "country": source.country,
                 "seen": 0,
                 "new": 0,
                 "duplicates": 0,
@@ -271,6 +317,7 @@ def run(mode: str, report_path: str) -> int:
         source_results.append({
             "source_id": source.source_id,
             "source_type": source.source_type,
+            "country": source.country,
             "seen": seen,
             "new": new_count,
             "duplicates": duplicate_count,
@@ -300,6 +347,10 @@ def run(mode: str, report_path: str) -> int:
         "status": "completed",
         "enabled_sources": len(sources),
         "approved_sources": len(sources) - len(unapproved),
+        "policy_excluded_sources": policy_excluded_sources,
+        "excluded_countries": list(excluded_countries),
+        "preferred_countries": list(preferred_countries),
+        "agency_exclusion_enabled": exclude_agencies,
         "discovered": len(discovered),
         "dedupe_domains_after_run": len(known),
         "source_failures": failures,
@@ -308,7 +359,7 @@ def run(mode: str, report_path: str) -> int:
         "source_runs_persisted": source_runs_persisted,
         "observation_rows": len(observations),
         "observations_persisted": observation_persisted,
-        "note": "Candidates remain discovered-only; contact lookup is deferred to Leads, which must review fit, evidence, compliance and approved transport state before SMTP.",
+        "note": "Candidates remain discovered-only; NL/default excluded countries and agency-like providers are filtered before candidate creation. Contact lookup is deferred to Leads, which must review fit, website evidence, compliance and approved transport state before SMTP.",
     }
     report.update(target_summary(len(discovered), target_new))
     write_report(report_path, report)

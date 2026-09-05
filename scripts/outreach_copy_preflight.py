@@ -16,18 +16,28 @@ from outreach_sequences import SEQUENCE_HEADERS, SEQUENCE_SHEET, enabled as sequ
 CTA_A = "Zal ik nog één concreet idee sturen?"
 CTA_B = "Mag ik nog één concreet idee sturen?"
 OPT_OUT = 'Geen interesse? Een kort "nee" is genoeg.'
-CASES_URL = "https://andrewbaeten.nl/category/cases"
 SIGNATURE = "Met vriendelijke groet,\nAndrew Baeten"
+CTA_A_EN = "Would you like me to send one more concrete idea?"
+CTA_B_EN = "May I send one more concrete idea?"
+OPT_OUT_EN = 'Not interested? A quick "no" is enough.'
+SIGNATURE_EN = "Best regards,\nAndrew Baeten"
+CASES_URL = "https://andrewbaeten.nl/category/cases"
 CANONICAL_FOLLOWUP_RE = re.compile(
     r'^Beste .+,\n\n'
     r'Ik kom hier nog één keer op terug\. Als het nuttig is, stuur ik het concrete idee voor .+ graag door\.\n\n'
     r'Geen interesse\? Een kort "nee" is genoeg\.\n\n'
     r'Met vriendelijke groet,\nAndrew Baeten$'
 )
+CANONICAL_FOLLOWUP_EN_RE = re.compile(
+    r'^Hi .+,\n\n'
+    r"Just following up once\. If useful, I'm happy to send the concrete idea for .+\.\n\n"
+    r'Not interested\? A quick "no" is enough\.\n\n'
+    r'Best regards,\nAndrew Baeten$'
+)
 BANNED_PATTERNS = (
-    re.compile(r"(?i)\b(?:plan|boek|reserveer)\b.{0,60}\b(?:call|meeting|gesprek|afspraak|agenda|minuten)\b"),
-    re.compile(r"(?i)\b(?:gegarandeerd|garandeert|garantie op|levert direct meer|levert meer aanvragen|meer omzet gegarandeerd)\b"),
-    re.compile(r"(?i)\b(?:alleen vandaag|laatste kans|nog een plek|nog één plek|beperkt beschikbaar|mis dit niet)\b"),
+    re.compile(r"(?i)\b(?:plan|boek|reserveer|schedule|book)\b.{0,60}\b(?:call|meeting|gesprek|afspraak|agenda|minuten|minutes)\b"),
+    re.compile(r"(?i)\b(?:gegarandeerd|garandeert|garantie op|levert direct meer|levert meer aanvragen|meer omzet gegarandeerd|guaranteed|guarantees|guaranteed revenue|guaranteed results)\b"),
+    re.compile(r"(?i)\b(?:alleen vandaag|laatste kans|nog een plek|nog één plek|beperkt beschikbaar|mis dit niet|last chance|limited time|only today|don't miss out)\b"),
 )
 
 
@@ -42,10 +52,32 @@ def _subject_errors(subject: str) -> list[str]:
         return ["missing subject"]
     if re.match(r"(?i)^(?:re|fw|fwd)\s*:", value):
         errors.append("fake reply/forward subject is not allowed")
-    if re.search(r"(?i)\b(?:laatste kans|alleen vandaag|urgent|direct resultaat|mis dit niet)\b", value):
+    if re.search(r"(?i)\b(?:laatste kans|alleen vandaag|urgent|direct resultaat|mis dit niet|last chance|limited time|guaranteed results)\b", value):
         errors.append("clickbait or hype subject is not allowed")
     errors.extend(_placeholder_errors(value))
     return errors
+
+
+def _template_contract(text: str) -> tuple[str, str, str, list[str]]:
+    variants = [
+        ("nl", CTA_A, OPT_OUT, SIGNATURE),
+        ("nl", CTA_B, OPT_OUT, SIGNATURE),
+        ("en", CTA_A_EN, OPT_OUT_EN, SIGNATURE_EN),
+        ("en", CTA_B_EN, OPT_OUT_EN, SIGNATURE_EN),
+    ]
+    selected = [variant for variant in variants if variant[1] in text]
+    errors: list[str] = []
+    if len(selected) != 1:
+        errors.append("initial must contain exactly one canonical NL or EN CTA A/B")
+        return "", "", "", errors
+    language, cta, opt_out, signature = selected[0]
+    if text.count(cta) != 1:
+        errors.append("initial must contain the selected CTA exactly once")
+    for _, other_cta, _, _ in variants:
+        if other_cta != cta and other_cta in text:
+            errors.append("initial may not mix CTA variants or languages")
+            break
+    return cta, opt_out, signature, errors
 
 
 def initial_copy_errors(subject: str, body: str) -> list[str]:
@@ -59,16 +91,15 @@ def initial_copy_errors(subject: str, body: str) -> list[str]:
         errors.append("initial must contain only the fixed cases URL exactly once")
     if f"\n{CASES_URL}\n" not in f"\n{text}\n":
         errors.append("cases URL must be a raw URL on its own line")
-    cta_count = int(CTA_A in text) + int(CTA_B in text)
-    if cta_count != 1 or text.count(CTA_A) > 1 or text.count(CTA_B) > 1:
-        errors.append("initial must contain exactly one canonical CTA A or B")
-    selected_cta = CTA_A if CTA_A in text and CTA_B not in text else CTA_B if CTA_B in text and CTA_A not in text else ""
-    if text.count(OPT_OUT) != 1:
-        errors.append("initial must contain the canonical easy opt-out exactly once")
-    if not text.endswith(SIGNATURE):
-        errors.append("initial must end with the canonical Andrew Baeten signature")
-    if selected_cta and CASES_URL in text and OPT_OUT in text:
-        if not (text.index(CASES_URL) < text.index(selected_cta) < text.index(OPT_OUT)):
+    selected_cta, opt_out, signature, template_errors = _template_contract(text)
+    errors.extend(template_errors)
+    if opt_out:
+        if text.count(opt_out) != 1:
+            errors.append("initial must contain the canonical language-matched easy opt-out exactly once")
+    if signature and not text.endswith(signature):
+        errors.append("initial must end with the canonical language-matched Andrew Baeten signature")
+    if selected_cta and CASES_URL in text and opt_out and opt_out in text:
+        if not (text.index(CASES_URL) < text.index(selected_cta) < text.index(opt_out)):
             errors.append("initial content order violates LeadPromo")
     if any(pattern.search(text) for pattern in BANNED_PATTERNS):
         errors.append("initial contains a banned meeting, pressure or unsupported-result pattern")
@@ -85,10 +116,16 @@ def followup_copy_errors(body: str) -> list[str]:
     errors = _placeholder_errors(text)
     if re.search(r"https?://", text):
         errors.append("follow-up may not contain URLs")
-    if not CANONICAL_FOLLOWUP_RE.fullmatch(text):
-        errors.append("follow-up must match the canonical LeadPromo follow-up structure")
-    if text.count(OPT_OUT) != 1:
-        errors.append("follow-up must contain the canonical easy opt-out exactly once")
+    language = ""
+    if CANONICAL_FOLLOWUP_RE.fullmatch(text):
+        language = "nl"
+    elif CANONICAL_FOLLOWUP_EN_RE.fullmatch(text):
+        language = "en"
+    else:
+        errors.append("follow-up must match the canonical NL or EN LeadPromo follow-up structure")
+    expected_opt_out = OPT_OUT if language == "nl" else OPT_OUT_EN if language == "en" else ""
+    if expected_opt_out and text.count(expected_opt_out) != 1:
+        errors.append("follow-up must contain the canonical language-matched easy opt-out exactly once")
     if any(pattern.search(text) for pattern in BANNED_PATTERNS):
         errors.append("follow-up contains a banned meeting, pressure or unsupported-result pattern")
     return errors

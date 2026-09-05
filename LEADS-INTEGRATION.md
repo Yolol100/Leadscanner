@@ -12,8 +12,10 @@ Workflow: `.github/workflows/prospect-discovery.yml`.
 - Ondersteunt `seed_site`, `directory_page`, `directory_index` en `directory_sitemap` als expliciete source-adapters.
 - `directory_sitemap` accepteert alleen begrensde publieke XML `urlset`/`sitemapindex`-bronnen, volgt uitsluitend same-host profiel-URLs en maximaal drie same-host child-sitemaps; externe child-sitemaps worden genegeerd.
 - XML blijft onder dezelfde robots-, public-network/SSRF-, timeout-, pacing- en bytegrenzen als HTML discovery; DTD/entity-declaraties worden geblokkeerd.
+- Huidig targetbeleid sluit `NL` standaard uit via `PROSPECT_DISCOVERY_EXCLUDE_COUNTRIES`; de standaard bronprioriteit is `US` eerst en daarna niet-Nederlandse Europese markten. Deze bronprioriteit is discoveryvolgorde, geen compliancebewijs.
+- Agency-/concurrentfilter staat standaard aan via `PROSPECT_DISCOVERY_EXCLUDE_AGENCIES=true` en voegt meertalige sterke self-description-termen toe voor webdesign, website/webdevelopment, marketing, advertising, SEO, branding, creative/digital, WordPress/WooCommerce/Shopify en vergelijkbare bureaus. Bestaande source-specifieke `exclude_terms` blijven behouden; extra termen kunnen alleen aanvullend via `PROSPECT_DISCOVERY_EXTRA_EXCLUDE_TERMS` worden gezet.
 - Schrijft nieuwe company/domain-kandidaten naar `ProspectCandidates`.
-- Kan met `PROSPECT_DISCOVERY_TARGET_NEW` een begrensd doelvolume over meerdere goedgekeurde bronnen in Sheet-volgorde proberen te vullen; `PROSPECT_DISCOVERY_MAX_TOTAL` blijft de bovengrens.
+- Kan met `PROSPECT_DISCOVERY_TARGET_NEW` een begrensd doelvolume over meerdere goedgekeurde bronnen proberen te vullen; `PROSPECT_DISCOVERY_MAX_TOTAL` blijft de bovengrens.
 - Rapporteert `target_met` en `target_gap`; een niet gehaald doel wordt nooit als succesvolle vulling verzonnen.
 - Schrijft, wanneer `ProspectObservations` bestaat, per verwerkte company/domain-herwaarneming provenance naar die tab. `new` en `duplicate` zijn observatie-uitkomsten, geen kwalificatiebesluiten.
 - Schrijft, wanneer `ProspectSourceRuns` bestaat, per werkelijk verwerkte bron `status`, `seen`, `new`, `duplicates`, `duration_ms` en begrensde fouttekst. Dit is run-/bronbewijs en nooit kwalificatie of send permission.
@@ -95,7 +97,7 @@ Deze capability bewijst dat een concept **in de geconfigureerde mijn.host-mailbo
 
 Workflow: `.github/workflows/outreach-smtp.yml`.
 
-De runtime accepteert alleen reeds door Leads beoordeelde transportstate. Zij genereert geen nieuwe mailcopy en kiest geen prospect of verzendgrond.
+De runtime accepteert alleen reeds door Leads beoordeelde transportstate. Zij genereert geen nieuwe prospectkeuze of verzendgrond; de copy moet vóór queue-promotie uit het officiële website-/webshopbewijs zijn opgebouwd.
 
 Actieve live-volgorde:
 
@@ -104,6 +106,7 @@ campaign policy
 -> sender preflight
 -> extended Sheet contract preflight
 -> live sender readiness gate
+-> website target + evidence preflight
 -> LeadPromo copy preflight
 -> compliance preflight
 -> direct mijn.host SMTP runtime
@@ -114,6 +117,11 @@ campaign policy
 - Handmatige default: `validate`.
 - `live` is expliciet; scheduled live vereist daarnaast `OUTREACH_ENABLED=true`.
 - Push/CI mag nooit naar live promoveren en krijgt geen production mailboxsecret.
+- Iedere `approved` queue-row moet `source` als `website_scan:<JSON>` dragen. Verplicht: een `evidence_url` op het officiële prospectdomein, `analysis_type=website|webshop` en een concrete `idea` die exact in de mailtekst terugkomt. Dit maakt de scan->copy-binding machinecontroleerbaar zonder scannerbevindingen automatisch tot score of permission te promoveren.
+- De target/evidence-preflight herleest de officiële homepage begrensd en blokkeert agency-/bureauachtige targets opnieuw vóór SMTP. `NL` blijft onder het huidige prospectbeleid als live target geblokkeerd.
+- Voor `US` vereist de target/evidence-preflight een geconfigureerde `OUTREACH_POSTAL_ADDRESS`, aanwezigheid van dat fysieke postadres in de mail en duidelijke aanduiding als commerciële/advertentieboodschap. Dit is aanvullend op accurate afzender/onderwerpdata, opt-out en suppression.
+- Voor `GB` wordt unsolicited live alleen toegelaten wanneer de evidence metadata `subscriber_type=corporate` bevat én de bedrijfsnaam een duidelijke corporate-vorm (`Ltd`, `Limited`, `LLP`, `PLC`) toont; onzekere/sole-traderdoelen blijven fail-closed.
+- LeadPromo-copy accepteert naast de bestaande Nederlandse champion nu een gecontroleerde Engelse champion/follow-up voor internationale doelen. Talen mogen niet binnen één CTA/opt-out/signaturecontract worden gemengd.
 - Suppression wordt vóór send gecontroleerd; reply, bounce en opt-out stoppen vervolgstate fail-closed.
 - Mailboxpool, limits, minimum waits, send windows, slow ramp, pacing, jitter, sticky sender en threading blijven actief.
 - De actieve direct-SMTP-route vereist geen Reoon. Legacy `verification_status`/`verification_checked_at` blijven alleen providercompatibele velden.
@@ -197,7 +205,9 @@ Minimaal bewaakt:
 
 - Leads bezit `country/jurisdiction`, `compliance_basis`, `compliance_status`, contactbron en mailcopy.
 - Nederland/EER blijft fail-closed: een openbaar zakelijk adres, `ContactCandidates.ready`, sender-readiness, seed-placement, prospect-intelligence/signal-uitvoer of draft-readback is nooit zelfstandig toestemming voor commerciële outreach.
-- Compliance-, copy-, suppression- en sendergates blijven vóór live SMTP.
+- Verenigde Staten: CAN-SPAM-content/opt-out/postadresgates zijn aanvullend; een technische green senderstatus vervangt deze niet.
+- Verenigd Koninkrijk: alleen aantoonbare corporate-subscriberroute kan zonder PECR-consent worden voorbereid; persoonsgegevens, lawful basis en opt-outs blijven afzonderlijk relevant. Sole traders/onzekere typen worden als individueel behandeld en blijven fail-closed zonder geldige basis.
+- Compliance-, target/evidence-, copy-, suppression- en sendergates blijven vóór live SMTP.
 - Creatorvideo's/comments zijn adviserend bewijs. Actuele wet/providerregels en echte Webactueel-resultaten hebben voorrang.
 
 ## GitHub Actions Secrets
@@ -216,14 +226,14 @@ Belangrijk: `mailbox_draft` krijgt **geen** `GOOGLE_SERVICE_ACCOUNT_JSON`; disco
 
 De workflows bevatten veilige projectdefaults waar die al bestonden. Relevante variabelen zijn onder meer:
 
-- discovery: `PROSPECT_DISCOVERY_*`, inclusief `PROSPECT_DISCOVERY_TARGET_NEW`, plus `OUTREACH_SPREADSHEET_ID`;
+- discovery: `PROSPECT_DISCOVERY_*`, inclusief `PROSPECT_DISCOVERY_TARGET_NEW`, `PROSPECT_DISCOVERY_EXCLUDE_COUNTRIES`, `PROSPECT_DISCOVERY_PREFERRED_COUNTRIES`, `PROSPECT_DISCOVERY_EXCLUDE_AGENCIES`, `PROSPECT_DISCOVERY_EXTRA_EXCLUDE_TERMS`, plus `OUTREACH_SPREADSHEET_ID`;
 - prospect intelligence: `PROSPECT_INTELLIGENCE_ENABLED`, `PROSPECT_INTELLIGENCE_STALE_DAYS`, `OUTREACH_SPREADSHEET_ID`;
 - prospect signals: `PROSPECT_SIGNAL_DISCOVERY_ENABLED`, `PROSPECT_SIGNAL_MAX_CANDIDATES`, `PROSPECT_SIGNAL_TIMEOUT_SECONDS`, `PROSPECT_SIGNAL_MAX_BYTES`, `PROSPECT_SIGNAL_MIN_INTERVAL_SECONDS`, `PROSPECT_SIGNAL_USER_AGENT`;
 - contact enrichment: `CONTACT_ENRICHMENT_*`, `OUTREACH_SPREADSHEET_ID`;
 - sender readiness: `SENDER_READINESS_ENABLED`, `OUTREACH_OUTBOUND_IP`, `OUTREACH_DNSBL_ZONES`;
 - placement: `OUTREACH_PLACEMENT_POLL_SECONDS`, `OUTREACH_PLACEMENT_MAX_WAIT_SECONDS`;
 - mailbox draft: `OUTREACH_DRAFT_FOLDER`, plus de gewone IMAP/mailboxconfiguratie;
-- outreach: `OUTREACH_ENABLED`, `OUTREACH_MODE`, timezone/sendwindow, daily/run/new-lead limits, pacing/ramp/jitter, mailbox/sender SMTP/IMAP- en DKIM/SPF-instellingen.
+- outreach: `OUTREACH_ENABLED`, `OUTREACH_MODE`, `OUTREACH_POSTAL_ADDRESS`, timezone/sendwindow, daily/run/new-lead limits, pacing/ramp/jitter, mailbox/sender SMTP/IMAP- en DKIM/SPF-instellingen.
 
 Gebruik de workflows zelf als waarheid voor exacte defaults en bounds; kopieer die lijsten niet naar extra docs.
 
