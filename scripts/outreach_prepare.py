@@ -17,6 +17,7 @@ from prospect_qualification import QUALIFICATION_HEADERS, QUALIFICATION_SHEET
 PROSPECT_SHEET = "ProspectCandidates"
 CONTACT_SHEET = "ContactCandidates"
 LEAD_SHEET = "Leadlijst"
+AUTOMATION_ID = "zero_touch_prepare_v1"
 PROSPECT_HEADERS = [
     "candidate_id", "discovered_at", "company", "website", "source_url",
     "source_id", "source_type", "country", "matched_terms", "status", "reason",
@@ -153,6 +154,7 @@ def build_prepared_row(
         postal_address=postal_address,
     )
     evidence = {
+        "automation": AUTOMATION_ID,
         "evidence_url": evidence_url,
         "fact": fact,
         "idea": idea,
@@ -190,13 +192,55 @@ def build_prepared_row(
     return row
 
 
-def _append_row(service, spreadsheet_id: str, sheet: str, headers: Sequence[str], row: Mapping[str, object]) -> None:
+def _zero_touch_row(row: Mapping[str, object]) -> bool:
+    if _text(row.get("verification_status")).casefold() != "official_site_ready":
+        return False
+    source = _text(row.get("source"))
+    if not source.startswith("website_scan:"):
+        return False
+    try:
+        metadata = json.loads(source.split(":", 1)[1])
+    except (ValueError, TypeError, json.JSONDecodeError):
+        return False
+    return metadata.get("automation") == AUTOMATION_ID or metadata.get("qualification_tier") == "A"
+
+
+def _prepare_eligible(
+    candidate: Mapping[str, object] | None,
+    qualification: Mapping[str, object] | None,
+    contact: Mapping[str, object] | None,
+) -> bool:
+    return bool(
+        candidate
+        and qualification
+        and contact
+        and _text(candidate.get("status")).casefold() == "qualified"
+        and _text(qualification.get("tier")).upper() == "A"
+        and _text(qualification.get("status")).casefold() == "qualified"
+        and _text(contact.get("status")).casefold() == "ready"
+    )
+
+
+def _replace_rows(service, spreadsheet_id: str, sheet: str, headers: Sequence[str], rows: Sequence[Mapping[str, object]]) -> None:
+    values = [list(headers)] + [[str(row.get(header, "")) for header in headers] for row in rows]
+    service.spreadsheets().values().clear(
+        spreadsheetId=spreadsheet_id, range=f"'{sheet}'!A:ZZ", body={}
+    ).execute()
+    service.spreadsheets().values().update(
+        spreadsheetId=spreadsheet_id,
+        range=f"'{sheet}'!A1",
+        valueInputOption="RAW",
+        body={"values": values},
+    ).execute()
+
+
+def _append_lead(service, spreadsheet_id: str, row: Mapping[str, object]) -> None:
     service.spreadsheets().values().append(
         spreadsheetId=spreadsheet_id,
-        range=f"'{sheet}'!A:ZZ",
+        range=f"'{LEAD_SHEET}'!A:D",
         valueInputOption="RAW",
         insertDataOption="INSERT_ROWS",
-        body={"values": [[str(row.get(header, "")) for header in headers]]},
+        body={"values": [[str(row.get(header, "")) for header in LEAD_HEADERS]]},
     ).execute()
 
 
@@ -233,9 +277,10 @@ def run(mode: str, report_path: str) -> int:
         print("OUTREACH_PREPARE=validated send_permission=none")
         return 0
 
+    candidate_by_id = {_text(row.get("candidate_id")): row for row in candidates if _text(row.get("candidate_id"))}
     qualification_by_id = {_text(row.get("candidate_id")): row for row in qualifications if _text(row.get("candidate_id"))}
     contact_by_id = {_text(row.get("candidate_id")): row for row in contacts if _text(row.get("candidate_id"))}
-    queued_ids = {_text(row.get("lead_id")) for row in queue if _text(row.get("lead_id"))}
+    queue_by_id = {_text(row.get("lead_id")): row for row in queue if _text(row.get("lead_id"))}
     lead_domains = {canonical_domain(row.get("Website") or row.get("website")) for row in leads}
     lead_domains.discard("")
     postal_address = os.getenv("OUTREACH_POSTAL_ADDRESS", "")
@@ -243,19 +288,35 @@ def run(mode: str, report_path: str) -> int:
     sender_email = os.getenv("OUTREACH_SENDER_EMAIL", "info@andrewbaeten.nl")
     hard_max = max(1, min(int(os.getenv("OUTREACH_PREPARE_MAX_PER_RUN", "10") or "10"), 25))
 
-    prepared = skipped = 0
+    prepared = updated = reconciled = skipped = 0
+    queue_changed = False
+
+    for existing_row in queue:
+        if not _zero_touch_row(existing_row):
+            continue
+        if _text(existing_row.get("status")).casefold() not in {"prepared", "manual_review"}:
+            continue
+        lead_id = _text(existing_row.get("lead_id"))
+        if _prepare_eligible(candidate_by_id.get(lead_id), qualification_by_id.get(lead_id), contact_by_id.get(lead_id)):
+            continue
+        if _text(existing_row.get("status")).casefold() == "prepared":
+            existing_row["status"] = "manual_review"
+            existing_row["compliance_status"] = "manual_review"
+            existing_row["compliance_basis"] = ""
+            existing_row["last_error"] = "zero_touch_prepare_reconciled: qualification/contact no longer prepare-eligible"
+            reconciled += 1
+            queue_changed = True
+
     for candidate in candidates:
-        if prepared >= hard_max:
+        if prepared + updated >= hard_max:
             break
         candidate_id = _text(candidate.get("candidate_id"))
-        if not candidate_id or candidate_id in queued_ids:
-            continue
         qualification = qualification_by_id.get(candidate_id)
         contact = contact_by_id.get(candidate_id)
-        if not qualification or not contact:
+        if not _prepare_eligible(candidate, qualification, contact):
             continue
         try:
-            row = build_prepared_row(
+            new_row = build_prepared_row(
                 candidate,
                 qualification,
                 contact,
@@ -266,26 +327,47 @@ def run(mode: str, report_path: str) -> int:
         except ValueError:
             skipped += 1
             continue
-        _append_row(service, spreadsheet_id, QUEUE_SHEET, FULL_QUEUE_HEADERS, row)
-        prepared += 1
-        queued_ids.add(candidate_id)
-        domain = canonical_domain(row["website"])
+
+        existing_row = queue_by_id.get(candidate_id)
+        if existing_row:
+            if not _zero_touch_row(existing_row) or _text(existing_row.get("status")).casefold() not in {"prepared", "manual_review"}:
+                skipped += 1
+                continue
+            existing_row.clear()
+            existing_row.update(new_row)
+            updated += 1
+            queue_changed = True
+        else:
+            queue.append(new_row)
+            queue_by_id[candidate_id] = new_row
+            prepared += 1
+            queue_changed = True
+
+        domain = canonical_domain(new_row["website"])
         if domain and domain not in lead_domains:
-            _append_row(service, spreadsheet_id, LEAD_SHEET, LEAD_HEADERS, {
-                "Bedrijf": row["company"], "Website": row["website"], "E-mail": row["email"], "Status": "gevonden",
+            _append_lead(service, spreadsheet_id, {
+                "Bedrijf": new_row["company"], "Website": new_row["website"], "E-mail": new_row["email"], "Status": "gevonden",
             })
             lead_domains.add(domain)
+
+    if queue_changed:
+        _replace_rows(service, spreadsheet_id, QUEUE_SHEET, FULL_QUEUE_HEADERS, queue)
 
     _write_report(report_path, {
         "mode": mode,
         "status": "completed",
         "prepared": prepared,
+        "updated": updated,
+        "reconciled": reconciled,
         "skipped": skipped,
         "send_permission": "none",
         "compliance_status": "manual_review",
-        "note": "Prepared rows are evidence-bound drafts only. This capability never approves compliance or sends mail.",
+        "note": "Prepared rows are evidence-bound drafts only. Stale automated prepared rows are reconciled to manual_review. This capability never approves compliance or sends mail.",
     })
-    print(f"OUTREACH_PREPARE=complete prepared={prepared} skipped={skipped} send_permission=none")
+    print(
+        f"OUTREACH_PREPARE=complete prepared={prepared} updated={updated} reconciled={reconciled} "
+        f"skipped={skipped} send_permission=none"
+    )
     return 0
 
 
