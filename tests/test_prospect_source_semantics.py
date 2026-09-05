@@ -37,7 +37,7 @@ class ProspectSourceSemanticTests(unittest.TestCase):
     def test_manufacturing_directory_requires_official_site_category_evidence(self):
         allowed, reason = source_semantic_target_check(
             source_id="us-greer-manufacturers",
-            source_url="https://directory.example.com/Manufacturers",
+            source_url="https://directory-provider.example/Manufacturers",
             company="Example Community Event",
             website="https://event.example.com/",
             html="<html><head><title>Community Arts Festival</title></head><body><h1>Food and arts festival</h1></body></html>",
@@ -48,7 +48,7 @@ class ProspectSourceSemanticTests(unittest.TestCase):
     def test_real_manufacturer_passes_manufacturing_source_gate(self):
         allowed, reason = source_semantic_target_check(
             source_id="us-greer-manufacturers",
-            source_url="https://directory.example.com/Manufacturers",
+            source_url="https://directory-provider.example/Manufacturers",
             company="Example Components",
             website="https://components.example.com/",
             html="<html><head><title>Example Components</title></head><body><h1>Industrial manufacturer</h1><p>Precision manufacturing and fabrication.</p></body></html>",
