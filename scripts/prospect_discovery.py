@@ -12,6 +12,7 @@ import re
 import socket
 import time
 import xml.etree.ElementTree as ET
+from collections import Counter
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from typing import Callable, Mapping, Sequence
@@ -28,6 +29,8 @@ HARD_MAX_TOTAL = 200
 HARD_MAX_BYTES = 2_097_152
 HARD_TIMEOUT = 30.0
 HARD_MAX_SITEMAP_CHILDREN = 3
+HARD_MAX_DIRECTORY_LINKS = 500
+DIRECTORY_POOL_MULTIPLIER = 6
 SOURCE_HEADERS = [
     "source_id", "source_type", "source_url", "country", "include_terms",
     "exclude_terms", "max_candidates", "approved", "enabled",
@@ -43,6 +46,26 @@ SKIP_HOST_SUFFIXES = {
     "youtube.com", "youtu.be", "tiktok.com", "pinterest.com", "google.com",
     "google.nl", "bing.com", "yahoo.com", "duckduckgo.com", "github.com",
     "wikipedia.org",
+}
+DIRECTORY_WEBSITE_LABELS = (
+    "visit website", "visit site", "view website", "view site", "website", "web site",
+    "bezoek website", "bezoek site", "webseite", "zur website", "site web",
+    "visiter le site", "sitio web",
+)
+DIRECTORY_NAV_LABELS = (
+    "home", "about", "about us", "contact", "login", "log in", "sign in", "register",
+    "privacy", "terms", "cookie", "cookies", "news", "events", "jobs", "careers",
+    "search", "directory", "facebook", "instagram", "linkedin", "youtube",
+)
+DIRECTORY_PROFILE_HINTS = (
+    "member", "members", "company", "companies", "business", "businesses", "profile",
+    "listing", "listings", "shop", "shops", "webshop", "supplier", "suppliers",
+    "vendor", "vendors", "manufacturer", "manufacturers",
+)
+DIRECTORY_PROFILE_NAV_SEGMENTS = {
+    "about", "contact", "privacy", "terms", "cookie", "cookies", "login", "register",
+    "search", "event", "events", "news", "blog", "category", "categories", "tag", "tags",
+    "account", "faq", "sitemap", "feed", "author",
 }
 
 
@@ -75,6 +98,8 @@ def normalize_url(raw: str, *, require_path: bool = False) -> str:
     parsed = urlparse(raw)
     if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
         return ""
+    if parsed.username or parsed.password:
+        return ""
     host = parsed.hostname.lower().rstrip(".")
     try:
         port = parsed.port
@@ -95,6 +120,14 @@ def host_key(url: str) -> str:
 def root_url(url: str) -> str:
     parsed = urlparse(normalize_url(url))
     return urlunparse((parsed.scheme, parsed.netloc, "/", "", "", "")) if parsed.hostname else ""
+
+
+def hosts_related(left: str, right: str) -> bool:
+    left = (left or "").lower().strip(".")
+    right = (right or "").lower().strip(".")
+    if not left or not right:
+        return False
+    return left == right or left.endswith("." + right) or right.endswith("." + left)
 
 
 def is_skipped_host(host: str) -> bool:
@@ -133,6 +166,46 @@ def split_terms(raw: object) -> list[str]:
 
 def truthy(raw: object) -> bool:
     return str(raw or "").strip().casefold() in {"1", "true", "yes", "ja", "y", "on"}
+
+
+def directory_pool_limit(source: "SourceSpec") -> int:
+    return min(HARD_MAX_DIRECTORY_LINKS, max(source.max_candidates, source.max_candidates * DIRECTORY_POOL_MULTIPLIER))
+
+
+def _norm_text(value: str) -> str:
+    return re.sub(r"\s+", " ", value or "").strip().casefold()
+
+
+def _external_link_score(target: str, label: str, frequency: int) -> int:
+    label_norm = _norm_text(label)
+    score = 0
+    if any(token in label_norm for token in DIRECTORY_WEBSITE_LABELS):
+        score += 8
+    if label_norm and not any(token == label_norm or token in label_norm for token in DIRECTORY_NAV_LABELS):
+        score += 2
+    if any(token == label_norm or token in label_norm for token in DIRECTORY_NAV_LABELS):
+        score -= 6
+    if frequency >= 3 and score < 8:
+        score -= min(4, frequency - 1)
+    return score
+
+
+def _profile_link_score(target: str, label: str) -> int:
+    parsed = urlparse(target)
+    segments = [part for part in parsed.path.casefold().split("/") if part]
+    label_norm = _norm_text(label)
+    score = 0
+    if any(any(hint in segment for hint in DIRECTORY_PROFILE_HINTS) for segment in segments):
+        score += 5
+    if any(segment in DIRECTORY_PROFILE_NAV_SEGMENTS for segment in segments):
+        score -= 8
+    if any(token in label_norm for token in ("member", "company", "business", "supplier", "manufacturer")):
+        score += 2
+    if any(token == label_norm or token in label_norm for token in DIRECTORY_NAV_LABELS):
+        score -= 4
+    if not segments:
+        score -= 10
+    return score
 
 
 @dataclass(frozen=True)
@@ -370,26 +443,51 @@ def company_name(page: ParsedPage, website: str) -> str:
     return re.sub(r"\s+", " ", value).strip()[:160]
 
 
-def source_candidate_urls(source: SourceSpec, page: ParsedPage) -> list[tuple[str, str]]:
+def source_candidate_urls(source: SourceSpec, page: ParsedPage, *, limit: int | None = None) -> list[tuple[str, str]]:
     if source.source_type == "seed_site":
         return [(root_url(source.source_url), page.text)]
+    limit = clamp_int(limit, source.max_candidates, 1, HARD_MAX_DIRECTORY_LINKS)
     source_host = host_key(source.source_url)
-    output: list[tuple[str, str]] = []
-    seen: set[str] = set()
-    for target, label in page.links:
-        website = root_url(normalize_url(target))
+    raw: list[tuple[int, str, str, str]] = []
+    frequency: Counter[str] = Counter()
+    for index, (target, label) in enumerate(page.links[:HARD_MAX_DIRECTORY_LINKS]):
+        normalized = normalize_url(target, require_path=True)
+        website = root_url(normalized)
         host = host_key(website)
-        if not website or not host or host == source_host or is_skipped_host(host) or host in seen:
+        if not website or not host or hosts_related(host, source_host) or is_skipped_host(host):
             continue
-        seen.add(host)
-        output.append((website, label))
-        if len(output) >= source.max_candidates:
-            break
-    return output
+        frequency[host] += 1
+        raw.append((index, website, normalized, label))
+    best: dict[str, tuple[int, int, str, str]] = {}
+    for index, website, normalized, label in raw:
+        host = host_key(website)
+        score = _external_link_score(normalized, label, frequency[host])
+        current = best.get(host)
+        candidate = (score, index, website, label)
+        if current is None or score > current[0] or (score == current[0] and index < current[1]):
+            best[host] = candidate
+    ranked = sorted(best.values(), key=lambda item: (-item[0], item[1]))
+    return [(website, label) for _, _, website, label in ranked[:limit]]
 
 
-def directory_sitemap_profile_urls(source: SourceSpec, fetch: Callable[[str], str]) -> list[str]:
+def directory_profile_urls(source: SourceSpec, page: ParsedPage, *, limit: int | None = None) -> list[str]:
+    limit = clamp_int(limit, source.max_candidates, 1, HARD_MAX_DIRECTORY_LINKS)
     source_host = host_key(source.source_url)
+    seen: set[str] = set()
+    ranked: list[tuple[int, int, str]] = []
+    for index, (target, label) in enumerate(page.links[:HARD_MAX_DIRECTORY_LINKS]):
+        profile = normalize_url(target, require_path=True)
+        if not profile or host_key(profile) != source_host or profile == source.source_url or profile in seen:
+            continue
+        seen.add(profile)
+        ranked.append((_profile_link_score(profile, label), index, profile))
+    ranked.sort(key=lambda item: (-item[0], item[1]))
+    return [profile for _, _, profile in ranked[:limit]]
+
+
+def directory_sitemap_profile_urls(source: SourceSpec, fetch: Callable[[str], str], *, limit: int | None = None) -> list[str]:
+    source_host = host_key(source.source_url)
+    limit = clamp_int(limit, source.max_candidates, 1, HARD_MAX_DIRECTORY_LINKS)
     kind, locations = parse_sitemap_locations(fetch(source.source_url))
     profiles: list[str] = []
 
@@ -399,7 +497,7 @@ def directory_sitemap_profile_urls(source: SourceSpec, fetch: Callable[[str], st
             if not profile or host_key(profile) != source_host or profile == source.source_url or profile in profiles:
                 continue
             profiles.append(profile)
-            if len(profiles) >= source.max_candidates:
+            if len(profiles) >= limit:
                 return
 
     if kind == "urlset":
@@ -422,15 +520,16 @@ def directory_sitemap_profile_urls(source: SourceSpec, fetch: Callable[[str], st
         if child_kind != "urlset":
             continue
         add_profiles(child_locations)
-        if len(profiles) >= source.max_candidates:
+        if len(profiles) >= limit:
             break
     return profiles
 
 
-def directory_profile_candidates(source: SourceSpec, profiles: Sequence[str], fetch: Callable[[str], str]) -> list[tuple[str, str]]:
+def directory_profile_candidates(source: SourceSpec, profiles: Sequence[str], fetch: Callable[[str], str], *, limit: int | None = None) -> list[tuple[str, str]]:
+    limit = clamp_int(limit, source.max_candidates, 1, HARD_MAX_DIRECTORY_LINKS)
     candidate_links: list[tuple[str, str]] = []
     seen: set[str] = set()
-    for profile in profiles:
+    for profile in profiles[:HARD_MAX_DIRECTORY_LINKS]:
         try:
             page = parse_page(fetch(profile), profile)
         except DiscoveryError:
@@ -439,14 +538,15 @@ def directory_profile_candidates(source: SourceSpec, profiles: Sequence[str], fe
             source.source_id, "directory_page", profile, source.country,
             source.include_terms, source.exclude_terms, source.max_candidates, True, True,
         )
-        for website, label in source_candidate_urls(proxy, page):
+        remaining = max(1, limit - len(candidate_links))
+        for website, label in source_candidate_urls(proxy, page, limit=remaining):
             host = host_key(website)
             if host and host not in seen:
                 seen.add(host)
                 candidate_links.append((website, f"{label} {page.text}"))
-            if len(candidate_links) >= source.max_candidates:
+            if len(candidate_links) >= limit:
                 break
-        if len(candidate_links) >= source.max_candidates:
+        if len(candidate_links) >= limit:
             break
     return candidate_links
 
@@ -470,35 +570,47 @@ def discover_candidate(source: SourceSpec, website: str, context: str, fetch: Ca
     )
 
 
-def discover_source(source: SourceSpec, fetch: Callable[[str], str]) -> list[Candidate]:
+def discover_source_with_stats(
+    source: SourceSpec,
+    fetch: Callable[[str], str],
+    *,
+    known_hosts: Sequence[str] | set[str] | None = None,
+) -> tuple[list[Candidate], int]:
     if not source.enabled or not source.approved:
-        return []
+        return [], 0
+    known = {str(host).lower().strip(".") for host in (known_hosts or ()) if str(host).strip()}
+    pool_limit = directory_pool_limit(source)
     candidate_links: list[tuple[str, str]] = []
     if source.source_type == "directory_sitemap":
-        profiles = directory_sitemap_profile_urls(source, fetch)
-        candidate_links = directory_profile_candidates(source, profiles, fetch)
+        profiles = directory_sitemap_profile_urls(source, fetch, limit=pool_limit)
+        candidate_links = directory_profile_candidates(source, profiles, fetch, limit=pool_limit)
     else:
         source_page = parse_page(fetch(source.source_url), source.source_url)
         if source.source_type == "directory_index":
-            source_host = host_key(source.source_url)
-            profiles: list[str] = []
-            for target, _ in source_page.links:
-                profile = normalize_url(target, require_path=True)
-                if profile and host_key(profile) == source_host and profile != source.source_url and profile not in profiles:
-                    profiles.append(profile)
-                if len(profiles) >= source.max_candidates:
-                    break
-            candidate_links = directory_profile_candidates(source, profiles, fetch)
+            profiles = directory_profile_urls(source, source_page, limit=pool_limit)
+            candidate_links = directory_profile_candidates(source, profiles, fetch, limit=pool_limit)
         else:
-            candidate_links = source_candidate_urls(source, source_page)
+            candidate_links = source_candidate_urls(source, source_page, limit=pool_limit)
     output: list[Candidate] = []
+    skipped_known = 0
     for website, context in candidate_links:
+        host = host_key(website)
+        if not host:
+            continue
+        if host in known:
+            skipped_known += 1
+            continue
         candidate = discover_candidate(source, website, context, fetch)
         if candidate:
             output.append(candidate)
+            known.add(host)
         if len(output) >= source.max_candidates:
             break
-    return output
+    return output, skipped_known
+
+
+def discover_source(source: SourceSpec, fetch: Callable[[str], str]) -> list[Candidate]:
+    return discover_source_with_stats(source, fetch)[0]
 
 
 def rows_to_dicts(values: Sequence[Sequence[object]], expected_headers: Sequence[str]) -> list[dict[str, object]]:
