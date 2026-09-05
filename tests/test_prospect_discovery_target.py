@@ -4,13 +4,15 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 RUNTIME = ROOT / "scripts" / "prospect_discovery_runtime.py"
 WORKFLOW = ROOT / ".github" / "workflows" / "prospect-discovery.yml"
+CANONICAL_SHEET_ID = "1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI"
 
 
 class ProspectDiscoveryTargetTests(unittest.TestCase):
     def test_workflow_exposes_bounded_target_fill_without_mail_secrets(self):
         text = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("PROSPECT_DISCOVERY_TARGET_NEW: ${{ vars.PROSPECT_DISCOVERY_TARGET_NEW }}", text)
-        self.assertIn("PROSPECT_DISCOVERY_MAX_TOTAL", text)
+        self.assertIn("PROSPECT_DISCOVERY_TARGET_NEW: ${{ vars.PROSPECT_DISCOVERY_TARGET_NEW || '10' }}", text)
+        self.assertIn("PROSPECT_DISCOVERY_MAX_TOTAL: ${{ vars.PROSPECT_DISCOVERY_MAX_TOTAL || '25' }}", text)
+        self.assertIn(f"OUTREACH_SPREADSHEET_ID: ${{{{ vars.OUTREACH_SPREADSHEET_ID || '{CANONICAL_SHEET_ID}' }}}}", text)
         self.assertNotIn("OUTREACH_MAIL_PASSWORD", text)
         self.assertNotIn("OUTREACH_MAILBOXES_JSON", text)
 
