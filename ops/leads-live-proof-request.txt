@@ -1,1 +1,1 @@
-discovery-run
+inbox-validate
