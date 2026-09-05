@@ -66,6 +66,14 @@ jobs:
       - name: Install isolated Python dependencies
         run: python3 -m pip install --disable-pip-version-check --requirement requirements-outreach.txt
 
+      - name: Verify Python dependency consistency
+        run: python3 -m pip check
+
+      - name: Audit Python runtime dependencies
+        run: |
+          python3 -m pip install --disable-pip-version-check pip-audit==2.10.1
+          python3 -m pip_audit --requirement requirements-outreach.txt
+
       - name: Compile Leads Python runtime
         run: python3 -m compileall -q scripts
 
