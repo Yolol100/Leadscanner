@@ -20,11 +20,11 @@ class ProspectTargetPolicyTests(unittest.TestCase):
             enabled=True,
         )
 
-    def test_netherlands_is_excluded_by_default(self):
+    def test_netherlands_is_allowed_by_default(self):
         for value in ("NL", "NLD", "Netherlands", "Nederland", "Netherlands (NL)"):
             filtered, reason = policy.apply_source_policy(self.source(country=value))
-            self.assertIsNone(filtered)
-            self.assertEqual(reason, "country_excluded")
+            self.assertIsNotNone(filtered)
+            self.assertEqual(reason, "")
 
     def test_usa_and_uk_are_retained(self):
         for value in ("US", "USA", "United States", "GB", "UK", "United Kingdom"):
@@ -76,14 +76,14 @@ class ProspectTargetPolicyTests(unittest.TestCase):
         self.assertTrue(discovery.match_terms(retailer, source.include_terms, source.exclude_terms)[0])
         self.assertTrue(discovery.match_terms(software_product, source.include_terms, source.exclude_terms)[0])
 
-    def test_country_priority_keeps_stable_order(self):
+    def test_country_priority_is_us_then_nl_then_other(self):
         sources = [
             self.source(country="DE"),
-            discovery.SourceSpec("s2", "seed_site", "https://uk.example/", "GB", approved=True),
+            discovery.SourceSpec("s2", "seed_site", "https://nl.example/", "NL", approved=True),
             discovery.SourceSpec("s3", "seed_site", "https://us.example/", "US", approved=True),
             discovery.SourceSpec("s4", "seed_site", "https://fr.example/", "FR", approved=True),
         ]
-        ordered = policy.prioritize_sources(sources, ("US", "GB", "DE", "FR"))
+        ordered = policy.prioritize_sources(sources, policy.DEFAULT_PREFERRED_COUNTRIES)
         self.assertEqual([item.source_id for item in ordered], ["s3", "s2", "s1", "s4"])
 
 
