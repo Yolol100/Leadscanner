@@ -32,6 +32,10 @@ class ProspectTargetPolicyTests(unittest.TestCase):
             self.assertIsNotNone(filtered)
             self.assertEqual(reason, "")
 
+    def test_short_country_codes_do_not_match_inside_unrelated_names(self):
+        self.assertEqual(policy.canonical_country("Zimbabwe"), "ZIMBABWE")
+        self.assertEqual(policy.canonical_country("Austria"), "AT")
+
     def test_agency_terms_are_merged_without_erasing_source_terms(self):
         filtered, _ = policy.apply_source_policy(self.source(exclude_terms=("casino",)))
         self.assertIn("casino", filtered.exclude_terms)
