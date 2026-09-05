@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import pathlib
 import sys
 import unittest
@@ -107,7 +108,7 @@ class ProspectSourceMeshTests(unittest.TestCase):
         result = discovery.discover_source(source, fetch)
         self.assertEqual(len(result), 1)
         self.assertNotIn("https://evil.example/external.xml", fetched)
-        self.assertLessEqual(discovery.HARD_MAX_SITEMAP_CHILDREN, 3)
+        self.assertEqual(discovery.HARD_MAX_SITEMAP_CHILDREN, 3)
 
     def test_http_client_contract_allows_bounded_xml_sources(self):
         text = (SCRIPTS / "prospect_discovery.py").read_text(encoding="utf-8")
@@ -146,6 +147,20 @@ class ProspectSourceMeshTests(unittest.TestCase):
         self.assertIn('"source_runs_available": "ProspectSourceRuns" in sheet_titles', text)
         self.assertIn('source_runs_persisted = "ProspectSourceRuns" in sheet_titles', text)
         self.assertIn("ProspectSourceRuns", text)
+
+    def test_machine_and_human_contracts_match_source_mesh(self):
+        contract = json.loads((ROOT / "toolkit-contract.json").read_text(encoding="utf-8"))
+        registry = json.loads((ROOT / "tool-registry.json").read_text(encoding="utf-8"))
+        discovery_contract = contract["capabilities"]["prospect_discovery"]
+        self.assertIn("directory_sitemap", discovery_contract["source_types"])
+        self.assertEqual(discovery_contract["directory_sitemap_child_hard_cap"], 3)
+        self.assertIn("ProspectSourceRuns", discovery_contract["outputs"])
+        self.assertIn("ProspectSourceRuns", registry["capabilities"]["prospect_discovery"]["writes"])
+        self.assertFalse(registry["tools"]["directory_sitemap_adapter"]["automatic_score_effect"])
+        integration = (ROOT / "LEADS-INTEGRATION.md").read_text(encoding="utf-8")
+        self.assertIn("`directory_sitemap`", integration)
+        self.assertIn("`ProspectSourceRuns`", integration)
+        self.assertIn("nooit kwalificatie of send permission", integration)
 
 
 if __name__ == "__main__":
