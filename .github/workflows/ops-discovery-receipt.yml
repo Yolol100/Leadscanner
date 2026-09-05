@@ -1,0 +1,47 @@
+name: Temporary Bounded Discovery Receipt
+
+on:
+  push:
+    branches:
+      - ops/leads-live-proof-20260905
+    paths:
+      - ops/discovery-run-request.txt
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-outreach.txt
+      - name: Install dependencies
+        run: python3 -m pip install --disable-pip-version-check --requirement requirements-outreach.txt
+      - name: Run bounded discovery
+        env:
+          OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
+          PROSPECT_DISCOVERY_MAX_TOTAL: '6'
+          PROSPECT_DISCOVERY_TIMEOUT_SECONDS: ${{ vars.PROSPECT_DISCOVERY_TIMEOUT_SECONDS }}
+          PROSPECT_DISCOVERY_MAX_BYTES: ${{ vars.PROSPECT_DISCOVERY_MAX_BYTES }}
+          PROSPECT_DISCOVERY_MIN_INTERVAL_SECONDS: ${{ vars.PROSPECT_DISCOVERY_MIN_INTERVAL_SECONDS }}
+          PROSPECT_DISCOVERY_USER_AGENT: ${{ vars.PROSPECT_DISCOVERY_USER_AGENT }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python3 scripts/prospect_discovery_runtime.py --mode discover --report prospect-discovery-report.json
+      - name: Upload discovery receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: prospect-discovery-receipt-${{ github.run_id }}
+          path: prospect-discovery-report.json
+          if-no-files-found: error
+          retention-days: 7
