@@ -154,13 +154,19 @@ jobs:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: python3 scripts/prospect_intelligence_runtime.py --mode refresh --report prospect-intelligence-report.json
 
+      - name: Load private outreach config
+        if: steps.mode.outputs.mode == 'prepare'
+        env:
+          OUTREACH_CONFIG_SPREADSHEET_ID: ${{ vars.OUTREACH_CONFIG_SPREADSHEET_ID || '1panRChrQAL-Fe067swRGUCP3mxdyXA6hmvUUwdmQxfI' }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python3 scripts/outreach_private_config.py
+
       - name: Prepare LeadPromo queue rows without send permission
         if: steps.mode.outputs.mode == 'prepare'
         env:
           OUTREACH_PREPARE_MODE: prepare
           OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
           OUTREACH_PREPARE_MAX_PER_RUN: ${{ vars.OUTREACH_PREPARE_MAX_PER_RUN || '10' }}
-          OUTREACH_POSTAL_ADDRESS: ${{ vars.OUTREACH_POSTAL_ADDRESS }}
           OUTREACH_MAILBOX_ID: ${{ vars.OUTREACH_MAILBOX_ID || 'primary' }}
           OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
