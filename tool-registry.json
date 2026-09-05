@@ -1,5 +1,5 @@
 {
-  "version": "3.6",
+  "version": "3.7",
   "repository_role": "central_leads_github_runtime",
   "policy": {
     "website_scanner_read_only": true,
@@ -7,16 +7,22 @@
     "prospect_target_policy_enforced": true,
     "prospect_intelligence_advisory_only": true,
     "prospect_signal_discovery_advisory_only": true,
+    "prospect_qualification_evidence_bound": true,
+    "prospect_qualification_bounded": true,
     "contact_enrichment_qualified_only": true,
+    "zero_touch_prepare_no_send": true,
     "sender_readiness_diagnostic_only": true,
     "inbox_placement_seed_only": true,
     "mailbox_draft_imap_only": true,
     "dashboard_readout_only": true,
     "outreach_live_fail_closed": true,
     "outreach_requires_website_scan_evidence": true,
-    "changes_lead_fit_automatically": false,
+    "changes_lead_fit_automatically": true,
+    "lead_fit_automation_scope": "only deterministic bounded ProspectQualifications using the Leads Customer Potential contract",
     "changes_compliance_automatically": false,
-    "generates_mailcopy": false,
+    "generates_mailcopy": true,
+    "mailcopy_automation_scope": "only deterministic LeadPromo prepare rows for A-qualified and ContactCandidates.ready prospects; status remains prepared/manual_review",
+    "prepared_copy_never_send_permission": true,
     "required_scanner_output": "scan-results/leads-handoff.json",
     "never_simulate_browser_evidence": true
   },
@@ -50,6 +56,18 @@
       "signal_types": ["hiring", "technology_wordpress", "technology_woocommerce"],
       "boundaries": ["discovered/qualified/hold candidates only", "official-site evidence only", "robots/pacing/timeout/byte limits retained", "no contact harvesting", "no Customer Potential mutation", "no qualification mutation", "no compliance mutation", "no mail copy", "no SMTP/IMAP credentials", "no send permission"]
     },
+    "prospect_qualification": {
+      "workflow": ".github/workflows/leads-autopilot.yml",
+      "script": "scripts/prospect_qualification.py",
+      "runtime": "python",
+      "role": "bounded_deterministic_customer_potential_qualification",
+      "modes": ["validate", "qualify"],
+      "reads": ["ProspectCandidates", "ProspectSignals"],
+      "writes": ["ProspectCandidates", "ProspectQualifications"],
+      "max_candidates_per_run": 25,
+      "score_contract": "ICP 0-3 + evidence-bound website opportunity 0-3 + active signal 0-2 + offer fit 0-2; A=8-10, B=6-7, C=0-5",
+      "boundaries": ["discovered/hold candidates only", "official homepage evidence only", "strong shop context required before checkout-gap claims", "one primary opportunity severity is scored rather than summing generic gaps", "fact and idea are bound to official-page evidence", "agency/provider and self targets fail closed", "no contact harvesting", "no compliance mutation", "no queue approval", "no mail credentials", "no send permission"]
+    },
     "contact_enrichment": {
       "workflow": ".github/workflows/contact-enrichment.yml",
       "runtime": "python",
@@ -57,6 +75,17 @@
       "modes": ["validate", "discover"],
       "writes": ["ContactCandidates"],
       "boundaries": ["qualified ProspectCandidates only", "maximum 25 prospects per run", "maximum 3 contact-like pages per company", "no guessed or constructed email addresses", "no free-mail or no-reply addresses", "no mail credentials", "no send permission"]
+    },
+    "zero_touch_prepare": {
+      "workflow": ".github/workflows/leads-autopilot.yml",
+      "script": "scripts/outreach_prepare.py",
+      "runtime": "python",
+      "role": "scheduled_bounded_discovery_qualification_contact_and_leadpromo_prepare_pipeline",
+      "modes": ["validate", "prepare"],
+      "flow": "prospect_discovery -> prospect_signal_discovery -> prospect_qualification -> contact_enrichment -> prospect_intelligence -> outreach_prepare",
+      "reads": ["ProspectSources", "ProspectCandidates", "ProspectSignals", "ProspectQualifications", "ContactCandidates", "Leadlijst", "OutreachQueue"],
+      "writes": ["ProspectCandidates", "ProspectObservations", "ProspectSourceRuns", "ProspectSignals", "ProspectQualifications", "ContactCandidates", "ProspectEntities", "ProspectSourceMetrics", "ProspectEvidence", "ProspectLookalikes", "Leadlijst", "OutreachQueue"],
+      "boundaries": ["only A-qualified plus ContactCandidates.ready can become prepared copy", "prepared queue rows remain status=prepared", "compliance_status remains manual_review", "compliance_basis remains blank until independently evidenced", "LeadPromo copy preflight must pass", "US prepare copy requires configured postal address and commercial-message label", "no OUTREACH_MAIL_PASSWORD", "no OUTREACH_MAILBOXES_JSON", "no seed secrets", "no SMTP/IMAP send runtime", "send permission none"]
     },
     "website_evidence_scan": {
       "workflow": ".github/workflows/scan.yml",
@@ -72,7 +101,8 @@
       "runtime": "python",
       "role": "technical_sender_diagnostics",
       "writes": ["SenderReadiness"],
-      "checks": ["SPF", "DKIM", "DMARC", "MX", "SMTP TLS", "IMAP TLS", "optional mailbox auth", "optional PTR/FCrDNS", "optional configured DNSBL zones"],
+      "checks": ["SPF", "DKIM", "DMARC", "MX", "SMTP TLS", "IMAP TLS", "optional mailbox auth", "explicit-IP PTR/FCrDNS", "explicit-IP configured DNSBL zones", "proven mijn.host shared-relay provider-managed classification"],
+      "provider_managed_rule": "when required SPF token is include:spf.mijn.host and SPF is green, absence of one fixed egress IP is represented as provider_managed; this is not per-IP reputation or global placement proof",
       "send_permission": "none"
     },
     "inbox_placement": {
@@ -102,7 +132,7 @@
       "transport": "direct mijn.host SMTP + IMAP readback",
       "external_email_verifier_required": false,
       "live_gate": "sender_readiness -> website target/evidence -> LeadPromo copy -> compliance -> SMTP",
-      "boundaries": ["Leads owns qualification/contact/compliance/copy", "live sender readiness gate runs before target/evidence/copy/compliance/SMTP", "approved rows require website_scan JSON with same-domain evidence_url and exact idea present in body", "NL targets are allowed but still require the normal NL/EER compliance basis", "webactueel.nl and all subdomains remain blocked", "official homepage is rechecked against agency/provider terms before SMTP", "US targets require configured physical postal address plus commercial-message identification", "UK unsolicited route requires verified corporate subscriber metadata and clear Ltd/Limited/LLP/PLC company form", "controlled English LeadPromo copy is allowed for international targets without mixing CTA/opt-out/signature languages", "compliance preflight runs before SMTP", "reply/bounce/opt-out stop sequences fail-closed", "suppression checked before send", "scheduled live requires explicit OUTREACH_ENABLED=true", "no live send from CI"]
+      "boundaries": ["Leads policy owns qualification/copy/compliance contracts; repository automation may execute bounded qualification and prepare-only copy but never grants compliance or send permission", "live sender readiness gate runs before target/evidence/copy/compliance/SMTP", "approved rows require website_scan JSON with same-domain evidence_url and exact idea present in body", "NL targets are allowed but still require the normal NL/EER compliance basis", "webactueel.nl and all subdomains remain blocked", "official homepage is rechecked against agency/provider terms before SMTP", "US targets require configured physical postal address plus commercial-message identification", "UK unsolicited route requires verified corporate subscriber metadata and clear Ltd/Limited/LLP/PLC company form", "controlled English LeadPromo copy is allowed for international targets without mixing CTA/opt-out/signature languages", "compliance preflight runs before SMTP", "reply/bounce/opt-out stop sequences fail-closed", "suppression checked before send", "scheduled live requires explicit OUTREACH_ENABLED=true", "no live send from CI"]
     },
     "dashboard": {
       "surface": "Webactueel Leadlijst/Dashboard",
@@ -131,8 +161,11 @@
     "directory_sitemap_adapter": {"status":"enabled","purpose":"consume bounded public directory sitemap/urlset sources and follow same-host profile pages to official company domains","evidence_role":"source_mesh_adapter","automatic_score_effect":false},
     "prospect_intelligence": {"status":"enabled","purpose":"derive entity/freshness, source-performance, evidence-graph and lookalike views from evidence-bound Sheet state","evidence_role":"derived_prospect_intelligence","automatic_score_effect":false},
     "prospect_signal_discovery": {"status":"enabled","purpose":"collect bounded official-site hiring and WordPress/WooCommerce evidence for existing candidates","evidence_role":"advisory_signal_evidence","automatic_score_effect":false},
+    "prospect_qualification": {"status":"enabled","purpose":"deterministically apply bounded Customer Potential to official-site evidence and preserve the audit record in ProspectQualifications","evidence_role":"qualification_decision_evidence","automatic_score_effect":true},
     "contact_enrichment": {"status":"enabled","purpose":"bounded official-site business-email lookup for qualified prospects","evidence_role":"contact_candidate_evidence"},
-    "sender_readiness": {"status":"enabled","purpose":"technical sender authentication/connectivity/reputation diagnostics","evidence_role":"deliverability_diagnostics"},
+    "outreach_prepare": {"status":"enabled","purpose":"generate deterministic LeadPromo prepare-only copy from A qualification plus ready official-site contact","evidence_role":"evidence_bound_copy_prepare","send_permission":"none"},
+    "zero_touch_prepare": {"status":"enabled","purpose":"weekday bounded discovery-to-prepared-queue orchestration without mailbox credentials or SMTP","evidence_role":"prepare_pipeline_orchestration","send_permission":"none"},
+    "sender_readiness": {"status":"enabled","purpose":"technical sender authentication/connectivity/shared-relay diagnostics","evidence_role":"deliverability_diagnostics"},
     "inbox_placement": {"status":"manual_only","purpose":"controlled seed inbox/spam placement probe","evidence_role":"bounded_placement_sample"},
     "mailbox_draft": {"status":"manual_test_only","purpose":"append and verify one self-addressed concept through mijn.host IMAP","evidence_role":"mailbox_draft_readback"},
     "outreach_target_evidence": {"status":"enabled","purpose":"recheck approved targets, require same-domain website_scan evidence and enforce international target/compliance metadata before copy and SMTP","evidence_role":"pre_send_target_and_copy_provenance"},
