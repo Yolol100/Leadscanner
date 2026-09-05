@@ -21,7 +21,7 @@ Workflow: `.github/workflows/prospect-discovery.yml`.
 - Agency/providerfilter staat standaard aan.
 - Source-semantics blokkeert directory-provider-infrastructuur, duidelijke navigatie/institutionele identiteiten en manufacturing-directory drift. Manufacturing-directory kandidaten moeten op de officiële site manufacturing/industrial evidence hebben.
 - Bekende domeinen worden vóór source-outputquota overgeslagen. Navigatie/providerlinks worden gedeprioriteerd; source-owned parent/subdomains tellen niet als prospect.
-- Standalone runtime heeft veilige projectdefaults: canonical `OUTREACH_SPREADSHEET_ID` fallback, target-new 10, hard max total 25, timeout 10 s, max 2 MiB per fetch en minimuminterval 0,5 s. Repo-variabelen mogen deze bounded defaults aanscherpen/instellen.
+- Standalone runtime heeft veilige projectdefaults: canonical `OUTREACH_SPREADSHEET_ID` fallback, `PROSPECT_DISCOVERY_TARGET_NEW=10`, hard max total 25, timeout 10 s, max 2 MiB per fetch en minimuminterval 0,5 s. Repo-variabelen mogen deze bounded defaults aanscherpen/instellen. Als het bounded doel niet wordt gehaald, wordt dat eerlijk als `target_gap` gerapporteerd; er wordt geen completion verzonnen.
 - `ProspectObservations` bewaart provenance/freshness en `ProspectSourceRuns` bronstatus/yield/duplicates/duration/error. Dit is bewijscontext, nooit kwalificatie of send permission.
 - Modi: `validate`, `bootstrap`, `discover`. Weekdays blijven `validate` tenzij `PROSPECT_DISCOVERY_ENABLED=true`.
 - Ontvangt `GOOGLE_SERVICE_ACCOUNT_JSON`, maar nooit mailbox-, SMTP/IMAP-, seed- of verifiersecrets.
@@ -136,7 +136,7 @@ Workflow: `.github/workflows/prospect-intelligence.yml`.
 - Veilige standalone defaults: canonical Sheet fallback en stale-days 30.
 - Krijgt alleen Sheetcredential, geen mailcredentials.
 - Bouwt entities, source metrics, evidence edges, freshness en lookalikes uit bestaande evidence-bound state.
-- Wijzigt nooit zelfstandig Customer Potential, compliance, contactpromotie, copy of send permission.
+- Deze afgeleide intelligence-views wijzigen nooit zelfstandig Customer Potential, compliance, contactpromotie, copy of send permission.
 
 ## Capability 10 — prospect_signal_discovery
 
