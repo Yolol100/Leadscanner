@@ -68,6 +68,7 @@ jobs:
           PROSPECT_DISCOVERY_MODE: ${{ steps.mode.outputs.mode }}
           OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID }}
           PROSPECT_DISCOVERY_MAX_TOTAL: ${{ vars.PROSPECT_DISCOVERY_MAX_TOTAL }}
+          PROSPECT_DISCOVERY_TARGET_NEW: ${{ vars.PROSPECT_DISCOVERY_TARGET_NEW }}
           PROSPECT_DISCOVERY_TIMEOUT_SECONDS: ${{ vars.PROSPECT_DISCOVERY_TIMEOUT_SECONDS }}
           PROSPECT_DISCOVERY_MAX_BYTES: ${{ vars.PROSPECT_DISCOVERY_MAX_BYTES || '2097152' }}
           PROSPECT_DISCOVERY_MIN_INTERVAL_SECONDS: ${{ vars.PROSPECT_DISCOVERY_MIN_INTERVAL_SECONDS }}
@@ -84,6 +85,7 @@ jobs:
             echo
             echo "- mode: \`${{ steps.mode.outputs.mode }}\`"
             echo "- controller: \`leads\`"
+            echo "- target-fill: \`PROSPECT_DISCOVERY_TARGET_NEW\` (bounded by hard max total)"
             echo "- transport/send permission: \`none\`"
             echo
             echo "A discovered candidate is not an approved lead. Leads must still verify official-site evidence, fit, contact source, compliance and approved transport state before SMTP."

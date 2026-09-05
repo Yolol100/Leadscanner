@@ -28,6 +28,7 @@ from prospect_discovery import (
     host_key,
     rows_to_dicts,
 )
+from prospect_intelligence import OBSERVATION_HEADERS, clamp_target, make_observation_row, target_summary
 
 
 def load_google_service():
@@ -68,7 +69,7 @@ def append_rows(service, spreadsheet_id: str, range_name: str, rows: Sequence[Se
     ).execute()
 
 
-def ensure_tabs(service, spreadsheet_id: str, *, create: bool) -> None:
+def ensure_tabs(service, spreadsheet_id: str, *, create: bool) -> set[str]:
     metadata = service.spreadsheets().get(
         spreadsheetId=spreadsheet_id, fields="sheets.properties"
     ).execute()
@@ -77,15 +78,22 @@ def ensure_tabs(service, spreadsheet_id: str, *, create: bool) -> None:
         for item in metadata.get("sheets", [])
     }
     required = {"ProspectSources": SOURCE_HEADERS, "ProspectCandidates": CANDIDATE_HEADERS}
-    missing = [title for title in required if title not in sheets]
-    if missing and not create:
-        raise DiscoveryError("missing spreadsheet tabs: " + ", ".join(missing))
-    if missing:
+    optional_on_bootstrap = {"ProspectObservations": OBSERVATION_HEADERS}
+    missing_required = [title for title in required if title not in sheets]
+    if missing_required and not create:
+        raise DiscoveryError("missing spreadsheet tabs: " + ", ".join(missing_required))
+    to_create = list(missing_required)
+    if create:
+        to_create.extend(title for title in optional_on_bootstrap if title not in sheets)
+    if to_create:
         service.spreadsheets().batchUpdate(
             spreadsheetId=spreadsheet_id,
-            body={"requests": [{"addSheet": {"properties": {"title": title}}} for title in missing]},
+            body={"requests": [{"addSheet": {"properties": {"title": title}}} for title in to_create]},
         ).execute()
-    for title, headers in required.items():
+        sheets.update({title: -1 for title in to_create})
+    for title, headers in {**required, **optional_on_bootstrap}.items():
+        if title not in sheets:
+            continue
         values = get_values(service, spreadsheet_id, f"'{title}'!1:1")
         current = [str(v).strip() for v in values[0]] if values else []
         if not current and create:
@@ -97,6 +105,7 @@ def ensure_tabs(service, spreadsheet_id: str, *, create: bool) -> None:
             ).execute()
         elif current != headers:
             raise DiscoveryError(f"{title} headers do not match the required contract")
+    return set(sheets)
 
 
 def write_report(path: str, payload: Mapping[str, object]) -> None:
@@ -113,11 +122,12 @@ def run(mode: str, report_path: str) -> int:
     if not spreadsheet_id:
         raise DiscoveryError("OUTREACH_SPREADSHEET_ID is required")
     service = load_google_service()
-    ensure_tabs(service, spreadsheet_id, create=(mode == "bootstrap"))
+    sheet_titles = ensure_tabs(service, spreadsheet_id, create=(mode == "bootstrap"))
     if mode == "bootstrap":
         write_report(report_path, {
-            "mode": mode, "status": "ready",
-            "created_or_validated_tabs": ["ProspectSources", "ProspectCandidates"],
+            "mode": mode,
+            "status": "ready",
+            "created_or_validated_tabs": ["ProspectSources", "ProspectCandidates", "ProspectObservations"],
         })
         return 0
 
@@ -145,10 +155,14 @@ def run(mode: str, report_path: str) -> int:
     unapproved = [source.source_id for source in sources if not source.approved]
     if mode == "validate":
         write_report(report_path, {
-            "mode": mode, "status": "ready", "enabled_sources": len(sources),
+            "mode": mode,
+            "status": "ready",
+            "enabled_sources": len(sources),
             "approved_sources": len(sources) - len(unapproved),
-            "unapproved_sources": unapproved, "existing_candidates": len(candidate_rows),
+            "unapproved_sources": unapproved,
+            "existing_candidates": len(candidate_rows),
             "existing_leads": len(lead_rows),
+            "observations_available": "ProspectObservations" in sheet_titles,
         })
         return 0
 
@@ -161,9 +175,16 @@ def run(mode: str, report_path: str) -> int:
     max_total = clamp_int(
         os.environ.get("PROSPECT_DISCOVERY_MAX_TOTAL"), DEFAULT_MAX_TOTAL, 1, HARD_MAX_TOTAL
     )
+    target_new = clamp_target(os.environ.get("PROSPECT_DISCOVERY_TARGET_NEW"), max_total)
     known = existing_domains(lead_rows, candidate_rows)
     discovered = []
     failures = []
+    source_results = []
+    observations = []
+    observation_ids = set()
+    discovered_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    run_id = os.environ.get("GITHUB_RUN_ID", "").strip() or discovered_at
+
     for source in sources:
         if not source.approved:
             continue
@@ -171,29 +192,73 @@ def run(mode: str, report_path: str) -> int:
             items = discover_source(source, client.fetch_text)
         except DiscoveryError as exc:
             failures.append({"source_id": source.source_id, "error": str(exc)[:300]})
+            source_results.append({
+                "source_id": source.source_id,
+                "seen": 0,
+                "new": 0,
+                "duplicates": 0,
+                "status": "error",
+            })
             continue
+        seen = 0
+        new_count = 0
+        duplicate_count = 0
         for item in items:
             domain = host_key(item.website)
-            if not domain or domain in known:
+            if not domain:
+                continue
+            seen += 1
+            is_duplicate = domain in known
+            observation = make_observation_row(
+                run_id=run_id,
+                observed_at=discovered_at,
+                candidate=item,
+                outcome="duplicate" if is_duplicate else "new",
+            )
+            if observation[0] not in observation_ids:
+                observations.append(observation)
+                observation_ids.add(observation[0])
+            if is_duplicate:
+                duplicate_count += 1
                 continue
             known.add(domain)
             discovered.append(item)
-            if len(discovered) >= max_total:
+            new_count += 1
+            if len(discovered) >= target_new:
                 break
-        if len(discovered) >= max_total:
+        source_results.append({
+            "source_id": source.source_id,
+            "seen": seen,
+            "new": new_count,
+            "duplicates": duplicate_count,
+            "status": "ok",
+        })
+        if len(discovered) >= target_new:
             break
 
-    discovered_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     append_rows(
         service, spreadsheet_id, "'ProspectCandidates'!A:K",
         [item.as_row(discovered_at) for item in discovered],
     )
-    write_report(report_path, {
-        "mode": mode, "status": "completed", "enabled_sources": len(sources),
-        "approved_sources": len(sources) - len(unapproved), "discovered": len(discovered),
-        "dedupe_domains_after_run": len(known), "source_failures": failures,
+    observation_persisted = "ProspectObservations" in sheet_titles
+    if observation_persisted:
+        append_rows(service, spreadsheet_id, "'ProspectObservations'!A:K", observations)
+
+    report = {
+        "mode": mode,
+        "status": "completed",
+        "enabled_sources": len(sources),
+        "approved_sources": len(sources) - len(unapproved),
+        "discovered": len(discovered),
+        "dedupe_domains_after_run": len(known),
+        "source_failures": failures,
+        "source_results": source_results,
+        "observation_rows": len(observations),
+        "observations_persisted": observation_persisted,
         "note": "Candidates remain discovered-only; contact lookup is deferred to Leads, which must review fit, evidence, compliance and approved transport state before SMTP.",
-    })
+    }
+    report.update(target_summary(len(discovered), target_new))
+    write_report(report_path, report)
     return 0
 
 

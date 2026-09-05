@@ -1,9 +1,10 @@
 {
-  "version": "3.2",
+  "version": "3.3",
   "repository_role": "central_leads_github_runtime",
   "policy": {
     "website_scanner_read_only": true,
     "prospect_discovery_bounded": true,
+    "prospect_intelligence_advisory_only": true,
     "contact_enrichment_qualified_only": true,
     "sender_readiness_diagnostic_only": true,
     "inbox_placement_seed_only": true,
@@ -20,10 +21,19 @@
     "prospect_discovery": {
       "workflow": ".github/workflows/prospect-discovery.yml",
       "runtime": "python",
-      "role": "bounded_company_domain_discovery",
+      "role": "bounded_company_domain_discovery_with_target_fill",
       "modes": ["validate", "bootstrap", "discover"],
-      "writes": ["ProspectCandidates"],
-      "boundaries": ["approved ProspectSources only", "no contact harvesting", "no lead score or qualification decision", "no mail copy", "no SMTP/IMAP credentials", "no send permission"]
+      "writes": ["ProspectCandidates", "ProspectObservations"],
+      "boundaries": ["approved ProspectSources only", "bounded target-fill only", "target gaps are reported honestly", "observations are provenance/freshness only", "no contact harvesting", "no lead score or qualification decision", "no mail copy", "no SMTP/IMAP credentials", "no send permission"]
+    },
+    "prospect_intelligence": {
+      "workflow": ".github/workflows/prospect-intelligence.yml",
+      "runtime": "python",
+      "role": "derived_entity_freshness_signal_source_economics_and_lookalike_intelligence",
+      "modes": ["validate", "bootstrap", "refresh"],
+      "reads": ["ProspectSources", "ProspectCandidates", "ProspectObservations", "ProspectSignals", "ContactCandidates", "Leadlijst"],
+      "writes": ["ProspectEntities", "ProspectSourceMetrics", "ProspectEvidence", "ProspectLookalikes"],
+      "boundaries": ["signals require evidence-bound candidate IDs", "derived/advisory only", "no Customer Potential mutation", "no compliance mutation", "no contact promotion", "no mail copy", "no SMTP/IMAP credentials", "no send permission"]
     },
     "contact_enrichment": {
       "workflow": ".github/workflows/contact-enrichment.yml",
@@ -101,7 +111,8 @@
     "languagetool": {"status":"optional_local","purpose":"optional Dutch language signals","evidence_role":"supplemental_candidate_signal"},
     "tech_detect": {"status":"enabled","purpose":"technology context for audit interpretation","evidence_role":"context_only"},
     "leads_handoff": {"status":"enabled","purpose":"normalize audit evidence for Leads readback","evidence_role":"handoff_adapter"},
-    "prospect_discovery": {"status":"enabled","purpose":"bounded approved-source company/domain discovery","evidence_role":"lead_candidate_discovery"},
+    "prospect_discovery": {"status":"enabled","purpose":"bounded approved-source company/domain discovery with target-fill and observation provenance","evidence_role":"lead_candidate_discovery"},
+    "prospect_intelligence": {"status":"enabled","purpose":"derive entity/freshness, source-performance, evidence-graph and lookalike views from evidence-bound Sheet state","evidence_role":"derived_prospect_intelligence","automatic_score_effect":false},
     "contact_enrichment": {"status":"enabled","purpose":"bounded official-site business-email lookup for qualified prospects","evidence_role":"contact_candidate_evidence"},
     "sender_readiness": {"status":"enabled","purpose":"technical sender authentication/connectivity/reputation diagnostics","evidence_role":"deliverability_diagnostics"},
     "inbox_placement": {"status":"manual_only","purpose":"controlled seed inbox/spam placement probe","evidence_role":"bounded_placement_sample"},
