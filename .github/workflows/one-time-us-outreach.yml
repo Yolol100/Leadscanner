@@ -1,0 +1,92 @@
+name: One-time US Outreach Dispatch
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/one-time-us-outreach.yml'
+      - 'scripts/outreach_one_time_us_guard.py'
+  schedule:
+    - cron: '17 6 7 9 *'
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: one-time-us-outreach-2026-09-07
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-outreach.txt
+
+      - name: Install outreach runtime dependencies
+        run: python3 -m pip install --disable-pip-version-check --requirement requirements-outreach.txt
+
+      - name: Resolve one-time mode
+        id: plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          run=false
+          mode=validate
+          if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+            run=true
+            mode=validate
+          elif [ "${GITHUB_EVENT_NAME}" = "schedule" ] && [ "$(date -u +%F)" = "2026-09-07" ]; then
+            run=true
+            mode=live
+          fi
+          echo "run=${run}" >> "$GITHUB_OUTPUT"
+          echo "mode=${mode}" >> "$GITHUB_OUTPUT"
+          echo "ONE_TIME_DISPATCH_PLAN run=${run} mode=${mode}"
+
+      - name: Guard exact approved US cohort
+        if: steps.plan.outputs.run == 'true'
+        env:
+          OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
+          OUTREACH_ONE_TIME_EXPECTED_LEADS: prospect-8b27a02ebd2e038890e3,prospect-2ec02fcea879e3646bff
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python3 scripts/outreach_one_time_us_guard.py
+
+      - name: Dispatch existing controlled outreach workflow
+        if: steps.plan.outputs.run == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MODE: ${{ steps.plan.outputs.mode }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          payload=$(printf '{"ref":"main","inputs":{"mode":"%s"}}' "$MODE")
+          status=$(curl -sS -L -o /tmp/dispatch-response.json -w '%{http_code}' \
+            -X POST \
+            -H 'Accept: application/vnd.github+json' \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H 'X-GitHub-Api-Version: 2026-03-10' \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/outreach-smtp.yml/dispatches" \
+            -d "$payload")
+          if [ "$status" != "200" ] && [ "$status" != "204" ]; then
+            echo "::error::Controlled outreach dispatch failed with HTTP ${status}."
+            cat /tmp/dispatch-response.json
+            exit 1
+          fi
+          echo "CONTROLLED_OUTREACH_DISPATCH=accepted mode=${MODE}"
+
+      - name: Confirm inert state outside the one-time date
+        if: steps.plan.outputs.run != 'true'
+        run: echo 'ONE_TIME_US_OUTREACH=inert date_guard=green'
