@@ -33,10 +33,23 @@ def _inject_private_postal(row: dict[str, str], body: str) -> str:
     return body.replace(POSTAL_PLACEHOLDER, address)
 
 
+def _append_private_us_footer(row: dict[str, str], body: str) -> str:
+    body = str(body or "").strip()
+    if canonical_country(row.get("country", "")) != "US":
+        return body
+    address = _private_postal_address()
+    if address.casefold() in body.casefold():
+        return body
+    return body + f"\n\nThis is a commercial message.\n{address}"
+
+
 def _build_message_with_private_postal(row: dict[str, str], mailbox, stage: int):
     outbound = dict(row)
     body_key = "body" if stage == 1 else "followup_body"
-    outbound[body_key] = _inject_private_postal(outbound, outbound.get(body_key, ""))
+    if stage == 1:
+        outbound[body_key] = _inject_private_postal(outbound, outbound.get(body_key, ""))
+    else:
+        outbound[body_key] = _append_private_us_footer(outbound, outbound.get(body_key, ""))
     return _ORIGINAL_BUILD_MESSAGE(outbound, mailbox, stage)
 
 
@@ -44,7 +57,10 @@ def _build_sequence_message_with_private_postal(queue_row: dict[str, str], actio
     if canonical_country(queue_row.get("country", "")) != "US":
         return _ORIGINAL_BUILD_SEQUENCE_MESSAGE(queue_row, action, mailbox)
     sequence_row = dict(action.row)
-    sequence_row["body"] = _inject_private_postal(queue_row, sequence_row.get("body", ""))
+    if action.step_number == 1:
+        sequence_row["body"] = _inject_private_postal(queue_row, sequence_row.get("body", ""))
+    else:
+        sequence_row["body"] = _append_private_us_footer(queue_row, sequence_row.get("body", ""))
     return _ORIGINAL_BUILD_SEQUENCE_MESSAGE(queue_row, replace(action, row=sequence_row), mailbox)
 
 
