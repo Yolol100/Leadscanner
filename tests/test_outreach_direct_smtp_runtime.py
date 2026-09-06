@@ -53,6 +53,25 @@ class DirectSmtpRuntimeTests(unittest.TestCase):
         self.assertEqual(row["body"], stored_body)
         self.assertNotIn(ADDRESS, row["body"])
 
+    def test_us_followup_gets_private_commercial_footer_without_mutating_sheet_copy(self):
+        row = {
+            "lead_id": "lead-us",
+            "country": "US",
+            "email": "lead@example.org",
+            "subject": "Idea",
+            "body": f"This is a commercial message.\n{d.POSTAL_PLACEHOLDER}",
+            "followup_body": "Hi team,\n\nJust following up once.\n\nBest regards,\nAndrew Baeten",
+            "message_id": "<initial@example.com>",
+        }
+        stored_followup = row["followup_body"]
+        with patch.dict(os.environ, {"OUTREACH_POSTAL_ADDRESS": ADDRESS}, clear=False):
+            msg = d._build_message_with_private_postal(row, mailbox(), 2)
+        content = msg.get_content()
+        self.assertIn("This is a commercial message.", content)
+        self.assertIn(ADDRESS, content)
+        self.assertEqual(row["followup_body"], stored_followup)
+        self.assertNotIn(ADDRESS, row["followup_body"])
+
     def test_us_postal_injection_fails_closed_without_private_config(self):
         row = {"country": "US"}
         with patch.dict(os.environ, {}, clear=True):
@@ -67,6 +86,7 @@ class DirectSmtpRuntimeTests(unittest.TestCase):
 
     def test_non_us_body_is_unchanged(self):
         self.assertEqual(d._inject_private_postal({"country": "NL"}, "Body"), "Body")
+        self.assertEqual(d._append_private_us_footer({"country": "NL"}, "Body"), "Body")
 
     def test_process_replaces_external_verification_and_message_gates(self):
         original_process = d.runtime.process
