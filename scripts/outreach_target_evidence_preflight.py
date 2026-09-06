@@ -17,6 +17,7 @@ from prospect_discovery import BoundedHttpClient, DiscoveryError, host_key, matc
 from prospect_target_policy import DEFAULT_AGENCY_EXCLUDE_TERMS, canonical_country, is_excluded_domain
 
 EVIDENCE_PREFIX = "website_scan:"
+POSTAL_PLACEHOLDER = "{{OUTREACH_POSTAL_ADDRESS}}"
 LIVE_CANDIDATE_STATUSES = {"approved"}
 UK_CORPORATE_SUFFIX_RE = re.compile(r"(?i)\b(?:ltd\.?|limited|llp|plc)\b")
 
@@ -89,8 +90,10 @@ def metadata_errors(row: dict[str, str], *, postal_address: str = "") -> list[st
         body = str(row.get("body", ""))
         if not address:
             errors.append("US commercial email requires configured OUTREACH_POSTAL_ADDRESS")
-        elif address.casefold() not in body.casefold():
-            errors.append("US commercial email body must contain the configured physical postal address")
+        if POSTAL_PLACEHOLDER not in body:
+            errors.append("US commercial email body must contain the private postal placeholder")
+        if address and address.casefold() in body.casefold():
+            errors.append("US private postal address must not be persisted in OutreachQueue")
         if "commercial message" not in body.casefold() and "advertisement" not in body.casefold():
             errors.append("US commercial email must clearly identify the message as commercial/advertising")
 
