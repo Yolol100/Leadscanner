@@ -87,7 +87,7 @@ def _mailbox_from_mapping(
     imap_port = _int_value(item.get("imap_port"), default=993, name=f"mailbox {mailbox_id} imap_port", minimum=1, maximum=65535)
     daily_limit = _int_value(
         item.get("daily_limit"),
-        default=min(default_daily_limit, 30),
+        default=min(default_daily_limit, 50),
         name=f"mailbox {mailbox_id} daily_limit",
         minimum=1,
         maximum=100,
@@ -159,7 +159,7 @@ def _legacy_mailbox(*, mode: str, default_daily_limit: int) -> MailboxConfig:
             "password": os.getenv("OUTREACH_MAIL_PASSWORD", ""),
             "sender_name": os.getenv("OUTREACH_SENDER_NAME", ""),
             "sender_email": os.getenv("OUTREACH_SENDER_EMAIL", ""),
-            "daily_limit": os.getenv("OUTREACH_MAILBOX_DAILY_LIMIT", str(min(default_daily_limit, 30))),
+            "daily_limit": os.getenv("OUTREACH_MAILBOX_DAILY_LIMIT", str(min(default_daily_limit, 50))),
             "min_wait_minutes": os.getenv("OUTREACH_MAILBOX_MIN_WAIT_MINUTES", "1"),
             "dkim_selector": os.getenv("OUTREACH_DKIM_SELECTOR", ""),
             "required_spf_token": os.getenv("OUTREACH_REQUIRED_SPF_TOKEN", ""),
