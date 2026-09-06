@@ -10,6 +10,7 @@ import outreach_target_evidence_preflight as p
 
 FACT = "Example sells handmade lighting and home accessories through its online store."
 IDEA = "Make the mobile category navigation visible above the product grid so shoppers can reach the right collection faster."
+ADDRESS = "123 Main Street, Example City"
 
 
 def source(**extra):
@@ -29,7 +30,7 @@ def row(country="US", company="Example Inc", **overrides):
         "website": "https://shop.example.com/",
         "country": country,
         "source": source(),
-        "body": f"Hi Example team,\n\n{FACT}\n\nOne idea: {IDEA}\n\nThis is a commercial message from Webactueel.\n123 Main Street, Example City\n\nBest regards,\nAndrew Baeten",
+        "body": f"Hi Example team,\n\n{FACT}\n\nOne idea: {IDEA}\n\nThis is a commercial message.\n{p.POSTAL_PLACEHOLDER}\n\nBest regards,\nAndrew Baeten",
         "status": "approved",
     }
     base.update(overrides)
@@ -46,14 +47,14 @@ class FakeClient:
 
 class TargetEvidencePreflightTests(unittest.TestCase):
     def test_netherlands_is_not_country_blocked(self):
-        errors = p.metadata_errors(row(country="NL"), postal_address="123 Main Street, Example City")
+        errors = p.metadata_errors(row(country="NL"), postal_address=ADDRESS)
         self.assertFalse(any("NL target" in item for item in errors))
 
     def test_webactueel_self_target_is_blocked_before_send(self):
         evidence = source(evidence_url="https://webactueel.nl/")
         errors = p.metadata_errors(
             row(website="https://webactueel.nl/", source=evidence),
-            postal_address="123 Main Street, Example City",
+            postal_address=ADDRESS,
         )
         self.assertTrue(any("self domain" in item.lower() for item in errors))
         live_errors = p.website_target_errors(
@@ -62,32 +63,42 @@ class TargetEvidencePreflightTests(unittest.TestCase):
         )
         self.assertTrue(any("self domain" in item.lower() for item in live_errors))
 
-    def test_us_requires_postal_address_and_commercial_identification(self):
+    def test_us_requires_private_postal_config_and_placeholder(self):
         errors = p.metadata_errors(row(country="US"), postal_address="")
         self.assertTrue(any("OUTREACH_POSTAL_ADDRESS" in item for item in errors))
+        body = row(country="US")["body"].replace(p.POSTAL_PLACEHOLDER, "")
+        errors = p.metadata_errors(row(country="US", body=body), postal_address=ADDRESS)
+        self.assertTrue(any("private postal placeholder" in item for item in errors))
+
+    def test_us_requires_commercial_identification(self):
         body = row(country="US")["body"].replace("commercial message", "note")
-        errors = p.metadata_errors(row(country="US", body=body), postal_address="123 Main Street, Example City")
+        errors = p.metadata_errors(row(country="US", body=body), postal_address=ADDRESS)
         self.assertTrue(any("commercial/advertising" in item for item in errors))
 
-    def test_us_evidence_metadata_can_be_green(self):
+    def test_us_rejects_persisted_private_postal_address(self):
+        body = row(country="US")["body"].replace(p.POSTAL_PLACEHOLDER, ADDRESS)
+        errors = p.metadata_errors(row(country="US", body=body), postal_address=ADDRESS)
+        self.assertTrue(any("must not be persisted" in item for item in errors))
+
+    def test_us_evidence_metadata_can_be_green_with_private_placeholder(self):
         self.assertEqual(
-            p.metadata_errors(row(country="US"), postal_address="123 Main Street, Example City"),
+            p.metadata_errors(row(country="US"), postal_address=ADDRESS),
             [],
         )
 
     def test_evidence_url_must_be_official_domain(self):
         bad_source = source(evidence_url="https://third-party.example/evidence")
-        errors = p.metadata_errors(row(source=bad_source), postal_address="123 Main Street, Example City")
+        errors = p.metadata_errors(row(source=bad_source), postal_address=ADDRESS)
         self.assertTrue(any("official prospect domain" in item for item in errors))
 
     def test_exact_scan_fact_must_be_in_mail(self):
         body = row()["body"].replace(FACT, "A generic compliment.")
-        errors = p.metadata_errors(row(body=body), postal_address="123 Main Street, Example City")
+        errors = p.metadata_errors(row(body=body), postal_address=ADDRESS)
         self.assertTrue(any("exact website_scan fact" in item for item in errors))
 
     def test_exact_scan_idea_must_be_in_mail(self):
         body = row()["body"].replace(IDEA, "A generic redesign idea.")
-        errors = p.metadata_errors(row(body=body), postal_address="123 Main Street, Example City")
+        errors = p.metadata_errors(row(body=body), postal_address=ADDRESS)
         self.assertTrue(any("exact website_scan idea" in item for item in errors))
 
     def test_uk_requires_verified_corporate_subscriber(self):
