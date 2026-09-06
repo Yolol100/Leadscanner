@@ -13,13 +13,23 @@ from outreach_sender import (
     get_values,
     rows_from_values,
 )
-from prospect_discovery import BoundedHttpClient, DiscoveryError, host_key, match_terms, normalize_url, parse_page, root_url
+from prospect_discovery import (
+    BoundedHttpClient,
+    DiscoveryError,
+    HARD_MAX_BYTES,
+    host_key,
+    match_terms,
+    normalize_url,
+    parse_page,
+    root_url,
+)
 from prospect_target_policy import DEFAULT_AGENCY_EXCLUDE_TERMS, canonical_country, is_excluded_domain
 
 EVIDENCE_PREFIX = "website_scan:"
 POSTAL_PLACEHOLDER = "{{OUTREACH_POSTAL_ADDRESS}}"
 LIVE_CANDIDATE_STATUSES = {"approved"}
 UK_CORPORATE_SUFFIX_RE = re.compile(r"(?i)\b(?:ltd\.?|limited|llp|plc)\b")
+TARGET_FETCH_ATTEMPTS = 3
 
 
 def _text(value: object) -> str:
@@ -106,10 +116,20 @@ def website_target_errors(row: dict[str, str], client: BoundedHttpClient) -> lis
         return ["invalid website for target check"]
     if is_excluded_domain(website):
         return ["Webactueel/self domain is excluded from prospect outreach"]
-    try:
-        page = parse_page(client.fetch_text(website), website)
-    except DiscoveryError as exc:
-        return [f"official website target check failed: {exc}"]
+
+    page = None
+    last_error: DiscoveryError | None = None
+    for _attempt in range(TARGET_FETCH_ATTEMPTS):
+        try:
+            page = parse_page(client.fetch_text(website), website)
+            break
+        except DiscoveryError as exc:
+            last_error = exc
+    if page is None:
+        return [
+            f"official website target check failed after {TARGET_FETCH_ATTEMPTS} attempts: {last_error}"
+        ]
+
     haystack = f"{page.title} {page.site_name} {page.text}"
     accepted, _ = match_terms(haystack, (), DEFAULT_AGENCY_EXCLUDE_TERMS)
     if not accepted:
@@ -125,7 +145,7 @@ def process() -> int:
 
     client = BoundedHttpClient(
         timeout=8.0,
-        max_bytes=524_288,
+        max_bytes=HARD_MAX_BYTES,
         min_interval=0.25,
     )
     postal_address = os.getenv("OUTREACH_POSTAL_ADDRESS", "")
