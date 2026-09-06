@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 from outreach_sender import build_sheets_service, ensure_expected_headers, get_values, rows_from_values
 from prospect_discovery import BoundedHttpClient, DiscoveryError, match_terms, parse_page, root_url
 from prospect_intelligence import SIGNAL_HEADERS
+from prospect_signal_recency import active_signal_score
 from prospect_source_semantics import obvious_non_target, source_semantic_target_check
 from prospect_target_policy import DEFAULT_AGENCY_EXCLUDE_TERMS, canonical_country, is_excluded_domain
 
@@ -143,18 +144,7 @@ def _explicit_shop_context(page, html: str) -> bool:
 
 
 def _active_signal_score(candidate_id: str, signals: Sequence[Mapping[str, object]]) -> int:
-    score = 0
-    for row in signals:
-        if _text(row.get("candidate_id")) != candidate_id:
-            continue
-        if _text(row.get("status")).casefold() != "active":
-            continue
-        try:
-            strength = int(_text(row.get("strength")) or "0")
-        except ValueError:
-            continue
-        score = max(score, max(0, min(strength, 2)))
-    return score
+    return active_signal_score(candidate_id, signals)
 
 
 def _fact_and_idea(issue: str, company: str, language: str, page_title: str = "") -> tuple[str, str]:
