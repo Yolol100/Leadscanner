@@ -12,7 +12,7 @@ on:
           - prepare
         default: validate
   schedule:
-    - cron: '11 8 * * 1-5'
+    - cron: '11,41 5-17 * * 1-5'
   push:
     branches: [main]
     paths:
@@ -85,8 +85,8 @@ jobs:
         env:
           PROSPECT_DISCOVERY_MODE: ${{ steps.mode.outputs.mode == 'prepare' && 'discover' || 'validate' }}
           OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
-          PROSPECT_DISCOVERY_MAX_TOTAL: ${{ vars.PROSPECT_DISCOVERY_MAX_TOTAL || '25' }}
-          PROSPECT_DISCOVERY_TARGET_NEW: ${{ vars.PROSPECT_DISCOVERY_TARGET_NEW || '10' }}
+          PROSPECT_DISCOVERY_MAX_TOTAL: ${{ vars.PROSPECT_DISCOVERY_MAX_TOTAL || '200' }}
+          PROSPECT_DISCOVERY_TARGET_NEW: ${{ vars.PROSPECT_DISCOVERY_TARGET_NEW || '50' }}
           PROSPECT_DISCOVERY_TIMEOUT_SECONDS: ${{ vars.PROSPECT_DISCOVERY_TIMEOUT_SECONDS || '10' }}
           PROSPECT_DISCOVERY_MAX_BYTES: ${{ vars.PROSPECT_DISCOVERY_MAX_BYTES || '2097152' }}
           PROSPECT_DISCOVERY_MIN_INTERVAL_SECONDS: ${{ vars.PROSPECT_DISCOVERY_MIN_INTERVAL_SECONDS || '0.5' }}
@@ -113,7 +113,7 @@ jobs:
         env:
           PROSPECT_SIGNAL_MODE: ${{ steps.mode.outputs.mode == 'prepare' && 'discover' || 'validate' }}
           OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
-          PROSPECT_SIGNAL_MAX_CANDIDATES: ${{ vars.PROSPECT_SIGNAL_MAX_CANDIDATES || '10' }}
+          PROSPECT_SIGNAL_MAX_CANDIDATES: ${{ vars.PROSPECT_SIGNAL_MAX_CANDIDATES || '25' }}
           PROSPECT_SIGNAL_TIMEOUT_SECONDS: ${{ vars.PROSPECT_SIGNAL_TIMEOUT_SECONDS || '10' }}
           PROSPECT_SIGNAL_MAX_BYTES: ${{ vars.PROSPECT_SIGNAL_MAX_BYTES || '524288' }}
           PROSPECT_SIGNAL_MIN_INTERVAL_SECONDS: ${{ vars.PROSPECT_SIGNAL_MIN_INTERVAL_SECONDS || '0.5' }}
@@ -127,7 +127,7 @@ jobs:
           PROSPECT_QUALIFICATION_FORCE_RECHECK: ${{ steps.mode.outputs.recheck }}
           PROSPECT_QUALIFICATION_RECHECK_DAYS: ${{ vars.PROSPECT_QUALIFICATION_RECHECK_DAYS || '30' }}
           OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
-          PROSPECT_QUALIFICATION_MAX_PER_RUN: ${{ steps.mode.outputs.recheck == 'true' && '25' || vars.PROSPECT_QUALIFICATION_MAX_PER_RUN || '10' }}
+          PROSPECT_QUALIFICATION_MAX_PER_RUN: ${{ steps.mode.outputs.recheck == 'true' && '25' || vars.PROSPECT_QUALIFICATION_MAX_PER_RUN || '25' }}
           PROSPECT_QUALIFICATION_TIMEOUT_SECONDS: ${{ vars.PROSPECT_QUALIFICATION_TIMEOUT_SECONDS || '10' }}
           PROSPECT_QUALIFICATION_MAX_BYTES: ${{ vars.PROSPECT_QUALIFICATION_MAX_BYTES || '524288' }}
           PROSPECT_QUALIFICATION_MIN_INTERVAL_SECONDS: ${{ vars.PROSPECT_QUALIFICATION_MIN_INTERVAL_SECONDS || '0.5' }}
@@ -138,7 +138,7 @@ jobs:
       - name: Enrich qualified official-site contacts
         env:
           CONTACT_ENRICHMENT_MODE: ${{ steps.mode.outputs.mode == 'prepare' && 'discover' || 'validate' }}
-          CONTACT_ENRICHMENT_MAX_PER_RUN: ${{ vars.CONTACT_ENRICHMENT_MAX_PER_RUN || '10' }}
+          CONTACT_ENRICHMENT_MAX_PER_RUN: ${{ vars.CONTACT_ENRICHMENT_MAX_PER_RUN || '25' }}
           CONTACT_ENRICHMENT_MIN_INTERVAL: ${{ vars.CONTACT_ENRICHMENT_MIN_INTERVAL || '0.5' }}
           CONTACT_ENRICHMENT_TIMEOUT: ${{ vars.CONTACT_ENRICHMENT_TIMEOUT || '10' }}
           OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
@@ -166,7 +166,7 @@ jobs:
         env:
           OUTREACH_PREPARE_MODE: prepare
           OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
-          OUTREACH_PREPARE_MAX_PER_RUN: ${{ vars.OUTREACH_PREPARE_MAX_PER_RUN || '10' }}
+          OUTREACH_PREPARE_MAX_PER_RUN: ${{ vars.OUTREACH_PREPARE_MAX_PER_RUN || '25' }}
           OUTREACH_MAILBOX_ID: ${{ vars.OUTREACH_MAILBOX_ID || 'primary' }}
           OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
