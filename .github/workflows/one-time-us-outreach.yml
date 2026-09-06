@@ -7,12 +7,6 @@ on:
     paths:
       - '.github/workflows/one-time-us-outreach.yml'
       - 'scripts/outreach_one_time_us_guard.py'
-  schedule:
-    - cron: '17 6 7 9 *'
-    - cron: '32 6 7 9 *'
-    - cron: '47 6 7 9 *'
-    - cron: '2 7 7 9 *'
-    - cron: '17 7 7 9 *'
 
 permissions:
   actions: write
@@ -52,9 +46,6 @@ jobs:
           if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
             run=true
             mode=validate
-          elif [ "${GITHUB_EVENT_NAME}" = "schedule" ] && [ "$(date -u +%F)" = "2026-09-07" ]; then
-            run=true
-            mode=live
           fi
           echo "run=${run}" >> "$GITHUB_OUTPUT"
           echo "mode=${mode}" >> "$GITHUB_OUTPUT"
