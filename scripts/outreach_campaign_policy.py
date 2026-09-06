@@ -119,7 +119,7 @@ def decision_from_env(now: datetime | None = None) -> PolicyDecision:
         now=now,
         timezone_name=timezone_name,
         mode=os.getenv("OUTREACH_MODE", "validate"),
-        daily_limit=int(os.getenv("OUTREACH_DAILY_LIMIT", "20") or "20"),
+        daily_limit=int(os.getenv("OUTREACH_DAILY_LIMIT", "50") or "50"),
         max_sends_per_run=int(os.getenv("OUTREACH_MAX_SENDS_PER_RUN", "2") or "2"),
         natural_pacing=parse_bool(
             os.getenv("OUTREACH_NATURAL_PACING"), default=False, name="OUTREACH_NATURAL_PACING"
