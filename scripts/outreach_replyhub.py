@@ -11,6 +11,7 @@ from typing import Iterable
 
 from outreach_mailboxes import MailboxConfig
 from outreach_optout import message_has_optout
+from outreach_reply_triage import advisory_reply_triage
 from outreach_sender import (
     QUEUE_SHEET,
     Settings,
@@ -96,6 +97,12 @@ def _append_reply(
     text: str,
 ) -> None:
     triage = "new" if classification in {"reply", "other"} else "closed"
+    owner_label = ""
+    notes = ""
+    if classification == "reply":
+        advisory = advisory_reply_triage(text, str(msg.get("Subject", "")))
+        owner_label = advisory["intent"]
+        notes = advisory["note"]
     append_row(
         service,
         settings.spreadsheet_id,
@@ -113,8 +120,8 @@ def _append_reply(
             "preview": _compact_preview(text),
             "classification": classification,
             "triage_status": triage,
-            "owner_label": "",
-            "notes": "",
+            "owner_label": owner_label,
+            "notes": notes,
             "message_id": str(msg.get("Message-ID", ""))[:500],
             "in_reply_to": str(msg.get("In-Reply-To", ""))[:500],
             "source": f"imap:{mailbox.mailbox_id}",

@@ -79,12 +79,30 @@ class ProspectQualificationTests(unittest.TestCase):
         """
         signals = [{
             "candidate_id": "prospect-1",
+            "detected_at": datetime.now(timezone.utc).isoformat(),
+            "evidence_date": "",
             "status": "active",
             "strength": "2",
         }]
         result = assess_candidate(self._candidate(), html, signals)
         self.assertEqual(result.signal_score, 2)
         self.assertLessEqual(result.customer_potential, 10)
+
+    def test_stale_signal_cannot_inflate_customer_potential(self):
+        html = """
+        <html><head><title>Example Products</title><meta name='viewport' content='width=device-width'></head>
+        <body><h1>Products</h1><a href='/contact'>Contact</a><p>Products and services.</p></body></html>
+        """
+        signals = [{
+            "candidate_id": "prospect-1",
+            "detected_at": (datetime.now(timezone.utc) - timedelta(days=31)).isoformat(),
+            "evidence_date": "",
+            "status": "active",
+            "strength": "2",
+        }]
+        result = assess_candidate(self._candidate(), html, signals)
+        self.assertEqual(result.signal_score, 0)
+        self.assertNotIn("signal=2", result.reason)
 
     def test_good_site_without_concrete_gap_is_not_auto_qualified(self):
         html = """

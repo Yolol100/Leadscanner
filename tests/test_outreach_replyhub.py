@@ -65,6 +65,40 @@ class ReplyHubTests(unittest.TestCase):
         self.assertEqual(queue[0]["status"], "replied")
         update.assert_called()
 
+    def test_reply_intent_is_written_as_advisory_metadata_only(self):
+        msg = EmailMessage()
+        msg["Subject"] = "Re: Idee"
+        msg["Message-ID"] = "<reply-advisory@example.org>"
+        with patch.object(r, "append_row") as append:
+            r._append_reply(
+                object(), settings(), reply_id="reply-1", mailbox=mailbox(),
+                lead_row={"lead_id":"lead-1","company":"Example"},
+                email_address="lead@example.org", msg=msg,
+                classification="reply", text="Sounds good, let's talk next week.",
+            )
+        payload = append.call_args.args[4]
+        self.assertEqual(payload["classification"], "reply")
+        self.assertEqual(payload["triage_status"], "new")
+        self.assertEqual(payload["owner_label"], "positive_interest")
+        self.assertIn("advisory_only", payload["notes"])
+        self.assertIn("never canonical sales outcome", payload["notes"])
+
+    def test_not_interested_advisory_does_not_become_optout_or_sales_outcome(self):
+        queue = [{"lead_id":"lead-1","company":"Example","email":"lead@example.org","status":"sent"}]
+        FakeIMAP.payload = message(body="Not interested at this time.")
+        try:
+            with patch.object(r.imaplib, "IMAP4_SSL", FakeIMAP), patch.object(r, "append_row") as append, patch.object(r, "update_row"), patch.object(r, "add_suppression") as suppress, patch.object(r, "log_event"):
+                count = r.sync_replyhub_for_mailbox(object(), settings(), ["lead_id","email","status","reply_at"], queue, [], mailbox())
+            self.assertEqual(count, 1)
+            self.assertEqual(queue[0]["status"], "replied")
+            suppress.assert_not_called()
+            payload = append.call_args.args[4]
+            self.assertEqual(payload["classification"], "reply")
+            self.assertEqual(payload["owner_label"], "not_interested")
+            self.assertIn("advisory_only", payload["notes"])
+        finally:
+            FakeIMAP.payload = message()
+
     def test_optout_adds_suppression_and_stops(self):
         queue = [{"lead_id":"lead-1","company":"Example","email":"lead@example.org","status":"sent"}]
         FakeIMAP.payload = message(body="Nee bedankt")
