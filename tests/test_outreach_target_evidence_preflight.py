@@ -45,6 +45,19 @@ class FakeClient:
         return self.html
 
 
+class FlakyClient:
+    def __init__(self, failures, html="<html><title>Example Shop</title><body>Furniture, lighting and home accessories. Shop online.</body></html>"):
+        self.failures = failures
+        self.html = html
+        self.calls = 0
+
+    def fetch_text(self, _url):
+        self.calls += 1
+        if self.calls <= self.failures:
+            raise p.DiscoveryError("temporary fetch failure")
+        return self.html
+
+
 class TargetEvidencePreflightTests(unittest.TestCase):
     def test_netherlands_is_not_country_blocked(self):
         errors = p.metadata_errors(row(country="NL"), postal_address=ADDRESS)
@@ -132,6 +145,18 @@ class TargetEvidencePreflightTests(unittest.TestCase):
             FakeClient("<html><title>Example Shop</title><body>Furniture, lighting and home accessories. Shop online.</body></html>"),
         )
         self.assertEqual(errors, [])
+
+    def test_live_target_check_retries_transient_discovery_error(self):
+        client = FlakyClient(failures=2)
+        errors = p.website_target_errors(row(country="US"), client)
+        self.assertEqual(errors, [])
+        self.assertEqual(client.calls, 3)
+
+    def test_live_target_check_fails_closed_after_bounded_retries(self):
+        client = FlakyClient(failures=3)
+        errors = p.website_target_errors(row(country="US"), client)
+        self.assertTrue(any("after 3 attempts" in item for item in errors))
+        self.assertEqual(client.calls, 3)
 
 
 if __name__ == "__main__":
