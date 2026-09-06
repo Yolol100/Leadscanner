@@ -38,6 +38,18 @@ class OutreachMailboxTests(unittest.TestCase):
         self.assertEqual(result[0].sender_email, "info@example.com")
         self.assertEqual(result[0].daily_limit, 20)
 
+    def test_legacy_environment_uses_50_day_campaign_capacity(self):
+        env = {
+            "OUTREACH_SMTP_HOST":"mail.example.com","OUTREACH_SMTP_PORT":"587",
+            "OUTREACH_IMAP_HOST":"mail.example.com","OUTREACH_IMAP_PORT":"993",
+            "OUTREACH_MAIL_USER":"info@example.com","OUTREACH_MAIL_PASSWORD":"secret",
+            "OUTREACH_SENDER_NAME":"Andrew","OUTREACH_SENDER_EMAIL":"info@example.com",
+            "OUTREACH_DKIM_SELECTOR":"x","OUTREACH_REQUIRED_SPF_TOKEN":"include:spf.example.com",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            result = m.load_mailboxes_from_env(mode="live", default_daily_limit=50)
+        self.assertEqual(result[0].daily_limit, 50)
+
     def test_json_pool_loads_multiple_mailboxes(self):
         payload = [
             {"id":"sales-1","smtp_host":"mail.example.com","imap_host":"mail.example.com","mail_user":"sales1@example.com","password":"one","sender_name":"Andrew","sender_email":"sales1@example.com","daily_limit":12,"min_wait_minutes":3,"dkim_selector":"x"},
