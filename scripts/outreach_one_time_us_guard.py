@@ -18,6 +18,18 @@ from outreach_sender import (
 from prospect_target_policy import canonical_country
 
 POSTAL_PLACEHOLDER = "{{OUTREACH_POSTAL_ADDRESS}}"
+ALLOWED_EXPECTED_STATUSES = {
+    "approved",
+    "sent",
+    "followup_sent",
+    "sequence_complete",
+    "replied",
+    "bounced",
+    "opted_out",
+    "blocked",
+    "manual_review",
+    "error",
+}
 
 
 def _text(value: object) -> str:
@@ -36,14 +48,12 @@ def validate_one_time_batch(
         if _text(row.get("status")).casefold() == "approved"
     }
     approved.discard("")
-    if approved != expected_ids:
+    unexpected_approved = approved - expected_ids
+    if unexpected_approved:
         errors.append(
-            "approved lead set mismatch: expected="
-            + ",".join(sorted(expected_ids))
-            + " actual="
-            + ",".join(sorted(approved))
+            "approved lead set mismatch: unexpected="
+            + ",".join(sorted(unexpected_approved))
         )
-        return errors
 
     rows_by_id = {_text(row.get("lead_id")): row for row in queue_rows if _text(row.get("lead_id"))}
     suppressed_emails, suppressed_domains = suppression_sets(suppression_rows)
@@ -53,6 +63,9 @@ def validate_one_time_batch(
         if not row:
             errors.append(f"{lead_id}: missing queue row")
             continue
+        status = _text(row.get("status")).casefold()
+        if status not in ALLOWED_EXPECTED_STATUSES:
+            errors.append(f"{lead_id}: unsupported campaign status {status or 'empty'}")
         if canonical_country(row.get("country", "")) != "US":
             errors.append(f"{lead_id}: country must be US")
         if _text(row.get("compliance_status")).casefold() != "approved":
@@ -64,13 +77,13 @@ def validate_one_time_batch(
         address = normalize_address(row.get("email", ""))
         if "@" not in address:
             errors.append(f"{lead_id}: invalid email syntax")
-        if suppression_match(address, suppressed_emails, suppressed_domains):
-            errors.append(f"{lead_id}: recipient is suppressed")
         body = str(row.get("body", ""))
         if POSTAL_PLACEHOLDER not in body:
             errors.append(f"{lead_id}: missing private postal placeholder")
         if "commercial message" not in body.casefold() and "advertisement" not in body.casefold():
             errors.append(f"{lead_id}: missing commercial identification")
+        if status == "approved" and suppression_match(address, suppressed_emails, suppressed_domains):
+            errors.append(f"{lead_id}: recipient is suppressed")
     return errors
 
 
