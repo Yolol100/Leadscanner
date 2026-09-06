@@ -60,7 +60,7 @@ jobs:
         if: steps.plan.outputs.run == 'true'
         env:
           OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
-          OUTREACH_ONE_TIME_EXPECTED_LEADS: prospect-8b27a02ebd2e038890e3,prospect-2ec02fcea879e3646bff
+          OUTREACH_ONE_TIME_EXPECTED_LEADS: prospect-8b27a02ebd2e038890e3,prospect-2faf8c72b098cf705738,prospect-2ec02fcea879e3646bff
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: python3 scripts/outreach_one_time_us_guard.py
 
