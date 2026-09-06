@@ -1,7 +1,9 @@
+import os
 import sys
 import unittest
 from datetime import date, datetime, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
@@ -9,6 +11,14 @@ import outreach_campaign_policy as p
 
 
 class OutreachCampaignPolicyTests(unittest.TestCase):
+    def test_default_daily_limit_is_fifty(self):
+        with patch.dict(os.environ, {}, clear=True):
+            decision = p.decision_from_env(
+                now=datetime(2026, 9, 7, 8, 0, tzinfo=timezone.utc)
+            )
+        self.assertEqual(decision.effective_daily_limit, 50)
+        self.assertEqual(decision.effective_mode, "validate")
+
     def test_natural_pacing_reduces_run_to_one(self):
         decision = p.decide_policy(
             now=datetime(2026, 9, 4, 8, 0, tzinfo=timezone.utc),
