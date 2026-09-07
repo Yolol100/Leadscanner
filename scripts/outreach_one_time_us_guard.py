@@ -42,6 +42,19 @@ def validate_one_time_batch(
     expected_ids: set[str],
 ) -> list[str]:
     errors: list[str] = []
+    if not expected_ids or any(not isinstance(value, str) or not value.strip() or value != value.strip() for value in expected_ids):
+        return ["expected lead IDs must be a non-empty set of canonical IDs"]
+    # A dictionary must not silently select the last conflicting queue row.
+    seen_ids: set[str] = set()
+    for row in queue_rows:
+        lead_id = _text(row.get("lead_id"))
+        if lead_id and lead_id in seen_ids:
+            errors.append(f"{lead_id}: duplicate queue identity")
+        if not lead_id and _text(row.get("status")).casefold() == "approved":
+            errors.append("approved queue row has no lead_id")
+        seen_ids.add(lead_id)
+    if errors:
+        return errors
     approved = {
         _text(row.get("lead_id"))
         for row in queue_rows
