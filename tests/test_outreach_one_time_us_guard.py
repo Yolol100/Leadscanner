@@ -7,9 +7,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import outreach_one_time_us_guard as g
 
 
-Y = "prospect-8b27a02ebd2e038890e3"
-T = "prospect-2faf8c72b098cf705738"
-W = "prospect-2ec02fcea879e3646bff"
+Y = "fixture-alpha"
+T = "fixture-beta"
+W = "fixture-gamma"
 EXPECTED = {Y, T, W}
 
 
@@ -101,3 +101,4 @@ class OneTimeUsOutreachGuardTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

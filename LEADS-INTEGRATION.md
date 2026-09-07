@@ -85,6 +85,8 @@ Workflow: `.github/workflows/myhost-draft-test.yml`.
 
 Workflow: `.github/workflows/outreach-smtp.yml`.
 
+Voor een afzonderlijke read-only controle van een exacte US-cohort gebruik `.github/workflows/outreach-cohort-validation.yml` handmatig met `expected_lead_ids`. De Sheet komt uitsluitend uit `OUTREACH_SPREADSHEET_ID`; cohort-ID's en Sheet-fallbacks horen niet in broncode. Deze controle dispatcht geen outreach en verstuurt niets. De bestaande guard en live-preflights blijven van toepassing.
+
 De runtime accepteert alleen vooraf voorbereide en afzonderlijk goedgekeurde transportstate. De relevante fail-closed volgorde is:
 
 ```text
