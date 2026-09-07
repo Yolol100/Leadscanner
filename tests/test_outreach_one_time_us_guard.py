@@ -7,9 +7,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import outreach_one_time_us_guard as g
 
 
-Y = "prospect-8b27a02ebd2e038890e3"
-T = "prospect-2faf8c72b098cf705738"
-W = "prospect-2ec02fcea879e3646bff"
+Y = "fixture-alpha"
+T = "fixture-beta"
+W = "fixture-gamma"
 EXPECTED = {Y, T, W}
 
 
@@ -29,6 +29,17 @@ def row(lead_id, email="lead@example.com", **overrides):
 
 
 class OneTimeUsOutreachGuardTests(unittest.TestCase):
+    def test_empty_cohort_is_not_green(self):
+        self.assertTrue(g.validate_one_time_batch([], [], set()))
+
+    def test_duplicate_identity_blocks_in_both_row_orders(self):
+        invalid = row(Y, compliance_status="manual_review")
+        for rows in [[invalid, row(Y), row(T), row(W)], [row(Y), invalid, row(T), row(W)]]:
+            self.assertTrue(any("duplicate queue identity" in e for e in g.validate_one_time_batch(rows, [], EXPECTED)))
+
+    def test_approved_row_without_identity_blocks(self):
+        self.assertTrue(g.validate_one_time_batch([row(Y), row(T), row(W), row("")], [], EXPECTED))
+
     def test_exact_three_green(self):
         self.assertEqual(g.validate_one_time_batch([row(Y), row(T), row(W)], [], EXPECTED), [])
 

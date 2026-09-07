@@ -85,6 +85,8 @@ Workflow: `.github/workflows/myhost-draft-test.yml`.
 
 Workflow: `.github/workflows/outreach-smtp.yml`.
 
+Voor een afzonderlijke read-only controle van een exacte US-cohort gebruik `.github/workflows/outreach-cohort-validation.yml` handmatig met `expected_lead_ids`. De Sheet komt uitsluitend uit `OUTREACH_SPREADSHEET_ID`; cohort-ID's en Sheet-fallbacks horen niet in broncode. Deze controle dispatcht geen outreach en verstuurt niets. De bestaande guard en live-preflights blijven van toepassing.
+
 De runtime accepteert alleen vooraf voorbereide en afzonderlijk goedgekeurde transportstate. De relevante fail-closed volgorde is:
 
 ```text
@@ -250,3 +252,5 @@ Gebruik de workflows zelf als waarheid voor exacte actuele defaults en hard caps
 5. Draai outreach eerst in `validate` en controleer target/evidence, LeadPromo-copy en compliance.
 6. Start alleen na expliciete live/autopilot-sendopdracht een gecontroleerde live-run.
 7. Accepteer alleen echte SMTP acceptance plus IMAP/reply/bounce/opt-out readback als transportbewijs.
+
+Cohort validation rejects empty expected sets, duplicate queue identities (regardless of row order), and approved rows without a lead ID. It never selects the last duplicate row as authoritative and never creates send permission.
