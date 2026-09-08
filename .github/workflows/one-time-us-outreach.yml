@@ -6,14 +6,13 @@ on:
       - main
     paths:
       - '.github/workflows/one-time-us-outreach.yml'
-      - 'scripts/outreach_one_time_us_guard.py'
 
 permissions:
   actions: write
   contents: read
 
 concurrency:
-  group: one-time-us-outreach-2026-09-07
+  group: one-time-us-outreach-2026-09-08
   cancel-in-progress: false
 
 jobs:
@@ -43,19 +42,26 @@ jobs:
           set -euo pipefail
           run=false
           mode=validate
-          if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+          local_date="$(TZ=Europe/Amsterdam date +%F)"
+          if [ "${GITHUB_EVENT_NAME}" = "push" ] && [ "$local_date" = "2026-09-08" ]; then
             run=true
-            mode=validate
+            mode=live
           fi
           echo "run=${run}" >> "$GITHUB_OUTPUT"
           echo "mode=${mode}" >> "$GITHUB_OUTPUT"
-          echo "ONE_TIME_DISPATCH_PLAN run=${run} mode=${mode}"
+          echo "ONE_TIME_DISPATCH_PLAN run=${run} mode=${mode} local_date=${local_date}"
 
       - name: Guard exact US campaign cohort
         if: steps.plan.outputs.run == 'true'
         env:
           OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
-          OUTREACH_ONE_TIME_EXPECTED_LEADS: prospect-8b27a02ebd2e038890e3,prospect-2faf8c72b098cf705738,prospect-2ec02fcea879e3646bff
+          OUTREACH_ONE_TIME_EXPECTED_LEADS: >-
+            prospect-8b27a02ebd2e038890e3,prospect-2faf8c72b098cf705738,prospect-2ec02fcea879e3646bff,
+            manual-20260907-ntma-018,manual-20260907-ntma-007,manual-20260907-ntma-015,manual-20260907-stark-019,manual-20260907-stark-021,
+            manual-20260907-us50-009,manual-20260907-us50-010,manual-20260907-us50-011,manual-20260907-us50-012,manual-20260907-us50-013,manual-20260907-us50-014,manual-20260907-us50-015,manual-20260907-us50-016,manual-20260907-us50-017,manual-20260907-us50-018,manual-20260907-us50-019,manual-20260907-us50-020,
+            manual-20260907-us50-021,manual-20260907-us50-022,manual-20260907-us50-023,manual-20260907-us50-024,manual-20260907-us50-025,manual-20260907-us50-026,manual-20260907-us50-027,manual-20260907-us50-028,manual-20260907-us50-029,manual-20260907-us50-030,
+            manual-20260907-us50-031,manual-20260907-us50-032,manual-20260907-us50-033,manual-20260907-us50-034,manual-20260907-us50-035,manual-20260907-us50-036,manual-20260907-us50-037,manual-20260907-us50-038,manual-20260907-us50-039,manual-20260907-us50-040,
+            manual-20260907-us50-041,manual-20260907-us50-042,manual-20260907-us50-043,manual-20260907-us50-044,manual-20260907-us50-045,manual-20260907-us50-046,manual-20260907-us50-047,manual-20260907-us50-048,manual-20260907-us50-049,manual-20260907-us50-050
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: python3 scripts/outreach_one_time_us_guard.py
 
