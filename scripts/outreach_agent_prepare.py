@@ -30,6 +30,7 @@ LEAD_HEADERS = ["Bedrijf", "Website", "E-mail", "Status"]
 FULL_QUEUE_HEADERS = QUEUE_HEADERS + ["compliance_basis"]
 UK_CORPORATE_SUFFIX_RE = re.compile(r"(?i)\b(?:ltd\.?|limited|llp|plc)\b")
 CASES_URL = "https://andrewbaeten.nl/category/cases"
+POSTAL_PLACEHOLDER = "{{OUTREACH_POSTAL_ADDRESS}}"
 
 
 def _text(value: object) -> str:
@@ -80,7 +81,7 @@ def build_copy(*, company: str, country: str, fact: str, idea: str, agent_type: 
         if canonical_country(country) == "US":
             if not _text(postal_address):
                 raise ValueError("OUTREACH_POSTAL_ADDRESS is required to prepare US commercial copy")
-            legal_lines = f"\n\nThis is a commercial message.\n{_text(postal_address)}"
+            legal_lines = f"\n\nThis is a commercial message.\n{POSTAL_PLACEHOLDER}"
         body = (
             f"Hi {company} team,\n\n"
             f"{fact}\n\n"
@@ -149,13 +150,26 @@ def build_prepared_row(candidate: Mapping[str, object], qualification: Mapping[s
         evidence["subscriber_type"] = "corporate"
     row = {header: "" for header in FULL_QUEUE_HEADERS}
     row.update({
-        "lead_id": candidate_id, "company": company, "website": website, "email": email, "first_name": "",
-        "subject": subject, "body": body, "followup_subject": followup_subject, "followup_body": followup_body,
-        "followup_delay_days": str(delay), "country": country, "compliance_status": "manual_review",
-        "opt_out_mode": "reply_optout", "status": "prepared", "verification_status": "official_site_ready",
-        "verification_checked_at": _text(contact.get("checked_at")), "stage": "1",
+        "lead_id": candidate_id,
+        "company": company,
+        "website": website,
+        "email": email,
+        "first_name": "",
+        "subject": subject,
+        "body": body,
+        "followup_subject": followup_subject,
+        "followup_body": followup_body,
+        "followup_delay_days": str(delay),
+        "country": country,
+        "compliance_status": "manual_review",
+        "opt_out_mode": "reply_optout",
+        "status": "prepared",
+        "verification_status": "official_site_ready",
+        "verification_checked_at": _text(contact.get("checked_at")),
+        "stage": "1",
         "source": "agent_offer:" + json.dumps(evidence, ensure_ascii=False, separators=(",", ":")),
-        "sender_mailbox_id": _text(sender_mailbox_id) or "primary", "sender_email": _text(sender_email),
+        "sender_mailbox_id": _text(sender_mailbox_id) or "primary",
+        "sender_email": _text(sender_email),
         "compliance_basis": "",
     })
     return row
@@ -189,13 +203,21 @@ def _prepare_eligible(candidate, qualification, contact) -> bool:
 def _replace_rows(service, spreadsheet_id: str, sheet: str, headers: Sequence[str], rows: Sequence[Mapping[str, object]]) -> None:
     values = [list(headers)] + [[str(row.get(header, "")) for header in headers] for row in rows]
     service.spreadsheets().values().clear(spreadsheetId=spreadsheet_id, range=f"'{sheet}'!A:ZZ", body={}).execute()
-    service.spreadsheets().values().update(spreadsheetId=spreadsheet_id, range=f"'{sheet}'!A1", valueInputOption="RAW", body={"values": values}).execute()
+    service.spreadsheets().values().update(
+        spreadsheetId=spreadsheet_id,
+        range=f"'{sheet}'!A1",
+        valueInputOption="RAW",
+        body={"values": values},
+    ).execute()
 
 
 def _append_lead(service, spreadsheet_id: str, row: Mapping[str, object]) -> None:
     service.spreadsheets().values().append(
-        spreadsheetId=spreadsheet_id, range=f"'{LEAD_SHEET}'!A:D", valueInputOption="RAW",
-        insertDataOption="INSERT_ROWS", body={"values": [[str(row.get(header, "")) for header in LEAD_HEADERS]]},
+        spreadsheetId=spreadsheet_id,
+        range=f"'{LEAD_SHEET}'!A:D",
+        valueInputOption="RAW",
+        insertDataOption="INSERT_ROWS",
+        body={"values": [[str(row.get(header, "")) for header in LEAD_HEADERS]]},
     ).execute()
 
 
@@ -270,10 +292,18 @@ def run(mode: str, report_path: str) -> int:
         if not _prepare_eligible(candidate, qualification, contact):
             continue
         try:
-            new_row = build_prepared_row(candidate, qualification, contact, postal_address=postal_address, sender_mailbox_id=sender_mailbox_id, sender_email=sender_email)
+            new_row = build_prepared_row(
+                candidate,
+                qualification,
+                contact,
+                postal_address=postal_address,
+                sender_mailbox_id=sender_mailbox_id,
+                sender_email=sender_email,
+            )
         except ValueError:
             skipped += 1
             continue
+
         existing_row = queue_by_id.get(candidate_id)
         if existing_row:
             if not _agent_row(existing_row) or _text(existing_row.get("status")).casefold() not in {"prepared", "manual_review"}:
@@ -288,20 +318,36 @@ def run(mode: str, report_path: str) -> int:
             queue_by_id[candidate_id] = new_row
             prepared += 1
             queue_changed = True
+
         domain = canonical_domain(new_row["website"])
         if domain and domain not in lead_domains:
-            _append_lead(service, spreadsheet_id, {"Bedrijf": new_row["company"], "Website": new_row["website"], "E-mail": new_row["email"], "Status": "gevonden"})
+            _append_lead(service, spreadsheet_id, {
+                "Bedrijf": new_row["company"],
+                "Website": new_row["website"],
+                "E-mail": new_row["email"],
+                "Status": "gevonden",
+            })
             lead_domains.add(domain)
 
     if queue_changed:
         _replace_rows(service, spreadsheet_id, QUEUE_SHEET, FULL_QUEUE_HEADERS, queue)
+
     _write_report(report_path, {
-        "mode": mode, "status": "completed", "prepared": prepared, "updated": updated,
-        "reconciled": reconciled, "skipped": skipped, "offer_family": "ai_agent",
-        "send_permission": "none", "compliance_status": "manual_review",
+        "mode": mode,
+        "status": "completed",
+        "prepared": prepared,
+        "updated": updated,
+        "reconciled": reconciled,
+        "skipped": skipped,
+        "offer_family": "ai_agent",
+        "send_permission": "none",
+        "compliance_status": "manual_review",
         "note": "Prepared agent rows are evidence-bound drafts only. This capability never approves compliance or sends mail.",
     })
-    print(f"OUTREACH_AGENT_PREPARE=complete prepared={prepared} updated={updated} reconciled={reconciled} skipped={skipped} send_permission=none")
+    print(
+        f"OUTREACH_AGENT_PREPARE=complete prepared={prepared} updated={updated} reconciled={reconciled} "
+        f"skipped={skipped} send_permission=none"
+    )
     return 0
 
 
