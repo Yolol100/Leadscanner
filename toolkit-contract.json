@@ -1,181 +1,25 @@
 {
-  "schema_version": "2.8",
-  "owner_skill": "leads",
-  "project_id": "project-leads",
-  "repository": "Yolol100/Leadscanner",
-  "repository_role": "central_leads_github_runtime",
-  "requires_mcp": false,
-  "capabilities": {
-    "prospect_discovery": {
-      "workflow": ".github/workflows/prospect-discovery.yml",
-      "requires_account": true,
-      "required_secrets": ["GOOGLE_SERVICE_ACCOUNT_JSON"],
-      "forbidden_secrets": ["OUTREACH_MAIL_PASSWORD", "OUTREACH_MAILBOXES_JSON", "OUTREACH_SEED_INBOXES_JSON", "REOON_API_KEY"],
-      "modes": ["validate", "bootstrap", "discover"],
-      "scheduled_default": "validate",
-      "scheduled_discover_gate": "PROSPECT_DISCOVERY_ENABLED=true",
-      "optional_variables": ["PROSPECT_DISCOVERY_TARGET_NEW", "PROSPECT_DISCOVERY_EXCLUDE_COUNTRIES", "PROSPECT_DISCOVERY_PREFERRED_COUNTRIES", "PROSPECT_DISCOVERY_EXCLUDE_AGENCIES", "PROSPECT_DISCOVERY_EXTRA_EXCLUDE_TERMS"],
-      "source_types": ["seed_site", "directory_page", "directory_index", "directory_sitemap"],
-      "directory_sitemap_child_hard_cap": 3,
-      "default_excluded_countries": [],
-      "default_preferred_countries": ["US", "NL", "GB", "DE", "FR", "BE", "ES", "IT", "SE", "DK", "NO", "FI", "AT", "CH", "IE", "PT", "PL", "CZ"],
-      "agency_exclusion_default": true,
-      "agency_exclusion_scope": "multilingual strong self-description phrases for web/design/development/app/software/UX/marketing/advertising/SEO/branding/digital/commerce agencies and similar providers",
-      "source_semantic_filter": "directory-provider self domains and obvious institutional/navigation candidates are rejected; manufacturing-directory candidates require manufacturing/industrial self-description on the official site before candidate write",
-      "target_fill": "bounded by PROSPECT_DISCOVERY_MAX_TOTAL and processed after target-policy and source-semantic filtering in preferred-country order",
-      "source_run_history": "ProspectSourceRuns records processed-source status, yield, duplicates, duration and bounded error text when the optional bootstrap tab exists",
-      "outputs": ["ProspectCandidates", "ProspectObservations", "ProspectSourceRuns", "prospect-discovery-report.json"],
-      "send_permission": "none"
-    },
-    "prospect_intelligence": {
-      "workflow": ".github/workflows/prospect-intelligence.yml",
-      "requires_account": true,
-      "required_secrets": ["GOOGLE_SERVICE_ACCOUNT_JSON"],
-      "forbidden_secrets": ["OUTREACH_MAIL_PASSWORD", "OUTREACH_MAILBOXES_JSON", "OUTREACH_SEED_INBOXES_JSON", "REOON_API_KEY"],
-      "modes": ["validate", "bootstrap", "refresh"],
-      "scheduled_default": "validate",
-      "scheduled_refresh_gate": "PROSPECT_INTELLIGENCE_ENABLED=true",
-      "optional_variables": ["PROSPECT_INTELLIGENCE_STALE_DAYS"],
-      "inputs": ["ProspectSources", "ProspectCandidates", "ProspectObservations", "ProspectSignals", "ContactCandidates", "Leadlijst"],
-      "outputs": ["ProspectEntities", "ProspectSourceMetrics", "ProspectEvidence", "ProspectLookalikes", "prospect-intelligence-report.json"],
-      "automatic_score_effect": false,
-      "send_permission": "none"
-    },
-    "prospect_signal_discovery": {
-      "workflow": ".github/workflows/prospect-signal-discovery.yml",
-      "requires_account": true,
-      "required_secrets": ["GOOGLE_SERVICE_ACCOUNT_JSON"],
-      "forbidden_secrets": ["OUTREACH_MAIL_PASSWORD", "OUTREACH_MAILBOXES_JSON", "OUTREACH_SEED_INBOXES_JSON", "REOON_API_KEY"],
-      "modes": ["validate", "discover"],
-      "scheduled_default": "validate",
-      "scheduled_discover_gate": "PROSPECT_SIGNAL_DISCOVERY_ENABLED=true",
-      "optional_variables": ["PROSPECT_SIGNAL_MAX_CANDIDATES", "PROSPECT_SIGNAL_TIMEOUT_SECONDS", "PROSPECT_SIGNAL_MAX_BYTES", "PROSPECT_SIGNAL_MIN_INTERVAL_SECONDS", "PROSPECT_SIGNAL_USER_AGENT"],
-      "input_boundary": "existing discovered/qualified/hold ProspectCandidates only",
-      "signal_types": ["hiring", "technology_wordpress", "technology_woocommerce"],
-      "max_candidates_per_run": 25,
-      "outputs": ["ProspectSignals", "prospect-signal-report.json"],
-      "automatic_score_effect": false,
-      "send_permission": "none"
-    },
-    "prospect_qualification": {
-      "workflow": ".github/workflows/leads-autopilot.yml",
-      "script": "scripts/prospect_agent_qualification.py",
-      "requires_account": true,
-      "required_secrets": ["GOOGLE_SERVICE_ACCOUNT_JSON"],
-      "forbidden_secrets": ["OUTREACH_MAIL_PASSWORD", "OUTREACH_MAILBOXES_JSON", "OUTREACH_SEED_INBOXES_JSON", "REOON_API_KEY"],
-      "modes": ["validate", "qualify"],
-      "offer_family": "ai_agent",
-      "agent_types": ["front_desk_sales", "lead_reactivation", "review_concierge", "customer_support", "commerce", "quote_intake"],
-      "input_boundary": "new/unassessed discovered or hold candidates are prioritized; previously assessed discovered/hold/qualified/rejected rows are only rechecked after the configured age or an explicit bounded recheck",
-      "max_candidates_per_run": 25,
-      "default_recheck_days": 30,
-      "score_contract": "ICP 0-3 + evidence-bound agent opportunity 0-3 + active signal 0-2 + value/integration fit 0-2; A=8-10, B=6-7, C=0-5",
-      "quality_rules": [
-        "one primary agent opportunity is selected instead of stacking generic opportunities",
-        "A requires an official-page evidence-bound fact and agent idea",
-        "generic contact-only evidence stays hold without stronger fit/signal",
-        "fetch/evidence failures become UNSCORED hold instead of fabricated rejection",
-        "agency/provider and self targets fail closed",
-        "qualification never creates compliance or send permission"
-      ],
-      "outputs": ["ProspectCandidates", "AgentProspectQualifications", "prospect-agent-qualification-report.json"],
-      "automatic_score_effect": true,
-      "compliance_effect": false,
-      "send_permission": "none"
-    },
-    "contact_enrichment": {
-      "workflow": ".github/workflows/contact-enrichment.yml",
-      "requires_account": true,
-      "required_secrets": ["GOOGLE_SERVICE_ACCOUNT_JSON"],
-      "forbidden_secrets": ["OUTREACH_MAIL_PASSWORD", "OUTREACH_MAILBOXES_JSON", "OUTREACH_SEED_INBOXES_JSON", "REOON_API_KEY"],
-      "modes": ["validate", "discover"],
-      "input_boundary": "qualified ProspectCandidates only",
-      "outputs": ["ContactCandidates"],
-      "send_permission": "none"
-    },
-    "zero_touch_prepare": {
-      "workflow": ".github/workflows/leads-autopilot.yml",
-      "script": "scripts/outreach_agent_prepare.py",
-      "requires_account": true,
-      "required_secrets": ["GOOGLE_SERVICE_ACCOUNT_JSON"],
-      "forbidden_secrets": ["OUTREACH_MAIL_PASSWORD", "OUTREACH_MAILBOXES_JSON", "OUTREACH_SEED_INBOXES_JSON", "REOON_API_KEY"],
-      "optional_variables": ["OUTREACH_CONFIG_SPREADSHEET_ID", "PROSPECT_QUALIFICATION_RECHECK_DAYS"],
-      "modes": ["validate", "prepare"],
-      "scheduled_default": "prepare",
-      "flow": "prospect_discovery -> prospect_candidate_sanitizer -> prospect_signal_discovery -> prospect_agent_qualification -> contact_enrichment -> prospect_intelligence -> private_outreach_config -> outreach_agent_prepare",
-      "input_boundary": "only A-qualified ai_agent prospects with ContactCandidates.ready can produce agent copy",
-      "private_config_contract": "US postal address is read at runtime from the private Webactueel Outreach Config Sheet, masked before export to GITHUB_ENV and queue copy stores only the private postal placeholder",
-      "queue_contract": "writes status=prepared, compliance_status=manual_review and blank compliance_basis; stale automated agent rows that are no longer A+ready are reconciled to manual_review; never creates approved/sendable state",
-      "copy_contract": "deterministic NL/EN agent copy with one canonical follow-up, no inferred agent price and no unsupported result claim",
-      "outputs": ["ProspectCandidates", "ProspectObservations", "ProspectSourceRuns", "ProspectSignals", "AgentProspectQualifications", "ContactCandidates", "ProspectEntities", "ProspectSourceMetrics", "ProspectEvidence", "ProspectLookalikes", "Leadlijst", "OutreachQueue"],
-      "send_permission": "none"
-    },
-    "website_evidence_scan": {
-      "workflow": ".github/workflows/scan.yml",
-      "requires_account": false,
-      "requires_api_key": false,
-      "read_only": true,
-      "normal_default_for_every_prospect": false,
-      "outputs": ["scan-results/", "scan-results/leads-handoff.json"]
-    },
-    "sender_readiness": {
-      "workflow": ".github/workflows/sender-readiness.yml",
-      "requires_account": true,
-      "required_secrets": ["GOOGLE_SERVICE_ACCOUNT_JSON"],
-      "optional_secrets": ["OUTREACH_MAIL_PASSWORD", "OUTREACH_MAILBOXES_JSON"],
-      "optional_variables": ["OUTREACH_OUTBOUND_IP", "OUTREACH_DNSBL_ZONES"],
-      "provider_managed_relay": "when include:spf.mijn.host is the required SPF token and SPF is proven green, a shared mijn.host relay without one explicit fixed egress IP is represented as provider_managed; no per-egress-IP reputation or global placement is claimed",
-      "outputs": ["SenderReadiness"],
-      "send_permission": "none"
-    },
-    "inbox_placement": {
-      "workflow": ".github/workflows/inbox-placement.yml",
-      "requires_account": true,
-      "manual_only": true,
-      "manual_default": "validate",
-      "required_secrets_validate": ["GOOGLE_SERVICE_ACCOUNT_JSON"],
-      "required_secrets_test": ["GOOGLE_SERVICE_ACCOUNT_JSON", "OUTREACH_MAIL_PASSWORD", "OUTREACH_SEED_INBOXES_JSON"],
-      "max_seed_inboxes": 5,
-      "outputs": ["InboxPlacement"],
-      "send_permission": "configured_seed_test_only"
-    },
-    "mailbox_draft": {
-      "workflow": ".github/workflows/myhost-draft-test.yml",
-      "requires_account": true,
-      "manual_only": true,
-      "required_secrets": ["OUTREACH_MAIL_PASSWORD"],
-      "optional_secrets": ["OUTREACH_MAILBOXES_JSON"],
-      "writes": ["configured mijn.host Drafts/Concepten mailbox only"],
-      "send_permission": "none",
-      "recipient_boundary": "self_only for automated test route",
-      "transport": "IMAP APPEND + same-folder readback only"
-    },
-    "outreach_delivery": {
-      "workflow": ".github/workflows/outreach-smtp.yml",
-      "requires_account": true,
-      "required_secrets": ["GOOGLE_SERVICE_ACCOUNT_JSON", "OUTREACH_MAIL_PASSWORD"],
-      "optional_secrets": ["OUTREACH_MAILBOXES_JSON"],
-      "optional_variables": ["OUTREACH_CONFIG_SPREADSHEET_ID"],
-      "forbidden_secrets": ["REOON_API_KEY"],
-      "modes": ["validate", "live"],
-      "manual_default": "validate",
-      "private_config_contract": "the physical postal address is loaded from the private Config Sheet and masked before later steps; no plaintext postal address repository variable is used by the active workflow",
-      "external_email_verifier": "none_required_for_active_direct_smtp_route",
-      "live_gate": "sender_readiness -> website target/evidence -> LeadPromo copy -> compliance -> SMTP",
-      "target_evidence_contract": "approved rows accept canonical agent_offer:<JSON> with same-domain evidence_url, exact fact/idea, approved agent_type, business_process and KPI candidate; legacy website_scan:<JSON> remains accepted for already-prepared website/webshop rows; official homepage is rechecked against agency/provider exclusions before SMTP",
-      "international_copy_contract": "controlled NL and EN copy only; CTA/opt-out/signature language may not be mixed",
-      "us_gate": "US requires private physical postal configuration plus commercial identification; queue holds only the postal placeholder",
-      "uk_gate": "GB unsolicited route requires subscriber_type=corporate evidence plus clear Ltd/Limited/LLP/PLC company form; uncertainty blocks",
-      "outputs": ["OutreachQueue", "OutreachSequences", "ReplyInbox", "Suppression", "OutreachLog", "VariantAnalytics", "MailboxHealth"]
-    },
-    "dashboard": {
-      "surface": "Google Sheet Dashboard tab",
-      "role": "readout_only_aggregate_control_panel",
-      "inputs": ["ProspectCandidates", "ContactCandidates", "OutreachQueue", "MailboxHealth", "SenderReadiness", "InboxPlacement", "Suppression"],
-      "send_permission": "none"
-    }
+  "schema_version":"2.8",
+  "owner_skill":"leads",
+  "project_id":"project-leads",
+  "repository":"Yolol100/Leadscanner",
+  "repository_role":"central_leads_github_runtime",
+  "requires_mcp":false,
+  "capabilities":{
+    "prospect_discovery":{"workflow":".github/workflows/prospect-discovery.yml","requires_account":true,"required_secrets":["GOOGLE_SERVICE_ACCOUNT_JSON"],"forbidden_secrets":["OUTREACH_MAIL_PASSWORD","OUTREACH_MAILBOXES_JSON","OUTREACH_SEED_INBOXES_JSON","REOON_API_KEY"],"modes":["validate","bootstrap","discover"],"scheduled_default":"validate","scheduled_discover_gate":"PROSPECT_DISCOVERY_ENABLED=true","optional_variables":["PROSPECT_DISCOVERY_TARGET_NEW","PROSPECT_DISCOVERY_EXCLUDE_COUNTRIES","PROSPECT_DISCOVERY_PREFERRED_COUNTRIES","PROSPECT_DISCOVERY_EXCLUDE_AGENCIES","PROSPECT_DISCOVERY_EXTRA_EXCLUDE_TERMS"],"source_types":["seed_site","directory_page","directory_index","directory_sitemap"],"directory_sitemap_child_hard_cap":3,"default_excluded_countries":[],"default_preferred_countries":["US","NL","GB","DE","FR","BE","ES","IT","SE","DK","NO","FI","AT","CH","IE","PT","PL","CZ"],"agency_exclusion_default":true,"agency_exclusion_scope":"multilingual strong self-description phrases for web/design/development/app/software/UX/marketing/advertising/SEO/branding/digital/commerce agencies and similar providers","source_semantic_filter":"directory-provider self domains and obvious institutional/navigation candidates are rejected; manufacturing-directory candidates require manufacturing/industrial self-description on the official site before candidate write","target_fill":"bounded by PROSPECT_DISCOVERY_MAX_TOTAL and processed after target-policy and source-semantic filtering in preferred-country order","source_run_history":"ProspectSourceRuns records processed-source status, yield, duplicates, duration and bounded error text when the optional bootstrap tab exists","outputs":["ProspectCandidates","ProspectObservations","ProspectSourceRuns","prospect-discovery-report.json"],"send_permission":"none"},
+    "prospect_intelligence":{"workflow":".github/workflows/prospect-intelligence.yml","requires_account":true,"required_secrets":["GOOGLE_SERVICE_ACCOUNT_JSON"],"forbidden_secrets":["OUTREACH_MAIL_PASSWORD","OUTREACH_MAILBOXES_JSON","OUTREACH_SEED_INBOXES_JSON","REOON_API_KEY"],"modes":["validate","bootstrap","refresh"],"scheduled_default":"validate","scheduled_refresh_gate":"PROSPECT_INTELLIGENCE_ENABLED=true","optional_variables":["PROSPECT_INTELLIGENCE_STALE_DAYS"],"inputs":["ProspectSources","ProspectCandidates","ProspectObservations","ProspectSignals","ContactCandidates","Leadlijst"],"outputs":["ProspectEntities","ProspectSourceMetrics","ProspectEvidence","ProspectLookalikes","prospect-intelligence-report.json"],"automatic_score_effect":false,"send_permission":"none"},
+    "prospect_signal_discovery":{"workflow":".github/workflows/prospect-signal-discovery.yml","requires_account":true,"required_secrets":["GOOGLE_SERVICE_ACCOUNT_JSON"],"forbidden_secrets":["OUTREACH_MAIL_PASSWORD","OUTREACH_MAILBOXES_JSON","OUTREACH_SEED_INBOXES_JSON","REOON_API_KEY"],"modes":["validate","discover"],"scheduled_default":"validate","scheduled_discover_gate":"PROSPECT_SIGNAL_DISCOVERY_ENABLED=true","optional_variables":["PROSPECT_SIGNAL_MAX_CANDIDATES","PROSPECT_SIGNAL_TIMEOUT_SECONDS","PROSPECT_SIGNAL_MAX_BYTES","PROSPECT_SIGNAL_MIN_INTERVAL_SECONDS","PROSPECT_SIGNAL_USER_AGENT"],"input_boundary":"existing discovered/qualified/hold ProspectCandidates only","signal_types":["hiring","technology_wordpress","technology_woocommerce"],"max_candidates_per_run":25,"outputs":["ProspectSignals","prospect-signal-report.json"],"automatic_score_effect":false,"send_permission":"none"},
+    "prospect_qualification":{"workflow":".github/workflows/leads-autopilot.yml","script":"scripts/prospect_agent_qualification.py","requires_account":true,"required_secrets":["GOOGLE_SERVICE_ACCOUNT_JSON"],"forbidden_secrets":["OUTREACH_MAIL_PASSWORD","OUTREACH_MAILBOXES_JSON","OUTREACH_SEED_INBOXES_JSON","REOON_API_KEY"],"modes":["validate","qualify"],"offer_family":"ai_agent","agent_types":["front_desk_sales","lead_reactivation","review_concierge","customer_support","commerce","quote_intake"],"input_boundary":"new/unassessed discovered or hold candidates are prioritized; previously assessed discovered/hold/qualified/rejected rows are only rechecked after the configured age or an explicit bounded recheck","max_candidates_per_run":25,"default_recheck_days":30,"score_contract":"ICP 0-3 + evidence-bound agent opportunity 0-3 + active signal 0-2 + value/integration fit 0-2; A=8-10, B=6-7, C=0-5","quality_rules":["one primary agent opportunity is selected instead of stacking generic opportunities","A requires an official-page evidence-bound fact and agent idea","generic contact-only evidence stays hold without stronger fit/signal","fetch/evidence failures become UNSCORED hold instead of fabricated rejection","agency/provider and self targets fail closed","qualification never creates compliance or send permission"],"outputs":["ProspectCandidates","AgentProspectQualifications","prospect-agent-qualification-report.json"],"automatic_score_effect":true,"compliance_effect":false,"send_permission":"none"},
+    "contact_enrichment":{"workflow":".github/workflows/contact-enrichment.yml","requires_account":true,"required_secrets":["GOOGLE_SERVICE_ACCOUNT_JSON"],"forbidden_secrets":["OUTREACH_MAIL_PASSWORD","OUTREACH_MAILBOXES_JSON","OUTREACH_SEED_INBOXES_JSON","REOON_API_KEY"],"modes":["validate","discover"],"input_boundary":"qualified ProspectCandidates only","outputs":["ContactCandidates"],"send_permission":"none"},
+    "zero_touch_prepare":{"workflow":".github/workflows/leads-autopilot.yml","script":"scripts/outreach_agent_prepare.py","requires_account":true,"required_secrets":["GOOGLE_SERVICE_ACCOUNT_JSON"],"forbidden_secrets":["OUTREACH_MAIL_PASSWORD","OUTREACH_MAILBOXES_JSON","OUTREACH_SEED_INBOXES_JSON","REOON_API_KEY"],"optional_variables":["OUTREACH_CONFIG_SPREADSHEET_ID","PROSPECT_QUALIFICATION_RECHECK_DAYS"],"modes":["validate","prepare"],"scheduled_default":"prepare","flow":"prospect_discovery -> prospect_candidate_sanitizer -> prospect_signal_discovery -> prospect_agent_qualification -> contact_enrichment -> prospect_intelligence -> private_outreach_config -> outreach_agent_prepare","input_boundary":"only A-qualified ai_agent prospects with ContactCandidates.ready can produce agent copy","private_config_contract":"US postal address is read at runtime from the private Webactueel Outreach Config Sheet, masked before export to GITHUB_ENV and queue copy stores only the private postal placeholder","queue_contract":"writes status=prepared, compliance_status=manual_review and blank compliance_basis; stale automated agent rows that are no longer A+ready are reconciled to manual_review; never creates approved/sendable state","copy_contract":"deterministic NL/EN agent copy with one canonical follow-up, no inferred agent price and no unsupported result claim","outputs":["ProspectCandidates","ProspectObservations","ProspectSourceRuns","ProspectSignals","AgentProspectQualifications","ContactCandidates","ProspectEntities","ProspectSourceMetrics","ProspectEvidence","ProspectLookalikes","Leadlijst","OutreachQueue"],"send_permission":"none"},
+    "website_evidence_scan":{"workflow":".github/workflows/scan.yml","requires_account":false,"requires_api_key":false,"read_only":true,"normal_default_for_every_prospect":false,"outputs":["scan-results/","scan-results/leads-handoff.json"]},
+    "sender_readiness":{"workflow":".github/workflows/sender-readiness.yml","requires_account":true,"required_secrets":["GOOGLE_SERVICE_ACCOUNT_JSON"],"optional_secrets":["OUTREACH_MAIL_PASSWORD","OUTREACH_MAILBOXES_JSON"],"optional_variables":["OUTREACH_OUTBOUND_IP","OUTREACH_DNSBL_ZONES"],"provider_managed_relay":"when include:spf.mijn.host is the required SPF token and SPF is proven green, a shared mijn.host relay without one explicit fixed egress IP is represented as provider_managed; no per-egress-IP reputation or global placement is claimed","outputs":["SenderReadiness"],"send_permission":"none"},
+    "inbox_placement":{"workflow":".github/workflows/inbox-placement.yml","requires_account":true,"manual_only":true,"manual_default":"validate","required_secrets_validate":["GOOGLE_SERVICE_ACCOUNT_JSON"],"required_secrets_test":["GOOGLE_SERVICE_ACCOUNT_JSON","OUTREACH_MAIL_PASSWORD","OUTREACH_SEED_INBOXES_JSON"],"max_seed_inboxes":5,"outputs":["InboxPlacement"],"send_permission":"configured_seed_test_only"},
+    "mailbox_draft":{"workflow":".github/workflows/myhost-draft-test.yml","requires_account":true,"manual_only":true,"required_secrets":["OUTREACH_MAIL_PASSWORD"],"optional_secrets":["OUTREACH_MAILBOXES_JSON"],"writes":["configured mijn.host Drafts/Concepten mailbox only"],"send_permission":"none","recipient_boundary":"self_only for automated test route","transport":"IMAP APPEND + same-folder readback only"},
+    "outreach_delivery":{"workflow":".github/workflows/outreach-smtp.yml","requires_account":true,"required_secrets":["GOOGLE_SERVICE_ACCOUNT_JSON","OUTREACH_MAIL_PASSWORD"],"optional_secrets":["OUTREACH_MAILBOXES_JSON"],"optional_variables":["OUTREACH_CONFIG_SPREADSHEET_ID"],"forbidden_secrets":["REOON_API_KEY"],"modes":["validate","live"],"manual_default":"validate","private_config_contract":"the physical postal address is loaded from the private Config Sheet and masked before later steps; no plaintext postal address repository variable is used by the active workflow","external_email_verifier":"none_required_for_active_direct_smtp_route","live_gate":"sender_readiness -> website target/evidence -> LeadPromo copy -> compliance -> SMTP","target_evidence_contract":"approved rows accept canonical agent_offer:<JSON> with same-domain evidence_url, exact fact/idea, approved agent_type, business_process and KPI candidate; legacy website_scan:<JSON> remains accepted for already-prepared website/webshop rows; official homepage is rechecked against agency/provider exclusions before SMTP","international_copy_contract":"controlled NL and EN copy only; CTA/opt-out/signature language may not be mixed","us_gate":"US requires private physical postal configuration plus commercial identification; queue holds only the postal placeholder","uk_gate":"GB unsolicited route requires subscriber_type=corporate evidence plus clear Ltd/Limited/LLP/PLC company form; uncertainty blocks","outputs":["OutreachQueue","OutreachSequences","ReplyInbox","Suppression","OutreachLog","VariantAnalytics","MailboxHealth"]},
+    "dashboard":{"surface":"Google Sheet Dashboard tab","role":"readout_only_aggregate_control_panel","inputs":["ProspectCandidates","ContactCandidates","OutreachQueue","MailboxHealth","SenderReadiness","InboxPlacement","Suppression"],"send_permission":"none"}
   },
-  "scanner_tools": [
+  "scanner_tools":[
     {"id":"crawlee","version":"3.18.1","trigger_when":"explicit website audit or Leads technical evidence-gap crawl orchestration is needed","outputs":["scan-results/"]},
     {"id":"playwright","version":"1.62.1","trigger_when":"explicit audit or Leads technical evidence-gap desktop/mobile browser evidence is needed","outputs":["scan-results/"]},
     {"id":"axe-core","version":"4.13.0","trigger_when":"homepage audit evidence is collected","outputs":["finding_candidates"]},
@@ -186,18 +30,10 @@
     {"id":"tech-detect","version":"repo","trigger_when":"technology context is necessary to interpret the scoped evidence question","outputs":["context"]},
     {"id":"leads-handoff","version":"repo","trigger_when":"a completed explicit audit or evidence-gap scan returns to Leads","outputs":["scan-results/leads-handoff.json"]}
   ],
-  "usage_assertions": [
-    {"tool":"crawlee","path":"package.json","contains":"\"crawlee\""},
-    {"tool":"playwright","path":"package.json","contains":"\"playwright\""},
-    {"tool":"axe-core","path":"src/scan.mjs","contains":"AxeBuilder"},
-    {"tool":"linkinator","path":"package.json","contains":"\"linkinator\""},
-    {"tool":"lighthouse","path":"package.json","contains":"\"lighthouse\""},
-    {"tool":"languagetool","path":".github/workflows/scan.yml","contains":"start-languagetool.sh"},
-    {"tool":"sitemap-robots","path":"src/scan.mjs","contains":"discoverSite"},
-    {"tool":"tech-detect","path":".github/workflows/scan.yml","contains":"RUN_TECH_DETECT"},
-    {"tool":"leads-handoff","path":"package.json","contains":"handoff:leads"}
+  "usage_assertions":[
+    {"tool":"crawlee","path":"package.json","contains":"\"crawlee\""},{"tool":"playwright","path":"package.json","contains":"\"playwright\""},{"tool":"axe-core","path":"src/scan.mjs","contains":"AxeBuilder"},{"tool":"linkinator","path":"package.json","contains":"\"linkinator\""},{"tool":"lighthouse","path":"package.json","contains":"\"lighthouse\""},{"tool":"languagetool","path":".github/workflows/scan.yml","contains":"start-languagetool.sh"},{"tool":"sitemap-robots","path":"src/scan.mjs","contains":"discoverSite"},{"tool":"tech-detect","path":".github/workflows/scan.yml","contains":"RUN_TECH_DETECT"},{"tool":"leads-handoff","path":"package.json","contains":"handoff:leads"}
   ],
-  "boundaries": [
+  "boundaries":[
     "Leadscanner executes bounded Leads policy; it is not a second process controller.",
     "AI agent sales is the default new-offer family; legacy website/webshop evidence remains compatibility-only.",
     "The six approved agent types are front_desk_sales, lead_reactivation, review_concierge, customer_support, commerce and quote_intake.",
@@ -208,6 +44,7 @@
     "US physical postal configuration remains private and is injected at send time; queue copy stores the placeholder only.",
     "NL/EER live outreach still requires a separately evidenced valid compliance basis.",
     "Reply, bounce and opt-out readback stop follow-up state and maintain suppression evidence.",
-    "No secret belongs in repository files, Sheet evidence fields, logs, test fixtures or artifacts."
+    "No secret belongs in repository files, Sheet evidence fields, logs, test fixtures or artifacts.",
+    "Scheduled prospect discovery remains validate-only unless PROSPECT_DISCOVERY_ENABLED=true explicitly promotes the scheduled run to discover mode."
   ]
 }
