@@ -46,6 +46,40 @@ class ContactEnrichmentTests(unittest.TestCase):
         rows = [{"candidate_id": str(i), "status": "qualified", "website": f"https://{i}.example.nl"} for i in range(40)]
         self.assertEqual(len(m.eligible_prospects(rows, set(), m.HARD_MAX_PROSPECTS_PER_RUN)), 25)
 
+    def test_retryable_contact_rows_do_not_block_future_retry(self):
+        contacts = [
+            {"candidate_id": "retry", "status": m.RETRYABLE_CONTACT_STATUS},
+            {"candidate_id": "ready", "status": "ready"},
+            {"candidate_id": "missing", "status": "not_found"},
+        ]
+        self.assertEqual(m.definitive_contact_ids(contacts), {"ready", "missing"})
+
+    def test_transient_fetch_failure_is_fail_closed_for_only_that_prospect(self):
+        row = {"candidate_id": "retry", "company": "Retry Inc", "website": "https://retry.example"}
+        with patch.object(m, "discover_contact", side_effect=m.ContactDiscoveryError("HTTP Error 429: Too Many Requests")):
+            output, is_ready = m.contact_output(row, fetch=lambda url: "")
+        self.assertFalse(is_ready)
+        self.assertEqual(output["status"], m.RETRYABLE_CONTACT_STATUS)
+        self.assertEqual(output["email"], "")
+        self.assertIn("429", output["reason"])
+
+    def test_ready_contact_output_remains_ready(self):
+        row = {"candidate_id": "ready", "company": "Ready Inc", "website": "https://ready.example"}
+        candidate = m.ContactCandidate(
+            email="info@ready.example",
+            source_url="https://ready.example/contact",
+            source_kind="mailto",
+            domain_alignment="aligned",
+            mx_status="present",
+            status="ready",
+            reason="public business address found on official site with aligned domain and MX present",
+        )
+        with patch.object(m, "discover_contact", return_value=candidate):
+            output, is_ready = m.contact_output(row, fetch=lambda url: "")
+        self.assertTrue(is_ready)
+        self.assertEqual(output["status"], "ready")
+        self.assertEqual(output["email"], "info@ready.example")
+
 
 if __name__ == "__main__":
     unittest.main()
