@@ -108,7 +108,7 @@ Google Sheet `Dashboard` is read-only aggregatie. Lege diagnostiek blijft `not_t
 
 Workflow: `.github/workflows/prospect-intelligence.yml`.
 
-Afgeleide entity/freshness/source-performance/evidence/lookalike-laag. Adviserend; wijzigt nooit zelfstandig Customer Potential, compliance, contactpromotie, copy of send permission.
+Afgeleide entity/freshness/source-performance/evidence/lookalike-laag. Adviserend; deze outputs wijzigen nooit zelfstandig Customer Potential, compliance, contactpromotie, copy of send permission.
 
 ## Capability 10 — prospect_signal_discovery
 
@@ -173,4 +173,4 @@ Minimaal bewaakt: `Leadlijst`, `ProspectSources`, `ProspectCandidates`, `Prospec
 
 ## Releasebewijs
 
-Voor releaseclaims moeten minimaal `Toolkit Contract`, `Leads Runtime CI` en `Scanner Smoke Test` groen zijn op de relevante code. Een groene test is code-/contractbewijs; live Sheet/mailbox-state vereist aparte runtime/readback en live prospectsend blijft alleen mogelijk na expliciete live-intentie plus alle huidige gates.
+Voor releaseclaims moeten minimaal `Toolkit Contract`, `Leads Runtime CI` en `Scanner Smoke Test` groen zijn op de relevante code. Een groene test is code-/contractbewijs; live Sheet/mailbox readiness vereist aparte runtime/readback en live prospectsend blijft alleen mogelijk na expliciete live-intentie plus alle huidige gates.
