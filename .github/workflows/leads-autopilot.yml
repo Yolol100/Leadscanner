@@ -4,13 +4,26 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Validate the pipeline or run bounded agent-sales prepare automation
+        description: Validate the pipeline or run bounded campaign-first agent-sales prepare automation
         required: true
         type: choice
         options:
           - validate
           - prepare
         default: validate
+      agent_type:
+        description: One campaign agent target. Auto preserves discovery-wide qualification but is not the preferred campaign mode.
+        required: true
+        type: choice
+        options:
+          - auto
+          - front_desk_sales
+          - quote_intake
+          - customer_support
+          - commerce
+          - review_concierge
+          - lead_reactivation
+        default: auto
   schedule:
     - cron: '11,41 5-17 * * 1-5'
   push:
@@ -35,19 +48,26 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Resolve bounded automation mode
+      - name: Resolve bounded automation mode and campaign target
         id: mode
         shell: bash
         env:
           REQUESTED_MODE: ${{ inputs.mode }}
+          REQUESTED_AGENT_TYPE: ${{ inputs.agent_type }}
+          DEFAULT_AGENT_TYPE: ${{ vars.AGENT_SALES_TARGET_TYPE || 'auto' }}
         run: |
           set -euo pipefail
           mode="validate"
           recheck="false"
+          agent_type="${REQUESTED_AGENT_TYPE:-${DEFAULT_AGENT_TYPE:-auto}}"
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
             mode="${REQUESTED_MODE:-validate}"
           elif [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
-            mode="prepare"
+            if [ "$agent_type" = "auto" ]; then
+              mode="validate"
+            else
+              mode="prepare"
+            fi
           elif [ -f ops/leads-autopilot-request.txt ]; then
             requested="$(tr -d '\r\n ' < ops/leads-autopilot-request.txt | tr '[:upper:]' '[:lower:]')"
             case "$requested" in
@@ -57,10 +77,20 @@ jobs:
               *) echo "unsupported request file mode: $requested" >&2; exit 2 ;;
             esac
           fi
+          case "$agent_type" in
+            auto|front_desk_sales|quote_intake|customer_support|commerce|review_concierge|lead_reactivation) ;;
+            *) echo "unsupported AGENT_SALES_TARGET_TYPE: $agent_type" >&2; exit 2 ;;
+          esac
+          if [ "$mode" = "prepare" ] && [ "$agent_type" = "auto" ]; then
+            echo "campaign-first prepare requires one explicit agent_type; auto is validate/exploration only" >&2
+            exit 2
+          fi
           echo "mode=$mode" >> "$GITHUB_OUTPUT"
           echo "recheck=$recheck" >> "$GITHUB_OUTPUT"
+          echo "agent_type=$agent_type" >> "$GITHUB_OUTPUT"
           echo "LEADS_AUTOPILOT_MODE=$mode"
           echo "LEADS_AUTOPILOT_RECHECK=$recheck"
+          echo "LEADS_CAMPAIGN_AGENT_TYPE=$agent_type"
 
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -135,15 +165,26 @@ jobs:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: python3 scripts/prospect_agent_qualification.py --mode "$PROSPECT_QUALIFICATION_MODE" --report prospect-agent-qualification-report.json
 
+      - name: Enforce one-agent campaign target before contact research
+        env:
+          AGENT_SALES_CAMPAIGN_GATE_MODE: ${{ steps.mode.outputs.mode == 'prepare' && 'audit' || 'validate' }}
+          AGENT_SALES_TARGET_TYPE: ${{ steps.mode.outputs.agent_type }}
+          AGENT_SALES_FIRST_PARTY_REACTIVATION: ${{ vars.AGENT_SALES_FIRST_PARTY_REACTIVATION || 'false' }}
+          OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python3 scripts/prospect_campaign_gate.py --mode "$AGENT_SALES_CAMPAIGN_GATE_MODE" --report prospect-campaign-gate-report.json
+
       - name: Enrich qualified official-site contacts
         env:
           CONTACT_ENRICHMENT_MODE: ${{ steps.mode.outputs.mode == 'prepare' && 'discover' || 'validate' }}
           CONTACT_ENRICHMENT_MAX_PER_RUN: ${{ vars.CONTACT_ENRICHMENT_MAX_PER_RUN || '25' }}
           CONTACT_ENRICHMENT_MIN_INTERVAL: ${{ vars.CONTACT_ENRICHMENT_MIN_INTERVAL || '0.5' }}
           CONTACT_ENRICHMENT_TIMEOUT: ${{ vars.CONTACT_ENRICHMENT_TIMEOUT || '10' }}
+          AGENT_SALES_TARGET_TYPE: ${{ steps.mode.outputs.agent_type }}
+          AGENT_SALES_FIRST_PARTY_REACTIVATION: ${{ vars.AGENT_SALES_FIRST_PARTY_REACTIVATION || 'false' }}
           OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-        run: python3 scripts/prospect_contact_enrichment.py
+        run: python3 scripts/prospect_contact_enrichment_campaign.py
 
       - name: Refresh advisory prospect intelligence
         if: steps.mode.outputs.mode == 'prepare'
@@ -161,33 +202,37 @@ jobs:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: python3 scripts/outreach_private_config.py
 
-      - name: Prepare agent-offer queue rows without send permission
+      - name: Prepare campaign-first value-flow agent copy without send permission
         if: steps.mode.outputs.mode == 'prepare'
         env:
           OUTREACH_PREPARE_MODE: prepare
+          AGENT_SALES_TARGET_TYPE: ${{ steps.mode.outputs.agent_type }}
+          OUTREACH_CTA_VARIANT: ${{ vars.OUTREACH_CTA_VARIANT || 'A' }}
           OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
           OUTREACH_PREPARE_MAX_PER_RUN: ${{ vars.OUTREACH_PREPARE_MAX_PER_RUN || '25' }}
           OUTREACH_MAILBOX_ID: ${{ vars.OUTREACH_MAILBOX_ID || 'primary' }}
           OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-        run: python3 scripts/outreach_agent_prepare.py --mode prepare --report outreach-agent-prepare-report.json
+        run: python3 scripts/outreach_agent_prepare_v2.py --mode prepare --report outreach-agent-prepare-report.json
 
-      - name: Write agent-sales prepare summary
+      - name: Write campaign-first agent-sales prepare summary
         if: always()
         shell: bash
         run: |
           {
-            echo "## Leads agent-sales prepare"
+            echo "## Leads campaign-first agent-sales prepare"
             echo
             echo "- mode: \`${{ steps.mode.outputs.mode }}\`"
             echo "- force-recheck: \`${{ steps.mode.outputs.recheck }}\`"
+            echo "- campaign agent: \`${{ steps.mode.outputs.agent_type }}\`"
             echo "- owner: \`leads\`"
             echo "- offer family: \`ai_agent\`"
-            echo "- flow: \`VIND -> SANITIZE -> AGENT-FIT -> CONTACT + MAIL\`"
+            echo "- flow: \`CAMPAGNE -> VIND -> SANITIZE -> AGENT-FIT -> CAMPAIGN-GATE -> CONTACT -> VALUE-FLOW MAIL\`"
+            echo "- website: \`light official process evidence; full technical scan only on evidence-gap\`"
             echo "- compliance: \`manual_review/fail-closed until an evidenced basis exists\`"
             echo "- send permission: \`none\`"
             echo
-            echo "This workflow may discover, sanitize, score agent fit, enrich and prepare bounded evidence-bound lead state. It never receives mailbox credentials and never calls SMTP."
+            echo "This workflow may discover, sanitize, qualify, enforce one campaign agent, enrich qualified contacts and prepare bounded value-flow outreach. It never receives mailbox credentials and never calls SMTP."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload prepare receipts
@@ -199,6 +244,7 @@ jobs:
             prospect-discovery-report.json
             prospect-signal-report.json
             prospect-agent-qualification-report.json
+            prospect-campaign-gate-report.json
             prospect-intelligence-report.json
             outreach-agent-prepare-report.json
           if-no-files-found: ignore
