@@ -137,6 +137,24 @@ def website_target_errors(row: dict[str, str], client: BoundedHttpClient) -> lis
     return []
 
 
+def _quarantine_live_rows(service, spreadsheet_id: str, failures: list[tuple[int, list[str]]]) -> None:
+    data = []
+    for row_number, row_errors in failures:
+        reason = "live target preflight blocked: " + "; ".join(row_errors)
+        data.extend(
+            [
+                {"range": f"{QUEUE_SHEET}!N{row_number}", "values": [["manual_review"]]},
+                {"range": f"{QUEUE_SHEET}!O{row_number}", "values": [["target_recheck_blocked"]]},
+                {"range": f"{QUEUE_SHEET}!Y{row_number}", "values": [[reason[:2000]]]},
+            ]
+        )
+    if data:
+        service.spreadsheets().values().batchUpdate(
+            spreadsheetId=spreadsheet_id,
+            body={"valueInputOption": "RAW", "data": data},
+        ).execute()
+
+
 def process() -> int:
     settings = Settings.from_env()
     service = build_sheets_service()
@@ -149,8 +167,11 @@ def process() -> int:
         min_interval=0.25,
     )
     postal_address = os.getenv("OUTREACH_POSTAL_ADDRESS", "")
+    live_mode = os.getenv("OUTREACH_MODE", "validate").strip().casefold() == "live"
     errors: list[str] = []
+    failures: list[tuple[int, list[str]]] = []
     checked = 0
+    valid = 0
     for row_number, row in enumerate(rows, start=2):
         if str(row.get("status", "")).strip().casefold() not in LIVE_CANDIDATE_STATUSES:
             continue
@@ -161,15 +182,38 @@ def process() -> int:
         row_errors = metadata_errors(row, postal_address=postal_address)
         if not row_errors:
             row_errors.extend(website_target_errors(row, client))
-        for error in row_errors:
-            errors.append(f"{QUEUE_SHEET} row {row_number}: {error}")
+        if row_errors:
+            failures.append((row_number, row_errors))
+            for error in row_errors:
+                errors.append(f"{QUEUE_SHEET} row {row_number}: {error}")
+        else:
+            valid += 1
+
+    if checked > 50:
+        for error in errors[:50]:
+            print("target_evidence_error=" + error)
+        print(f"OUTREACH_TARGET_EVIDENCE_PREFLIGHT=blocked checked={checked} invalid={len(errors)}")
+        return 2
+
+    if failures and live_mode:
+        _quarantine_live_rows(service, settings.spreadsheet_id, failures)
+        for error in errors[:50]:
+            print("target_evidence_quarantined=" + error)
+        if valid < 1:
+            print(f"OUTREACH_TARGET_EVIDENCE_PREFLIGHT=blocked checked={checked} quarantined={len(failures)} valid=0")
+            return 2
+        print(
+            f"OUTREACH_TARGET_EVIDENCE_PREFLIGHT=green checked={checked} "
+            f"quarantined={len(failures)} valid={valid}"
+        )
+        return 0
 
     if errors:
         for error in errors[:50]:
             print("target_evidence_error=" + error)
         print(f"OUTREACH_TARGET_EVIDENCE_PREFLIGHT=blocked checked={checked} invalid={len(errors)}")
         return 2
-    print(f"OUTREACH_TARGET_EVIDENCE_PREFLIGHT=green checked={checked}")
+    print(f"OUTREACH_TARGET_EVIDENCE_PREFLIGHT=green checked={checked} valid={valid}")
     return 0
 
 
