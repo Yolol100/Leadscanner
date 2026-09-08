@@ -128,3 +128,5 @@ jobs:
             outreach-prepare-report.json
           if-no-files-found: ignore
           retention-days: 14
+
+# execution-marker: 2026-09-08-us50-replacements
