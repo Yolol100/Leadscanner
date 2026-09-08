@@ -1,25 +1,38 @@
 # Leadscanner
 
-> **Status:** centrale GitHub-runtime voor Webactueel Leads.
+> **Status:** centrale GitHub-runtime voor Webactueel Leads; nieuwe prospecting verkoopt standaard productized AI agents.
 
-Deze repository levert twaalf strikt begrensde capabilities. De machineleesbare waarheid staat in `toolkit-contract.json`; de menselijke uitvoeringsgrenzen staan in `LEADS-INTEGRATION.md`. Deze README blijft bewust kort om dubbele documentatie te voorkomen.
+De machineleesbare waarheid staat in `toolkit-contract.json`; de menselijke uitvoeringsgrenzen staan in `LEADS-INTEGRATION.md`. Deze README blijft bewust kort om dubbele documentatie te voorkomen.
+
+## Standaard aanbod
+
+Nieuwe Leads-kwalificatie kiest één evidence-bound offer uit zes typen:
+
+1. `front_desk_sales` — AI Front Desk & Sales Agent
+2. `lead_reactivation` — AI Comeback Agent
+3. `review_concierge` — AI Review Agent
+4. `customer_support` — AI Customer Support Agent
+5. `commerce` — AI Commerce Agent
+6. `quote_intake` — AI Quote & Intake Agent
+
+Geen generieke FAQ-bot of algemene autonome AI employee als standaardoffer. Agentprijzen worden niet uit creator/vendorcontent afgeleid; standaard `pricing_mode=no_price` totdat Leads-policy een prijs vastlegt.
 
 ## Capabilities
 
-1. `prospect_discovery` — begrensde company/domain discovery uit goedgekeurde `ProspectSources` naar `ProspectCandidates`.
-2. `contact_enrichment` — qualified-only openbare zakelijke contact-evidence van officiële websites naar `ContactCandidates`.
-3. `website_evidence_scan` — optionele read-only Crawlee/Playwright/Axe/Lighthouse/Linkinator/tech-detect evidence.
-4. `sender_readiness` — SPF/DKIM/DMARC/MX/TLS/auth plus exact-IP of bewezen mijn.host shared-relaydiagnostiek; geen send permission.
-5. `inbox_placement` — handmatige seed-only placementtest, standaard `validate`, maximaal vijf seed-inboxen.
-6. `mailbox_draft` — expliciete self-addressed mijn.host IMAP-concepttest via `APPEND` + readback; geen SMTP en geen Sheet.
-7. `outreach_delivery` — gecontroleerde mijn.host SMTP + IMAP readback voor afzonderlijk goedgekeurde Leads-state.
+1. `prospect_discovery` — begrensde company/domain discovery uit goedgekeurde `ProspectSources`.
+2. `contact_enrichment` — qualified-only officiële-site zakelijke contactevidence.
+3. `website_evidence_scan` — optionele read-only website evidence.
+4. `sender_readiness` — technische senderdiagnostiek; geen send permission.
+5. `inbox_placement` — handmatige seed-only test.
+6. `mailbox_draft` — self-only mijn.host IMAP-concepttest.
+7. `outreach_delivery` — gecontroleerde mijn.host SMTP + IMAP readback voor afzonderlijk goedgekeurde state.
 8. `dashboard` — read-only Google Sheet-controlpanel.
-9. `prospect_intelligence` — afgeleide entity/freshness/source-performance/evidence/lookalike-laag; adviserend.
-10. `prospect_signal_discovery` — begrensde official-site hiring en WordPress/WooCommerce signalen.
-11. `prospect_qualification` — deterministische bounded Customer Potential-kwalificatie met audit trail in `ProspectQualifications`.
-12. `zero_touch_prepare` — automatische weekday-keten van discovery tot `status=prepared` LeadPromo-copy, zonder mailboxcredential of send permission.
+9. `prospect_intelligence` — afgeleide evidence/freshness/source/lookalike-laag.
+10. `prospect_signal_discovery` — begrensde official-site signalen.
+11. `prospect_qualification` — `scripts/prospect_agent_qualification.py`, Customer Potential en audit in `AgentProspectQualifications`.
+12. `zero_touch_prepare` — discovery tot evidence-bound agentmail `status=prepared`, zonder mailboxcredential of send permission.
 
-Leads-policy blijft eigenaar van de regels voor realness, Customer Potential, copy, compliance en verzendgates. Repositorytools mogen die regels begrensd uitvoeren voor kwalificatie en prepare, maar mogen nooit een ontbrekende compliancebasis verzinnen of live verzendpermission creëren.
+Leads-policy blijft eigenaar van realness, Customer Potential, offerselectie, copy, compliance en verzendgates. De repository voert alleen begrensde technische contracten uit.
 
 ## Hoofdroute
 
@@ -28,40 +41,34 @@ ProspectSources
 -> prospect_discovery
 -> ProspectCandidates
 -> prospect_signal_discovery
--> prospect_qualification
--> ProspectQualifications
+-> prospect_agent_qualification
+-> AgentProspectQualifications
 -> contact_enrichment
 -> ContactCandidates
 -> prospect_intelligence
--> zero_touch_prepare / outreach_prepare
+-> outreach_agent_prepare
 -> OutreachQueue status=prepared + compliance_status=manual_review
 -> afzonderlijke compliance-goedkeuring
 -> sender_readiness
 -> outreach_delivery validate/live
 -> SMTP / IMAP readback
--> ReplyInbox / Suppression / OutreachLog / VariantAnalytics / MailboxHealth
--> Dashboard / Leads
+-> Leads
 ```
 
-`mailbox_draft`, `inbox_placement` en `website_evidence_scan` zijn aparte test/evidencecapabilities en zijn niet nodig voor iedere normale prepare-run.
+Legacy `ProspectQualifications` en `website_scan:` blijven alleen voor historische website/webshopcompatibiliteit.
 
 ## Kernveiligheid
 
-- Scanner: publieke officiële sites, GET/HEAD-only, geen formulieren/login/order/payment/booking.
-- Discovery: geen contactharvesting, mailcopy, compliancebesluit of mailboxcredentials.
-- Qualification: alleen bounded official-site evidence; één primaire opportunityseverity; A vereist brongebonden fact + idea; geen compliance/send permission.
-- Contact enrichment: geen geraadde/geconstrueerde adressen en geen send permission.
+- Qualification: officiële evidence; één primaire agent opportunity; A vereist fact + idea + agent/process/KPI-context; geen compliance/send permission.
+- Contact enrichment: geen geraadde/geconstrueerde adressen.
 - Zero-touch prepare: alleen A + `ContactCandidates.ready`; queue blijft `prepared/manual_review`; geen SMTP/IMAP-secret.
-- Sender readiness: technische diagnostiek; mijn.host shared relay kan alleen als `provider_managed` worden vastgelegd wanneer SPF-delegatie bewezen is. Dat is geen per-IP reputatie- of placementclaim.
-- Inbox placement: alleen expliciete seedadressen, nooit `OutreachQueue`.
-- Mailbox draft: uitsluitend mijn.host IMAP `APPEND` naar Drafts/Concepten, self-only test, unieke readback-ID, nooit SMTP.
-- Outreach delivery: manual default `validate`; live vereist expliciete `live`, geldige compliance, suppressioncheck, groene sender readiness en mailboxauth.
-- Pushes/CI krijgen geen production mailboxsecrets en voeren geen live e-mail uit.
-- De actieve direct-SMTP-route heeft geen Reoon-dependency.
+- Agentmail: geen verzonnen ROI, workload, gemiste omzet of vaste prijs.
+- Live target evidence: nieuwe rows gebruiken `agent_offer:<JSON>`; legacy `website_scan:<JSON>` blijft compatibility-only.
+- EER live: aparte actuele geldige compliancebasis verplicht; openbaar adres/A-score/ready-contact is onvoldoende.
+- Sender readiness, inbox placement en scanner evidence zijn technische bewijssoorten en nooit commerciële toestemming.
+- Pushes/CI voeren geen live e-mail uit.
 
 ## Tests
-
-Python Leads-runtime:
 
 ```bash
 python3 -m pip install -r requirements-outreach.txt
@@ -69,19 +76,8 @@ python3 -m compileall -q scripts
 PYTHONPATH=scripts python3 -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
-Scanner/runtime checks blijven in de bestaande Node- en Actions-workflows. `Toolkit Contract`, `Leads Runtime CI` en `Scanner Smoke Test` moeten groen zijn voor releaseclaims.
+`Toolkit Contract`, `Leads Runtime CI` en `Scanner Smoke Test` moeten groen zijn voor releaseclaims.
 
-## Configuratie
+## Configuratie en hygiene
 
-Secretwaarden horen alleen in GitHub Actions Secrets. De actieve routes gebruiken waar van toepassing:
-
-- `GOOGLE_SERVICE_ACCOUNT_JSON`
-- `OUTREACH_MAIL_PASSWORD` alleen voor mailbox/live transport
-- optioneel `OUTREACH_MAILBOXES_JSON` alleen voor mailbox/live transport
-- optioneel `OUTREACH_SEED_INBOXES_JSON` alleen voor de handmatige seedtest
-
-`zero_touch_prepare` gebruikt alleen de Sheetcredential en niet-geheime vars. Exacte vars, modes, Sheet-contracten en gatevolgorde: zie `LEADS-INTEGRATION.md`.
-
-## Hygiene
-
-Geen klant-, secret- of runoutput op `main`. Actions-evidence blijft run-scoped; een tijdelijke `ops/leads-autopilot-request.txt` mag alleen als expliciete eenmalige connector-trigger worden gebruikt en wordt daarna verwijderd. `Yolol100/Orchestrator` is geen technische dependency van Leadscanner.
+Secrets horen alleen in GitHub Actions Secrets. `zero_touch_prepare` gebruikt de Sheetcredential en geen mailboxcredentials. Geen klant-, secret- of runoutput op `main`. Volledige vars, data-contracten en gatevolgorde: zie `LEADS-INTEGRATION.md`.
