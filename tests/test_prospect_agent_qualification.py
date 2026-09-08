@@ -100,11 +100,11 @@ class ProspectAgentQualificationTests(unittest.TestCase):
 
     def test_agency_target_stays_rejected(self):
         html = """
-        <html><head><title>Example AI Agency</title></head><body>
-        <h1>AI automation agency</h1><p>We build AI agents for clients.</p>
+        <html><head><title>Example Web Design Agency</title></head><body>
+        <h1>Web design agency</h1><p>We build websites and digital marketing for clients.</p>
         <a href='/book'>Book an appointment</a></body></html>
         """
-        result = assess_candidate(self._candidate(company="Example AI Agency"), html, [])
+        result = assess_candidate(self._candidate(company="Example Web Design Agency"), html, [])
         self.assertEqual(result.status, "rejected")
         self.assertEqual(result.customer_potential, 0)
 
