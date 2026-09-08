@@ -247,6 +247,9 @@ def assess_candidate(row: Mapping[str, object], html: str, signals: Sequence[Map
     signal_score = active_signal_score(candidate_id, signals)
     value_fit = 2 if fit.score == 3 and fit.integration_hint else 1 if fit.score > 0 else 0
     total = max(0, min(icp_score + fit.score + signal_score + value_fit, 10))
+    reactivation_first_party_required = fit.agent_type == "lead_reactivation"
+    if reactivation_first_party_required:
+        total = min(total, 7)
     tier = "A" if total >= 8 else "B" if total >= 6 else "C"
     status = "qualified" if tier == "A" else "hold" if tier == "B" else "rejected"
     fact, idea = _fact_and_idea(fit, company, _language(country)) if fit.agent_type else ("", "")
@@ -254,6 +257,8 @@ def assess_candidate(row: Mapping[str, object], html: str, signals: Sequence[Map
         f"customer_potential={total}; icp={icp_score}; agent_opportunity={fit.score}; signal={signal_score}; "
         f"value_integration_fit={value_fit}; agent_type={fit.agent_type or 'none'}; evidence={fit.evidence_kind}"
     )
+    if reactivation_first_party_required:
+        reason += "; first_party_reactivation_evidence_required=approved_existing_lead_or_quote_dataset"
     if tier == "A" and (not fact or not idea or fit.agent_type not in AGENT_CATALOG):
         tier, status = "B", "hold"
         reason += "; downgraded=no evidence-bound agent fact/idea"

@@ -87,6 +87,24 @@ class ProspectAgentQualificationTests(unittest.TestCase):
         self.assertEqual(with_signal.status, "qualified")
         self.assertIn("Review Agent", with_signal.idea)
 
+    def test_public_reactivation_signal_stays_hold_without_first_party_dataset(self):
+        html = """
+        <html><head><title>Example Service</title></head><body>
+        <h1>Professional services</h1>
+        <p>Returning customers can subscribe to our newsletter for follow-up updates.</p>
+        </body></html>
+        """
+        signals = [{
+            "candidate_id": "prospect-1", "detected_at": datetime.now(timezone.utc).isoformat(),
+            "evidence_date": "", "status": "active", "strength": "2",
+        }]
+        result = assess_candidate(self._candidate(company="Example Service"), html, signals)
+        self.assertEqual(result.agent_type, "lead_reactivation")
+        self.assertLessEqual(result.customer_potential, 7)
+        self.assertEqual(result.tier, "B")
+        self.assertEqual(result.status, "hold")
+        self.assertIn("first_party_reactivation_evidence_required", result.reason)
+
     def test_generic_contact_only_is_hold_not_auto_qualified(self):
         html = """
         <html><head><title>Example Services</title></head><body>
