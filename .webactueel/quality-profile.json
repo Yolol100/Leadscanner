@@ -1,0 +1,54 @@
+{
+  "schema_version": "1.0",
+  "controller": "webactueel-workflow",
+  "repository": "Yolol100/Leadscanner",
+  "repo_class": "specialist_core",
+  "role": "leads-execution-runtime",
+  "owner_skill": "leads",
+  "profile_scope": "generic_capability",
+  "project_truth": {
+    "authority": "Project Leads live manifest and operational Leads state",
+    "must_not_be_stored_in_repo": true
+  },
+  "master_rule_ids": [
+    "repo.profile.contract",
+    "repo.role.boundary",
+    "repo.hygiene",
+    "repo.tests",
+    "repo.provenance",
+    "repo.dependencies"
+  ],
+  "capability_evidence": [
+    "prospect-discovery",
+    "qualification",
+    "contact-enrichment",
+    "website-evidence",
+    "sender-readiness",
+    "outreach-transport-readback"
+  ],
+  "validation": {
+    "commands": [
+      "npm ci",
+      "npm test",
+      "npm run check:crawler",
+      "npm run check:tools",
+      "python3 -m pip install -r requirements-outreach.txt",
+      "python3 -m compileall -q scripts",
+      "PYTHONPATH=scripts python3 -m unittest discover -s tests -p 'test_*.py' -v"
+    ],
+    "workflow_gates": [
+      "Leads Runtime CI"
+    ]
+  },
+  "evidence_contract": {
+    "commit_sha": true,
+    "result_readback": true,
+    "artifact_or_result_identity": true,
+    "owner_acceptance": true
+  },
+  "closure_contract": {
+    "repo_success_is_not_workflow_complete": true,
+    "temporary_target_evidence_off_default_branch": true,
+    "project_truth_off_default_branch": true
+  }
+}
