@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import unittest
 
-from outreach_agent_prepare import AUTOMATION_ID, _agent_row, _prepare_eligible, build_copy, build_prepared_row
+from outreach_agent_prepare import AUTOMATION_ID, POSTAL_PLACEHOLDER, _agent_row, _prepare_eligible, build_copy, build_prepared_row
 from outreach_copy_preflight import followup_copy_errors, initial_copy_errors
 
 
@@ -24,7 +24,7 @@ class OutreachAgentPrepareTests(unittest.TestCase):
         self.assertNotIn("€500", body)
         self.assertNotIn("€750", body)
 
-    def test_us_agent_copy_keeps_commercial_label_and_postal_address(self):
+    def test_us_agent_copy_keeps_commercial_label_and_private_postal_placeholder(self):
         address = "Example Business, 1 Test Street, New York, NY 10001, USA"
         _, body, _, followup_body, _ = build_copy(
             company="Example Clinic",
@@ -35,7 +35,8 @@ class OutreachAgentPrepareTests(unittest.TestCase):
             postal_address=address,
         )
         self.assertIn("commercial message", body.lower())
-        self.assertIn(address, body)
+        self.assertIn(POSTAL_PLACEHOLDER, body)
+        self.assertNotIn(address, body)
         self.assertEqual(followup_copy_errors(followup_body), [])
 
     def _ready_inputs(self):
