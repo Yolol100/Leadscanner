@@ -91,3 +91,5 @@ jobs:
       - name: Confirm inert state outside the one-time date
         if: steps.plan.outputs.run != 'true'
         run: echo 'ONE_TIME_US_OUTREACH=inert date_guard=green'
+
+# operational-round: 1-2026-09-08
