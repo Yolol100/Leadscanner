@@ -18,7 +18,7 @@ concurrency:
 jobs:
   dispatch:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -65,31 +65,92 @@ jobs:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: python3 scripts/outreach_one_time_us_guard.py
 
-      - name: Dispatch existing controlled outreach workflow
+      - name: Dispatch controlled outreach rounds serially
         if: steps.plan.outputs.run == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           MODE: ${{ steps.plan.outputs.mode }}
+          ROUND_COUNT: '5'
+          OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
+          OUTREACH_ONE_TIME_EXPECTED_LEADS: >-
+            prospect-8b27a02ebd2e038890e3,prospect-2faf8c72b098cf705738,prospect-2ec02fcea879e3646bff,
+            manual-20260907-ntma-018,manual-20260907-ntma-007,manual-20260907-ntma-015,manual-20260907-stark-019,manual-20260907-stark-021,
+            manual-20260907-us50-009,manual-20260907-us50-010,manual-20260907-us50-011,manual-20260907-us50-012,manual-20260907-us50-013,manual-20260907-us50-014,manual-20260907-us50-015,manual-20260907-us50-016,manual-20260907-us50-017,manual-20260907-us50-018,manual-20260907-us50-019,manual-20260907-us50-020,
+            manual-20260907-us50-021,manual-20260907-us50-022,manual-20260907-us50-023,manual-20260907-us50-024,manual-20260907-us50-025,manual-20260907-us50-026,manual-20260907-us50-027,manual-20260907-us50-028,manual-20260907-us50-029,manual-20260907-us50-030,
+            manual-20260907-us50-031,manual-20260907-us50-032,manual-20260907-us50-033,manual-20260907-us50-034,manual-20260907-us50-035,manual-20260907-us50-036,manual-20260907-us50-037,manual-20260907-us50-038,manual-20260907-us50-039,manual-20260907-us50-040,
+            manual-20260907-us50-041,manual-20260907-us50-042,manual-20260907-us50-043,manual-20260907-us50-044,manual-20260907-us50-045,manual-20260907-us50-046,manual-20260907-us50-047,manual-20260907-us50-048,manual-20260907-us50-049,manual-20260907-us50-050
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         shell: bash
         run: |
           set -euo pipefail
+
+          api_get() {
+            curl -fsSL \
+              -H 'Accept: application/vnd.github+json' \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H 'X-GitHub-Api-Version: 2026-03-10' \
+              "$1"
+          }
+
+          latest_dispatch_run_id() {
+            api_get "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/outreach-smtp.yml/runs?event=workflow_dispatch&branch=main&per_page=1" \
+              | python3 -c 'import json,sys; runs=json.load(sys.stdin).get("workflow_runs", []); print(runs[0]["id"] if runs else "")'
+          }
+
           payload=$(printf '{"ref":"main","inputs":{"mode":"%s"}}' "$MODE")
-          status=$(curl -sS -L -o /tmp/dispatch-response.json -w '%{http_code}' \
-            -X POST \
-            -H 'Accept: application/vnd.github+json' \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H 'X-GitHub-Api-Version: 2026-03-10' \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/outreach-smtp.yml/dispatches" \
-            -d "$payload")
-          if [ "$status" != "200" ] && [ "$status" != "204" ]; then
-            echo "::error::Controlled outreach dispatch failed with HTTP ${status}."
-            cat /tmp/dispatch-response.json
-            exit 1
-          fi
-          echo "CONTROLLED_OUTREACH_DISPATCH=accepted mode=${MODE}"
+
+          for round in $(seq 1 "$ROUND_COUNT"); do
+            python3 scripts/outreach_one_time_us_guard.py
+            prior_run_id="$(latest_dispatch_run_id)"
+
+            status=$(curl -sS -L -o /tmp/dispatch-response.json -w '%{http_code}' \
+              -X POST \
+              -H 'Accept: application/vnd.github+json' \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H 'X-GitHub-Api-Version: 2026-03-10' \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/outreach-smtp.yml/dispatches" \
+              -d "$payload")
+            if [ "$status" != "200" ] && [ "$status" != "204" ]; then
+              echo "::error::Controlled outreach dispatch failed with HTTP ${status}."
+              cat /tmp/dispatch-response.json
+              exit 1
+            fi
+
+            run_id=""
+            for _ in $(seq 1 30); do
+              sleep 2
+              current_run_id="$(latest_dispatch_run_id)"
+              if [ -n "$current_run_id" ] && [ "$current_run_id" != "$prior_run_id" ]; then
+                run_id="$current_run_id"
+                break
+              fi
+            done
+            if [ -z "$run_id" ]; then
+              echo "::error::Could not identify the controlled outreach run for round ${round}."
+              exit 1
+            fi
+
+            conclusion=""
+            for _ in $(seq 1 180); do
+              run_json="$(api_get "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}")"
+              run_status="$(printf '%s' "$run_json" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("status", ""))')"
+              if [ "$run_status" = "completed" ]; then
+                conclusion="$(printf '%s' "$run_json" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("conclusion", ""))')"
+                break
+              fi
+              sleep 5
+            done
+            if [ "$conclusion" != "success" ]; then
+              echo "::error::Controlled outreach round ${round} ended with conclusion '${conclusion:-timeout}'."
+              exit 1
+            fi
+
+            python3 scripts/outreach_one_time_us_guard.py
+            echo "CONTROLLED_OUTREACH_ROUND=${round}/${ROUND_COUNT} run_id=${run_id} conclusion=${conclusion}"
+          done
 
       - name: Confirm inert state outside the one-time date
         if: steps.plan.outputs.run != 'true'
         run: echo 'ONE_TIME_US_OUTREACH=inert date_guard=green'
 
-# operational-round: 2-2026-09-08
+# operational-rounds: serial-5-2026-09-08
