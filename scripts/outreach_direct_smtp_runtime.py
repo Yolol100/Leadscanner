@@ -64,7 +64,21 @@ def _build_sequence_message_with_private_postal(queue_row: dict[str, str], actio
     return _ORIGINAL_BUILD_SEQUENCE_MESSAGE(queue_row, replace(action, row=sequence_row), mailbox)
 
 
+def _restore_blank_workflow_defaults() -> None:
+    # GitHub Actions renders an unset repository variable as an empty string.
+    # Settings.from_env only applies its defaults when the variable is absent,
+    # so normalize the two send-window values here without changing policy.
+    defaults = {
+        "OUTREACH_SEND_WINDOW_START": "08:00",
+        "OUTREACH_SEND_WINDOW_END": "18:00",
+    }
+    for name, value in defaults.items():
+        if not os.getenv(name, "").strip():
+            os.environ[name] = value
+
+
 def process() -> int:
+    _restore_blank_workflow_defaults()
     runtime.verification_is_fresh = _no_external_verifier_required
     runtime.build_message = _build_message_with_private_postal
     runtime.build_sequence_message = _build_sequence_message_with_private_postal
