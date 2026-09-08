@@ -97,8 +97,30 @@ def build_copy(*, company: str, country: str, fact: str, idea: str, agent_type: 
     return subject, body, "", followup, 4
 
 
+def _with_legacy_v2_globals(callable_, *args, **kwargs):
+    old = {
+        "AUTOMATION_ID": legacy.AUTOMATION_ID,
+        "build_copy": legacy.build_copy,
+        "build_prepared_row": legacy.build_prepared_row,
+        "initial_copy_errors": legacy.initial_copy_errors,
+        "followup_copy_errors": legacy.followup_copy_errors,
+    }
+    legacy.AUTOMATION_ID = AUTOMATION_ID
+    legacy.build_copy = build_copy
+    legacy.initial_copy_errors = initial_copy_errors
+    legacy.followup_copy_errors = followup_copy_errors
+    try:
+        return callable_(*args, **kwargs)
+    finally:
+        legacy.AUTOMATION_ID = old["AUTOMATION_ID"]
+        legacy.build_copy = old["build_copy"]
+        legacy.build_prepared_row = old["build_prepared_row"]
+        legacy.initial_copy_errors = old["initial_copy_errors"]
+        legacy.followup_copy_errors = old["followup_copy_errors"]
+
+
 def build_prepared_row(candidate, qualification, contact, **kwargs):
-    row = _original_build_prepared_row(candidate, qualification, contact, **kwargs)
+    row = _with_legacy_v2_globals(_original_build_prepared_row, candidate, qualification, contact, **kwargs)
     source = str(row.get("source", ""))
     if not source.startswith("agent_offer:"):
         raise ValueError("prepared row must contain agent_offer evidence")
@@ -117,15 +139,13 @@ def build_prepared_row(candidate, qualification, contact, **kwargs):
     return row
 
 
-legacy.AUTOMATION_ID = AUTOMATION_ID
-legacy.build_copy = build_copy
-legacy.build_prepared_row = build_prepared_row
-legacy.initial_copy_errors = initial_copy_errors
-legacy.followup_copy_errors = followup_copy_errors
-
-
 def main(argv=None) -> int:
-    return legacy.main(argv)
+    old_build = legacy.build_prepared_row
+    legacy.build_prepared_row = build_prepared_row
+    try:
+        return _with_legacy_v2_globals(legacy.main, argv)
+    finally:
+        legacy.build_prepared_row = old_build
 
 
 if __name__ == "__main__":
