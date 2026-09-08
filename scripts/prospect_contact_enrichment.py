@@ -42,6 +42,7 @@ FREE_MAIL_DOMAINS = {
 HARD_MAX_PROSPECTS_PER_RUN = 25
 DEFAULT_MAX_PROSPECTS_PER_RUN = 10
 MAX_CONTACT_PAGES = 3
+RETRYABLE_CONTACT_STATUS = "retryable_error"
 
 
 class ContactDiscoveryError(RuntimeError):
@@ -194,6 +195,15 @@ def discover_contact(website: str, *, fetch: Callable[[str], str], resolver: Cal
     return candidates[0]
 
 
+def definitive_contact_ids(rows: Sequence[Mapping[str, str]]) -> set[str]:
+    return {
+        str(row.get("candidate_id", "")).strip()
+        for row in rows
+        if row.get("candidate_id")
+        and str(row.get("status", "")).strip().casefold() != RETRYABLE_CONTACT_STATUS
+    }
+
+
 def eligible_prospects(rows: Sequence[Mapping[str, str]], existing_ids: set[str], limit: int) -> list[Mapping[str, str]]:
     output: list[Mapping[str, str]] = []
     for row in rows:
@@ -208,6 +218,47 @@ def eligible_prospects(rows: Sequence[Mapping[str, str]], existing_ids: set[str]
         if len(output) >= limit:
             break
     return output
+
+
+def contact_output(row: Mapping[str, str], *, fetch: Callable[[str], str]) -> tuple[dict[str, str], bool]:
+    candidate_id = str(row.get("candidate_id", "")).strip()
+    company = str(row.get("company", ""))
+    website = str(row.get("website", ""))
+    base = {
+        "candidate_id": candidate_id,
+        "checked_at": utc_iso(),
+        "company": company,
+        "website": website,
+        "email": "",
+        "source_url": "",
+        "email_domain": "",
+        "domain_alignment": "",
+        "mx_status": "",
+    }
+    try:
+        candidate = discover_contact(website, fetch=fetch)
+    except ContactDiscoveryError as exc:
+        return {
+            **base,
+            "status": RETRYABLE_CONTACT_STATUS,
+            "reason": ("official-site contact fetch unavailable; no contact promoted: " + str(exc))[:300],
+        }, False
+    if candidate is None:
+        return {
+            **base,
+            "status": "not_found",
+            "reason": "no public business email found on the bounded official-site pages",
+        }, False
+    return {
+        **base,
+        "email": candidate.email,
+        "source_url": candidate.source_url,
+        "email_domain": email_domain(candidate.email),
+        "domain_alignment": candidate.domain_alignment,
+        "mx_status": candidate.mx_status,
+        "status": candidate.status,
+        "reason": candidate.reason,
+    }, candidate.status == "ready"
 
 
 def _load_sheet(service, spreadsheet_id: str, sheet_name: str, expected_headers: list[str]):
@@ -232,20 +283,19 @@ def run(mode: str | None = None) -> tuple[int, int]:
         print("CONTACT_ENRICHMENT=validated sheets=ProspectCandidates,ContactCandidates")
         return 0, 0
     max_rows = clamp_int(os.getenv("CONTACT_ENRICHMENT_MAX_PER_RUN", ""), DEFAULT_MAX_PROSPECTS_PER_RUN, 1, HARD_MAX_PROSPECTS_PER_RUN)
-    existing_ids = {str(row.get("candidate_id", "")).strip() for row in contacts if row.get("candidate_id")}
+    existing_ids = definitive_contact_ids(contacts)
     eligible = eligible_prospects(prospects, existing_ids, max_rows)
     client = BoundedHttpClient(user_agent=os.getenv("CONTACT_ENRICHMENT_USER_AGENT", "WebactueelContactDiscovery/1.0 (+https://andrewbaeten.nl)"), timeout=float(os.getenv("CONTACT_ENRICHMENT_TIMEOUT", "10") or "10"), max_bytes=524_288, min_interval=float(os.getenv("CONTACT_ENRICHMENT_MIN_INTERVAL", "0.5") or "0.5"))
-    checked = ready = 0
+    checked = ready = retryable = 0
     for row in eligible:
         checked += 1
-        candidate = discover_contact(str(row.get("website", "")), fetch=client.fetch_text)
-        if candidate is None:
-            output = {"candidate_id": str(row.get("candidate_id", "")), "checked_at": utc_iso(), "company": str(row.get("company", "")), "website": str(row.get("website", "")), "email": "", "source_url": "", "email_domain": "", "domain_alignment": "", "mx_status": "", "status": "not_found", "reason": "no public business email found on the bounded official-site pages"}
-        else:
-            if candidate.status == "ready": ready += 1
-            output = {"candidate_id": str(row.get("candidate_id", "")), "checked_at": utc_iso(), "company": str(row.get("company", "")), "website": str(row.get("website", "")), "email": candidate.email, "source_url": candidate.source_url, "email_domain": email_domain(candidate.email), "domain_alignment": candidate.domain_alignment, "mx_status": candidate.mx_status, "status": candidate.status, "reason": candidate.reason}
+        output, is_ready = contact_output(row, fetch=client.fetch_text)
+        if is_ready:
+            ready += 1
+        if output["status"] == RETRYABLE_CONTACT_STATUS:
+            retryable += 1
         append_row(service, spreadsheet_id, CONTACT_SHEET, CONTACT_HEADERS, output)
-    print(f"CONTACT_ENRICHMENT=complete checked={checked} ready={ready}")
+    print(f"CONTACT_ENRICHMENT=complete checked={checked} ready={ready} retryable={retryable}")
     return checked, ready
 
 
