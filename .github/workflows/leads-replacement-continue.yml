@@ -1,0 +1,130 @@
+name: Leads Replacement Continuation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/leads-replacement-continue.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: leads-replacement-continuation
+  cancel-in-progress: false
+
+jobs:
+  continue-prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-outreach.txt
+
+      - name: Install isolated runtime dependencies
+        run: python3 -m pip install --disable-pip-version-check --requirement requirements-outreach.txt
+
+      - name: Require Sheet runtime credential
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${GOOGLE_SERVICE_ACCOUNT_JSON:-}" || { echo "::error::GOOGLE_SERVICE_ACCOUNT_JSON is required."; exit 1; }
+          echo "SHEET_RUNTIME_AUTH=present"
+
+      - name: Collect next bounded official-site signals
+        env:
+          PROSPECT_SIGNAL_MODE: discover
+          OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
+          PROSPECT_SIGNAL_MAX_CANDIDATES: ${{ vars.PROSPECT_SIGNAL_MAX_CANDIDATES || '25' }}
+          PROSPECT_SIGNAL_TIMEOUT_SECONDS: ${{ vars.PROSPECT_SIGNAL_TIMEOUT_SECONDS || '10' }}
+          PROSPECT_SIGNAL_MAX_BYTES: ${{ vars.PROSPECT_SIGNAL_MAX_BYTES || '524288' }}
+          PROSPECT_SIGNAL_MIN_INTERVAL_SECONDS: ${{ vars.PROSPECT_SIGNAL_MIN_INTERVAL_SECONDS || '0.5' }}
+          PROSPECT_SIGNAL_USER_AGENT: ${{ vars.PROSPECT_SIGNAL_USER_AGENT }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python3 scripts/prospect_signal_discovery_runtime.py --mode discover --report prospect-signal-report.json
+
+      - name: Qualify next evidence-bound batch
+        env:
+          PROSPECT_QUALIFICATION_MODE: qualify
+          PROSPECT_QUALIFICATION_FORCE_RECHECK: 'false'
+          PROSPECT_QUALIFICATION_RECHECK_DAYS: ${{ vars.PROSPECT_QUALIFICATION_RECHECK_DAYS || '30' }}
+          OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
+          PROSPECT_QUALIFICATION_MAX_PER_RUN: '25'
+          PROSPECT_QUALIFICATION_TIMEOUT_SECONDS: ${{ vars.PROSPECT_QUALIFICATION_TIMEOUT_SECONDS || '10' }}
+          PROSPECT_QUALIFICATION_MAX_BYTES: ${{ vars.PROSPECT_QUALIFICATION_MAX_BYTES || '524288' }}
+          PROSPECT_QUALIFICATION_MIN_INTERVAL_SECONDS: ${{ vars.PROSPECT_QUALIFICATION_MIN_INTERVAL_SECONDS || '0.5' }}
+          PROSPECT_QUALIFICATION_USER_AGENT: ${{ vars.PROSPECT_QUALIFICATION_USER_AGENT }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python3 scripts/prospect_qualification.py --mode qualify --report prospect-qualification-report.json
+
+      - name: Enrich qualified official-site contacts
+        env:
+          CONTACT_ENRICHMENT_MODE: discover
+          CONTACT_ENRICHMENT_MAX_PER_RUN: '25'
+          CONTACT_ENRICHMENT_MIN_INTERVAL: ${{ vars.CONTACT_ENRICHMENT_MIN_INTERVAL || '0.5' }}
+          CONTACT_ENRICHMENT_TIMEOUT: ${{ vars.CONTACT_ENRICHMENT_TIMEOUT || '10' }}
+          OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python3 scripts/prospect_contact_enrichment.py
+
+      - name: Refresh advisory prospect intelligence
+        env:
+          PROSPECT_INTELLIGENCE_MODE: refresh
+          OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
+          PROSPECT_INTELLIGENCE_STALE_DAYS: ${{ vars.PROSPECT_INTELLIGENCE_STALE_DAYS || '30' }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python3 scripts/prospect_intelligence_runtime.py --mode refresh --report prospect-intelligence-report.json
+
+      - name: Load private outreach config
+        env:
+          OUTREACH_CONFIG_SPREADSHEET_ID: ${{ vars.OUTREACH_CONFIG_SPREADSHEET_ID || '1iOBCaBq3MpsrYQiESAhjS1NMRQDXAWmkTh-U-63qzs4' }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python3 scripts/outreach_private_config.py
+
+      - name: Prepare LeadPromo queue rows without send permission
+        env:
+          OUTREACH_PREPARE_MODE: prepare
+          OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
+          OUTREACH_PREPARE_MAX_PER_RUN: '25'
+          OUTREACH_MAILBOX_ID: ${{ vars.OUTREACH_MAILBOX_ID || 'primary' }}
+          OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python3 scripts/outreach_prepare.py --mode prepare --report outreach-prepare-report.json
+
+      - name: Write continuation summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## Leads replacement continuation'
+            echo
+            echo '- owner: `leads`'
+            echo '- discovery: `skipped; reuse canonical discovered state`'
+            echo '- flow: `SIGNALS -> KWALIFICEER -> CONTACT + MAIL`'
+            echo '- compliance: `manual_review/fail-closed until separately approved`'
+            echo '- send permission: `none`'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload continuation receipts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: leads-replacement-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            prospect-signal-report.json
+            prospect-qualification-report.json
+            prospect-intelligence-report.json
+            outreach-prepare-report.json
+          if-no-files-found: ignore
+          retention-days: 14
