@@ -1,10 +1,10 @@
-name: Leads Zero-Touch Prepare
+name: Leads Agent Sales Prepare
 
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Validate the pipeline or run bounded prepare automation
+        description: Validate the pipeline or run bounded agent-sales prepare automation
         required: true
         type: choice
         options:
@@ -121,7 +121,7 @@ jobs:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: python3 scripts/prospect_signal_discovery_runtime.py --mode "$PROSPECT_SIGNAL_MODE" --report prospect-signal-report.json
 
-      - name: Qualify evidence-bound prospects
+      - name: Qualify prospects for approved AI agent offers
         env:
           PROSPECT_QUALIFICATION_MODE: ${{ steps.mode.outputs.mode == 'prepare' && 'qualify' || 'validate' }}
           PROSPECT_QUALIFICATION_FORCE_RECHECK: ${{ steps.mode.outputs.recheck }}
@@ -133,7 +133,7 @@ jobs:
           PROSPECT_QUALIFICATION_MIN_INTERVAL_SECONDS: ${{ vars.PROSPECT_QUALIFICATION_MIN_INTERVAL_SECONDS || '0.5' }}
           PROSPECT_QUALIFICATION_USER_AGENT: ${{ vars.PROSPECT_QUALIFICATION_USER_AGENT }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-        run: python3 scripts/prospect_qualification.py --mode "$PROSPECT_QUALIFICATION_MODE" --report prospect-qualification-report.json
+        run: python3 scripts/prospect_agent_qualification.py --mode "$PROSPECT_QUALIFICATION_MODE" --report prospect-agent-qualification-report.json
 
       - name: Enrich qualified official-site contacts
         env:
@@ -161,7 +161,7 @@ jobs:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: python3 scripts/outreach_private_config.py
 
-      - name: Prepare LeadPromo queue rows without send permission
+      - name: Prepare agent-offer queue rows without send permission
         if: steps.mode.outputs.mode == 'prepare'
         env:
           OUTREACH_PREPARE_MODE: prepare
@@ -170,35 +170,36 @@ jobs:
           OUTREACH_MAILBOX_ID: ${{ vars.OUTREACH_MAILBOX_ID || 'primary' }}
           OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-        run: python3 scripts/outreach_prepare.py --mode prepare --report outreach-prepare-report.json
+        run: python3 scripts/outreach_agent_prepare.py --mode prepare --report outreach-agent-prepare-report.json
 
-      - name: Write zero-touch prepare summary
+      - name: Write agent-sales prepare summary
         if: always()
         shell: bash
         run: |
           {
-            echo "## Leads zero-touch prepare"
+            echo "## Leads agent-sales prepare"
             echo
             echo "- mode: \`${{ steps.mode.outputs.mode }}\`"
             echo "- force-recheck: \`${{ steps.mode.outputs.recheck }}\`"
             echo "- owner: \`leads\`"
-            echo "- flow: \`VIND -> SANITIZE -> KWALIFICEER -> CONTACT + MAIL\`"
+            echo "- offer family: \`ai_agent\`"
+            echo "- flow: \`VIND -> SANITIZE -> AGENT-FIT -> CONTACT + MAIL\`"
             echo "- compliance: \`manual_review/fail-closed until an evidenced basis exists\`"
             echo "- send permission: \`none\`"
             echo
-            echo "This workflow may discover, sanitize, score, enrich and prepare bounded evidence-bound lead state. It never receives mailbox credentials and never calls SMTP."
+            echo "This workflow may discover, sanitize, score agent fit, enrich and prepare bounded evidence-bound lead state. It never receives mailbox credentials and never calls SMTP."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload prepare receipts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: leads-zero-touch-${{ github.run_id }}
+          name: leads-agent-sales-${{ github.run_id }}
           path: |
             prospect-discovery-report.json
             prospect-signal-report.json
-            prospect-qualification-report.json
+            prospect-agent-qualification-report.json
             prospect-intelligence-report.json
-            outreach-prepare-report.json
+            outreach-agent-prepare-report.json
           if-no-files-found: ignore
           retention-days: 14
