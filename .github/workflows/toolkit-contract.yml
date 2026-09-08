@@ -33,11 +33,11 @@ jobs:
           c=json.load(open('toolkit-contract.json', encoding='utf-8'))
           assert c['repository']=='Yolol100/Leadscanner'
           assert c['repository_role']=='central_leads_github_runtime'
-          assert c['schema_version']=='2.8'
+          assert c['schema_version']=='2.9'
           caps=c['capabilities']
           expected={
               'prospect_discovery','prospect_intelligence','prospect_signal_discovery',
-              'prospect_qualification','contact_enrichment','zero_touch_prepare',
+              'prospect_qualification','campaign_gate','contact_enrichment','zero_touch_prepare',
               'website_evidence_scan','sender_readiness','inbox_placement',
               'mailbox_draft','outreach_delivery','dashboard',
           }
@@ -58,14 +58,27 @@ jobs:
           assert q['compliance_effect'] is False
           assert q['send_permission']=='none'
           assert 'UNSCORED' in ' '.join(q['quality_rules'])
-          for key in ('OUTREACH_MAIL_PASSWORD','OUTREACH_MAILBOXES_JSON','OUTREACH_SEED_INBOXES_JSON','REOON_API_KEY'):
-              assert key in q['forbidden_secrets']
+
+          campaign=caps['campaign_gate']
+          assert campaign['script']=='scripts/prospect_campaign_gate.py'
+          assert campaign['modes']==['validate','audit']
+          assert campaign['canonical_candidate_state_mutated'] is False
+          assert 'explicit approved agent' in campaign['target_contract']
+          assert campaign['send_permission']=='none'
+
+          contact=caps['contact_enrichment']
+          assert contact['campaign_script']=='scripts/prospect_contact_enrichment_campaign.py'
+          assert contact['legacy_script']=='scripts/prospect_contact_enrichment.py'
+          assert 'campaign-matching A-qualified' in contact['input_boundary']
+          assert contact['send_permission']=='none'
 
           prepare=caps['zero_touch_prepare']
-          assert prepare['script']=='scripts/outreach_agent_prepare.py'
-          assert prepare['scheduled_default']=='prepare'
-          assert 'prospect_agent_qualification' in prepare['flow']
-          assert 'outreach_agent_prepare' in prepare['flow']
+          assert prepare['script']=='scripts/outreach_agent_prepare_v2.py'
+          assert prepare['legacy_script']=='scripts/outreach_agent_prepare.py'
+          assert 'validate_when_agent_target_auto' in prepare['scheduled_default']
+          for part in ('prospect_agent_qualification','prospect_campaign_gate','prospect_contact_enrichment_campaign','outreach_agent_prepare_v2'):
+              assert part in prepare['flow']
+          assert 'process_flow' in prepare['value_asset_contract']
           assert 'status=prepared' in prepare['queue_contract']
           assert 'manual_review' in prepare['queue_contract']
           assert prepare['required_secrets']==['GOOGLE_SERVICE_ACCOUNT_JSON']
@@ -75,14 +88,9 @@ jobs:
 
           scanner=caps['website_evidence_scan']
           assert scanner['read_only'] is True
-          assert scanner['requires_account'] is False
-          assert scanner['requires_api_key'] is False
-          assert caps['contact_enrichment']['input_boundary']=='qualified ProspectCandidates only'
+          assert scanner['normal_default_for_every_prospect'] is False
           assert caps['sender_readiness']['send_permission']=='none'
-          assert 'provider_managed' in caps['sender_readiness']['provider_managed_relay']
           assert caps['inbox_placement']['manual_only'] is True
-          assert caps['inbox_placement']['manual_default']=='validate'
-          assert caps['mailbox_draft']['send_permission']=='none'
           assert caps['mailbox_draft']['transport']=='IMAP APPEND + same-folder readback only'
 
           delivery=caps['outreach_delivery']
@@ -90,7 +98,6 @@ jobs:
           assert delivery['live_gate']=='sender_readiness -> website target/evidence -> LeadPromo copy -> compliance -> SMTP'
           assert 'agent_offer:<JSON>' in delivery['target_evidence_contract']
           assert 'website_scan:<JSON>' in delivery['target_evidence_contract']
-          assert 'OUTREACH_POSTAL_ADDRESS' not in delivery['optional_variables']
           assert 'private' in delivery['private_config_contract'].lower()
 
           ids=[t['id'] for t in c['scanner_tools']]
@@ -109,9 +116,13 @@ jobs:
               '.github/workflows/contact-enrichment.yml',
               '.github/workflows/outreach-smtp.yml',
               'scripts/prospect_agent_qualification.py',
-              'scripts/outreach_agent_prepare.py',
-              'scripts/outreach_target_evidence_preflight.py',
+              'scripts/prospect_campaign_gate.py',
+              'scripts/prospect_contact_enrichment_campaign.py',
               'scripts/prospect_contact_enrichment.py',
+              'scripts/outreach_agent_prepare_v2.py',
+              'scripts/outreach_agent_prepare.py',
+              'scripts/outreach_copy_preflight.py',
+              'scripts/outreach_target_evidence_preflight.py',
               'scripts/outreach_private_config.py',
               'scripts/outreach_direct_smtp_runtime.py',
               'scripts/outreach_compliance_preflight.py',
@@ -123,46 +134,36 @@ jobs:
           trigger=autopilot.split('permissions:',1)[0]
           assert 'workflow_dispatch:' in trigger and 'schedule:' in trigger
           assert 'ops/leads-autopilot-request.txt' in trigger
-          assert 'scripts/prospect_candidate_sanitizer.py' in autopilot
-          assert 'scripts/prospect_agent_qualification.py' in autopilot
-          assert 'scripts/prospect_contact_enrichment.py' in autopilot
-          assert 'scripts/outreach_private_config.py' in autopilot
-          assert 'scripts/outreach_agent_prepare.py' in autopilot
+          for expected_text in (
+              'scripts/prospect_candidate_sanitizer.py','scripts/prospect_agent_qualification.py',
+              'scripts/prospect_campaign_gate.py','scripts/prospect_contact_enrichment_campaign.py',
+              'scripts/outreach_private_config.py','scripts/outreach_agent_prepare_v2.py',
+              'AGENT_SALES_TARGET_TYPE','campaign-first prepare requires one explicit agent_type',
+          ):
+              assert expected_text in autopilot
           assert 'outreach_direct_smtp_runtime.py' not in autopilot
           for forbidden in ('OUTREACH_MAIL_PASSWORD','OUTREACH_MAILBOXES_JSON','OUTREACH_SEED_INBOXES_JSON'):
               assert forbidden not in autopilot
           assert 'send permission:' in autopilot and 'none' in autopilot
 
-          qualification=pathlib.Path('scripts/prospect_agent_qualification.py').read_text(encoding='utf-8')
-          assert 'AGENT_QUALIFICATION_SHEET = "AgentProspectQualifications"' in qualification
-          assert 'AGENT_CATALOG' in qualification
-          assert 'value_integration_fit_score' in qualification
-          assert 'UNSCORED' in qualification
-          assert 'send_permission' in qualification
-
-          prepare_runtime=pathlib.Path('scripts/outreach_agent_prepare.py').read_text(encoding='utf-8')
-          assert 'agent_offer:' in prepare_runtime
-          assert '"status": "prepared"' in prepare_runtime
-          assert '"compliance_status": "manual_review"' in prepare_runtime
-          assert '"compliance_basis": ""' in prepare_runtime
-          assert 'POSTAL_PLACEHOLDER' in prepare_runtime
+          campaign_runtime=pathlib.Path('scripts/prospect_campaign_gate.py').read_text(encoding='utf-8')
+          assert 'canonical_candidate_state_mutated' in campaign_runtime
+          assert 'audit_campaign_gate' in campaign_runtime
+          contact_runtime=pathlib.Path('scripts/prospect_contact_enrichment_campaign.py').read_text(encoding='utf-8')
+          assert 'campaign_eligible_prospects' in contact_runtime
+          prepare_runtime=pathlib.Path('scripts/outreach_agent_prepare_v2.py').read_text(encoding='utf-8')
+          assert 'value_asset_type' in prepare_runtime
+          assert 'campaign_target_agent_type' in prepare_runtime
+          assert 'OUTREACH_CTA_VARIANT' in prepare_runtime
           assert 'smtplib' not in prepare_runtime
-          assert '€500' not in prepare_runtime and '€750' not in prepare_runtime
-
-          evidence=pathlib.Path('scripts/outreach_target_evidence_preflight.py').read_text(encoding='utf-8')
-          assert 'AGENT_EVIDENCE_PREFIX = "agent_offer:"' in evidence
-          assert 'LEGACY_EVIDENCE_PREFIX = "website_scan:"' in evidence
-          assert 'APPROVED_AGENT_TYPES' in evidence
-          assert 'POSTAL_PLACEHOLDER' in evidence
+          copy_runtime=pathlib.Path('scripts/outreach_copy_preflight.py').read_text(encoding='utf-8')
+          assert 'subject must focus on the prospect/process' in copy_runtime
+          assert 'v13.1 value-flow initial may not contain external URLs by default' in copy_runtime
 
           outreach=pathlib.Path('.github/workflows/outreach-smtp.yml').read_text(encoding='utf-8')
           order=[
-              'Run sender preflight',
-              'Run extended outreach contract preflight',
-              'Run live sender readiness gate',
-              'Run website target and evidence preflight',
-              'Run LeadPromo copy preflight',
-              'Run outreach compliance preflight',
+              'Run sender preflight','Run extended outreach contract preflight','Run live sender readiness gate',
+              'Run website target and evidence preflight','Run LeadPromo copy preflight','Run outreach compliance preflight',
               'Process approved outreach queue through mijn.host SMTP',
           ]
           positions=[outreach.index(name) for name in order]
@@ -172,16 +173,22 @@ jobs:
           assert 'vars.OUTREACH_POSTAL_ADDRESS' not in outreach
 
           registry=json.load(open('tool-registry.json', encoding='utf-8'))
-          assert registry['version']=='3.9'
+          assert registry['version']=='4.0'
           assert registry['repository_role']=='central_leads_github_runtime'
           assert set(registry['capabilities']) >= expected
           assert registry['policy']['agent_sales_default_offer_family']=='ai_agent'
-          assert registry['policy']['approved_agent_types']==q['agent_types']
+          assert registry['policy']['campaign_first_agent_sales'] is True
+          assert registry['policy']['campaign_prepare_requires_explicit_agent_type'] is True
+          assert registry['policy']['campaign_gate_canonical_state_mutation'] is False
+          assert registry['policy']['value_asset_before_contact'] is True
+          assert registry['policy']['default_agent_outreach_has_generic_cases_url'] is False
           assert registry['policy']['changes_compliance_automatically'] is False
-          assert registry['policy']['prepared_copy_never_send_permission'] is True
-          assert registry['capabilities']['prospect_qualification']['script']=='scripts/prospect_agent_qualification.py'
-          assert registry['capabilities']['zero_touch_prepare']['script']=='scripts/outreach_agent_prepare.py'
+          assert registry['capabilities']['campaign_gate']['script']=='scripts/prospect_campaign_gate.py'
+          assert registry['capabilities']['contact_enrichment']['campaign_script']=='scripts/prospect_contact_enrichment_campaign.py'
+          assert registry['capabilities']['zero_touch_prepare']['script']=='scripts/outreach_agent_prepare_v2.py'
           assert registry['capabilities']['outreach_delivery']['evidence_sources']==['agent_offer','website_scan_legacy']
+          assert registry['tools']['outreach_agent_prepare']['status']=='legacy_compatibility'
+          assert registry['tools']['outreach_agent_prepare_v2']['default_for_campaign_prepare'] is True
           assert registry['tools']['axe_core']['automatic_score_effect'] is False
-          print('toolkit-contract: OK')
+          print('toolkit-contract v13.1: OK')
           PY

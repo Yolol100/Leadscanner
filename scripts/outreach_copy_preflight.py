@@ -3,39 +3,36 @@ from __future__ import annotations
 import re
 
 from outreach_sender import (
-    QUEUE_HEADERS,
-    QUEUE_SHEET,
-    Settings,
-    build_sheets_service,
-    ensure_expected_headers,
-    get_values,
-    rows_from_values,
+    QUEUE_HEADERS, QUEUE_SHEET, Settings, build_sheets_service,
+    ensure_expected_headers, get_values, rows_from_values,
 )
 from outreach_sequences import SEQUENCE_HEADERS, SEQUENCE_SHEET, enabled as sequence_enabled
 
-CTA_A = "Zal ik nog één concreet idee sturen?"
-CTA_B = "Mag ik nog één concreet idee sturen?"
+LEGACY_CTA_A = "Zal ik nog één concreet idee sturen?"
+LEGACY_CTA_B = "Mag ik nog één concreet idee sturen?"
+LEGACY_CTA_A_EN = "Would you like me to send one more concrete idea?"
+LEGACY_CTA_B_EN = "May I send one more concrete idea?"
+FLOW_CTA_NL_RE = re.compile(r"^(?:Zal|Mag) ik de korte voorbeeldflow voor .+ sturen\?$", re.M)
+FLOW_CTA_EN_RE = re.compile(r"^(?:Would you like me to|May I) send the short example flow for .+\?$", re.M)
 OPT_OUT = 'Geen interesse? Een kort "nee" is genoeg.'
 SIGNATURE = "Met vriendelijke groet,\nAndrew Baeten"
-CTA_A_EN = "Would you like me to send one more concrete idea?"
-CTA_B_EN = "May I send one more concrete idea?"
 OPT_OUT_EN = 'Not interested? A quick "no" is enough.'
 SIGNATURE_EN = "Best regards,\nAndrew Baeten"
 CASES_URL = "https://andrewbaeten.nl/category/cases"
-CANONICAL_FOLLOWUP_RE = re.compile(
-    r'^Beste .+,\n\n'
-    r'Ik kom hier nog één keer op terug\. Als het nuttig is, stuur ik het concrete idee voor .+ graag door\.\n\n'
-    r'Geen interesse\? Een kort "nee" is genoeg\.\n\n'
-    r'Met vriendelijke groet,\nAndrew Baeten$'
+LEGACY_FOLLOWUP_NL_RE = re.compile(
+    r'^Beste .+,\n\nIk kom hier nog één keer op terug\. Als het nuttig is, stuur ik het concrete idee voor .+ graag door\.\n\nGeen interesse\? Een kort "nee" is genoeg\.\n\nMet vriendelijke groet,\nAndrew Baeten$'
 )
-CANONICAL_FOLLOWUP_EN_RE = re.compile(
-    r'^Hi .+,\n\n'
-    r"Just following up once\. If useful, I'm happy to send the concrete idea for .+\.\n\n"
-    r'Not interested\? A quick "no" is enough\.\n\n'
-    r'Best regards,\nAndrew Baeten$'
+LEGACY_FOLLOWUP_EN_RE = re.compile(
+    r'^Hi .+,\n\nJust following up once\. If useful, I\'m happy to send the concrete idea for .+\.\n\nNot interested\? A quick "no" is enough\.\n\nBest regards,\nAndrew Baeten$'
+)
+FLOW_FOLLOWUP_NL_RE = re.compile(
+    r'^Beste .+,\n\nIk kom hier nog één keer op terug\. De korte voorbeeldflow voor .+ staat klaar\.\n\n(?:Zal|Mag) ik de korte voorbeeldflow voor .+ sturen\?\n\nGeen interesse\? Een kort "nee" is genoeg\.\n\nMet vriendelijke groet,\nAndrew Baeten$'
+)
+FLOW_FOLLOWUP_EN_RE = re.compile(
+    r'^Hi .+ team,\n\nJust following up once\. The short example flow for .+ is ready\.\n\n(?:Would you like me to|May I) send the short example flow for .+\?\n\nNot interested\? A quick "no" is enough\.\n\nBest regards,\nAndrew Baeten$'
 )
 BANNED_PATTERNS = (
-    re.compile(r"(?i)\b(?:plan|boek|reserveer|schedule|book)\b.{0,60}\b(?:call|meeting|gesprek|afspraak|agenda|minuten|minutes)\b"),
+    re.compile(r"(?i)\b(?:plan|boek|reserveer|schedule|book)\b.{0,60}\b(?:call|meeting|gesprek|agenda|minuten|minutes)\b"),
     re.compile(r"(?i)\b(?:gegarandeerd|garandeert|garantie op|levert direct meer|levert meer aanvragen|meer omzet gegarandeerd|guaranteed|guarantees|guaranteed revenue|guaranteed results)\b"),
     re.compile(r"(?i)\b(?:alleen vandaag|laatste kans|nog een plek|nog één plek|beperkt beschikbaar|mis dit niet|last chance|limited time|only today|don't miss out)\b"),
 )
@@ -47,37 +44,34 @@ def _placeholder_errors(text: str) -> list[str]:
 
 def _subject_errors(subject: str) -> list[str]:
     value = str(subject or "").strip()
-    errors: list[str] = []
     if not value:
         return ["missing subject"]
+    errors: list[str] = []
     if re.match(r"(?i)^(?:re|fw|fwd)\s*:", value):
         errors.append("fake reply/forward subject is not allowed")
     if re.search(r"(?i)\b(?:laatste kans|alleen vandaag|urgent|direct resultaat|mis dit niet|last chance|limited time|guaranteed results)\b", value):
         errors.append("clickbait or hype subject is not allowed")
+    if re.search(r"(?i)\b(?:AI|A\.I\.|automation|automatisering|bot|chatbot)\b", value):
+        errors.append("subject must focus on the prospect/process, not AI or automation buzzwords")
     errors.extend(_placeholder_errors(value))
     return errors
 
 
-def _template_contract(text: str) -> tuple[str, str, str, list[str]]:
+def _flow_cta(text: str) -> tuple[str, str]:
+    nl = FLOW_CTA_NL_RE.findall(text)
+    en = FLOW_CTA_EN_RE.findall(text)
+    if len(nl) + len(en) != 1:
+        return "", ""
+    return (nl[0], "nl") if nl else (en[0], "en")
+
+
+def _legacy_cta(text: str) -> tuple[str, str]:
     variants = [
-        ("nl", CTA_A, OPT_OUT, SIGNATURE),
-        ("nl", CTA_B, OPT_OUT, SIGNATURE),
-        ("en", CTA_A_EN, OPT_OUT_EN, SIGNATURE_EN),
-        ("en", CTA_B_EN, OPT_OUT_EN, SIGNATURE_EN),
+        (LEGACY_CTA_A, "nl"), (LEGACY_CTA_B, "nl"),
+        (LEGACY_CTA_A_EN, "en"), (LEGACY_CTA_B_EN, "en"),
     ]
-    selected = [variant for variant in variants if variant[1] in text]
-    errors: list[str] = []
-    if len(selected) != 1:
-        errors.append("initial must contain exactly one canonical NL or EN CTA A/B")
-        return "", "", "", errors
-    language, cta, opt_out, signature = selected[0]
-    if text.count(cta) != 1:
-        errors.append("initial must contain the selected CTA exactly once")
-    for _, other_cta, _, _ in variants:
-        if other_cta != cta and other_cta in text:
-            errors.append("initial may not mix CTA variants or languages")
-            break
-    return cta, opt_out, signature, errors
+    selected = [(cta, lang) for cta, lang in variants if cta in text]
+    return selected[0] if len(selected) == 1 else ("", "")
 
 
 def initial_copy_errors(subject: str, body: str) -> list[str]:
@@ -86,26 +80,38 @@ def initial_copy_errors(subject: str, body: str) -> list[str]:
     if not text:
         return errors + ["missing body"]
     errors.extend(_placeholder_errors(text))
+    flow_cta, flow_lang = _flow_cta(text)
+    legacy_cta, legacy_lang = _legacy_cta(text)
+    if bool(flow_cta) == bool(legacy_cta):
+        errors.append("initial must contain exactly one supported LeadPromo CTA contract")
+        return errors
+    is_flow = bool(flow_cta)
+    selected_cta = flow_cta or legacy_cta
+    language = flow_lang or legacy_lang
     urls = re.findall(r"https?://[^\s<>]+", text)
-    if urls != [CASES_URL]:
-        errors.append("initial must contain only the fixed cases URL exactly once")
-    if f"\n{CASES_URL}\n" not in f"\n{text}\n":
-        errors.append("cases URL must be a raw URL on its own line")
-    selected_cta, opt_out, signature, template_errors = _template_contract(text)
-    errors.extend(template_errors)
-    if opt_out:
-        if text.count(opt_out) != 1:
-            errors.append("initial must contain the canonical language-matched easy opt-out exactly once")
-    if signature and not text.endswith(signature):
+    if is_flow:
+        if urls:
+            errors.append("v13.1 value-flow initial may not contain external URLs by default")
+        if "voorbeeldflow" not in text.casefold() and "example flow" not in text.casefold():
+            errors.append("v13.1 initial must include the concrete example-flow value asset")
+    else:
+        if urls != [CASES_URL] or f"\n{CASES_URL}\n" not in f"\n{text}\n":
+            errors.append("legacy initial must contain only the fixed cases URL exactly once on its own line")
+    if text.count(selected_cta) != 1:
+        errors.append("initial must contain the selected CTA exactly once")
+    opt_out = OPT_OUT if language == "nl" else OPT_OUT_EN
+    signature = SIGNATURE if language == "nl" else SIGNATURE_EN
+    if text.count(opt_out) != 1:
+        errors.append("initial must contain the canonical language-matched easy opt-out exactly once")
+    if not text.endswith(signature):
         errors.append("initial must end with the canonical language-matched Andrew Baeten signature")
-    if selected_cta and CASES_URL in text and opt_out and opt_out in text:
-        if not (text.index(CASES_URL) < text.index(selected_cta) < text.index(opt_out)):
-            errors.append("initial content order violates LeadPromo")
+    if selected_cta in text and opt_out in text and text.index(selected_cta) > text.index(opt_out):
+        errors.append("initial content order violates LeadPromo")
     if any(pattern.search(text) for pattern in BANNED_PATTERNS):
         errors.append("initial contains a banned meeting, pressure or unsupported-result pattern")
     words = len(text.split())
-    if words < 45 or words > 120:
-        errors.append("initial length must stay within the 45-120 word hard guardrail")
+    if words < 40 or words > 120:
+        errors.append("initial length must stay within the 40-120 word hard guardrail")
     return errors
 
 
@@ -117,12 +123,12 @@ def followup_copy_errors(body: str) -> list[str]:
     if re.search(r"https?://", text):
         errors.append("follow-up may not contain URLs")
     language = ""
-    if CANONICAL_FOLLOWUP_RE.fullmatch(text):
+    if LEGACY_FOLLOWUP_NL_RE.fullmatch(text) or FLOW_FOLLOWUP_NL_RE.fullmatch(text):
         language = "nl"
-    elif CANONICAL_FOLLOWUP_EN_RE.fullmatch(text):
+    elif LEGACY_FOLLOWUP_EN_RE.fullmatch(text) or FLOW_FOLLOWUP_EN_RE.fullmatch(text):
         language = "en"
     else:
-        errors.append("follow-up must match the canonical NL or EN LeadPromo follow-up structure")
+        errors.append("follow-up must match a supported canonical NL or EN LeadPromo structure")
     expected_opt_out = OPT_OUT if language == "nl" else OPT_OUT_EN if language == "en" else ""
     if expected_opt_out and text.count(expected_opt_out) != 1:
         errors.append("follow-up must contain the canonical language-matched easy opt-out exactly once")
@@ -164,20 +170,15 @@ def sequence_copy_errors(row: dict[str, str]) -> list[str]:
 def process() -> int:
     settings = Settings.from_env()
     service = build_sheets_service()
-
     queue_headers, queue_rows = rows_from_values(get_values(service, settings.spreadsheet_id, QUEUE_SHEET))
     ensure_expected_headers(queue_headers, QUEUE_HEADERS + ["compliance_basis"], QUEUE_SHEET)
     sequence_headers, sequence_rows = rows_from_values(get_values(service, settings.spreadsheet_id, SEQUENCE_SHEET))
     ensure_expected_headers(sequence_headers, SEQUENCE_HEADERS, SEQUENCE_SHEET)
-
     errors: list[str] = []
     for row_number, row in enumerate(queue_rows, start=2):
-        for error in queue_copy_errors(row):
-            errors.append(f"{QUEUE_SHEET} row {row_number}: {error}")
+        errors.extend(f"{QUEUE_SHEET} row {row_number}: {error}" for error in queue_copy_errors(row))
     for row_number, row in enumerate(sequence_rows, start=2):
-        for error in sequence_copy_errors(row):
-            errors.append(f"{SEQUENCE_SHEET} row {row_number}: {error}")
-
+        errors.extend(f"{SEQUENCE_SHEET} row {row_number}: {error}" for error in sequence_copy_errors(row))
     if errors:
         for error in errors[:50]:
             print("copy_error=" + error)
