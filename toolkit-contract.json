@@ -6,9 +6,21 @@
   "repository_role": "central_leads_github_runtime",
   "requires_mcp": false,
   "capabilities": {
-    "prospect_discovery": {"workflow":".github/workflows/prospect-discovery.yml","requires_account":true,"required_secrets":["GOOGLE_SERVICE_ACCOUNT_JSON"],"modes":["validate","bootstrap","discover"],"outputs":["ProspectCandidates","ProspectObservations","ProspectSourceRuns"],"send_permission":"none"},
-    "prospect_intelligence": {"workflow":".github/workflows/prospect-intelligence.yml","requires_account":true,"required_secrets":["GOOGLE_SERVICE_ACCOUNT_JSON"],"automatic_score_effect":false,"send_permission":"none"},
-    "prospect_signal_discovery": {"workflow":".github/workflows/prospect-signal-discovery.yml","requires_account":true,"required_secrets":["GOOGLE_SERVICE_ACCOUNT_JSON"],"modes":["validate","discover"],"automatic_score_effect":false,"send_permission":"none"},
+    "prospect_discovery": {
+      "workflow":".github/workflows/prospect-discovery.yml","requires_account":true,"required_secrets":["GOOGLE_SERVICE_ACCOUNT_JSON"],"modes":["validate","bootstrap","discover"],
+      "outputs":["ProspectCandidates","ProspectObservations","ProspectSourceRuns"],
+      "optional_variables":["PROSPECT_DISCOVERY_ENABLED","PROSPECT_DISCOVERY_MAX_TOTAL","PROSPECT_DISCOVERY_TARGET_NEW","PROSPECT_DISCOVERY_TIMEOUT_SECONDS","PROSPECT_DISCOVERY_MAX_BYTES","PROSPECT_DISCOVERY_MIN_INTERVAL_SECONDS","PROSPECT_DISCOVERY_USER_AGENT","PROSPECT_DISCOVERY_EXCLUDE_COUNTRIES","PROSPECT_DISCOVERY_PREFERRED_COUNTRIES","PROSPECT_DISCOVERY_EXCLUDE_AGENCIES","PROSPECT_DISCOVERY_EXTRA_EXCLUDE_TERMS"],
+      "source_types":["directory_page","directory_index","directory_sitemap","seed_site"],"directory_sitemap_child_hard_cap":3,
+      "scheduled_default":"validate","scheduled_discover_gate":"PROSPECT_DISCOVERY_ENABLED=true","send_permission":"none"
+    },
+    "prospect_intelligence": {
+      "workflow":".github/workflows/prospect-intelligence.yml","requires_account":true,"required_secrets":["GOOGLE_SERVICE_ACCOUNT_JSON"],"automatic_score_effect":false,
+      "scheduled_default":"validate","scheduled_refresh_gate":"PROSPECT_INTELLIGENCE_ENABLED=true","send_permission":"none"
+    },
+    "prospect_signal_discovery": {
+      "workflow":".github/workflows/prospect-signal-discovery.yml","requires_account":true,"required_secrets":["GOOGLE_SERVICE_ACCOUNT_JSON"],"modes":["validate","discover"],
+      "automatic_score_effect":false,"scheduled_default":"validate","scheduled_discover_gate":"PROSPECT_SIGNAL_DISCOVERY_ENABLED=true","send_permission":"none"
+    },
     "prospect_qualification": {
       "workflow":".github/workflows/leads-autopilot.yml","script":"scripts/prospect_agent_qualification.py","requires_account":true,"required_secrets":["GOOGLE_SERVICE_ACCOUNT_JSON"],
       "forbidden_secrets":["OUTREACH_MAIL_PASSWORD","OUTREACH_MAILBOXES_JSON","OUTREACH_SEED_INBOXES_JSON","REOON_API_KEY"],"modes":["validate","qualify"],"offer_family":"ai_agent",
@@ -51,6 +63,7 @@
   ],
   "boundaries": [
     "Leadscanner executes bounded Leads policy; it is not a second process controller.",
+    "Scheduled prospect discovery remains validate-only unless PROSPECT_DISCOVERY_ENABLED=true explicitly promotes the scheduled run to discover mode.",
     "Campaign-first prepare requires one explicit approved agent target; auto is validate/exploration only.",
     "Campaign audit is read-only and never rewrites canonical ProspectCandidates state.",
     "Campaign-aware contact enrichment searches email only for campaign-matching A-qualified prospects.",
