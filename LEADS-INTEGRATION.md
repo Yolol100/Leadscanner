@@ -45,7 +45,8 @@ Workflow: `.github/workflows/prospect-discovery.yml`.
 - Geen contactharvesting, kwalificatie, mailcopy, compliance of send permission.
 - Ondersteunt `seed_site`, `directory_page`, `directory_index` en begrensde `directory_sitemap`.
 - Agency/provider-, self- en source-semantic filters blijven fail-closed.
-- Bekende domeinen worden vóór quota overgeslagen; target gaps blijven expliciet.
+- Bekende domeinen worden vóór quota overgeslagen; target gaps blijven expliciet. `PROSPECT_DISCOVERY_TARGET_NEW` bepaalt alleen een begrensd gewenste nieuwe-candidate-output en dwingt nooit verzonnen filler af.
+- `ProspectSourceRuns`, source metrics en target-gap-readback zijn discovery/intelligencebewijs en geven nooit kwalificatie of send permission.
 - Weekday schedule blijft validate-only tenzij `PROSPECT_DISCOVERY_ENABLED=true`.
 - Krijgt alleen Sheetcredential, geen mailboxsecrets.
 
