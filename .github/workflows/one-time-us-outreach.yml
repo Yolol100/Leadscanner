@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: one-time-us-outreach-2026-09-08
+  group: one-time-us-outreach-2026-09-09
   cancel-in-progress: false
 
 jobs:
@@ -37,19 +37,21 @@ jobs:
 
       - name: Resolve one-time mode
         id: plan
+        env:
+          TARGET_LOCAL_DATE: '2026-09-09'
         shell: bash
         run: |
           set -euo pipefail
           run=false
           mode=validate
           local_date="$(TZ=Europe/Amsterdam date +%F)"
-          if [ "${GITHUB_EVENT_NAME}" = "push" ] && [ "$local_date" = "2026-09-08" ]; then
+          if [ "${GITHUB_EVENT_NAME}" = "push" ] && [ "$local_date" = "$TARGET_LOCAL_DATE" ]; then
             run=true
             mode=live
           fi
           echo "run=${run}" >> "$GITHUB_OUTPUT"
           echo "mode=${mode}" >> "$GITHUB_OUTPUT"
-          echo "ONE_TIME_DISPATCH_PLAN run=${run} mode=${mode} local_date=${local_date}"
+          echo "ONE_TIME_DISPATCH_PLAN run=${run} mode=${mode} local_date=${local_date} target_date=${TARGET_LOCAL_DATE}"
 
       - name: Guard exact US campaign cohort
         if: steps.plan.outputs.run == 'true'
@@ -100,6 +102,13 @@ jobs:
           payload=$(printf '{"ref":"main","inputs":{"mode":"%s"}}' "$MODE")
 
           for round in $(seq 1 "$ROUND_COUNT"); do
+            local_hhmm="$(TZ=Europe/Amsterdam date +%H%M)"
+            local_hhmm_num=$((10#$local_hhmm))
+            if (( local_hhmm_num < 800 || local_hhmm_num >= 1800 )); then
+              echo "CONTROLLED_OUTREACH_STOP=outside_send_window local_hhmm=${local_hhmm}"
+              break
+            fi
+
             python3 scripts/outreach_one_time_us_guard.py
             prior_run_id="$(latest_dispatch_run_id)"
 
@@ -153,4 +162,4 @@ jobs:
         if: steps.plan.outputs.run != 'true'
         run: echo 'ONE_TIME_US_OUTREACH=inert date_guard=green'
 
-# operational-rounds: serial-5-2026-09-08
+# operational-rounds: serial-5-2026-09-09
