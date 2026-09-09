@@ -37,6 +37,41 @@ class OutreachSitePersonalizationTests(unittest.TestCase):
         self.assertIn(first.anchor, first.observation)
         self.assertIn(first.anchor, first.value)
 
+    def test_same_industry_generic_quote_route_prefers_distinct_same_site_offering(self):
+        roofer_one = ParsedPage(
+            title="Metal Roofing | Roof One",
+            links=[
+                ("https://roof-one.example/get-a-quote", "Get a Quote"),
+                ("https://roof-one.example/through-fastened/apex-panel", "Apex Panel"),
+            ],
+        )
+        roofer_two = ParsedPage(
+            title="Metal Roofing | Roof Two",
+            links=[
+                ("https://roof-two.example/get-a-quote", "Get a Quote"),
+                ("https://roof-two.example/standing-seam/snap-seam", "Snap Seam"),
+            ],
+        )
+        first = build_personalization(
+            roofer_one,
+            company="Roof One",
+            agent_type="quote_intake",
+            language="en",
+            evidence_url="https://roof-one.example/",
+        )
+        second = build_personalization(
+            roofer_two,
+            company="Roof Two",
+            agent_type="quote_intake",
+            language="en",
+            evidence_url="https://roof-two.example/",
+        )
+        self.assertEqual(first.process_label, "Get a Quote")
+        self.assertEqual(second.process_label, "Get a Quote")
+        self.assertEqual(first.anchor, "Apex Panel")
+        self.assertEqual(second.anchor, "Snap Seam")
+        self.assertNotEqual(first.value, second.value)
+
     def test_all_public_site_agent_families_have_process_specific_value(self):
         cases = {
             "front_desk_sales": ParsedPage(
@@ -77,6 +112,23 @@ class OutreachSitePersonalizationTests(unittest.TestCase):
         page = ParsedPage(
             title="Example Company | Home",
             links=[("https://example.test/quote", "Request a Quote")],
+        )
+        with self.assertRaisesRegex(ValueError, "specific"):
+            build_personalization(
+                page,
+                company="Example Company",
+                agent_type="quote_intake",
+                language="en",
+                evidence_url="https://example.test/",
+            )
+
+    def test_external_context_link_is_not_used_as_personalization_anchor(self):
+        page = ParsedPage(
+            title="Example Company | Home",
+            links=[
+                ("https://example.test/quote", "Request a Quote"),
+                ("https://external.example/products/premium-package", "Premium Package"),
+            ],
         )
         with self.assertRaisesRegex(ValueError, "specific"):
             build_personalization(
