@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Callable
 from urllib.parse import unquote, urlparse
 
-from prospect_discovery import BoundedHttpClient, DiscoveryError, parse_page
+from prospect_discovery import BoundedHttpClient, DiscoveryError, hosts_related, parse_page
 
 NON_USER_FACING_BLOCK_RE = re.compile(r"(?is)<!--.*?-->|<(script|style|noscript|template)\b[^>]*>.*?</\1\s*>")
 HIDDEN_ELEMENT_RE = re.compile(r"(?is)<([a-z][a-z0-9:-]*)\b(?=[^>]*(?:\bhidden\b|aria-hidden\s*=\s*[\"']?true|style\s*=\s*[\"'][^\"']*(?:display\s*:\s*none|visibility\s*:\s*hidden)))[^>]*>.*?</\1\s*>")
@@ -32,8 +32,10 @@ GENERIC_PROCESS_LABELS = {
 NAV_OR_LOW_VALUE = {
     "home", "about", "about us", "over ons", "contact", "privacy", "privacy policy", "terms", "cookies",
     "login", "sign in", "register", "news", "blog", "careers", "jobs", "facebook", "instagram", "linkedin",
-    "youtube", "menu", "search", "sitemap",
+    "youtube", "menu", "search", "sitemap", "learn", "downloads", "store finder", "all products", "view all products",
 }
+
+ACTION_PREFIX_RE = re.compile(r"(?i)^(?:view|learn|read|see|discover|explore|shop|buy|request|get|ask|contact)\b")
 
 
 @dataclass(frozen=True)
@@ -132,10 +134,62 @@ def _process_candidates(page, agent_type: str) -> list[tuple[int, int, str]]:
     return ranked
 
 
-def _specific_anchor(page, company: str, agent_type: str, process_label: str) -> str:
+def _context_candidates(page, *, evidence_url: str, company: str, process_label: str) -> list[str]:
+    evidence_host = (urlparse(evidence_url).hostname or "").lower().strip(".")
+    process_norm = _norm(process_label)
+    company_norm = _norm(company)
+    ranked: list[tuple[int, int, str]] = []
+    seen: set[str] = set()
+    for index, (target, raw_label) in enumerate(getattr(page, "links", [])[:200]):
+        label = _safe_visible_label(raw_label) or _path_label(target)
+        if not label:
+            continue
+        norm = _norm(label)
+        if not norm or norm in seen or norm in NAV_OR_LOW_VALUE or norm in GENERIC_PROCESS_LABELS:
+            continue
+        if norm == process_norm or norm == company_norm or ACTION_PREFIX_RE.search(label):
+            continue
+        target_host = (urlparse(target).hostname or "").lower().strip(".")
+        if evidence_host and target_host and not hosts_related(evidence_host, target_host):
+            continue
+        words = norm.split()
+        if len(words) < 2 or len(words) > 8:
+            continue
+        segments = [part for part in urlparse(target).path.split("/") if part]
+        score = 0
+        if len(segments) >= 2:
+            score += 4
+        elif len(segments) == 1:
+            score += 2
+        if 2 <= len(words) <= 5:
+            score += 2
+        elif len(words) <= 8:
+            score += 1
+        if any(ch.isdigit() for ch in label) or any(ch in label for ch in ("®", "™", "/")):
+            score += 1
+        if score > 0:
+            ranked.append((-score, index, label))
+            seen.add(norm)
+    ranked.sort()
+    return [label for _, _, label in ranked[:8]]
+
+
+def _specific_anchor(page, company: str, agent_type: str, process_label: str, evidence_url: str) -> str:
     process_norm = _norm(process_label)
     if process_label and process_norm not in GENERIC_PROCESS_LABELS and len(process_norm.split()) >= 2:
         return process_label
+
+    # For generic actions such as Get a Quote/Shop/FAQ, prefer one concrete
+    # same-site product/service context over a broad industry title.
+    contexts = _context_candidates(
+        page,
+        evidence_url=evidence_url,
+        company=company,
+        process_label=process_label,
+    )
+    if contexts:
+        return contexts[0]
+
     for descriptor in _title_descriptors(page, company):
         if _norm(descriptor) != process_norm:
             return descriptor
@@ -186,7 +240,7 @@ def build_personalization(page, *, company: str, agent_type: str, language: str,
         raise ValueError("unsupported agent type for website-derived personalization")
     candidates = _process_candidates(page, agent_type)
     process_label = candidates[0][2] if candidates else ""
-    anchor = _specific_anchor(page, company, agent_type, process_label)
+    anchor = _specific_anchor(page, company, agent_type, process_label, evidence_url)
     if not anchor:
         raise ValueError("no sufficiently specific public website/process anchor for personalized copy")
     observation, value = _build_sentences(agent_type, anchor, process_label, language)
