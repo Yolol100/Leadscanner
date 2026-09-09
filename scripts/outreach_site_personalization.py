@@ -35,6 +35,16 @@ NAV_OR_LOW_VALUE = {
     "youtube", "menu", "search", "sitemap", "learn", "downloads", "store finder", "all products", "view all products",
 }
 
+CONTEXT_LOW_VALUE_PATH_HEADS = {
+    "about", "company", "team", "leadership", "careers", "jobs", "blog", "news", "press", "privacy",
+    "terms", "cookies", "legal", "resources", "downloads", "gallery", "sitemap",
+}
+
+CONTEXT_LOW_VALUE_LABELS = {
+    "leadership team", "our team", "meet the team", "our story", "company history", "careers and culture",
+    "news and insights", "privacy policy", "terms and conditions", "photo gallery", "resource center",
+}
+
 ACTION_PREFIX_RE = re.compile(r"(?i)^(?:view|learn|read|see|discover|explore|shop|buy|request|get|ask|contact)\b")
 
 
@@ -139,6 +149,8 @@ def _process_candidates(page, agent_type: str) -> list[tuple[int, int, str]]:
 
 
 def _context_candidates(page, *, evidence_url: str, company: str, process_label: str) -> list[str]:
+    if not process_label:
+        return []
     evidence_host = (urlparse(evidence_url).hostname or "").lower().strip(".")
     process_norm = _norm(process_label)
     company_norm = _norm(company)
@@ -151,19 +163,21 @@ def _context_candidates(page, *, evidence_url: str, company: str, process_label:
         norm = _norm(label)
         if not norm or norm in seen or norm in NAV_OR_LOW_VALUE or norm in GENERIC_PROCESS_LABELS:
             continue
-        if norm == process_norm or norm == company_norm or ACTION_PREFIX_RE.search(label):
+        if norm == process_norm or norm == company_norm or norm in CONTEXT_LOW_VALUE_LABELS or ACTION_PREFIX_RE.search(label):
             continue
         target_host = (urlparse(target).hostname or "").lower().strip(".")
         if evidence_host and target_host and not hosts_related(evidence_host, target_host):
             continue
+        path_parts = [_norm(part) for part in urlparse(target).path.split("/") if part]
+        if path_parts and path_parts[0] in CONTEXT_LOW_VALUE_PATH_HEADS:
+            continue
         words = norm.split()
         if len(words) < 2 or len(words) > 8:
             continue
-        segments = [part for part in urlparse(target).path.split("/") if part]
         score = 0
-        if len(segments) >= 2:
+        if len(path_parts) >= 2:
             score += 4
-        elif len(segments) == 1:
+        elif len(path_parts) == 1:
             score += 2
         if 2 <= len(words) <= 5:
             score += 2
@@ -183,16 +197,18 @@ def _specific_anchor(page, company: str, agent_type: str, process_label: str, ev
     if process_label and process_norm not in GENERIC_PROCESS_LABELS and len(process_norm.split()) >= 2:
         return process_label
 
-    # For generic actions such as Get a Quote/Shop/FAQ, prefer one concrete
-    # same-site product/service context over a broad industry title.
-    contexts = _context_candidates(
-        page,
-        evidence_url=evidence_url,
-        company=company,
-        process_label=process_label,
-    )
-    if contexts:
-        return contexts[0]
+    # For a proven but generic action such as Get a Quote/Shop/FAQ, prefer one
+    # concrete same-site product/service context. Never infer a context anchor
+    # when no agent-relevant process route was found at all.
+    if process_label:
+        contexts = _context_candidates(
+            page,
+            evidence_url=evidence_url,
+            company=company,
+            process_label=process_label,
+        )
+        if contexts:
+            return contexts[0]
 
     for descriptor in _title_descriptors(page, company):
         if _norm(descriptor) != process_norm:
