@@ -8,9 +8,11 @@ from typing import Iterable
 
 from outreach_imap_draft import append_verified_draft, choose_mailbox
 from outreach_mailboxes import enabled_mailboxes, load_mailboxes_from_env
+from prospect_target_policy import canonical_country
 
 QUEUE_SHEET = "OutreachQueue"
 SUPPRESSION_SHEET = "Suppression"
+POSTAL_PLACEHOLDER = "{{OUTREACH_POSTAL_ADDRESS}}"
 SAFE_LEAD_ID = re.compile(r"^[A-Za-z0-9._:-]{1,160}$")
 ALLOWED_DRAFT_STATUSES = {"prepared", "manual_review", "approved"}
 TERMINAL_FIELDS = (
@@ -104,6 +106,21 @@ def validate_queue_row(
     return errors
 
 
+def inject_private_postal_for_draft(row: dict[str, str], body: str) -> str:
+    text = str(body or "")
+    country = canonical_country(row.get("country", ""))
+    if country != "US":
+        if POSTAL_PLACEHOLDER in text:
+            raise RuntimeError("non-US draft unexpectedly contains the private postal placeholder")
+        return text
+    address = os.getenv("OUTREACH_POSTAL_ADDRESS", "").strip()
+    if not address:
+        raise RuntimeError("OUTREACH_POSTAL_ADDRESS is required for US commercial draft")
+    if POSTAL_PLACEHOLDER not in text:
+        raise RuntimeError("US commercial draft is missing the private postal placeholder")
+    return text.replace(POSTAL_PLACEHOLDER, address)
+
+
 def build_sheets_service():
     from google.oauth2 import service_account
     from googleapiclient.discovery import build
@@ -147,11 +164,12 @@ def create_queue_draft(*, lead_id: str, spreadsheet_id: str, test_id: str):
     if errors:
         raise RuntimeError("; ".join(errors))
 
+    body = inject_private_postal_for_draft(row, row["body"])
     return append_verified_draft(
         mailbox,
         recipient=row["email"],
         subject=row["subject"],
-        body=row["body"],
+        body=body,
         test_id=test_id,
         explicit_folder=os.getenv("OUTREACH_DRAFT_FOLDER", ""),
         self_only=False,
