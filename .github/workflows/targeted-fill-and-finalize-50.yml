@@ -1,0 +1,110 @@
+name: Targeted Fill and Finalize 50 Human Drafts
+
+on:
+  push:
+    branches:
+      - run/leads-50-drafts-20260909
+    paths:
+      - '.github/workflows/targeted-fill-and-finalize-50.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: targeted-fill-finalize-50-human-drafts-20260910
+  cancel-in-progress: false
+
+jobs:
+  fill-and-finalize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
+      OUTREACH_CONFIG_SPREADSHEET_ID: ${{ vars.OUTREACH_CONFIG_SPREADSHEET_ID || '1iOBCaBq3MpsrYQiESAhjS1NMRQDXAWmkTh-U-63qzs4' }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+      OUTREACH_MAILBOXES_JSON: ${{ secrets.OUTREACH_MAILBOXES_JSON }}
+      OUTREACH_MAILBOX_ID: ${{ vars.OUTREACH_MAILBOX_ID || 'primary' }}
+      OUTREACH_DRAFT_MAILBOX_ID: ${{ vars.OUTREACH_MAILBOX_ID || 'primary' }}
+      OUTREACH_SMTP_HOST: ${{ vars.OUTREACH_SMTP_HOST || 'mail.andrewbaeten.nl' }}
+      OUTREACH_SMTP_PORT: ${{ vars.OUTREACH_SMTP_PORT || '587' }}
+      OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+      OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+      OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+      OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME || 'Andrew Baeten' }}
+      OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
+      OUTREACH_DAILY_LIMIT: '20'
+
+    steps:
+      - name: Checkout temporary execution branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-outreach.txt
+
+      - name: Install isolated runtime dependencies
+        run: python3 -m pip install --disable-pip-version-check --requirement requirements-outreach.txt
+
+      - name: Require bounded Sheet and mailbox credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${GOOGLE_SERVICE_ACCOUNT_JSON:-}" || { echo '::error::GOOGLE_SERVICE_ACCOUNT_JSON is required'; exit 1; }
+          test -n "${OUTREACH_MAIL_PASSWORD:-}" || { echo '::error::OUTREACH_MAIL_PASSWORD is required'; exit 1; }
+          echo 'RUNTIME_CREDENTIALS=present'
+
+      - name: Load private outreach footer config
+        run: python3 scripts/outreach_private_config.py
+
+      - name: Target only fresh US quote-intake A-fit candidates
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ops/targeted_us_quote_fill.py --target-new 35 --max-assess 180 --report targeted-us-quote-fill.json | tee targeted-us-quote-fill.log
+          grep -q '^TARGETED_US_QUOTE_FILL=complete .*smtp_send=not_invoked$' targeted-us-quote-fill.log
+
+      - name: Create and verify exactly 50 human drafts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ops/finalize_50_human_drafts.py | tee final-50-human-drafts.log
+          grep -q '^LEADS50_FINAL=green selected=50 drafts=50 .*smtp_send=not_invoked$' final-50-human-drafts.log
+
+      - name: Write final summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## Targeted 50 human mijn.host drafts'
+            echo '- target: `US manufacturing / quote_intake`'
+            echo '- sources: `approved + enabled Project Leads sources only`'
+            echo '- qualification: `A only, official homepage + max one same-site process page`'
+            echo '- contact: `public official-site business email + aligned domain + MX ready`'
+            echo '- copy: `company-specific official-site anchor; natural language; no prospect-facing AI/automation/bot/ROI/agent jargon`'
+            echo '- queue: `manual_review; no compliance/send permission granted`'
+            echo '- mailbox: `info@andrewbaeten.nl via IMAP Drafts only`'
+            echo '- final proof: `unique X-Webactueel-Draft-Test-ID + 50/50 same-folder readback`'
+            echo '- SMTP: `not invoked`'
+            echo '- main branch: `untouched`'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload evidence receipts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: targeted-final-50-human-drafts-${{ github.run_id }}
+          path: |
+            targeted-us-quote-fill.json
+            targeted-us-quote-fill.log
+            selected-50-final.json
+            draft-receipts-final.json
+            final-50-human-drafts.log
+            prepare-new-only-final-*.json
+          if-no-files-found: ignore
+          retention-days: 14
