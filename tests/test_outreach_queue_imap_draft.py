@@ -29,11 +29,11 @@ class QueueImapDraftTests(unittest.TestCase):
     def test_us_draft_injects_private_address_at_runtime(self):
         row = {"country": "US"}
         body = "Best regards,\nAndrew Baeten\n{{OUTREACH_POSTAL_ADDRESS}}\nandrewbaeten.nl"
-        with patch.dict(os.environ, {"OUTREACH_POSTAL_ADDRESS": "Pleinweg 90\n3083 EK Rotterdam\nThe Netherlands"}, clear=False):
+        with patch.dict(os.environ, {"OUTREACH_POSTAL_ADDRESS": "123 Example Street\nExample City\nExample Country"}, clear=False):
             rendered = inject_private_postal_for_draft(row, body)
         self.assertNotIn("{{OUTREACH_POSTAL_ADDRESS}}", rendered)
-        self.assertIn("Andrew Baeten\nPleinweg 90", rendered)
-        self.assertTrue(rendered.endswith("The Netherlands\nandrewbaeten.nl"))
+        self.assertIn("Andrew Baeten\n123 Example Street", rendered)
+        self.assertTrue(rendered.endswith("Example Country\nandrewbaeten.nl"))
 
     def test_us_draft_fails_closed_without_private_address(self):
         old = os.environ.pop("OUTREACH_POSTAL_ADDRESS", None)
