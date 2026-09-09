@@ -33,6 +33,28 @@ class OutreachPersonalizationAdversarialTests(unittest.TestCase):
                         evidence_url="https://example.test/",
                     )
 
+    def test_specific_title_cannot_replace_missing_agent_process_route(self):
+        for agent_type in (
+            "front_desk_sales",
+            "quote_intake",
+            "commerce",
+            "customer_support",
+            "review_concierge",
+        ):
+            with self.subTest(agent_type=agent_type):
+                page = ParsedPage(
+                    title="Example Company | Premium Roofing Specialists",
+                    links=[],
+                )
+                with self.assertRaisesRegex(ValueError, "specific"):
+                    build_personalization(
+                        page,
+                        company="Example Company",
+                        agent_type=agent_type,
+                        language="en",
+                        evidence_url="https://example.test/",
+                    )
+
     def test_each_public_agent_varies_when_real_site_context_varies(self):
         cases = {
             "front_desk_sales": (
