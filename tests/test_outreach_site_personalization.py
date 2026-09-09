@@ -139,6 +139,20 @@ class OutreachSitePersonalizationTests(unittest.TestCase):
                 evidence_url="https://example.test/",
             )
 
+    def test_irrelevant_same_site_link_is_not_mistaken_for_agent_process(self):
+        page = ParsedPage(
+            title="Example Company | Home",
+            links=[("https://example.test/team/leadership", "Leadership Team")],
+        )
+        with self.assertRaisesRegex(ValueError, "specific"):
+            build_personalization(
+                page,
+                company="Example Company",
+                agent_type="quote_intake",
+                language="en",
+                evidence_url="https://example.test/",
+            )
+
     def test_reactivation_requires_first_party_context_not_public_site(self):
         page = ParsedPage(
             title="Example Company | Customer Portal",
