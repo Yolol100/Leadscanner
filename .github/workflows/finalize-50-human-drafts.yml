@@ -1,0 +1,128 @@
+name: Finalize 50 Human mijn.host Drafts
+
+on:
+  push:
+    branches:
+      - run/leads-50-drafts-20260909
+    paths:
+      - '.github/workflows/finalize-50-human-drafts.yml'
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: finalize-50-human-drafts-20260910
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      PRIOR_RUN_ID: '34410373466'
+      OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
+      OUTREACH_CONFIG_SPREADSHEET_ID: ${{ vars.OUTREACH_CONFIG_SPREADSHEET_ID || '1iOBCaBq3MpsrYQiESAhjS1NMRQDXAWmkTh-U-63qzs4' }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+      OUTREACH_MAILBOXES_JSON: ${{ secrets.OUTREACH_MAILBOXES_JSON }}
+      OUTREACH_MAILBOX_ID: ${{ vars.OUTREACH_MAILBOX_ID || 'primary' }}
+      OUTREACH_DRAFT_MAILBOX_ID: ${{ vars.OUTREACH_MAILBOX_ID || 'primary' }}
+      OUTREACH_SMTP_HOST: ${{ vars.OUTREACH_SMTP_HOST || 'mail.andrewbaeten.nl' }}
+      OUTREACH_SMTP_PORT: ${{ vars.OUTREACH_SMTP_PORT || '587' }}
+      OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+      OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+      OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+      OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME || 'Andrew Baeten' }}
+      OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
+      OUTREACH_DAILY_LIMIT: '20'
+
+    steps:
+      - name: Stop superseded fill run before any new writes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+          headers=(-H 'Accept: application/vnd.github+json' -H "Authorization: Bearer ${GH_TOKEN}" -H 'X-GitHub-Api-Version: 2022-11-28')
+          status="$(curl --fail-with-body --silent --show-error "${headers[@]}" "${api}/actions/runs/${PRIOR_RUN_ID}" | jq -r '.status')"
+          if [ "$status" != 'completed' ]; then
+            curl --fail-with-body --silent --show-error -X POST "${headers[@]}" "${api}/actions/runs/${PRIOR_RUN_ID}/cancel" >/dev/null
+            echo "CANCEL_REQUESTED=${PRIOR_RUN_ID}"
+          else
+            echo "PRIOR_RUN_ALREADY_COMPLETED=${PRIOR_RUN_ID}"
+          fi
+          for _ in $(seq 1 120); do
+            status="$(curl --fail-with-body --silent --show-error "${headers[@]}" "${api}/actions/runs/${PRIOR_RUN_ID}" | jq -r '.status')"
+            if [ "$status" = 'completed' ]; then
+              echo "PRIOR_RUN_STOPPED=${PRIOR_RUN_ID}"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo '::error::Superseded fill run did not stop in bounded wait.'
+          exit 2
+
+      - name: Checkout temporary execution branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-outreach.txt
+
+      - name: Install isolated runtime dependencies
+        run: python3 -m pip install --disable-pip-version-check --requirement requirements-outreach.txt
+
+      - name: Require bounded Sheet and mailbox credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${GOOGLE_SERVICE_ACCOUNT_JSON:-}" || { echo '::error::GOOGLE_SERVICE_ACCOUNT_JSON is required'; exit 1; }
+          test -n "${OUTREACH_MAIL_PASSWORD:-}" || { echo '::error::OUTREACH_MAIL_PASSWORD is required'; exit 1; }
+          echo 'RUNTIME_CREDENTIALS=present'
+
+      - name: Load private outreach footer config
+        run: python3 scripts/outreach_private_config.py
+
+      - name: Fill remaining A-fit leads and create exactly 50 verified human drafts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ops/finalize_50_human_drafts.py | tee finalize-50-human-drafts.log
+          grep -q '^LEADS50_FINAL=green selected=50 drafts=50 .*smtp_send=not_invoked$' finalize-50-human-drafts.log
+
+      - name: Write final execution summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## Final 50 human mijn.host drafts'
+            echo '- campaign: `US manufacturing / quote_intake`'
+            echo '- lead gate: `new canonical domain + A-fit + official-site-ready contact`'
+            echo '- copy gate: `official site context + strong unique anchor + human company name`'
+            echo '- prospect copy: `no AI/automation/bot/ROI/agent jargon`'
+            echo '- queue: `manual_review; compliance basis not granted`'
+            echo '- mailbox: `info@andrewbaeten.nl via mijn.host IMAP`'
+            echo '- draft write: `idempotent unique header + final 50/50 IMAP readback`'
+            echo '- SMTP: `not invoked`'
+            echo '- main branch: `untouched`'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload final bounded receipts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: final-50-human-drafts-${{ github.run_id }}
+          path: |
+            selected-50-final.json
+            draft-receipts-final.json
+            finalize-50-human-drafts.log
+            prepare-new-only-final-*.json
+          if-no-files-found: ignore
+          retention-days: 14
