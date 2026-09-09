@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 
 from prospect_agent_qualification import (
     _parse_evidence_page,
     assess_candidate,
     select_process_evidence_link,
 )
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class ProspectAgentAuditHardeningTests(unittest.TestCase):
@@ -99,6 +102,14 @@ class ProspectAgentAuditHardeningTests(unittest.TestCase):
         )
         self.assertEqual(result.agent_type, "")
         self.assertEqual(result.evidence_url, "https://example.com/")
+
+    def test_autopilot_passes_campaign_target_into_qualification(self):
+        text = (ROOT / ".github" / "workflows" / "leads-autopilot.yml").read_text(encoding="utf-8")
+        qualification_block = text.split("- name: Qualify prospects for the selected AI agent campaign", 1)[1].split(
+            "- name: Enforce one-agent campaign target before contact research", 1
+        )[0]
+        self.assertIn("AGENT_SALES_TARGET_TYPE: ${{ steps.mode.outputs.agent_type }}", qualification_block)
+        self.assertIn("prospect_agent_qualification.py", qualification_block)
 
 
 if __name__ == "__main__":
