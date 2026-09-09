@@ -119,10 +119,14 @@ def _process_candidates(page, agent_type: str) -> list[tuple[int, int, str]]:
         if norm in NAV_OR_LOW_VALUE:
             continue
         path_norm = _norm(urlparse(target).path)
+        label_match = any(hint in norm for hint in hints)
+        path_match = any(hint in path_norm for hint in hints)
+        if not (label_match or path_match):
+            continue
         score = 0
-        if any(hint in norm for hint in hints):
+        if label_match:
             score += 6
-        if any(hint in path_norm for hint in hints):
+        if path_match:
             score += 3
         if len(norm.split()) >= 2:
             score += 1
