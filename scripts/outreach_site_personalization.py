@@ -194,21 +194,22 @@ def _context_candidates(page, *, evidence_url: str, company: str, process_label:
 
 def _specific_anchor(page, company: str, agent_type: str, process_label: str, evidence_url: str) -> str:
     process_norm = _norm(process_label)
-    if process_label and process_norm not in GENERIC_PROCESS_LABELS and len(process_norm.split()) >= 2:
+    if not process_label:
+        return ""
+    if process_norm not in GENERIC_PROCESS_LABELS and len(process_norm.split()) >= 2:
         return process_label
 
     # For a proven but generic action such as Get a Quote/Shop/FAQ, prefer one
     # concrete same-site product/service context. Never infer a context anchor
     # when no agent-relevant process route was found at all.
-    if process_label:
-        contexts = _context_candidates(
-            page,
-            evidence_url=evidence_url,
-            company=company,
-            process_label=process_label,
-        )
-        if contexts:
-            return contexts[0]
+    contexts = _context_candidates(
+        page,
+        evidence_url=evidence_url,
+        company=company,
+        process_label=process_label,
+    )
+    if contexts:
+        return contexts[0]
 
     for descriptor in _title_descriptors(page, company):
         if _norm(descriptor) != process_norm:
