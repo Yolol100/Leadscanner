@@ -40,7 +40,7 @@ PROVISIONAL_VALUE_NL = {
     "customer_support": "veelvoorkomende vragen krijgen antwoord uit goedgekeurde informatie en complexere vragen komen met context bij het team terecht",
     "commerce": "bezoekers krijgen hulp bij productvragen en kunnen daarna doorgaan via de bestaande shop- of orderroute",
     "review_concierge": "na een passende afgeronde klantactie kan een reviewverzoek worden gestart met maximaal een goedgekeurde follow-up",
-    "lead_reactivation": "alleen een goedgekeurde lijst met eerdere leads wordt benaderd en geinteresseerden worden terug naar sales geleid",
+    "lead_reactivation": "alleen een goedgekeurde lijst met eerdere leads wordt benaderd en geïnteresseerden worden terug naar sales geleid",
 }
 PROVISIONAL_VALUE_EN = {
     "front_desk_sales": "first questions are handled, relevant details are collected, and suitable enquiries can continue to the team or existing booking path",
@@ -109,7 +109,7 @@ def _copy_with_value(
         )
         followup = (
             f"Beste team van {company},\n\n"
-            f"Ik kom hier nog een keer op terug. Ik heb het korte voorbeeld voor {company} nog liggen.\n\n"
+            f"Ik kom hier nog één keer op terug. Ik heb het korte voorbeeld voor {company} nog liggen.\n\n"
             f"{cta}\n\n"
             "Geen interesse? Een kort \"nee\" is genoeg.\n\n"
             "Met vriendelijke groet,\nAndrew Baeten"
