@@ -9,7 +9,7 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Mapping, Sequence
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 from outreach_sender import build_sheets_service, ensure_expected_headers, get_values, rows_from_values
 from prospect_discovery import BoundedHttpClient, DiscoveryError, match_terms, parse_page, root_url
@@ -35,6 +35,7 @@ RECHECKABLE_STATUSES = {"discovered", "hold", "qualified", "rejected"}
 HARD_MAX_PER_RUN = 25
 DEFAULT_MAX_PER_RUN = 10
 DEFAULT_RECHECK_DAYS = 30
+AUTO_TARGET = "auto"
 
 AGENT_CATALOG = {
     "front_desk_sales": "AI Front Desk & Sales Agent",
@@ -55,8 +56,8 @@ QUOTE_HINTS = (
     "offerte", "offerte aanvragen", "prijs aanvragen", "prijsopgave", "aanvraag", "intake",
 )
 SHOP_HINTS = (
-    "woocommerce", "shopify", "add to cart", "checkout", "shopping cart", "cart", "buy now",
-    "webshop", "winkelwagen", "bestellen", "online shop", "shop online",
+    "add to cart", "checkout", "shopping cart", "cart", "buy now", "webshop", "winkelwagen",
+    "bestellen", "online shop", "shop online", "products", "producten",
 )
 SUPPORT_HINTS = (
     "customer support", "customer service", "help center", "help centre", "support", "faq",
@@ -79,6 +80,18 @@ COMMERCIAL_HINTS = (
     "services", "diensten", "products", "producten", "solutions", "oplossingen", "pricing",
     "prijzen", "contact", "quote", "offerte", "shop", "webshop",
 )
+
+NON_USER_FACING_BLOCK_RE = re.compile(r"(?is)<!--.*?-->|<(script|style|noscript|template)\b[^>]*>.*?</\1\s*>")
+HIDDEN_ELEMENT_RE = re.compile(r"(?is)<([a-z][a-z0-9:-]*)\b(?=[^>]*(?:\bhidden\b|aria-hidden\s*=\s*[\"\']?true|style\s*=\s*[\"\'][^\"\']*(?:display\s*:\s*none|visibility\s*:\s*hidden)))[^>]*>.*?</\1\s*>")
+
+PROCESS_LINK_HINTS = {
+    "front_desk_sales": ("book", "booking", "appointment", "afspraak", "reserve", "contact"),
+    "quote_intake": ("quote", "estimate", "pricing", "offerte", "intake", "aanvraag"),
+    "commerce": ("shop", "store", "product", "cart", "checkout", "webshop", "winkelwagen"),
+    "customer_support": ("support", "help", "faq", "service", "returns", "retour"),
+    "review_concierge": ("review", "testimonial", "beoordeling", "ervaring"),
+    "lead_reactivation": ("customer", "portal", "newsletter", "klant", "nieuwsbrief"),
+}
 
 
 @dataclass(frozen=True)
@@ -139,6 +152,17 @@ def env_bool(name: str, default: bool = False) -> bool:
     raise ValueError(f"{name} must be true or false")
 
 
+def normalize_target(raw: object, *, allow_auto: bool = True) -> str:
+    value = _text(raw).casefold() or AUTO_TARGET
+    if value == AUTO_TARGET:
+        if not allow_auto:
+            raise ValueError("one explicit AGENT_SALES_TARGET_TYPE is required")
+        return value
+    if value not in AGENT_CATALOG:
+        raise ValueError("AGENT_SALES_TARGET_TYPE must be auto or one of the six approved agent types")
+    return value
+
+
 def _language(country: str) -> str:
     return "nl" if canonical_country(country) in {"NL", "BE"} else "en"
 
@@ -148,28 +172,96 @@ def _contains_any(value: str, needles: Sequence[str]) -> bool:
     return any(needle.casefold() in haystack for needle in needles)
 
 
-def _page_context(page, html: str) -> str:
+def _sanitize_evidence_html(html: str) -> str:
+    cleaned = NON_USER_FACING_BLOCK_RE.sub(" ", html or "")
+    return HIDDEN_ELEMENT_RE.sub(" ", cleaned)
+
+
+def _parse_evidence_page(html: str, url: str):
+    return parse_page(_sanitize_evidence_html(html), url)
+
+
+def _page_context(page) -> str:
+    # Prospect-controlled raw HTML, scripts, comments and hidden markup are untrusted data.
+    # Classification uses parsed user-facing text and link labels/paths only.
     links = " ".join(f"{urlparse(target).path} {label}" for target, label in page.links[:200])
-    return f"{page.title} {page.site_name} {page.text} {links} {html[:100000]}"
+    return f"{page.title} {page.site_name} {page.text} {links}"
 
 
-def classify_agent_fit(page, html: str) -> AgentFit:
-    context = _page_context(page, html)
-    if _contains_any(context, BOOKING_HINTS):
-        return AgentFit("front_desk_sales", 3, "booking", "new_lead_to_qualified_appointment", "qualified_conversation_to_appointment", "phone/chat + calendar + CRM")
-    if _contains_any(context, QUOTE_HINTS):
-        return AgentFit("quote_intake", 3, "quote_intake", "request_to_complete_intake", "complete_intake_to_quote", "form/chat + CRM + quote workflow")
-    if _contains_any(context, SHOP_HINTS):
-        return AgentFit("commerce", 3, "commerce", "product_question_to_supported_purchase", "assisted_product_journey", "catalog/order data + support handoff")
-    if _contains_any(context, SUPPORT_HINTS):
-        return AgentFit("customer_support", 3, "support", "customer_question_to_resolution_or_handoff", "resolved_or_correctly_escalated_request", "knowledge base + ticketing/order data")
-    if _contains_any(context, REVIEW_HINTS):
-        return AgentFit("review_concierge", 2, "reviews", "completed_service_to_review_request", "completed_service_to_review_request", "CRM/order completion + review platform")
-    if _contains_any(context, REACTIVATION_HINTS):
-        return AgentFit("lead_reactivation", 2, "reactivation", "approved_old_lead_to_requalified_opportunity", "reactivated_conversation_to_qualified_opportunity", "approved CRM segment + messaging channel + suppression")
-    if _contains_any(context, CONTACT_HINTS):
-        return AgentFit("front_desk_sales", 2, "contact", "new_enquiry_to_qualified_handoff", "qualified_conversation_to_handoff", "phone/chat + CRM + human handoff")
+def _fit_for_target(context: str, target: str) -> AgentFit:
+    if target == "front_desk_sales":
+        if _contains_any(context, BOOKING_HINTS):
+            return AgentFit(target, 3, "booking", "new_lead_to_qualified_appointment", "qualified_conversation_to_appointment", "phone/chat + calendar + CRM")
+        if _contains_any(context, CONTACT_HINTS):
+            return AgentFit(target, 2, "contact", "new_enquiry_to_qualified_handoff", "qualified_conversation_to_handoff", "phone/chat + CRM + human handoff")
+    elif target == "quote_intake" and _contains_any(context, QUOTE_HINTS):
+        return AgentFit(target, 3, "quote_intake", "request_to_complete_intake", "complete_intake_to_quote", "form/chat + CRM + quote workflow")
+    elif target == "commerce" and _contains_any(context, SHOP_HINTS):
+        return AgentFit(target, 3, "commerce", "product_question_to_supported_purchase", "assisted_product_journey", "catalog/order data + support handoff")
+    elif target == "customer_support" and _contains_any(context, SUPPORT_HINTS):
+        return AgentFit(target, 3, "support", "customer_question_to_resolution_or_handoff", "resolved_or_correctly_escalated_request", "knowledge base + ticketing/order data")
+    elif target == "review_concierge" and _contains_any(context, REVIEW_HINTS):
+        return AgentFit(target, 2, "reviews", "completed_service_to_review_request", "completed_service_to_review_request", "CRM/order completion + review platform")
+    elif target == "lead_reactivation" and _contains_any(context, REACTIVATION_HINTS):
+        return AgentFit(target, 2, "reactivation", "approved_old_lead_to_requalified_opportunity", "reactivated_conversation_to_qualified_opportunity", "approved CRM segment + messaging channel + suppression")
     return AgentFit("", 0, "none", "", "", "")
+
+
+def classify_agent_context(context: str, target_agent_type: str = AUTO_TARGET) -> AgentFit:
+    target = normalize_target(target_agent_type)
+    if target != AUTO_TARGET:
+        return _fit_for_target(context, target)
+    # Exploration/backward compatibility preserves the historical deterministic priority.
+    for candidate in ("front_desk_sales", "quote_intake", "commerce", "customer_support", "review_concierge", "lead_reactivation"):
+        fit = _fit_for_target(context, candidate)
+        if fit.score:
+            return fit
+    return AgentFit("", 0, "none", "", "", "")
+
+
+def classify_agent_fit(page, html: str = "", target_agent_type: str = AUTO_TARGET) -> AgentFit:
+    del html  # raw HTML is intentionally not part of the evidence context
+    return classify_agent_context(_page_context(page), target_agent_type)
+
+
+def _canonical_host(url: str) -> str:
+    host = (urlparse(url).hostname or "").casefold().rstrip(".")
+    return host[4:] if host.startswith("www.") else host
+
+
+def _same_site(base_url: str, candidate_url: str) -> bool:
+    base_host = _canonical_host(base_url)
+    candidate_host = _canonical_host(candidate_url)
+    return bool(base_host and candidate_host and (candidate_host == base_host or candidate_host.endswith("." + base_host)))
+
+
+def select_process_evidence_link(page, website: str, target_agent_type: str = AUTO_TARGET) -> str:
+    target = normalize_target(target_agent_type)
+    hints = PROCESS_LINK_HINTS.get(target) if target != AUTO_TARGET else tuple(
+        dict.fromkeys(term for values in PROCESS_LINK_HINTS.values() for term in values)
+    )
+    if not hints:
+        return ""
+    root = root_url(website)
+    ranked: list[tuple[int, int, str]] = []
+    for index, (raw_target, label) in enumerate(page.links[:200]):
+        target_url = urljoin(root, raw_target)
+        parsed = urlparse(target_url)
+        if parsed.scheme not in {"http", "https"} or not _same_site(root, target_url):
+            continue
+        normalized = target_url.split("#", 1)[0]
+        if root_url(normalized) != root:
+            continue
+        path = parsed.path.casefold()
+        text = f"{path} {_text(label).casefold()}"
+        score = sum(1 for hint in hints if hint in text)
+        if score:
+            ranked.append((-score, index, normalized))
+    ranked.sort()
+    for _, _, url in ranked:
+        if url.rstrip("/") != root.rstrip("/"):
+            return url
+    return ""
 
 
 def _fact_and_idea(fit: AgentFit, company: str, language: str) -> tuple[str, str]:
@@ -186,8 +278,8 @@ def _fact_and_idea(fit: AgentFit, company: str, language: str) -> tuple[str, str
         }
         ideas = {
             "front_desk_sales": f"Een AI Front Desk & Sales Agent kan voor {company} eerste vragen beantwoorden, relevante gegevens verzamelen, leads kwalificeren en een afspraak of menselijke overdracht voorbereiden.",
-            "lead_reactivation": f"Een AI Comeback Agent kan uitsluitend op een door {company} goedgekeurde lijst oude leads opnieuw contact starten, interesse herkennen en geïnteresseerden terug naar sales of een afspraak sturen.",
-            "review_concierge": f"Een AI Review Agent kan na een door {company} vastgelegde afronding een reviewverzoek sturen, één nette follow-up doen en reacties voor menselijk toezicht klaarzetten.",
+            "lead_reactivation": f"Een AI Comeback Agent kan uitsluitend op een door {company} goedgekeurde lijst oude leads opnieuw contact starten, interesse herkennen en geinteresseerden terug naar sales of een afspraak sturen.",
+            "review_concierge": f"Een AI Review Agent kan na een door {company} vastgelegde afronding een reviewverzoek sturen, een nette follow-up doen en reacties voor menselijk toezicht klaarzetten.",
             "customer_support": f"Een AI Customer Support Agent kan voor {company} standaardvragen beantwoorden uit goedgekeurde kennis, context verzamelen en complexe gevallen met samenvatting overdragen.",
             "commerce": f"Een AI Commerce Agent kan bezoekers van {company} helpen producten te vinden en vergelijken en order- of retourvragen afhandelen op basis van echte catalogus- en orderdata.",
             "quote_intake": f"Een AI Quote & Intake Agent kan voor {company} aanvraaggegevens compleet verzamelen, ontbrekende informatie navragen en een conceptofferte of intake voor menselijke goedkeuring voorbereiden.",
@@ -213,15 +305,26 @@ def _fact_and_idea(fit: AgentFit, company: str, language: str) -> tuple[str, str
     return facts.get(fit.evidence_kind, ""), ideas.get(fit.agent_type, "")
 
 
-def assess_candidate(row: Mapping[str, object], html: str, signals: Sequence[Mapping[str, object]] = ()) -> Assessment:
+def assess_candidate(
+    row: Mapping[str, object],
+    html: str,
+    signals: Sequence[Mapping[str, object]] = (),
+    *,
+    target_agent_type: str = AUTO_TARGET,
+    process_html: str = "",
+    process_url: str = "",
+) -> Assessment:
+    target = normalize_target(target_agent_type)
     candidate_id = _text(row.get("candidate_id"))
     company = _text(row.get("company"))
     website = root_url(_text(row.get("website")))
     source_url = _text(row.get("source_url"))
     source_id = _text(row.get("source_id"))
     country = canonical_country(_text(row.get("country")))
+
     def reject(reason: str) -> Assessment:
         return Assessment(0, 0, 0, 0, 0, "C", website, "", "", "ai_agent", "", "", "", "", "rejected", reason)
+
     if not candidate_id or not company or not website:
         return reject("missing candidate identity or official website")
     if is_excluded_domain(website):
@@ -235,13 +338,19 @@ def assess_candidate(row: Mapping[str, object], html: str, signals: Sequence[Map
     if not semantic_allowed:
         return reject(f"source_semantic_target_policy: {semantic_reason}")
 
-    page = parse_page(html, website)
-    context = _page_context(page, html)
+    homepage = _parse_evidence_page(html, website)
+    contexts = [_page_context(homepage)]
+    evidence_url = website
+    if process_html and process_url and _same_site(website, process_url):
+        process_page = _parse_evidence_page(process_html, process_url)
+        contexts.append(_page_context(process_page))
+        evidence_url = process_url
+    context = " ".join(contexts)
     accepted, _ = match_terms(context, (), DEFAULT_AGENCY_EXCLUDE_TERMS)
     if not accepted:
         return reject("agency/provider target policy blocked")
 
-    fit = classify_agent_fit(page, html)
+    fit = classify_agent_context(context, target)
     commercial = _contains_any(context, COMMERCIAL_HINTS) or fit.score > 0
     icp_score = 3 if commercial and fit.score >= 2 else 2 if commercial else 1
     signal_score = active_signal_score(candidate_id, signals)
@@ -255,7 +364,8 @@ def assess_candidate(row: Mapping[str, object], html: str, signals: Sequence[Map
     fact, idea = _fact_and_idea(fit, company, _language(country)) if fit.agent_type else ("", "")
     reason = (
         f"customer_potential={total}; icp={icp_score}; agent_opportunity={fit.score}; signal={signal_score}; "
-        f"value_integration_fit={value_fit}; agent_type={fit.agent_type or 'none'}; evidence={fit.evidence_kind}"
+        f"value_integration_fit={value_fit}; agent_type={fit.agent_type or 'none'}; evidence={fit.evidence_kind}; "
+        f"campaign_target={target}"
     )
     if reactivation_first_party_required:
         reason += "; first_party_reactivation_evidence_required=approved_existing_lead_or_quote_dataset"
@@ -263,7 +373,7 @@ def assess_candidate(row: Mapping[str, object], html: str, signals: Sequence[Map
         tier, status = "B", "hold"
         reason += "; downgraded=no evidence-bound agent fact/idea"
     return Assessment(
-        icp_score, fit.score, signal_score, value_fit, total, tier, website, fact, idea,
+        icp_score, fit.score, signal_score, value_fit, total, tier, evidence_url, fact, idea,
         "ai_agent", fit.agent_type, fit.business_process, fit.kpi_candidate, fit.integration_hint,
         status, reason,
     )
@@ -345,6 +455,7 @@ def run(mode: str, report_path: str) -> int:
     mode = (mode or "validate").strip().casefold()
     if mode not in {"validate", "qualify"}:
         raise DiscoveryError("mode must be validate or qualify")
+    target = normalize_target(os.getenv("AGENT_SALES_TARGET_TYPE", AUTO_TARGET))
     spreadsheet_id = os.getenv("OUTREACH_SPREADSHEET_ID", "").strip()
     if not spreadsheet_id:
         raise DiscoveryError("OUTREACH_SPREADSHEET_ID is required")
@@ -359,8 +470,8 @@ def run(mode: str, report_path: str) -> int:
     qualification_exists = ensure_agent_qualification_tab(service, spreadsheet_id, create=(mode == "qualify"))
 
     if mode == "validate":
-        _write_report(report_path, {"mode": mode, "status": "ready", "agent_qualification_tab_present": qualification_exists, "send_permission": "none"})
-        print(f"PROSPECT_AGENT_QUALIFICATION=validated qualification_tab_present={str(qualification_exists).lower()}")
+        _write_report(report_path, {"mode": mode, "status": "ready", "agent_qualification_tab_present": qualification_exists, "campaign_target": target, "send_permission": "none"})
+        print(f"PROSPECT_AGENT_QUALIFICATION=validated qualification_tab_present={str(qualification_exists).lower()} target={target}")
         return 0
 
     existing_headers, existing = rows_from_values(get_values(service, spreadsheet_id, AGENT_QUALIFICATION_SHEET))
@@ -371,13 +482,13 @@ def run(mode: str, report_path: str) -> int:
     force_recheck = env_bool("PROSPECT_QUALIFICATION_FORCE_RECHECK", False)
     candidate_pool = _eligible_candidates(candidates, existing_by_id, force_recheck=force_recheck, recheck_days=recheck_days)
     client = BoundedHttpClient(
-        user_agent=os.getenv("PROSPECT_QUALIFICATION_USER_AGENT", "WebactueelAgentQualification/1.0 (+https://andrewbaeten.nl)"),
+        user_agent=os.getenv("PROSPECT_QUALIFICATION_USER_AGENT", "WebactueelAgentQualification/1.1 (+https://andrewbaeten.nl)"),
         timeout=float(os.getenv("PROSPECT_QUALIFICATION_TIMEOUT_SECONDS", "10") or "10"),
         max_bytes=clamp_int(os.getenv("PROSPECT_QUALIFICATION_MAX_BYTES", ""), 524288, 65536, 2097152),
         min_interval=float(os.getenv("PROSPECT_QUALIFICATION_MIN_INTERVAL_SECONDS", "0.5") or "0.5"),
     )
 
-    assessed = qualified = held = rejected = unscored = 0
+    assessed = qualified = held = rejected = unscored = process_page_fetches = 0
     for candidate in candidate_pool[:max_rows]:
         candidate_id = _text(candidate.get("candidate_id"))
         website = root_url(_text(candidate.get("website")))
@@ -389,7 +500,25 @@ def run(mode: str, report_path: str) -> int:
             assessment = Assessment(0, 0, 0, 0, 0, "C", website, "", "", "ai_agent", "", "", "", "", "rejected", f"source_semantic_target_policy: {direct_reason}")
         else:
             try:
-                assessment = assess_candidate(candidate, client.fetch_text(website), signals)
+                homepage_html = client.fetch_text(website)
+                homepage = _parse_evidence_page(homepage_html, website)
+                process_url = select_process_evidence_link(homepage, website, target)
+                process_html = ""
+                if process_url:
+                    try:
+                        process_html = client.fetch_text(process_url)
+                        process_page_fetches += 1
+                    except (DiscoveryError, RuntimeError, ValueError):
+                        process_html = ""
+                        process_url = ""
+                assessment = assess_candidate(
+                    candidate,
+                    homepage_html,
+                    signals,
+                    target_agent_type=target,
+                    process_html=process_html,
+                    process_url=process_url,
+                )
             except (DiscoveryError, RuntimeError, ValueError) as exc:
                 assessment = Assessment(0, 0, active_signal_score(candidate_id, signals), 0, 0, "UNSCORED", website, "", "", "ai_agent", "", "", "", "", "hold", f"agent qualification fetch/evidence unavailable: {type(exc).__name__}: {_text(exc)[:180]}")
                 unscored += 1
@@ -432,10 +561,11 @@ def run(mode: str, report_path: str) -> int:
     _write_report(report_path, {
         "mode": mode, "status": "completed", "assessed": assessed, "qualified": qualified,
         "hold": held, "rejected": rejected, "unscored": unscored, "force_recheck": force_recheck,
-        "recheck_days": recheck_days, "offer_family": "ai_agent", "send_permission": "none",
-        "note": "Agent qualification is deterministic, evidence-bound and bounded. It selects only from the six approved Webactueel agent offers and never grants compliance or send permission.",
+        "recheck_days": recheck_days, "offer_family": "ai_agent", "campaign_target": target,
+        "process_page_fetches": process_page_fetches, "send_permission": "none",
+        "note": "Qualification is campaign-aware when a target is explicit, uses parsed user-facing evidence from the homepage plus at most one same-site process page, and never grants compliance or send permission.",
     })
-    print(f"PROSPECT_AGENT_QUALIFICATION=complete assessed={assessed} qualified={qualified} hold={held} rejected={rejected} unscored={unscored}")
+    print(f"PROSPECT_AGENT_QUALIFICATION=complete target={target} assessed={assessed} qualified={qualified} hold={held} rejected={rejected} unscored={unscored} process_pages={process_page_fetches}")
     return 0
 
 
