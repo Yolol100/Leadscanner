@@ -151,7 +151,7 @@ jobs:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: python3 scripts/prospect_signal_discovery_runtime.py --mode "$PROSPECT_SIGNAL_MODE" --report prospect-signal-report.json
 
-      - name: Qualify prospects for approved AI agent offers
+      - name: Qualify prospects for the selected AI agent campaign
         env:
           PROSPECT_QUALIFICATION_MODE: ${{ steps.mode.outputs.mode == 'prepare' && 'qualify' || 'validate' }}
           PROSPECT_QUALIFICATION_FORCE_RECHECK: ${{ steps.mode.outputs.recheck }}
@@ -162,6 +162,8 @@ jobs:
           PROSPECT_QUALIFICATION_MAX_BYTES: ${{ vars.PROSPECT_QUALIFICATION_MAX_BYTES || '524288' }}
           PROSPECT_QUALIFICATION_MIN_INTERVAL_SECONDS: ${{ vars.PROSPECT_QUALIFICATION_MIN_INTERVAL_SECONDS || '0.5' }}
           PROSPECT_QUALIFICATION_USER_AGENT: ${{ vars.PROSPECT_QUALIFICATION_USER_AGENT }}
+          AGENT_SALES_TARGET_TYPE: ${{ steps.mode.outputs.agent_type }}
+          AGENT_SALES_FIRST_PARTY_REACTIVATION: ${{ vars.AGENT_SALES_FIRST_PARTY_REACTIVATION || 'false' }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: python3 scripts/prospect_agent_qualification.py --mode "$PROSPECT_QUALIFICATION_MODE" --report prospect-agent-qualification-report.json
 
@@ -227,12 +229,12 @@ jobs:
             echo "- campaign agent: \`${{ steps.mode.outputs.agent_type }}\`"
             echo "- owner: \`leads\`"
             echo "- offer family: \`ai_agent\`"
-            echo "- flow: \`CAMPAGNE -> VIND -> SANITIZE -> AGENT-FIT -> CAMPAIGN-GATE -> CONTACT -> VALUE-FLOW MAIL\`"
-            echo "- website: \`light official process evidence; full technical scan only on evidence-gap\`"
+            echo "- flow: \`CAMPAGNE -> VIND -> SANITIZE -> TARGET-AWARE AGENT-FIT -> CAMPAIGN-GATE -> CONTACT -> VALUE-FLOW MAIL\`"
+            echo "- website: \`parsed homepage + at most one same-site process page; full technical scan only on evidence-gap\`"
             echo "- compliance: \`manual_review/fail-closed until an evidenced basis exists\`"
             echo "- send permission: \`none\`"
             echo
-            echo "This workflow may discover, sanitize, qualify, enforce one campaign agent, enrich qualified contacts and prepare bounded value-flow outreach. It never receives mailbox credentials and never calls SMTP."
+            echo "This workflow may discover, sanitize, qualify against the selected campaign agent, audit that campaign match, enrich qualified contacts and prepare bounded value-flow outreach. It never receives mailbox credentials and never calls SMTP."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload prepare receipts

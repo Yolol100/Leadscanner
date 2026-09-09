@@ -39,13 +39,18 @@ class ProspectAgentQualificationTests(unittest.TestCase):
         self.assertEqual(result.status, "qualified")
         self.assertIn("Front Desk & Sales Agent", result.idea)
 
-    def test_quote_flow_selects_quote_intake(self):
+    def test_quote_campaign_target_selects_quote_intake_even_with_generic_contact_copy(self):
         html = """
         <html><head><title>Example Installations</title></head><body>
         <h1>Installation services</h1><a href='/quote'>Request a quote</a>
         <p>Contact us for pricing and services.</p></body></html>
         """
-        result = assess_candidate(self._candidate(company="Example Installations"), html, [])
+        result = assess_candidate(
+            self._candidate(company="Example Installations"),
+            html,
+            [],
+            target_agent_type="quote_intake",
+        )
         self.assertEqual(result.agent_type, "quote_intake")
         self.assertEqual(result.agent_opportunity_score, 3)
         self.assertIn("Quote & Intake Agent", result.idea)
