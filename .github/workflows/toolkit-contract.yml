@@ -158,7 +158,8 @@ jobs:
           assert 'smtplib' not in prepare_runtime
           copy_runtime=pathlib.Path('scripts/outreach_copy_preflight.py').read_text(encoding='utf-8')
           assert 'subject must focus on the prospect/process' in copy_runtime
-          assert 'v13.1 value-flow initial may not contain external URLs by default' in copy_runtime
+          assert 'value-first initial may not contain external URLs by default' in copy_runtime
+          assert 'human initial contains AI/corporate jargon banned by the human-writing contract' in copy_runtime
 
           outreach=pathlib.Path('.github/workflows/outreach-smtp.yml').read_text(encoding='utf-8')
           order=[
@@ -190,5 +191,5 @@ jobs:
           assert registry['tools']['outreach_agent_prepare']['status']=='legacy_compatibility'
           assert registry['tools']['outreach_agent_prepare_v2']['default_for_campaign_prepare'] is True
           assert registry['tools']['axe_core']['automatic_score_effect'] is False
-          print('toolkit-contract v13.1: OK')
+          print('toolkit-contract v13.4 human-copy: OK')
           PY
