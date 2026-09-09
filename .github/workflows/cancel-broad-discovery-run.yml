@@ -1,0 +1,44 @@
+name: Cancel Broad Discovery Run
+
+on:
+  push:
+    branches:
+      - run/leads-50-drafts-20260909
+    paths:
+      - '.github/workflows/cancel-broad-discovery-run.yml'
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  cancel-broad:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Cancel slow broad discovery before candidate or mailbox writes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_RUN_ID: '34412444274'
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+          headers=(-H 'Accept: application/vnd.github+json' -H "Authorization: Bearer ${GH_TOKEN}" -H 'X-GitHub-Api-Version: 2022-11-28')
+          status="$(curl --fail-with-body --silent --show-error "${headers[@]}" "${api}/actions/runs/${TARGET_RUN_ID}" | jq -r '.status')"
+          if [ "$status" = 'completed' ]; then
+            echo "TARGET_ALREADY_COMPLETED=${TARGET_RUN_ID}"
+            exit 0
+          fi
+          curl --fail-with-body --silent --show-error -X POST "${headers[@]}" "${api}/actions/runs/${TARGET_RUN_ID}/cancel" >/dev/null
+          echo "CANCEL_REQUESTED=${TARGET_RUN_ID} prior_status=${status}"
+          for _ in $(seq 1 120); do
+            status="$(curl --fail-with-body --silent --show-error "${headers[@]}" "${api}/actions/runs/${TARGET_RUN_ID}" | jq -r '.status')"
+            if [ "$status" = 'completed' ]; then
+              echo "TARGET_STOPPED=${TARGET_RUN_ID}"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo '::error::Broad discovery run did not stop in bounded wait.'
+          exit 2
