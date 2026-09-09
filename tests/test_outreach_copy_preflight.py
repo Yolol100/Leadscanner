@@ -9,25 +9,27 @@ import outreach_copy_preflight as c
 
 GOOD_INITIAL = '''Beste team van Demo,
 
-Demo helpt bedrijven met interieurprojecten.
+Ik zag dat jullie website bezoekers direct naar een offerteaanvraag stuurt.
 
-Eén idee: maak op mobiel direct zichtbaar welke projecttypes jullie aannemen, zodat bezoekers sneller de juiste dienst kunnen kiezen en zonder zoeken bij de relevante informatie uitkomen.
+Ik help bedrijven dit soort processen eenvoudiger te maken met een kleine AI-ondersteunde workflow, terwijl het team de belangrijke stappen zelf blijft controleren.
 
-Als je dit breder wilt doorvoeren, kan ik voor Demo een complete, mobielvriendelijke website maken voor €500.
+Voor Demo zou dat bijvoorbeeld kunnen betekenen: klanten beantwoorden een paar gerichte vragen en je team krijgt een completere aanvraag om te beoordelen.
 
-Een paar voorbeelden:
-https://andrewbaeten.nl/category/cases
-
-Zal ik nog één concreet idee sturen?
+Zal ik een kort voorbeeld sturen van hoe dat er voor Demo uit kan zien?
 
 Geen interesse? Een kort "nee" is genoeg.
 
+Dit is een commercieel bericht.
+
 Met vriendelijke groet,
-Andrew Baeten'''
+Andrew Baeten
+andrewbaeten.nl'''
 
 GOOD_FOLLOWUP = '''Beste team van Demo,
 
-Ik kom hier nog één keer op terug. Als het nuttig is, stuur ik het concrete idee voor Demo graag door.
+Ik kom hier nog één keer op terug. Ik heb het korte voorbeeld voor Demo nog liggen.
+
+Zal ik een kort voorbeeld sturen van hoe dat er voor Demo uit kan zien?
 
 Geen interesse? Een kort "nee" is genoeg.
 
@@ -37,32 +39,39 @@ Andrew Baeten'''
 
 class CopyPreflightTests(unittest.TestCase):
     def test_good_initial(self):
-        self.assertEqual(c.initial_copy_errors("Idee voor Demo", GOOD_INITIAL), [])
+        self.assertEqual(c.initial_copy_errors("Offerteaanvragen bij Demo", GOOD_INITIAL), [])
 
-    def test_cross_contaminated_cta_blocked(self):
+    def test_old_ai_jargon_blocked_under_human_contract(self):
         body = GOOD_INITIAL.replace(
-            "Zal ik nog één concreet idee sturen?",
-            "Zal ik nog één concreet idee sturen?\nMag ik nog één concreet idee sturen?",
+            "Ik help bedrijven dit soort processen eenvoudiger te maken met een kleine AI-ondersteunde workflow, terwijl het team de belangrijke stappen zelf blijft controleren.",
+            "I build bounded digital agents for workflows like this, with human handoff where needed.",
         )
-        self.assertTrue(c.initial_copy_errors("Idee voor Demo", body))
+        self.assertTrue(any("jargon" in e for e in c.initial_copy_errors("Offerteaanvragen bij Demo", body)))
+
+    def test_missing_commercial_identification_blocked(self):
+        body = GOOD_INITIAL.replace("Dit is een commercieel bericht.\n\n", "")
+        self.assertTrue(c.initial_copy_errors("Offerteaanvragen bij Demo", body))
 
     def test_missing_opt_out_blocked(self):
         body = GOOD_INITIAL.replace('Geen interesse? Een kort "nee" is genoeg.\n\n', "")
-        self.assertTrue(c.initial_copy_errors("Idee voor Demo", body))
+        self.assertTrue(c.initial_copy_errors("Offerteaanvragen bij Demo", body))
 
     def test_fake_reply_subject_blocked(self):
-        self.assertTrue(c.initial_copy_errors("RE: Idee voor Demo", GOOD_INITIAL))
+        self.assertTrue(c.initial_copy_errors("RE: Offerteaanvragen bij Demo", GOOD_INITIAL))
+
+    def test_context_free_subject_blocked(self):
+        self.assertTrue(c.initial_copy_errors("Quick question", GOOD_INITIAL))
 
     def test_extra_url_blocked(self):
-        body = GOOD_INITIAL.replace("Een paar voorbeelden:", "Bekijk ook https://example.com\n\nEen paar voorbeelden:")
-        self.assertTrue(c.initial_copy_errors("Idee voor Demo", body))
+        body = GOOD_INITIAL.replace("Dit is een commercieel bericht.", "Bekijk https://example.com\n\nDit is een commercieel bericht.")
+        self.assertTrue(c.initial_copy_errors("Offerteaanvragen bij Demo", body))
 
     def test_meeting_pressure_blocked(self):
         body = GOOD_INITIAL.replace(
-            "Zal ik nog één concreet idee sturen?",
-            "Plan een meeting van 15 minuten.\n\nZal ik nog één concreet idee sturen?",
+            "Zal ik een kort voorbeeld sturen van hoe dat er voor Demo uit kan zien?",
+            "Plan een meeting van 15 minuten.\n\nZal ik een kort voorbeeld sturen van hoe dat er voor Demo uit kan zien?",
         )
-        self.assertTrue(c.initial_copy_errors("Idee voor Demo", body))
+        self.assertTrue(c.initial_copy_errors("Offerteaanvragen bij Demo", body))
 
     def test_good_followup(self):
         self.assertEqual(c.followup_copy_errors(GOOD_FOLLOWUP), [])
@@ -74,7 +83,7 @@ class CopyPreflightTests(unittest.TestCase):
         self.assertTrue(c.followup_copy_errors(GOOD_FOLLOWUP.replace("Demo", "[mailnaam]", 1)))
 
     def test_followup_meeting_ask_blocked(self):
-        self.assertTrue(c.followup_copy_errors(GOOD_FOLLOWUP.replace("graag door.", "graag door. Plan daarna een meeting van 15 minuten.")))
+        self.assertTrue(c.followup_copy_errors(GOOD_FOLLOWUP.replace("nog liggen.", "nog liggen. Plan daarna een meeting van 15 minuten.")))
 
     def test_queue_custom_followup_subject_blocked(self):
         row = {"status": "sent", "followup_body": GOOD_FOLLOWUP, "followup_subject": "Nieuwe pitch"}
