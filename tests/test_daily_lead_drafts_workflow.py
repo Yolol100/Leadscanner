@@ -28,10 +28,10 @@ class DailyLeadDraftWorkflowTests(unittest.TestCase):
 
     def test_refill_is_target_driven_not_fixed_pass_count(self):
         text = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("Refill until target or source exhaustion", text)
+        self.assertIn("Refill until target or bounded continuation", text)
         self.assertIn("while true", text)
         self.assertIn("REFILL_TARGET=green", text)
-        self.assertIn("BLOCKED_SOURCE_EXHAUSTION", text)
+        self.assertIn("BLOCKED_NO_NEW_APPROVED_OUTPUT", text)
         self.assertIn("BLOCKED_BOUNDED_REFILL", text)
         self.assertNotIn("for pass in 1 2 3 4", text)
         self.assertRegex(text, r'\[ "\$ready" -ge "\$target" \]')
@@ -52,6 +52,8 @@ class DailyLeadDraftWorkflowTests(unittest.TestCase):
         for name in required:
             self.assertIn(name, text)
         self.assertNotIn("AGENT_SALES_TARGET_TYPE: auto", text)
+        self.assertIn('discovered="$(python3 -c', text)
+        self.assertIn('[ "$no_progress" -ge 3 ] && [ "$no_new" -ge 3 ]', text)
         helper = (ROOT / "scripts" / "outreach_daily_prepare_new.py").read_text(encoding="utf-8")
         self.assertIn("from outreach_agent_prepare_v2 import build_prepared_row", helper)
         self.assertIn("candidate_id in queued_ids", helper)
@@ -63,7 +65,18 @@ class DailyLeadDraftWorkflowTests(unittest.TestCase):
         self.assertNotIn('grep -q "drafted=${{ steps.command.outputs.target }}"', text)
         self.assertIn('drafts={len(receipts)}', runtime)
         self.assertIn("Create idempotent IMAP drafts and verify readback", text)
+        self.assertIn("Audit exact closure evidence", text)
+        self.assertIn("assert len(set(lead_ids)) == target", text)
+        self.assertIn("assert len(set(hosts)) == target", text)
+        self.assertIn("assert all(x.get('readback_count') == 1 for x in receipts)", text)
         self.assertIn("13.6.0-refill-audit", text)
+
+    def test_blocked_issue_stays_open_for_continuation(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn('if [ "$JOB_STATUS" = success ]; then', text)
+        self.assertIn("state_reason", text)
+        close_block = text.split('if [ "$JOB_STATUS" = success ]; then', 1)[1]
+        self.assertIn('"state":"closed"', close_block)
 
     def test_remote_actions_are_full_sha_pinned(self):
         text = WORKFLOW.read_text(encoding="utf-8")
