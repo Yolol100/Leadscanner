@@ -25,6 +25,13 @@ BLOCKED_ROLE_TOKENS = {
     "privacy", "legal", "billing", "payroll", "hr", "humanresources", "human-resources",
     "career", "careers", "job", "jobs", "recruiting", "recruitment", "press", "media",
 }
+PROCESS_LABELS = {
+    "front_desk_sales": "appointment or sales enquiry path",
+    "quote_intake": "quote or intake request",
+    "review_concierge": "customer review or testimonial path",
+    "customer_support": "support or service request path",
+    "commerce": "online store or checkout path",
+}
 
 
 def text(value: object) -> str:
@@ -106,6 +113,37 @@ def append_row(service, spreadsheet_id: str, sheet: str, headers: list[str], row
     ).execute()
 
 
+def verified_qualification_personalization(candidate: Mapping[str, object], q: Mapping[str, object]):
+    """Reuse official-site evidence already verified by the qualification stage.
+
+    Qualification only writes fact/idea/evidence_url after fetching and classifying the
+    candidate's official site. Reusing that evidence prevents a second serial HTTP fetch
+    during prepare while keeping provenance tied to the same official domain.
+    """
+    website = text(candidate.get("website"))
+    evidence_url = text(q.get("evidence_url"))
+    observation = text(q.get("fact"))
+    value = text(q.get("idea"))
+    agent_type = text(q.get("agent_type")).casefold()
+    if not website or not evidence_url or not observation or not value:
+        return None
+    if not hosts_related(host_key(website), host_key(evidence_url)):
+        return None
+    if agent_type not in NET_NEW_AGENTS:
+        return None
+    process_label = PROCESS_LABELS.get(agent_type) or text(q.get("business_process"))
+    if not process_label:
+        return None
+    return {
+        "observation": observation,
+        "value": value,
+        "anchor": process_label,
+        "process_label": process_label,
+        "evidence_url": evidence_url,
+        "personalization_mode": "verified_qualification_evidence",
+    }
+
+
 def build_row(candidate, q, contact, *, postal_address: str, sender_mailbox_id: str, sender_email: str):
     company = text(candidate.get("company"))
     website = text(candidate.get("website"))
@@ -113,20 +151,26 @@ def build_row(candidate, q, contact, *, postal_address: str, sender_mailbox_id: 
     agent_type = text(q.get("agent_type")).casefold()
     evidence_url = text(q.get("evidence_url")) or website
     language = "nl" if country in {"NL", "BE"} else "en"
-    personalization_mode = "specific_anchor"
-    try:
+
+    verified = verified_qualification_personalization(candidate, q)
+    if verified is not None:
+        observation = verified["observation"]
+        value = verified["value"]
+        anchor = verified["anchor"]
+        process_label = verified["process_label"]
+        final_evidence = verified["evidence_url"]
+        personalization_mode = verified["personalization_mode"]
+    else:
+        personalization_mode = "specific_anchor"
         p = personalize_from_evidence(company=company, agent_type=agent_type, language=language, evidence_url=evidence_url)
         observation, value = p.observation, p.value
         anchor, process_label, final_evidence = p.anchor, p.process_label, p.evidence_url
-    except ValueError:
-        personalization_mode = "verified_process_fallback"
-        observation = text(q.get("fact"))
-        value = text(q.get("idea"))
-        anchor = text(q.get("business_process")) or agent_type
-        process_label = text(q.get("business_process"))
-        final_evidence = evidence_url
+
     if not observation or not value:
         raise ValueError("missing evidence-grounded observation/value")
+    if not final_evidence or not hosts_related(host_key(website), host_key(final_evidence)):
+        raise ValueError("personalization evidence is not on the official site")
+
     subject, body, followup_subject, followup_body, delay = _copy_with_value(
         company=company, country=country, fact=observation, value=value,
         agent_type=agent_type, postal_address=postal_address,
