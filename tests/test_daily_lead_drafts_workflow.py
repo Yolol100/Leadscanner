@@ -58,7 +58,10 @@ class DailyLeadDraftWorkflowTests(unittest.TestCase):
 
     def test_completion_requires_exact_target_and_readback_route(self):
         text = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn('grep -q "drafted=${{ steps.command.outputs.target }}"', text)
+        runtime = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('grep -q "drafts=${{ steps.command.outputs.target }}"', text)
+        self.assertNotIn('grep -q "drafted=${{ steps.command.outputs.target }}"', text)
+        self.assertIn('drafts={len(receipts)}', runtime)
         self.assertIn("Create idempotent IMAP drafts and verify readback", text)
         self.assertIn("13.6.0-refill-audit", text)
 
