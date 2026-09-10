@@ -138,7 +138,7 @@ jobs:
           test -n "${OUTREACH_MAIL_PASSWORD:-}"
           python3 scripts/outreach_private_config.py
 
-      - name: Refill until target or source exhaustion
+      - name: Refill until target or bounded continuation
         if: steps.command.outputs.mode == 'create'
         env:
           AGENT_SALES_TARGET_TYPE: ${{ steps.command.outputs.agent }}
@@ -156,7 +156,7 @@ jobs:
         run: |
           set -euo pipefail
           target='${{ steps.command.outputs.target }}'
-          previous=-1; stagnant=0; cycle=0
+          previous=-1; no_progress=0; no_new=0; cycle=0
           mkdir -p daily-evidence
           while true; do
             cycle=$((cycle+1)); echo "REFILL_CYCLE=$cycle"
@@ -164,7 +164,11 @@ jobs:
             printf '%s\n' "$out" | tee "daily-evidence/ready-before-$cycle.log"
             ready="$(printf '%s\n' "$out" | sed -n 's/^DAILY_DRAFT_READY=\([0-9][0-9]*\).*/\1/p' | tail -n 1)"; test -n "$ready"
             [ "$ready" -ge "$target" ] && break
+
             python3 scripts/prospect_discovery_runtime.py --mode discover --report "daily-evidence/discovery-$cycle.json"
+            discovered="$(python3 -c 'import json,sys; print(int(json.load(open(sys.argv[1])).get("discovered",0)))' "daily-evidence/discovery-$cycle.json")"
+            if [ "$discovered" -eq 0 ]; then no_new=$((no_new+1)); else no_new=0; fi
+
             python3 scripts/prospect_candidate_sanitizer.py | tee "daily-evidence/sanitizer-$cycle.log"
             python3 scripts/prospect_signal_discovery_runtime.py --mode discover --report "daily-evidence/signal-$cycle.json"
             python3 scripts/prospect_agent_qualification.py --mode qualify --report "daily-evidence/qualification-$cycle.json"
@@ -172,13 +176,18 @@ jobs:
             python3 scripts/prospect_contact_enrichment_campaign.py
             python3 scripts/prospect_intelligence_runtime.py --mode refresh --report "daily-evidence/intelligence-$cycle.json"
             python3 scripts/outreach_daily_prepare_new.py | tee "daily-evidence/prepare-$cycle.log"
+
             out="$(python3 scripts/outreach_daily_batch_drafts_v2.py --count-only --target "$target" --agent-type '${{ steps.command.outputs.agent }}' --country '${{ steps.command.outputs.country }}' --run-key '${{ steps.command.outputs.run_key }}')"
             printf '%s\n' "$out" | tee "daily-evidence/ready-after-$cycle.log"
             ready="$(printf '%s\n' "$out" | sed -n 's/^DAILY_DRAFT_READY=\([0-9][0-9]*\).*/\1/p' | tail -n 1)"; test -n "$ready"
             [ "$ready" -ge "$target" ] && break
-            if [ "$ready" -le "$previous" ]; then stagnant=$((stagnant+1)); else stagnant=0; fi
+
+            if [ "$ready" -le "$previous" ]; then no_progress=$((no_progress+1)); else no_progress=0; fi
             previous="$ready"
-            [ "$stagnant" -lt 2 ] || { echo "BLOCKED_SOURCE_EXHAUSTION ready=$ready target=$target"; exit 3; }
+            if [ "$no_progress" -ge 3 ] && [ "$no_new" -ge 3 ]; then
+              echo "BLOCKED_NO_NEW_APPROVED_OUTPUT ready=$ready target=$target cycles=$cycle"
+              exit 3
+            fi
             [ "$cycle" -lt 12 ] || { echo "BLOCKED_BOUNDED_REFILL ready=$ready target=$target"; exit 3; }
           done
           echo "REFILL_TARGET=green ready=$ready target=$target"
@@ -191,7 +200,34 @@ jobs:
           set -euo pipefail
           python3 scripts/outreach_daily_batch_drafts_v2.py --target '${{ steps.command.outputs.target }}' --agent-type '${{ steps.command.outputs.agent }}' --country '${{ steps.command.outputs.country }}' --run-key '${{ steps.command.outputs.run_key }}' | tee daily-draft-run.log
           grep -q '^DAILY_LEAD_DRAFTS=green .*smtp_send=not_invoked$' daily-draft-run.log
-          grep -q "drafted=${{ steps.command.outputs.target }}" daily-draft-run.log
+          grep -q "drafts=${{ steps.command.outputs.target }}" daily-draft-run.log
+
+      - name: Audit exact closure evidence
+        if: steps.command.outputs.mode == 'create'
+        env:
+          TARGET: ${{ steps.command.outputs.target }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          target = int(os.environ['TARGET'])
+          selection = json.load(open('daily-draft-selection.json', encoding='utf-8'))
+          receipts = json.load(open('daily-draft-receipts.json', encoding='utf-8'))
+          selected = selection.get('selected', [])
+          assert len(selected) == target, (len(selected), target)
+          assert len(receipts) == target, (len(receipts), target)
+          lead_ids = [x['lead_id'] for x in selected]
+          hosts = [x['website_host'] for x in selected]
+          receipt_ids = [x['lead_id'] for x in receipts]
+          test_ids = [x['test_id'] for x in receipts]
+          assert len(set(lead_ids)) == target
+          assert len(set(hosts)) == target
+          assert len(set(receipt_ids)) == target
+          assert len(set(test_ids)) == target
+          assert set(receipt_ids) == set(lead_ids)
+          assert all(x.get('readback_count') == 1 for x in receipts)
+          assert selection.get('send_permission') == 'none'
+          print(f'CLOSURE_AUDIT=green target={target} unique_leads={target} unique_domains={target} readback=1 smtp_send=not_invoked')
+          PY
 
       - name: Upload closure evidence
         if: always()
@@ -220,4 +256,6 @@ jobs:
           [ "$JOB_STATUS" = success ] && result=green || result=blocked
           body="DAILY_LEAD_DRAFT_COMMAND=$result\nSOURCE_SET_VERSION=${{ steps.command.outputs.source_set }}\nTRANSPORT=IMAP_DRAFT_ONLY\nSMTP_SEND=not_invoked"
           curl --fail-with-body --silent --show-error -X POST -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer ${GH_TOKEN}" -H 'X-GitHub-Api-Version: 2022-11-28' "https://api.github.com/repos/${REPOSITORY}/issues/${ISSUE_NUMBER}/comments" -d "$(jq -n --arg body "$body" '{body:$body}')" >/dev/null
-          curl --fail-with-body --silent --show-error -X PATCH -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer ${GH_TOKEN}" -H 'X-GitHub-Api-Version: 2022-11-28' "https://api.github.com/repos/${REPOSITORY}/issues/${ISSUE_NUMBER}" -d '{"state":"closed","state_reason":"completed"}' >/dev/null
+          if [ "$JOB_STATUS" = success ]; then
+            curl --fail-with-body --silent --show-error -X PATCH -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer ${GH_TOKEN}" -H 'X-GitHub-Api-Version: 2022-11-28' "https://api.github.com/repos/${REPOSITORY}/issues/${ISSUE_NUMBER}" -d '{"state":"closed","state_reason":"completed"}' >/dev/null
+          fi
