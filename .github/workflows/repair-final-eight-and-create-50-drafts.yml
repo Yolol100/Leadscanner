@@ -70,6 +70,13 @@ jobs:
           python3 ops/repair_final_eight_verified_contacts.py | tee final-eight-repair.log
           grep -q '^FINAL8_REPAIR=green resolved=8 target=8 smtp_send=not_invoked$' final-eight-repair.log
 
+      - name: Stabilize two additional official-site anchors for final margin
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ops/stabilize_final_human_margin.py | tee final-human-margin.log
+          grep -q '^FINAL_HUMAN_MARGIN=green verified=2 target=2 smtp_send=not_invoked$' final-human-margin.log
+
       - name: Require at least 50 final human-ready rows before mailbox write
         shell: bash
         run: |
@@ -96,6 +103,8 @@ jobs:
           path: |
             final-eight-repair.json
             final-eight-repair.log
+            final-human-margin.json
+            final-human-margin.log
             final-50-count.log
             selected-50-final.json
             draft-receipts-final.json
