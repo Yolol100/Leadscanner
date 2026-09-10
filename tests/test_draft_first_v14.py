@@ -91,6 +91,7 @@ class DraftFirstV14Tests(unittest.TestCase):
             "customer_potential": 6,
             "email_source_url": "https://example.com/contact",
             "contact_mx_status": "unknown",
+            "evidence_url": "https://example.com/request-a-quote",
             "observation": "The site offers a quote request form for custom work.",
             "value_asset_summary": "A quote intake workflow could collect the required details before handoff.",
             "personalization_anchor": "custom quote request",
@@ -220,7 +221,7 @@ class DraftFirstV14Tests(unittest.TestCase):
 
     def test_workflow_has_source_pin_tests_retry_paths_and_no_smtp_sender(self):
         workflow = Path(".github/workflows/daily-agent-drafts-v14.yml").read_text(encoding="utf-8")
-        self.assertIn("EXPECTED_SOURCE_SET_VERSION: 14.0.0-draft-first", workflow)
+        self.assertIn("EXPECTED_SOURCE_SET_VERSION: 14.0.1-draft-first", workflow)
         self.assertIn("test_draft_first_v14*.py", workflow)
         self.assertIn("outreach_draft_first_prepare_retry.py", workflow)
         self.assertIn("outreach_daily_draft_first_retry.py", workflow)
