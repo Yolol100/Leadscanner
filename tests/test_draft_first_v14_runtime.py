@@ -165,7 +165,7 @@ class DraftFirstV14RuntimeRegressionTests(unittest.TestCase):
         self.assertNotIn("PROSPECT_QUALIFICATION_FORCE_RECHECK=true", workflow)
         self.assertLess(workflow.index("prepare-stock-$cycle.log"), workflow.index("prospect_discovery_retry_runtime.py"))
         self.assertIn("group: daily-draft-first-agent-leads", workflow)
-        self.assertIn("cancel-in-progress: false", workflow)
+        self.assertIn("cancel-in-progress: true", workflow)
 
 
 if __name__ == "__main__":
