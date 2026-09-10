@@ -191,7 +191,7 @@ jobs:
           set -euo pipefail
           python3 scripts/outreach_daily_batch_drafts_v2.py --target '${{ steps.command.outputs.target }}' --agent-type '${{ steps.command.outputs.agent }}' --country '${{ steps.command.outputs.country }}' --run-key '${{ steps.command.outputs.run_key }}' | tee daily-draft-run.log
           grep -q '^DAILY_LEAD_DRAFTS=green .*smtp_send=not_invoked$' daily-draft-run.log
-          grep -q "drafted=${{ steps.command.outputs.target }}" daily-draft-run.log
+          grep -q "drafts=${{ steps.command.outputs.target }}" daily-draft-run.log
 
       - name: Upload closure evidence
         if: always()
