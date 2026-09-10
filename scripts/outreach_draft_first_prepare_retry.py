@@ -70,17 +70,53 @@ def _column_letter(number: int) -> str:
     return out
 
 
-def _append_once(service, spreadsheet_id: str, sheet: str, headers: list[str], row: Mapping[str, object]) -> None:
-    # Important: never use A:ZZ here. Google values.append discovers a logical table
-    # inside the supplied range; a range wider than the real schema can cause later
-    # appends to drift sideways when stray cells exist. Bound the table to the exact
-    # schema width and overwrite the next empty logical row instead of inserting rows.
+def _get_schema_values(service, spreadsheet_id: str, sheet: str, headers: list[str]) -> list[list[object]]:
     last_col = _column_letter(len(headers))
-    service.spreadsheets().values().append(
+    result = service.spreadsheets().values().get(
         spreadsheetId=spreadsheet_id,
         range=f"'{sheet}'!A:{last_col}",
+        majorDimension="ROWS",
+    ).execute()
+    values = result.get("values", []) or []
+    if not values:
+        raise RuntimeError(f"{sheet} has no header row")
+    actual_headers = [_text(value) for value in values[0]]
+    if actual_headers[:len(headers)] != list(headers):
+        raise RuntimeError(f"{sheet} header order drift; refusing positional write")
+    return values
+
+
+def _next_schema_row(service, spreadsheet_id: str, sheet: str, headers: list[str]) -> int:
+    values = _get_schema_values(service, spreadsheet_id, sheet, headers)
+    last_nonempty = 1
+    for row_number, raw in enumerate(values[1:], start=2):
+        if any(_text(value) for value in raw[:len(headers)]):
+            last_nonempty = row_number
+    return last_nonempty + 1
+
+
+def _target_row_is_empty(service, spreadsheet_id: str, sheet: str, headers: list[str], row_number: int) -> bool:
+    last_col = _column_letter(len(headers))
+    result = service.spreadsheets().values().get(
+        spreadsheetId=spreadsheet_id,
+        range=f"'{sheet}'!A{row_number}:{last_col}{row_number}",
+        majorDimension="ROWS",
+    ).execute()
+    values = result.get("values", []) or []
+    return not any(_text(value) for raw in values for value in raw[:len(headers)])
+
+
+def _append_once(service, spreadsheet_id: str, sheet: str, headers: list[str], row: Mapping[str, object]) -> None:
+    # Never use values.append for draft-first writes. A logical-table append can drift
+    # when a legacy/stray row exists. Address one explicit schema-bounded row instead.
+    last_col = _column_letter(len(headers))
+    row_number = _next_schema_row(service, spreadsheet_id, sheet, headers)
+    if not _target_row_is_empty(service, spreadsheet_id, sheet, headers, row_number):
+        raise RuntimeError(f"{sheet} target row {row_number} is no longer empty; refusing overwrite")
+    service.spreadsheets().values().update(
+        spreadsheetId=spreadsheet_id,
+        range=f"'{sheet}'!A{row_number}:{last_col}{row_number}",
         valueInputOption="RAW",
-        insertDataOption="OVERWRITE",
         includeValuesInResponse=True,
         body={"values": [[str(row.get(header, "")) for header in headers]]},
     ).execute()
@@ -105,8 +141,7 @@ def append_row_retry(service, spreadsheet_id: str, sheet: str, headers: list[str
         raise RuntimeError(f"{sheet} pre-write dedupe expected at most one row; found {before}")
 
     # One logical write only. If the transport result is ambiguous we reconcile with
-    # read-only checks. We never automatically write the same record again because
-    # that is exactly how duplicate/diagonal queue corruption was created previously.
+    # read-only checks. We never automatically write the same record again.
     write_error: Exception | None = None
     try:
         _append_once(service, spreadsheet_id, sheet, headers, row)
@@ -119,10 +154,10 @@ def append_row_retry(service, spreadsheet_id: str, sheet: str, headers: list[str
     if after == 1:
         return
     if after > 1:
-        raise RuntimeError(f"{sheet} append reconciliation found duplicate rows: {after}") from write_error
+        raise RuntimeError(f"{sheet} write reconciliation found duplicate rows: {after}") from write_error
     if write_error is not None:
-        raise RuntimeError(f"{sheet} ambiguous append not visible after readback; refusing duplicate write") from write_error
-    raise RuntimeError(f"{sheet} append acknowledged but row not visible after readback; refusing duplicate write")
+        raise RuntimeError(f"{sheet} ambiguous write not visible after readback; refusing duplicate write") from write_error
+    raise RuntimeError(f"{sheet} explicit row write acknowledged but row not visible after readback; refusing duplicate write")
 
 
 def candidate_ok_draft_first(candidate, qualification, contact, *, country: str) -> bool:
