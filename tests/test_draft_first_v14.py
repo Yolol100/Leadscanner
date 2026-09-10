@@ -3,9 +3,15 @@ from __future__ import annotations
 import copy
 import json
 import py_compile
+import sys
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPTS = ROOT / "scripts"
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
 
 import outreach_daily_draft_first as daily
 import outreach_daily_draft_first_retry as daily_retry
@@ -130,6 +136,21 @@ class DraftFirstV14Tests(unittest.TestCase):
         self.assertEqual([], accepted)
         self.assertIn("draft-first metadata missing/stale", rejected["lead-1"])
 
+    def test_discovery_read_retry_recovers_from_ssl_eof(self):
+        calls = {"read": 0}
+
+        def flaky_get_values(service, spreadsheet_id, range_name):
+            calls["read"] += 1
+            if calls["read"] == 1:
+                raise OSError("SSL EOF")
+            return [["candidate_id"], ["candidate-1"]]
+
+        with patch.object(discovery_retry.legacy, "get_values", side_effect=flaky_get_values), \
+             patch.object(discovery_retry.time, "sleep", return_value=None):
+            ids = discovery_retry._existing_ids(object(), "sheet", "ProspectCandidates!A:Z")
+        self.assertEqual(2, calls["read"])
+        self.assertIn("candidate-1", ids)
+
     def test_discovery_retry_reconciles_ambiguous_success_without_duplicate(self):
         state = [["candidate_id"]]
         calls = {"append": 0}
@@ -149,6 +170,21 @@ class DraftFirstV14Tests(unittest.TestCase):
         self.assertEqual(1, calls["append"])
         self.assertEqual(1, sum(1 for row in state if row and row[0] == "candidate-1"))
 
+    def test_prepare_read_retry_recovers_from_ssl_eof(self):
+        calls = {"read": 0}
+
+        def flaky_load(service, spreadsheet_id, sheet, headers):
+            calls["read"] += 1
+            if calls["read"] == 1:
+                raise OSError("SSL EOF")
+            return []
+
+        with patch.object(prepare_retry, "_original_load", side_effect=flaky_load), \
+             patch.object(prepare_retry.time, "sleep", return_value=None):
+            rows = prepare_retry.load_retry(object(), "sheet", prepare.QUEUE_SHEET, ["lead_id"])
+        self.assertEqual([], rows)
+        self.assertEqual(2, calls["read"])
+
     def test_prepare_retry_reconciles_ambiguous_success_without_duplicate(self):
         state = []
         row = {"lead_id": "lead-1", "email": "info@example.com"}
@@ -162,7 +198,7 @@ class DraftFirstV14Tests(unittest.TestCase):
             state.append(dict(desired))
             raise OSError("connection reset")
 
-        with patch.object(prepare_retry.legacy, "load", side_effect=fake_load), \
+        with patch.object(prepare_retry, "_original_load", side_effect=fake_load), \
              patch.object(prepare_retry, "_original_append_row", side_effect=ambiguous_append), \
              patch.object(prepare_retry.time, "sleep", return_value=None):
             prepare_retry.append_row_retry(object(), "sheet", prepare.QUEUE_SHEET, ["lead_id", "email"], row)
@@ -184,10 +220,11 @@ class DraftFirstV14Tests(unittest.TestCase):
 
     def test_workflow_has_source_pin_tests_retry_paths_and_no_smtp_sender(self):
         workflow = Path(".github/workflows/daily-agent-drafts-v14.yml").read_text(encoding="utf-8")
-        self.assertIn("SOURCE_SET_VERSION=14.0.0-draft-first", workflow)
+        self.assertIn("EXPECTED_SOURCE_SET_VERSION: 14.0.0-draft-first", workflow)
         self.assertIn("test_draft_first_v14.py", workflow)
         self.assertIn("outreach_draft_first_prepare_retry.py", workflow)
         self.assertIn("outreach_daily_draft_first_retry.py", workflow)
+        self.assertIn("receipt_ids == selected_ids", workflow)
         for path in (
             "scripts/outreach_daily_draft_first.py",
             "scripts/outreach_daily_draft_first_retry.py",
