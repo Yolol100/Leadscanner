@@ -36,11 +36,15 @@ class DailyLeadDraftWorkflowTests(unittest.TestCase):
             "prospect_campaign_gate.py",
             "prospect_contact_enrichment_campaign.py",
             "prospect_intelligence_runtime.py",
-            "outreach_agent_prepare_v2.py",
+            "outreach_daily_prepare_new.py",
             "outreach_daily_batch_drafts.py",
         ):
             self.assertIn(required, text)
         self.assertNotIn("AGENT_SALES_TARGET_TYPE: auto", text)
+        helper = (ROOT / "scripts" / "outreach_daily_prepare_new.py").read_text(encoding="utf-8")
+        self.assertIn("from outreach_agent_prepare_v2 import build_prepared_row", helper)
+        self.assertIn("candidate_id in queued_ids", helper)
+        self.assertIn("13.5.0-evidence-personalization", text)
 
     def test_remote_actions_are_full_sha_pinned(self):
         text = WORKFLOW.read_text(encoding="utf-8")
