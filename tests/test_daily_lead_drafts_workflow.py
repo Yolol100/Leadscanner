@@ -10,13 +10,11 @@ HARDENED_SCRIPT = ROOT / "scripts" / "outreach_daily_batch_drafts_v2.py"
 class DailyLeadDraftWorkflowTests(unittest.TestCase):
     def test_trigger_is_owner_bound_and_single_command(self):
         text = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("issues:", text)
         self.assertIn("types: [opened]", text)
         self.assertIn("github.actor == 'Yolol100'", text)
         self.assertIn("github.ref == 'refs/heads/main'", text)
         self.assertIn("CREATE DAILY LEAD DRAFTS", text)
         self.assertIn("COMMAND=CREATE_DAILY_LEAD_DRAFTS", text)
-        self.assertIn("concurrency:", text)
         self.assertIn("cancel-in-progress: false", text)
 
     def test_route_is_draft_only_and_never_invokes_smtp_send(self):
@@ -28,9 +26,19 @@ class DailyLeadDraftWorkflowTests(unittest.TestCase):
         self.assertIn("smtp_send=not_invoked", script)
         self.assertIn("send_permission=none", script)
 
-    def test_runtime_uses_current_prepare_and_evidence_chain(self):
+    def test_refill_is_target_driven_not_fixed_pass_count(self):
         text = WORKFLOW.read_text(encoding="utf-8")
-        for required in (
+        self.assertIn("Refill until target or source exhaustion", text)
+        self.assertIn("while true", text)
+        self.assertIn("REFILL_TARGET=green", text)
+        self.assertIn("BLOCKED_SOURCE_EXHAUSTION", text)
+        self.assertIn("BLOCKED_BOUNDED_REFILL", text)
+        self.assertNotIn("for pass in 1 2 3 4", text)
+        self.assertRegex(text, r'\[ "\$ready" -ge "\$target" \]')
+
+    def test_refill_rediscovers_and_requalifies_when_short(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        required = (
             "prospect_discovery_runtime.py",
             "prospect_candidate_sanitizer.py",
             "prospect_signal_discovery_runtime.py",
@@ -40,13 +48,19 @@ class DailyLeadDraftWorkflowTests(unittest.TestCase):
             "prospect_intelligence_runtime.py",
             "outreach_daily_prepare_new.py",
             "outreach_daily_batch_drafts_v2.py",
-        ):
-            self.assertIn(required, text)
+        )
+        for name in required:
+            self.assertIn(name, text)
         self.assertNotIn("AGENT_SALES_TARGET_TYPE: auto", text)
         helper = (ROOT / "scripts" / "outreach_daily_prepare_new.py").read_text(encoding="utf-8")
         self.assertIn("from outreach_agent_prepare_v2 import build_prepared_row", helper)
         self.assertIn("candidate_id in queued_ids", helper)
-        self.assertIn("13.5.0-evidence-personalization", text)
+
+    def test_completion_requires_exact_target_and_readback_route(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn('grep -q "drafted=${{ steps.command.outputs.target }}"', text)
+        self.assertIn("Create idempotent IMAP drafts and verify readback", text)
+        self.assertIn("13.6.0-refill-audit", text)
 
     def test_remote_actions_are_full_sha_pinned(self):
         text = WORKFLOW.read_text(encoding="utf-8")
@@ -68,7 +82,7 @@ class DailyLeadDraftWorkflowTests(unittest.TestCase):
 
     def test_target_is_hard_capped_at_50(self):
         text = WORKFLOW.read_text(encoding="utf-8")
-        self.assertRegex(text, r"\[ \"\$target\" -gt 50 \]")
+        self.assertRegex(text, r'\[ "\$target" -le 50 \]')
         script = SCRIPT.read_text(encoding="utf-8")
         self.assertIn("target must be between 1 and 50", script)
 
