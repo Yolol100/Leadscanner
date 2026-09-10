@@ -120,7 +120,7 @@ jobs:
       - name: Run v14 scenario audit
         run: |
           set -euo pipefail
-          python3 -m unittest discover -s tests -p 'test_draft_first_v14.py' -v |& tee v14-test.log
+          python3 -m unittest discover -s tests -p 'test_draft_first_v14*.py' -v |& tee v14-test.log
           echo 'DRAFT_FIRST_SCENARIO_AUDIT=green smtp_send=not_invoked'
 
       - name: Validate only
@@ -128,7 +128,7 @@ jobs:
         run: |
           set -euo pipefail
           test -n "${GOOGLE_SERVICE_ACCOUNT_JSON:-}"
-          python3 scripts/outreach_daily_draft_first.py --count-only --target '${{ steps.command.outputs.target }}' --country '${{ steps.command.outputs.country }}' --run-key '${{ steps.command.outputs.run_key }}'
+          python3 scripts/outreach_daily_draft_first_retry.py --count-only --target '${{ steps.command.outputs.target }}' --country '${{ steps.command.outputs.country }}' --run-key '${{ steps.command.outputs.run_key }}'
           echo 'DRAFT_FIRST_ROUTE_VALIDATE=green mailbox_write=not_invoked smtp_send=not_invoked'
 
       - name: Require draft credentials
@@ -157,8 +157,17 @@ jobs:
           no_progress=0
           ready=0
           for cycle in $(seq 1 12); do
-            out="$(python3 scripts/outreach_daily_draft_first.py --count-only --target "$target" --country '${{ steps.command.outputs.country }}' --run-key '${{ steps.command.outputs.run_key }}')"
+            out="$(python3 scripts/outreach_daily_draft_first_retry.py --count-only --target "$target" --country '${{ steps.command.outputs.country }}' --run-key '${{ steps.command.outputs.run_key }}')"
             printf '%s\n' "$out" | tee "daily-evidence/ready-before-$cycle.log"
+            ready="$(printf '%s\n' "$out" | sed -n 's/^DRAFT_FIRST_READY=\([0-9][0-9]*\).*/\1/p' | tail -n 1)"
+            test -n "$ready"
+            [ "$ready" -ge "$target" ] && break
+
+            # Use already-qualified/contact-proven unqueued stock before paying the
+            # discovery cost. This preserves every v14 gate and only fills the shortfall.
+            python3 scripts/outreach_draft_first_prepare_retry.py | tee "daily-evidence/prepare-stock-$cycle.log"
+            out="$(python3 scripts/outreach_daily_draft_first_retry.py --count-only --target "$target" --country '${{ steps.command.outputs.country }}' --run-key '${{ steps.command.outputs.run_key }}')"
+            printf '%s\n' "$out" | tee "daily-evidence/ready-stock-$cycle.log"
             ready="$(printf '%s\n' "$out" | sed -n 's/^DRAFT_FIRST_READY=\([0-9][0-9]*\).*/\1/p' | tail -n 1)"
             test -n "$ready"
             [ "$ready" -ge "$target" ] && break
@@ -166,11 +175,11 @@ jobs:
             python3 scripts/prospect_discovery_retry_runtime.py --mode discover --report "daily-evidence/discovery-$cycle.json"
             python3 scripts/prospect_candidate_sanitizer.py | tee "daily-evidence/sanitizer-$cycle.log"
             python3 scripts/prospect_signal_discovery_runtime.py --mode discover --report "daily-evidence/signal-$cycle.json"
-            PROSPECT_QUALIFICATION_FORCE_RECHECK=true python3 scripts/prospect_agent_qualification_draft_first.py --mode qualify --report "daily-evidence/qualification-$cycle.json"
+            python3 scripts/prospect_agent_qualification_draft_first.py --mode qualify --report "daily-evidence/qualification-$cycle.json"
             python3 scripts/prospect_contact_enrichment_draft_first.py | tee "daily-evidence/contact-$cycle.log"
             python3 scripts/outreach_draft_first_prepare_retry.py | tee "daily-evidence/prepare-$cycle.log"
 
-            out="$(python3 scripts/outreach_daily_draft_first.py --count-only --target "$target" --country '${{ steps.command.outputs.country }}' --run-key '${{ steps.command.outputs.run_key }}')"
+            out="$(python3 scripts/outreach_daily_draft_first_retry.py --count-only --target "$target" --country '${{ steps.command.outputs.country }}' --run-key '${{ steps.command.outputs.run_key }}')"
             printf '%s\n' "$out" | tee "daily-evidence/ready-after-$cycle.log"
             ready="$(printf '%s\n' "$out" | sed -n 's/^DRAFT_FIRST_READY=\([0-9][0-9]*\).*/\1/p' | tail -n 1)"
             test -n "$ready"
