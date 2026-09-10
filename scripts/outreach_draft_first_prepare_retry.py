@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import re
 import time
 from typing import Mapping
 
@@ -9,6 +8,7 @@ import outreach_draft_first_prepare as legacy
 from prospect_intelligence import canonical_domain
 
 _original_append_row = legacy.append_row
+_original_load = legacy.load
 
 
 def _text(value: object) -> str:
@@ -25,6 +25,18 @@ def _retryable(exc: BaseException) -> bool:
         "ssl", "eof occurred", "timed out", "timeout", "connection reset", "connection aborted",
         "temporarily unavailable", "rate limit", "429", "500", "502", "503", "504",
     ))
+
+
+def load_retry(service, spreadsheet_id: str, sheet: str, expected_headers: list[str]):
+    max_attempts = 4
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return _original_load(service, spreadsheet_id, sheet, expected_headers)
+        except Exception as exc:
+            if not _retryable(exc) or attempt >= max_attempts:
+                raise
+            time.sleep(min(8.0, 0.75 * (2 ** (attempt - 1))))
+    raise RuntimeError("unreachable draft-first read retry state")
 
 
 def _matches(sheet: str, existing: Mapping[str, object], desired: Mapping[str, object]) -> bool:
@@ -44,7 +56,7 @@ def _matches(sheet: str, existing: Mapping[str, object], desired: Mapping[str, o
 
 
 def _readback_count(service, spreadsheet_id: str, sheet: str, headers: list[str], row: Mapping[str, object]) -> int:
-    return sum(1 for existing in legacy.load(service, spreadsheet_id, sheet, headers) if _matches(sheet, existing, row))
+    return sum(1 for existing in load_retry(service, spreadsheet_id, sheet, headers) if _matches(sheet, existing, row))
 
 
 def append_row_retry(service, spreadsheet_id: str, sheet: str, headers: list[str], row: Mapping[str, object]) -> None:
@@ -82,10 +94,12 @@ def append_row_retry(service, spreadsheet_id: str, sheet: str, headers: list[str
 
 
 def main() -> int:
+    legacy.load = load_retry
     legacy.append_row = append_row_retry
     try:
         return legacy.main()
     finally:
+        legacy.load = _original_load
         legacy.append_row = _original_append_row
 
 
