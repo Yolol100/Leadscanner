@@ -152,8 +152,11 @@ def run() -> int:
         except ValueError:
             skipped += 1
             continue
-        append_row(service, spreadsheet_id, QUEUE_SHEET, FULL_QUEUE_HEADERS, row)
-        queued_ids.add(candidate_id)
+
+        # Record the recoverable discovery lifecycle row before the queue write.
+        # If the later queue append fails, a rerun may safely continue because
+        # `gevonden` remains an allowed new-only state. The reverse order could
+        # strand a queue row without a corresponding Leadlijst identity.
         domain = canonical_domain(row.get("website"))
         if domain and domain not in known_lead_domains:
             append_row(service, spreadsheet_id, LEAD_SHEET, LEAD_HEADERS, {
@@ -164,6 +167,9 @@ def run() -> int:
             })
             known_lead_domains.add(domain)
             status_map[domain] = {"gevonden"}
+
+        append_row(service, spreadsheet_id, QUEUE_SHEET, FULL_QUEUE_HEADERS, row)
+        queued_ids.add(candidate_id)
         prepared += 1
 
     print(
