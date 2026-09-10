@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from typing import Mapping
 
@@ -16,6 +17,10 @@ from prospect_target_policy import canonical_country
 COPY_CONTRACT = "draft_first_v14"
 AUTOMATION_ID = "agent_sales_draft_first_v14"
 NET_NEW_AGENTS = {"front_desk_sales", "quote_intake", "review_concierge", "customer_support", "commerce"}
+GENERIC_NAV_ANCHORS = {
+    "skip to content", "home", "homepage", "menu", "main menu", "navigation",
+    "learn more", "read more", "about", "about us", "contact", "contact us",
+}
 
 
 def text(value: object) -> str:
@@ -35,6 +40,30 @@ def parse_meta(row: Mapping[str, object]) -> dict:
     except (TypeError, ValueError, json.JSONDecodeError):
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def meaningful_personalization(meta: Mapping[str, object], website: str) -> tuple[bool, str]:
+    anchor = text(meta.get("personalization_anchor") or meta.get("business_process"))
+    observation = text(meta.get("observation"))
+    evidence_url = text(meta.get("evidence_url"))
+    domain = host_key(website)
+    if not observation or not text(meta.get("value_asset_summary")):
+        return False, "missing observation/value"
+    if not evidence_url or not hosts_related(host_key(evidence_url), domain):
+        return False, "personalization evidence is not on official site"
+    if not anchor:
+        return False, "missing personalization anchor"
+    normalized = re.sub(r"\s+", " ", anchor).strip().casefold().rstrip(".:;!?")
+    if normalized in GENERIC_NAV_ANCHORS or normalized.startswith("skip to content"):
+        return False, "generic navigation personalization anchor"
+    # A phone number, icon label, or other punctuation-only fragment is not a
+    # business-process observation and cannot count as evidence personalization.
+    if not re.search(r"[a-zA-Z]{3,}", anchor):
+        return False, "non-semantic personalization anchor"
+    observation_normalized = re.sub(r"\s+", " ", observation).strip().casefold().rstrip(".:;!?")
+    if observation_normalized in GENERIC_NAV_ANCHORS or observation_normalized.startswith("skip to content"):
+        return False, "generic navigation observation"
+    return True, ""
 
 
 def eligible(queue_rows, suppressions, *, country: str):
@@ -83,8 +112,9 @@ def eligible(queue_rows, suppressions, *, country: str):
             errors.append("email is not evidenced on official site")
         if text(meta.get("contact_mx_status")).casefold() == "missing":
             errors.append("recipient domain MX missing")
-        if not text(meta.get("observation")) or not text(meta.get("value_asset_summary")):
-            errors.append("missing observation/value")
+        personal_ok, personal_error = meaningful_personalization(meta, website)
+        if not personal_ok:
+            errors.append(personal_error)
         errors.extend(f"copy: {item}" for item in initial_copy_errors(text(row.get("subject")), str(row.get("body") or "")))
         if domain in seen_domains:
             errors.append("duplicate domain in batch")
