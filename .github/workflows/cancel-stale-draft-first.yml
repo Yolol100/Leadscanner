@@ -1,0 +1,20 @@
+name: Cancel Stale Draft-First Run
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-draft-first-agent-leads
+  cancel-in-progress: true
+
+jobs:
+  cancel-stale:
+    if: github.actor == 'Yolol100' && github.event.issue.title == 'CANCEL STALE DRAFT FIRST'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - run: echo 'STALE_DRAFT_FIRST_CANCEL_BARRIER=green'
