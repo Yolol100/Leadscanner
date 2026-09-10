@@ -14,17 +14,25 @@ def _first_column_range(range_name: str) -> str:
     return f"{sheet}!A:A"
 
 
-def _existing_ids(service, spreadsheet_id: str, range_name: str) -> set[str]:
-    values = legacy.get_values(service, spreadsheet_id, _first_column_range(range_name))
-    return {str(row[0]).strip() for row in values if row and str(row[0]).strip()}
-
-
 def _retryable(exc: BaseException) -> bool:
     text = str(exc).casefold()
     return isinstance(exc, (OSError, TimeoutError)) or any(token in text for token in (
         'ssl', 'eof occurred', 'timed out', 'timeout', 'connection reset', 'connection aborted',
         'temporarily unavailable', 'rate limit', '429', '500', '502', '503', '504',
     ))
+
+
+def _existing_ids(service, spreadsheet_id: str, range_name: str) -> set[str]:
+    max_attempts = 4
+    for attempt in range(1, max_attempts + 1):
+        try:
+            values = legacy.get_values(service, spreadsheet_id, _first_column_range(range_name))
+            return {str(row[0]).strip() for row in values if row and str(row[0]).strip()}
+        except Exception as exc:
+            if not _retryable(exc) or attempt >= max_attempts:
+                raise
+            time.sleep(min(8.0, 0.75 * (2 ** (attempt - 1))))
+    raise RuntimeError('unreachable Sheets read retry state')
 
 
 def append_rows_retry(service, spreadsheet_id: str, range_name: str, rows: Sequence[Sequence[object]]) -> None:
