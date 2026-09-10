@@ -199,7 +199,7 @@ class DraftFirstV14Tests(unittest.TestCase):
             raise OSError("connection reset")
 
         with patch.object(prepare_retry, "_original_load", side_effect=fake_load), \
-             patch.object(prepare_retry, "_original_append_row", side_effect=ambiguous_append), \
+             patch.object(prepare_retry, "_append_once", side_effect=ambiguous_append), \
              patch.object(prepare_retry.time, "sleep", return_value=None):
             prepare_retry.append_row_retry(object(), "sheet", prepare.QUEUE_SHEET, ["lead_id", "email"], row)
         self.assertEqual(1, calls["append"])
@@ -221,7 +221,7 @@ class DraftFirstV14Tests(unittest.TestCase):
     def test_workflow_has_source_pin_tests_retry_paths_and_no_smtp_sender(self):
         workflow = Path(".github/workflows/daily-agent-drafts-v14.yml").read_text(encoding="utf-8")
         self.assertIn("EXPECTED_SOURCE_SET_VERSION: 14.0.0-draft-first", workflow)
-        self.assertIn("test_draft_first_v14.py", workflow)
+        self.assertIn("test_draft_first_v14*.py", workflow)
         self.assertIn("outreach_draft_first_prepare_retry.py", workflow)
         self.assertIn("outreach_daily_draft_first_retry.py", workflow)
         self.assertIn("receipt_ids == selected_ids", workflow)
