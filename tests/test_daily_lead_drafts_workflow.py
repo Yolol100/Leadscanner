@@ -4,6 +4,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "daily-lead-drafts.yml"
 SCRIPT = ROOT / "scripts" / "outreach_daily_batch_drafts.py"
+HARDENED_SCRIPT = ROOT / "scripts" / "outreach_daily_batch_drafts_v2.py"
 
 
 class DailyLeadDraftWorkflowTests(unittest.TestCase):
@@ -12,6 +13,7 @@ class DailyLeadDraftWorkflowTests(unittest.TestCase):
         self.assertIn("issues:", text)
         self.assertIn("types: [opened]", text)
         self.assertIn("github.actor == 'Yolol100'", text)
+        self.assertIn("github.ref == 'refs/heads/main'", text)
         self.assertIn("CREATE DAILY LEAD DRAFTS", text)
         self.assertIn("COMMAND=CREATE_DAILY_LEAD_DRAFTS", text)
         self.assertIn("concurrency:", text)
@@ -19,7 +21,7 @@ class DailyLeadDraftWorkflowTests(unittest.TestCase):
 
     def test_route_is_draft_only_and_never_invokes_smtp_send(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
-        script = SCRIPT.read_text(encoding="utf-8")
+        script = SCRIPT.read_text(encoding="utf-8") + HARDENED_SCRIPT.read_text(encoding="utf-8")
         for forbidden in ("outreach_direct_smtp_runtime.py", "outreach-smtp.yml", "smtplib", "send_email(", "smtp.send"):
             self.assertNotIn(forbidden, workflow + "\n" + script)
         self.assertIn("IMAP_DRAFT_ONLY", workflow)
@@ -37,7 +39,7 @@ class DailyLeadDraftWorkflowTests(unittest.TestCase):
             "prospect_contact_enrichment_campaign.py",
             "prospect_intelligence_runtime.py",
             "outreach_daily_prepare_new.py",
-            "outreach_daily_batch_drafts.py",
+            "outreach_daily_batch_drafts_v2.py",
         ):
             self.assertIn(required, text)
         self.assertNotIn("AGENT_SALES_TARGET_TYPE: auto", text)
