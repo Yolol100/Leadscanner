@@ -38,7 +38,7 @@ permissions:
 
 concurrency:
   group: daily-draft-first-agent-leads
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   draft-first:
