@@ -12,6 +12,7 @@ SCRIPTS = ROOT / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
+import outreach_daily_draft_first as daily
 import outreach_daily_draft_first_retry as daily_retry
 import outreach_draft_first_prepare as prepare
 import outreach_draft_first_prepare_retry as prepare_retry
@@ -110,6 +111,53 @@ class DraftFirstV14RuntimeRegressionTests(unittest.TestCase):
         parsed = json.loads(out["source"].split(":", 1)[1])
         self.assertEqual("unknown", parsed["contact_mx_status"])
         self.assertEqual(row["lead_id"], out["lead_id"])
+
+    def test_verified_qualification_evidence_is_reused_on_official_domain(self):
+        candidate = {"website": "https://example.com/"}
+        q = {
+            "agent_type": "quote_intake",
+            "evidence_url": "https://www.example.com/request-a-quote/",
+            "fact": "Example invites visitors to request a quote on its website.",
+            "idea": "A quote-intake agent could structure those requests before handoff.",
+            "business_process": "request_to_complete_intake",
+        }
+        result = prepare.verified_qualification_personalization(candidate, q)
+        self.assertIsNotNone(result)
+        self.assertEqual("verified_qualification_evidence", result["personalization_mode"])
+        self.assertEqual("quote or intake request", result["anchor"])
+        self.assertEqual(q["evidence_url"], result["evidence_url"])
+
+    def test_verified_qualification_evidence_rejects_cross_domain_provenance(self):
+        candidate = {"website": "https://example.com/"}
+        q = {
+            "agent_type": "quote_intake",
+            "evidence_url": "https://unrelated.example.net/request-a-quote/",
+            "fact": "A quote request exists.",
+            "idea": "Automate intake.",
+            "business_process": "request_to_complete_intake",
+        }
+        self.assertIsNone(prepare.verified_qualification_personalization(candidate, q))
+
+    def test_generic_navigation_personalization_is_rejected(self):
+        meta = {
+            "personalization_anchor": "Skip to content",
+            "observation": "Skip to content",
+            "value_asset_summary": "A useful workflow.",
+            "evidence_url": "https://example.com/",
+        }
+        ok, reason = daily.meaningful_personalization(meta, "https://example.com/")
+        self.assertFalse(ok)
+        self.assertIn("generic navigation", reason)
+
+    def test_verified_business_process_personalization_is_accepted(self):
+        meta = {
+            "personalization_anchor": "quote or intake request",
+            "observation": "Example invites visitors to request a quote on its website.",
+            "value_asset_summary": "A quote-intake agent could structure those requests before handoff.",
+            "evidence_url": "https://example.com/request-a-quote/",
+        }
+        ok, reason = daily.meaningful_personalization(meta, "https://www.example.com/")
+        self.assertTrue(ok, reason)
 
     def test_workflow_counts_with_retry_wrapper_and_avoids_forced_recheck(self):
         workflow = Path(".github/workflows/daily-agent-drafts-v14.yml").read_text(encoding="utf-8")
