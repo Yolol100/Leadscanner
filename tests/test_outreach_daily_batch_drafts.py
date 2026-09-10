@@ -220,5 +220,68 @@ class DailyDraftSelectionTests(unittest.TestCase):
             daily.process(target=1, agent_type="auto", country="US", run_key="test", count_only=True)
 
 
+class FakeImap:
+    def __init__(self, searches):
+        self.searches = list(searches)
+        self.append_calls = 0
+        self.select_calls = 0
+
+    def search(self, *_args):
+        value = self.searches.pop(0)
+        return "OK", [value]
+
+    def append(self, *_args):
+        self.append_calls += 1
+        return "OK", [b""]
+
+    def select(self, *_args, **_kwargs):
+        self.select_calls += 1
+        return "OK", [b""]
+
+
+class DailyDraftImapIdempotencyTests(unittest.TestCase):
+    def item(self, country="NL"):
+        return daily.Candidate(
+            lead_id="lead-001", company="Example", website="https://example.com/",
+            email="sales@example.com", subject="Subject", body="Body", country=country,
+            anchor="Custom Hydraulic Filters", score=9,
+        )
+
+    def mailbox(self):
+        return type("Mailbox", (), {"sender_name": "Andrew Baeten", "sender_email": "info@andrewbaeten.nl"})()
+
+    def test_exact_existing_stable_id_is_reused_without_append(self):
+        imap = FakeImap([b"7"])
+        receipt = daily._append_or_readback(imap, "Drafts", self.mailbox(), self.item())
+        self.assertEqual(receipt.action, "existing")
+        self.assertEqual(receipt.readback_count, 1)
+        self.assertEqual(imap.append_calls, 0)
+
+    def test_duplicate_stable_ids_fail_closed(self):
+        imap = FakeImap([b"7 8"])
+        with self.assertRaises(RuntimeError):
+            daily._append_or_readback(imap, "Drafts", self.mailbox(), self.item())
+        self.assertEqual(imap.append_calls, 0)
+
+    @patch.object(daily, "build_draft_message")
+    def test_new_append_requires_exact_readback(self, build):
+        message = type("Message", (), {"as_bytes": lambda self, policy=None: b"message"})()
+        build.return_value = message
+        imap = FakeImap([b"", b"11"])
+        receipt = daily._append_or_readback(imap, "Drafts", self.mailbox(), self.item())
+        self.assertEqual(receipt.action, "appended")
+        self.assertEqual(receipt.readback_count, 1)
+        self.assertEqual(imap.append_calls, 1)
+
+    @patch.object(daily, "build_draft_message")
+    def test_ambiguous_post_append_readback_blocks(self, build):
+        message = type("Message", (), {"as_bytes": lambda self, policy=None: b"message"})()
+        build.return_value = message
+        imap = FakeImap([b"", b""])
+        with self.assertRaises(RuntimeError):
+            daily._append_or_readback(imap, "Drafts", self.mailbox(), self.item())
+        self.assertEqual(imap.append_calls, 1)
+
+
 if __name__ == "__main__":
     unittest.main()
