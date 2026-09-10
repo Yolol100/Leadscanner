@@ -141,6 +141,7 @@ jobs:
           if ! [[ "$target" =~ ^[0-9]+$ ]] || [ "$target" -lt 1 ] || [ "$target" -gt 50 ]; then echo 'TARGET must be 1..50' >&2; exit 2; fi
           if ! [[ "$run_key" =~ ^[A-Za-z0-9._:-]{1,80}$ ]]; then echo 'RUN_KEY contains unsupported characters' >&2; exit 2; fi
           if ! [[ "$source_set" =~ ^[A-Za-z0-9._:-]{1,120}$ ]]; then echo 'SOURCE_SET_VERSION contains unsupported characters' >&2; exit 2; fi
+          if [ "$source_set" != '13.5.0-evidence-personalization' ]; then echo 'BLOCKED_DRIFT: runtime supports Project Leads 13.5.0-evidence-personalization only' >&2; exit 2; fi
 
           {
             echo "mode=$mode"
@@ -206,6 +207,7 @@ jobs:
           CONTACT_ENRICHMENT_MODE: discover
           PROSPECT_INTELLIGENCE_MODE: refresh
           OUTREACH_PREPARE_MODE: prepare
+          DAILY_DRAFT_COUNTRY: ${{ steps.command.outputs.country }}
         shell: bash
         run: |
           set -euo pipefail
@@ -217,7 +219,7 @@ jobs:
             python3 scripts/prospect_campaign_gate.py --mode audit --report "daily-campaign-gate-${pass}.json"
             python3 scripts/prospect_contact_enrichment_campaign.py
             python3 scripts/prospect_intelligence_runtime.py --mode refresh --report "daily-intelligence-${pass}.json"
-            python3 scripts/outreach_agent_prepare_v2.py --mode prepare --report "daily-prepare-${pass}.json"
+            python3 scripts/outreach_daily_prepare_new.py | tee "daily-prepare-${pass}.log"
 
             out="$(python3 scripts/outreach_daily_batch_drafts.py \
               --count-only \
@@ -259,7 +261,7 @@ jobs:
             daily-qualification-*.json
             daily-campaign-gate-*.json
             daily-intelligence-*.json
-            daily-prepare-*.json
+            daily-prepare-*.log
             daily-ready-*.log
             daily-draft-count.log
             daily-draft-selection.json
