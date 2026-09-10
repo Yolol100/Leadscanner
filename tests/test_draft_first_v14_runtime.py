@@ -5,7 +5,7 @@ import json
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
@@ -46,11 +46,45 @@ class DraftFirstV14RuntimeRegressionTests(unittest.TestCase):
                 prepare_retry.append_row_retry(object(), "sheet", prepare.QUEUE_SHEET, ["lead_id", "email"], row)
         self.assertEqual(1, calls["append"])
 
-    def test_append_runtime_is_schema_bounded_and_not_insert_rows(self):
+    def test_runtime_uses_explicit_update_not_logical_table_append(self):
         source = Path("scripts/outreach_draft_first_prepare_retry.py").read_text(encoding="utf-8")
-        self.assertIn("A:{last_col}", source)
-        self.assertIn('insertDataOption="OVERWRITE"', source)
+        self.assertIn("values().update(", source)
+        self.assertNotIn("values().append(", source)
+        self.assertIn("target row", source)
         self.assertNotIn('range=f"\'{sheet}\'!A:ZZ"', source)
+
+    def test_explicit_write_targets_first_row_after_schema_data(self):
+        headers = ["lead_id", "email"]
+        row = {"lead_id": "lead-2", "email": "two@example.com"}
+        service = MagicMock()
+        values_api = service.spreadsheets.return_value.values.return_value
+        values_api.get.return_value.execute.side_effect = [
+            {"values": [["lead_id", "email"], ["lead-1", "one@example.com"], [], ["lead-old", "old@example.com"]]},
+            {"values": []},
+        ]
+        values_api.update.return_value.execute.return_value = {"updatedRange": "OutreachQueue!A5:B5"}
+
+        prepare_retry._append_once(service, "sheet", prepare.QUEUE_SHEET, headers, row)
+
+        kwargs = values_api.update.call_args.kwargs
+        self.assertEqual("'OutreachQueue'!A5:B5", kwargs["range"])
+        self.assertEqual([["lead-2", "two@example.com"]], kwargs["body"]["values"])
+        values_api.append.assert_not_called()
+
+    def test_explicit_write_refuses_occupied_target_row(self):
+        headers = ["lead_id", "email"]
+        row = {"lead_id": "lead-2", "email": "two@example.com"}
+        service = MagicMock()
+        values_api = service.spreadsheets.return_value.values.return_value
+        values_api.get.return_value.execute.side_effect = [
+            {"values": [["lead_id", "email"], ["lead-1", "one@example.com"]]},
+            {"values": [["other", "other@example.com"]]},
+        ]
+
+        with self.assertRaisesRegex(RuntimeError, "no longer empty"):
+            prepare_retry._append_once(service, "sheet", prepare.QUEUE_SHEET, headers, row)
+        values_api.update.assert_not_called()
+        values_api.append.assert_not_called()
 
     def test_prepare_mx_missing_is_review_evidence_not_hard_block(self):
         candidate = {"candidate_id": "c1", "status": "hold", "country": "US", "website": "https://example.com"}
@@ -82,6 +116,8 @@ class DraftFirstV14RuntimeRegressionTests(unittest.TestCase):
         self.assertGreaterEqual(workflow.count("outreach_daily_draft_first_retry.py --count-only"), 3)
         self.assertNotIn("PROSPECT_QUALIFICATION_FORCE_RECHECK=true", workflow)
         self.assertLess(workflow.index("prepare-stock-$cycle.log"), workflow.index("prospect_discovery_retry_runtime.py"))
+        self.assertIn("group: daily-draft-first-agent-leads", workflow)
+        self.assertIn("cancel-in-progress: false", workflow)
 
 
 if __name__ == "__main__":
