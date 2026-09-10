@@ -26,6 +26,11 @@ on:
         required: true
         default: manual
         type: string
+      source_set_version:
+        description: Exact Project Leads source contract
+        required: true
+        default: 14.0.0-draft-first
+        type: string
 
 permissions:
   contents: read
@@ -43,6 +48,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
+      EXPECTED_SOURCE_SET_VERSION: 14.0.0-draft-first
       OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
       OUTREACH_CONFIG_SPREADSHEET_ID: ${{ vars.OUTREACH_CONFIG_SPREADSHEET_ID || '1iOBCaBq3MpsrYQiESAhjS1NMRQDXAWmkTh-U-63qzs4' }}
       GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
@@ -77,7 +83,7 @@ jobs:
           cache-dependency-path: requirements-outreach.txt
       - run: python3 -m pip install --disable-pip-version-check --requirement requirements-outreach.txt
 
-      - name: Parse command
+      - name: Parse command and pin source contract
         id: command
         shell: bash
         env:
@@ -85,20 +91,37 @@ jobs:
           INPUT_COUNTRY: ${{ inputs.country }}
           INPUT_TARGET: ${{ inputs.target }}
           INPUT_RUN_KEY: ${{ inputs.run_key }}
+          INPUT_SOURCE_SET_VERSION: ${{ inputs.source_set_version }}
         run: |
           set -euo pipefail
           if [ "$GITHUB_EVENT_NAME" = issues ]; then
             body="$(jq -r '.issue.body // ""' "$GITHUB_EVENT_PATH")"
-            one(){ mapfile -t x < <(printf '%s\n' "$body" | sed -n "s/^$1=//p"); [ "${#x[@]}" -eq 1 ] && [ -n "${x[0]}" ] || exit 2; printf '%s' "${x[0]}"; }
-            mode="$(one MODE)"; country="$(one COUNTRY)"; target="$(one TARGET)"; run_key="$(one RUN_KEY)"
+            one(){ mapfile -t x < <(printf '%s\n' "$body" | sed -n "s/^$1=//p"); [ "${#x[@]}" -eq 1 ] && [ -n "${x[0]}" ] || { echo "BLOCKED_COMMAND_FIELD field=$1"; exit 2; }; printf '%s' "${x[0]}"; }
+            mode="$(one MODE)"
+            country="$(one COUNTRY)"
+            target="$(one TARGET)"
+            run_key="$(one RUN_KEY)"
+            source_set_version="$(one SOURCE_SET_VERSION)"
           else
-            mode="$INPUT_MODE"; country="$INPUT_COUNTRY"; target="$INPUT_TARGET"; run_key="$INPUT_RUN_KEY"
+            mode="$INPUT_MODE"
+            country="$INPUT_COUNTRY"
+            target="$INPUT_TARGET"
+            run_key="$INPUT_RUN_KEY"
+            source_set_version="$INPUT_SOURCE_SET_VERSION"
           fi
-          case "$mode" in validate|create) ;; *) exit 2;; esac
-          [[ "$country" =~ ^[A-Z]{2}$ ]] || exit 2
-          [[ "$target" =~ ^[0-9]+$ ]] && [ "$target" -ge 1 ] && [ "$target" -le 50 ] || exit 2
-          [[ "$run_key" =~ ^[A-Za-z0-9._:-]{1,80}$ ]] || exit 2
-          printf 'mode=%s\ncountry=%s\ntarget=%s\nrun_key=%s\n' "$mode" "$country" "$target" "$run_key" >> "$GITHUB_OUTPUT"
+          case "$mode" in validate|create) ;; *) echo "BLOCKED_MODE"; exit 2;; esac
+          [[ "$country" =~ ^[A-Z]{2}$ ]] || { echo "BLOCKED_COUNTRY"; exit 2; }
+          [[ "$target" =~ ^[0-9]+$ ]] && [ "$target" -ge 1 ] && [ "$target" -le 50 ] || { echo "BLOCKED_TARGET"; exit 2; }
+          [[ "$run_key" =~ ^[A-Za-z0-9._:-]{1,80}$ ]] || { echo "BLOCKED_RUN_KEY"; exit 2; }
+          [ "$source_set_version" = "$EXPECTED_SOURCE_SET_VERSION" ] || { echo "BLOCKED_SOURCE_SET_DRIFT got=$source_set_version expected=$EXPECTED_SOURCE_SET_VERSION"; exit 2; }
+          printf 'mode=%s\ncountry=%s\ntarget=%s\nrun_key=%s\nsource_set_version=%s\n' "$mode" "$country" "$target" "$run_key" "$source_set_version" >> "$GITHUB_OUTPUT"
+          echo "SOURCE_SET_VERSION=$source_set_version"
+
+      - name: Run v14 scenario audit
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_draft_first_v14.py' -v |& tee v14-test.log
+          echo 'DRAFT_FIRST_SCENARIO_AUDIT=green smtp_send=not_invoked'
 
       - name: Validate only
         if: steps.command.outputs.mode == 'validate'
@@ -130,11 +153,14 @@ jobs:
           set -euo pipefail
           target='${{ steps.command.outputs.target }}'
           mkdir -p daily-evidence
-          previous=-1; no_progress=0; ready=0
+          previous=-1
+          no_progress=0
+          ready=0
           for cycle in $(seq 1 12); do
             out="$(python3 scripts/outreach_daily_draft_first.py --count-only --target "$target" --country '${{ steps.command.outputs.country }}' --run-key '${{ steps.command.outputs.run_key }}')"
             printf '%s\n' "$out" | tee "daily-evidence/ready-before-$cycle.log"
-            ready="$(printf '%s\n' "$out" | sed -n 's/^DRAFT_FIRST_READY=\([0-9][0-9]*\).*/\1/p' | tail -n 1)"; test -n "$ready"
+            ready="$(printf '%s\n' "$out" | sed -n 's/^DRAFT_FIRST_READY=\([0-9][0-9]*\).*/\1/p' | tail -n 1)"
+            test -n "$ready"
             [ "$ready" -ge "$target" ] && break
 
             python3 scripts/prospect_discovery_retry_runtime.py --mode discover --report "daily-evidence/discovery-$cycle.json"
@@ -142,11 +168,12 @@ jobs:
             python3 scripts/prospect_signal_discovery_runtime.py --mode discover --report "daily-evidence/signal-$cycle.json"
             PROSPECT_QUALIFICATION_FORCE_RECHECK=true python3 scripts/prospect_agent_qualification_draft_first.py --mode qualify --report "daily-evidence/qualification-$cycle.json"
             python3 scripts/prospect_contact_enrichment_draft_first.py | tee "daily-evidence/contact-$cycle.log"
-            python3 scripts/outreach_draft_first_prepare.py | tee "daily-evidence/prepare-$cycle.log"
+            python3 scripts/outreach_draft_first_prepare_retry.py | tee "daily-evidence/prepare-$cycle.log"
 
             out="$(python3 scripts/outreach_daily_draft_first.py --count-only --target "$target" --country '${{ steps.command.outputs.country }}' --run-key '${{ steps.command.outputs.run_key }}')"
             printf '%s\n' "$out" | tee "daily-evidence/ready-after-$cycle.log"
-            ready="$(printf '%s\n' "$out" | sed -n 's/^DRAFT_FIRST_READY=\([0-9][0-9]*\).*/\1/p' | tail -n 1)"; test -n "$ready"
+            ready="$(printf '%s\n' "$out" | sed -n 's/^DRAFT_FIRST_READY=\([0-9][0-9]*\).*/\1/p' | tail -n 1)"
+            test -n "$ready"
             [ "$ready" -ge "$target" ] && break
             if [ "$ready" -le "$previous" ]; then no_progress=$((no_progress+1)); else no_progress=0; fi
             previous="$ready"
@@ -159,28 +186,35 @@ jobs:
         if: steps.command.outputs.mode == 'create'
         run: |
           set -euo pipefail
-          python3 scripts/outreach_daily_draft_first.py --target '${{ steps.command.outputs.target }}' --country '${{ steps.command.outputs.country }}' --run-key '${{ steps.command.outputs.run_key }}' | tee daily-draft-run.log
+          python3 scripts/outreach_daily_draft_first_retry.py --target '${{ steps.command.outputs.target }}' --country '${{ steps.command.outputs.country }}' --run-key '${{ steps.command.outputs.run_key }}' | tee daily-draft-run.log
           grep -q '^DRAFT_FIRST_DRAFTS=green .*smtp_send=not_invoked$' daily-draft-run.log
 
-      - name: Audit closure
+      - name: Audit exact closure
         if: steps.command.outputs.mode == 'create'
         env:
           TARGET: ${{ steps.command.outputs.target }}
         run: |
+          set -euo pipefail
           python3 - <<'PY'
           import json, os
           target = int(os.environ['TARGET'])
           selection = json.load(open('daily-draft-selection.json', encoding='utf-8'))
           receipts = json.load(open('daily-draft-receipts.json', encoding='utf-8'))
-          assert len(selection['selected']) == target
+          selected = selection['selected']
+          assert len(selected) == target
           assert len(receipts) == target
-          assert len({x['lead_id'] for x in selection['selected']}) == target
-          assert len({x['website_host'] for x in selection['selected']}) == target
-          assert len({x['email'] for x in selection['selected']}) == target
+          selected_ids = {x['lead_id'] for x in selected}
+          receipt_ids = {x['lead_id'] for x in receipts}
+          assert len(selected_ids) == target
+          assert receipt_ids == selected_ids
+          assert len({x['website_host'] for x in selected}) == target
+          assert len({x['email'] for x in selected}) == target
+          assert len({x['test_id'] for x in receipts}) == target
           assert all(x['readback_count'] == 1 for x in receipts)
+          assert all(x['action'] in {'appended', 'existing'} for x in receipts)
           assert selection['send_permission'] == 'none'
           assert selection['smtp_send'] == 'not_invoked'
-          print(f'DRAFT_FIRST_CLOSURE=green target={target} readback=1 smtp_send=not_invoked')
+          print(f'DRAFT_FIRST_CLOSURE=green target={target} readback=1 receipt_match=1 smtp_send=not_invoked')
           PY
 
       - name: Upload evidence
@@ -189,6 +223,7 @@ jobs:
         with:
           name: draft-first-agent-leads-${{ github.run_id }}
           path: |
+            v14-test.log
             daily-evidence/
             daily-draft-selection.json
             daily-draft-receipts.json
@@ -203,8 +238,10 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           JOB_STATUS: ${{ job.status }}
+          SOURCE_SET_VERSION: ${{ steps.command.outputs.source_set_version }}
         run: |
           set -euo pipefail
           [ "$JOB_STATUS" = success ] && result=green || result=blocked
-          body="DRAFT_FIRST_LEADS=$result\nSOURCE_SET_VERSION=14.0.0-draft-first\nTRANSPORT=IMAP_DRAFT_ONLY\nSMTP_SEND=not_invoked"
+          version="${SOURCE_SET_VERSION:-unverified}"
+          body="DRAFT_FIRST_LEADS=$result\nSOURCE_SET_VERSION=$version\nTRANSPORT=IMAP_DRAFT_ONLY\nSMTP_SEND=not_invoked"
           curl --fail-with-body --silent --show-error -X POST -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer ${GH_TOKEN}" -H 'X-GitHub-Api-Version: 2022-11-28' "https://api.github.com/repos/${REPOSITORY}/issues/${ISSUE_NUMBER}/comments" -d "$(jq -n --arg body "$body" '{body:$body}')" >/dev/null
