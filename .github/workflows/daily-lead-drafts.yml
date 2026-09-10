@@ -161,7 +161,7 @@ jobs:
         run: |
           set -euo pipefail
           test -n "${GOOGLE_SERVICE_ACCOUNT_JSON:-}" || { echo '::error::GOOGLE_SERVICE_ACCOUNT_JSON is required'; exit 1; }
-          python3 scripts/outreach_daily_batch_drafts.py \
+          python3 scripts/outreach_daily_batch_drafts_v2.py \
             --count-only \
             --target '${{ steps.command.outputs.target }}' \
             --agent-type '${{ steps.command.outputs.agent }}' \
@@ -221,7 +221,7 @@ jobs:
             python3 scripts/prospect_intelligence_runtime.py --mode refresh --report "daily-intelligence-${pass}.json"
             python3 scripts/outreach_daily_prepare_new.py | tee "daily-prepare-${pass}.log"
 
-            out="$(python3 scripts/outreach_daily_batch_drafts.py \
+            out="$(python3 scripts/outreach_daily_batch_drafts_v2.py \
               --count-only \
               --target "$target" \
               --agent-type '${{ steps.command.outputs.agent }}' \
@@ -242,7 +242,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/outreach_daily_batch_drafts.py \
+          python3 scripts/outreach_daily_batch_drafts_v2.py \
             --target '${{ steps.command.outputs.target }}' \
             --agent-type '${{ steps.command.outputs.agent }}' \
             --country '${{ steps.command.outputs.country }}' \
