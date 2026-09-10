@@ -35,7 +35,7 @@ on:
       source_set_version:
         description: Live Project Leads source-set version read by the controller
         required: true
-        default: manual-validate
+        default: 13.5.0-evidence-personalization
         type: string
 
 permissions:
@@ -49,7 +49,7 @@ concurrency:
 jobs:
   daily-drafts:
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_dispatch' && github.actor == 'Yolol100' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'issues' &&
        github.actor == 'Yolol100' &&
        github.event.issue.title == 'CREATE DAILY LEAD DRAFTS' &&
