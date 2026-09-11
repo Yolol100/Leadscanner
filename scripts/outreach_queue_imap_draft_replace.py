@@ -134,6 +134,11 @@ def replace_queue_draft(*, lead_id: str, old_test_id: str, new_test_id: str, spr
         suppressed_emails=suppressed_emails,
         suppressed_domains=suppressed_domains,
     )
+    # Replacement is a draft-only edit, not a send authorization. Existing
+    # manual-review drafts must remain editable without changing their
+    # compliance state to approved. All other queue/suppression gates remain.
+    if row.get("compliance_status", "").strip().lower() == "manual_review":
+        errors = [error for error in errors if error != "compliance_status is not approved"]
     if errors:
         raise RuntimeError("; ".join(errors))
     body = inject_private_postal_for_draft(row, row["body"])
