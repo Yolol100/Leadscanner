@@ -17,17 +17,35 @@ from outreach_queue_imap_draft_sync import (
     _uid_search,
 )
 
+ALLOWED_DRAFT_COMPLIANCE = {"manual_review", "approved"}
 
-def _queue_index(rows: list[dict[str, str]]) -> dict[str, list[str]]:
-    index: dict[str, list[str]] = {}
+
+def _queue_index(rows: list[dict[str, str]], sender_email: str) -> dict[str, list[dict[str, str]]]:
+    sender = _normalize_email(sender_email)
+    index: dict[str, list[dict[str, str]]] = {}
     for row in rows:
         lead_id = (row.get("lead_id") or "").strip()
         recipient = _normalize_email(row.get("email", ""))
+        row_sender = _normalize_email(row.get("sender_email", ""))
+        compliance = (row.get("compliance_status") or "").strip().lower()
+        status = (row.get("status") or "").strip().lower()
         if not lead_id or not recipient:
             continue
-        index.setdefault(recipient, []).append(lead_id)
+        if row_sender and row_sender != sender:
+            continue
+        if compliance not in ALLOWED_DRAFT_COMPLIANCE:
+            continue
+        if status not in ALLOWED_DRAFT_COMPLIANCE:
+            continue
+        index.setdefault(recipient, []).append(
+            {
+                "lead_id": lead_id,
+                "subject": (row.get("subject") or "").strip(),
+            }
+        )
     for recipient in index:
-        index[recipient] = sorted(set(index[recipient]))
+        unique = {(item["lead_id"], item["subject"]): item for item in index[recipient]}
+        index[recipient] = sorted(unique.values(), key=lambda item: (item["subject"], item["lead_id"]))
     return index
 
 
@@ -39,13 +57,13 @@ def inventory_queue_drafts(*, spreadsheet_id: str, expected_count: int | None = 
 
     service = build_sheets_service()
     queue_rows = rows_from_values(get_values(service, spreadsheet_id, QUEUE_SHEET))
-    queue_index = _queue_index(queue_rows)
 
     daily_limit = int(os.getenv("OUTREACH_DAILY_LIMIT", "20") or "20")
     mailboxes = enabled_mailboxes(load_mailboxes_from_env(mode="validate", default_daily_limit=daily_limit))
     mailbox = choose_mailbox(mailboxes, os.getenv("OUTREACH_DRAFT_MAILBOX_ID", ""))
     if not getattr(mailbox, "mail_password", ""):
         raise RuntimeError("OUTREACH_MAIL_PASSWORD is required for IMAP draft inventory")
+    queue_index = _queue_index(queue_rows, mailbox.sender_email)
 
     context = ssl.create_default_context()
     imap = imaplib.IMAP4_SSL(mailbox.imap_host, mailbox.imap_port, ssl_context=context)
@@ -79,10 +97,19 @@ def inventory_queue_drafts(*, spreadsheet_id: str, expected_count: int | None = 
             snapshot = _snapshot_from_header(uid, _fetch_payload(imap, uid, header_query))
             if snapshot.sender != sender_email:
                 continue
-            candidate_ids: set[str] = set()
+
+            recipient_candidates: dict[str, dict[str, str]] = {}
+            subject_candidates: dict[str, dict[str, str]] = {}
             for recipient in snapshot.recipients:
                 recipient_counter[recipient] += 1
-                candidate_ids.update(queue_index.get(recipient, []))
+                for item in queue_index.get(recipient, []):
+                    recipient_candidates[item["lead_id"]] = item
+                    if item["subject"] == snapshot.subject:
+                        subject_candidates[item["lead_id"]] = item
+
+            chosen = subject_candidates if subject_candidates else recipient_candidates
+            match_basis = "recipient_subject" if subject_candidates else ("recipient" if recipient_candidates else "none")
+            candidate_ids = sorted(chosen)
             entries.append(
                 {
                     "uid": snapshot.uid,
@@ -90,8 +117,10 @@ def inventory_queue_drafts(*, spreadsheet_id: str, expected_count: int | None = 
                     "subject": snapshot.subject,
                     "test_id": snapshot.test_id,
                     "transport": snapshot.transport,
-                    "candidate_lead_ids": sorted(candidate_ids),
+                    "match_basis": match_basis,
+                    "candidate_lead_ids": candidate_ids,
                     "candidate_count": len(candidate_ids),
+                    "recipient_candidate_count": len(recipient_candidates),
                 }
             )
 
@@ -111,9 +140,12 @@ def inventory_queue_drafts(*, spreadsheet_id: str, expected_count: int | None = 
             "unmapped": unmapped,
             "duplicate_recipients": len(duplicate_recipients),
         }
+        blockers: list[str] = []
         if expected_count is not None and sender_count != expected_count:
+            blockers.append(f"expected {expected_count} sender drafts; found {sender_count}")
+        if blockers:
             report["status"] = "blocked"
-            report["blockers"] = [f"expected {expected_count} sender drafts; found {sender_count}"]
+            report["blockers"] = blockers
         else:
             report["status"] = "green"
         return report
