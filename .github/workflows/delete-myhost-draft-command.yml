@@ -1,0 +1,166 @@
+name: Delete exact mijn.host Draft Command
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: delete-myhost-draft-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  delete:
+    if: >-
+      github.actor == 'Yolol100' &&
+      github.event.issue.title == 'DELETE MYHOST DRAFT' &&
+      contains(github.event.issue.body, 'COMMAND=DELETE_MYHOST_DRAFT')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-outreach.txt
+
+      - name: Install isolated dependencies
+        run: python3 -m pip install --disable-pip-version-check --requirement requirements-outreach.txt
+
+      - name: Parse exact delete command
+        id: command
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t id_lines < <(jq -r '.issue.body // "" | split("\n")[] | select(startswith("TEST_ID=")) | sub("^TEST_ID="; "")' "$GITHUB_EVENT_PATH")
+          mapfile -t recipient_lines < <(jq -r '.issue.body // "" | split("\n")[] | select(startswith("RECIPIENT=")) | sub("^RECIPIENT="; "")' "$GITHUB_EVENT_PATH")
+          if [ "${#id_lines[@]}" -ne 1 ] || [ "${#recipient_lines[@]}" -ne 1 ]; then
+            echo 'Expected exactly one TEST_ID and RECIPIENT line.' >&2
+            exit 2
+          fi
+          test_id="${id_lines[0]}"
+          recipient="${recipient_lines[0]}"
+          if ! [[ "$test_id" =~ ^[A-Za-z0-9._:-]{1,180}$ ]]; then
+            echo 'TEST_ID contains unsupported characters.' >&2
+            exit 2
+          fi
+          if ! [[ "$recipient" =~ ^[^[:space:]@]+@[^[:space:]@]+$ ]]; then
+            echo 'RECIPIENT is invalid.' >&2
+            exit 2
+          fi
+          echo "test_id=$test_id" >> "$GITHUB_OUTPUT"
+          echo "recipient=$recipient" >> "$GITHUB_OUTPUT"
+
+      - name: Compile delete runtime
+        run: python3 -m py_compile scripts/outreach_imap_draft_delete_test_id.py
+
+      - name: Preflight exact draft deletion
+        id: preflight
+        continue-on-error: true
+        env: &draft_env
+          OUTREACH_DAILY_LIMIT: '100'
+          OUTREACH_DRAFT_MAILBOX_ID: ${{ vars.OUTREACH_MAILBOX_ID || 'primary' }}
+          OUTREACH_MAILBOX_ID: ${{ vars.OUTREACH_MAILBOX_ID || 'primary' }}
+          OUTREACH_SMTP_HOST: ${{ vars.OUTREACH_SMTP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_SMTP_PORT: ${{ vars.OUTREACH_SMTP_PORT || '587' }}
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME || 'Andrew Baeten' }}
+          OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_MAILBOXES_JSON: ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/outreach_imap_draft_delete_test_id.py \
+            --test-id '${{ steps.command.outputs.test_id }}' \
+            --recipient '${{ steps.command.outputs.recipient }}' \
+            --report delete-preflight.json | tee delete-preflight.txt
+          grep -q '^MYHOST_DRAFT_DELETE=preflight_green ' delete-preflight.txt
+          grep -q 'smtp_send=not_invoked' delete-preflight.txt
+
+      - name: Delete exact draft and verify absence
+        id: apply
+        if: steps.preflight.outcome == 'success'
+        continue-on-error: true
+        env: *draft_env
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/outreach_imap_draft_delete_test_id.py \
+            --test-id '${{ steps.command.outputs.test_id }}' \
+            --recipient '${{ steps.command.outputs.recipient }}' \
+            --apply \
+            --report delete-result.json | tee delete-result.txt
+          grep -q '^MYHOST_DRAFT_DELETE=green ' delete-result.txt
+          grep -q 'final_test_id_count=0' delete-result.txt
+          grep -q 'smtp_send=not_invoked' delete-result.txt
+
+      - name: Report exact delete result
+        if: always() && steps.command.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          PREFLIGHT_OUTCOME: ${{ steps.preflight.outcome }}
+          APPLY_OUTCOME: ${{ steps.apply.outcome }}
+          TEST_ID: ${{ steps.command.outputs.test_id }}
+          RECIPIENT: ${{ steps.command.outputs.recipient }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$PREFLIGHT_OUTCOME" = 'success' ] && [ "$APPLY_OUTCOME" = 'success' ] && grep -q '^MYHOST_DRAFT_DELETE=green ' delete-result.txt 2>/dev/null; then
+            result='MYHOST_DRAFT_DELETE_COMMAND=green'
+            detail="$(tail -n 1 delete-result.txt)"
+          else
+            result='MYHOST_DRAFT_DELETE_COMMAND=blocked'
+            detail="$(tail -n 1 delete-result.txt 2>/dev/null || tail -n 1 delete-preflight.txt 2>/dev/null || echo 'no result')"
+          fi
+          body="${result}\nTEST_ID=${TEST_ID}\nRECIPIENT=${RECIPIENT}\n${detail}\nTRANSPORT=IMAP_DRAFT_ONLY\nSMTP_SEND=not_invoked"
+          payload="$(jq -n --arg body "$body" '{body:$body}')"
+          curl --fail-with-body --silent --show-error \
+            -X POST \
+            -H 'Accept: application/vnd.github+json' \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/${REPOSITORY}/issues/${ISSUE_NUMBER}/comments" \
+            -d "$payload" >/dev/null
+          close_payload="$(jq -n '{state:"closed", state_reason:"completed"}')"
+          curl --fail-with-body --silent --show-error \
+            -X PATCH \
+            -H 'Accept: application/vnd.github+json' \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/${REPOSITORY}/issues/${ISSUE_NUMBER}" \
+            -d "$close_payload" >/dev/null
+
+      - name: Upload delete evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: myhost-draft-delete-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            delete-preflight.json
+            delete-preflight.txt
+            delete-result.json
+            delete-result.txt
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Fail closed when deletion failed
+        if: steps.preflight.outcome != 'success' || steps.apply.outcome != 'success'
+        shell: bash
+        run: |
+          echo 'Exact draft deletion did not complete with verified readback.' >&2
+          echo 'SMTP_SEND=not_invoked'
+          exit 1
