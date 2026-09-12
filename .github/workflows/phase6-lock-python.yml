@@ -25,23 +25,15 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Generate hash-locked outreach dependency graph
+      - name: Generate and commit hash-locked outreach dependency graph
         shell: bash
         run: |
           set -euo pipefail
           cp requirements-outreach.txt requirements-outreach.in
           python3 -m pip install --disable-pip-version-check 'pip-tools==7.6.1'
-          python3 -m piptools compile \
-            --generate-hashes \
-            --resolver=backtracking \
-            --output-file requirements-outreach.txt \
-            requirements-outreach.in
+          python3 -m piptools compile --generate-hashes --resolver=backtracking --output-file requirements-outreach.txt requirements-outreach.in
           cp requirements-outreach.txt /tmp/requirements-outreach.first.txt
-          python3 -m piptools compile \
-            --generate-hashes \
-            --resolver=backtracking \
-            --output-file requirements-outreach.txt \
-            requirements-outreach.in
+          python3 -m piptools compile --generate-hashes --resolver=backtracking --output-file requirements-outreach.txt requirements-outreach.in
           cmp /tmp/requirements-outreach.first.txt requirements-outreach.txt
           python3 -m pip install --disable-pip-version-check --require-hashes -r requirements-outreach.txt
           python3 -m pip check
@@ -62,18 +54,8 @@ jobs:
 
           A reviewed lock refresh must preserve the existing CI mail-secret boundary and `pip-audit` gate.
           EOF
-          python3 - <<'PY'
-          from pathlib import Path
-          path=Path('.github/workflows/leads-runtime-ci.yml')
-          text=path.read_text(encoding='utf-8')
-          text=text.replace("      - 'requirements-outreach.txt'\n", "      - 'requirements-outreach.in'\n      - 'requirements-outreach.txt'\n      - 'DEPENDENCY-LOCKS.md'\n")
-          text=text.replace('python3 -m pip install --disable-pip-version-check --requirement requirements-outreach.txt', 'python3 -m pip install --disable-pip-version-check --require-hashes --requirement requirements-outreach.txt')
-          path.write_text(text, encoding='utf-8')
-          PY
-          grep -q -- '--require-hashes --requirement requirements-outreach.txt' .github/workflows/leads-runtime-ci.yml
-          git rm .github/workflows/phase6-lock-python.yml
           git config user.name 'webactueel-phase6'
           git config user.email 'actions@users.noreply.github.com'
-          git add requirements-outreach.in requirements-outreach.txt DEPENDENCY-LOCKS.md .github/workflows/leads-runtime-ci.yml
+          git add requirements-outreach.in requirements-outreach.txt DEPENDENCY-LOCKS.md
           git commit -m 'Lock Python outreach dependencies with hashes'
           git push origin HEAD
