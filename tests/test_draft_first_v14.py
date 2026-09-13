@@ -17,6 +17,7 @@ import outreach_daily_draft_first as daily
 import outreach_daily_draft_first_retry as daily_retry
 import outreach_draft_first_prepare as prepare
 import outreach_draft_first_prepare_retry as prepare_retry
+from outreach_draft_first_user_contract import build_copy, initial_copy_errors
 import prospect_agent_qualification_draft_first as qualification
 import prospect_discovery_retry_runtime as discovery_retry
 
@@ -27,6 +28,7 @@ class DraftFirstV14Tests(unittest.TestCase):
             "scripts/prospect_discovery_retry_runtime.py",
             "scripts/prospect_agent_qualification_draft_first.py",
             "scripts/prospect_contact_enrichment_draft_first.py",
+            "scripts/outreach_draft_first_user_contract.py",
             "scripts/outreach_draft_first_prepare.py",
             "scripts/outreach_draft_first_prepare_retry.py",
             "scripts/outreach_daily_draft_first.py",
@@ -68,7 +70,7 @@ class DraftFirstV14Tests(unittest.TestCase):
         self.assertTrue(prepare.role_safe("info@example.com"))
         self.assertTrue(prepare.role_safe("sales@example.com"))
 
-    def test_official_external_contact_and_mx_unknown_are_review_eligible(self):
+    def test_mx_missing_is_blocked_but_unknown_can_stay_manual_review(self):
         candidate = {"candidate_id": "c1", "status": "hold", "country": "US", "website": "https://example.com"}
         q = {
             "offer_family": "ai_agent", "agent_type": "quote_intake", "tier": "B",
@@ -81,6 +83,25 @@ class DraftFirstV14Tests(unittest.TestCase):
         self.assertTrue(prepare.candidate_ok(candidate, q, contact, country="US"))
         self.assertFalse(prepare.candidate_ok(candidate, q, dict(contact, mx_status="missing"), country="US"))
         self.assertFalse(prepare.candidate_ok(candidate, q, dict(contact, source_url="https://directory.example/contact"), country="US"))
+
+    def test_explicit_draft_copy_style_has_hallo_and_andrew_only(self):
+        subject, body, followup_subject, followup_body, delay = build_copy(
+            company="Example Co", country="NL",
+            fact="een offerteformulier voor maatwerk zichtbaar is",
+            value="een intakeflow kan eerst de benodigde gegevens verzamelen",
+            agent_type="quote_intake",
+        )
+        self.assertEqual("Offerteaanvragen bij Example Co", subject)
+        self.assertTrue(body.startswith("Hallo,\n\n"))
+        self.assertTrue(body.endswith("Met vriendelijke groet,\nAndrew"))
+        self.assertNotIn("Beste team van", body)
+        self.assertNotIn("Andrew Baeten", body)
+        self.assertNotIn("andrewbaeten.nl", body)
+        self.assertNotIn("commercieel bericht", body)
+        self.assertEqual([], initial_copy_errors(subject, body))
+        self.assertEqual("", followup_subject)
+        self.assertEqual("", followup_body)
+        self.assertEqual(0, delay)
 
     def _queue_row(self, lead_id="lead-1", website="https://example.com", address="info@example.com"):
         meta = {
@@ -96,13 +117,19 @@ class DraftFirstV14Tests(unittest.TestCase):
             "value_asset_summary": "A quote intake workflow could collect the required details before handoff.",
             "personalization_anchor": "custom quote request",
         }
+        _, body, _, _, _ = build_copy(
+            company="Example Co", country="US",
+            fact="the site offers a quote request form for custom work",
+            value="a quote intake workflow could collect the required details before handoff",
+            agent_type="quote_intake",
+        )
         return {
             "lead_id": lead_id,
             "company": "Example Co",
             "website": website,
             "email": address,
             "subject": "Quote requests at Example Co",
-            "body": "I noticed your quote request flow. A short intake workflow could collect the required details before your team reviews them. Would it be useful if I sent a short example? Not interested? A quick no is enough. This is a commercial message.",
+            "body": body,
             "country": "US",
             "status": "manual_review",
             "compliance_status": "manual_review",
@@ -111,29 +138,27 @@ class DraftFirstV14Tests(unittest.TestCase):
 
     def test_daily_gate_accepts_b_then_blocks_suppression_and_duplicates(self):
         row = self._queue_row()
-        with patch.object(daily, "initial_copy_errors", return_value=[]):
-            accepted, rejected = daily.eligible([row], [], country="US")
-            self.assertEqual(1, len(accepted))
-            self.assertFalse(rejected)
+        accepted, rejected = daily.eligible([row], [], country="US")
+        self.assertEqual(1, len(accepted))
+        self.assertFalse(rejected)
 
-            accepted, rejected = daily.eligible([row], [{"email": "info@example.com", "domain": ""}], country="US")
-            self.assertEqual([], accepted)
-            self.assertIn("lead-1", rejected)
-            self.assertIn("suppressed", rejected["lead-1"])
+        accepted, rejected = daily.eligible([row], [{"email": "info@example.com", "domain": ""}], country="US")
+        self.assertEqual([], accepted)
+        self.assertIn("lead-1", rejected)
+        self.assertIn("suppressed", rejected["lead-1"])
 
-            second = self._queue_row("lead-2", "https://example.com/services", "sales@example.com")
-            accepted, rejected = daily.eligible([row, second], [], country="US")
-            self.assertEqual(1, len(accepted))
-            self.assertIn("lead-2", rejected)
-            self.assertIn("duplicate domain in batch", rejected["lead-2"])
+        second = self._queue_row("lead-2", "https://example.com/services", "sales@example.com")
+        accepted, rejected = daily.eligible([row, second], [], country="US")
+        self.assertEqual(1, len(accepted))
+        self.assertIn("lead-2", rejected)
+        self.assertIn("duplicate domain in batch", rejected["lead-2"])
 
     def test_stale_copy_contract_is_rejected(self):
         row = self._queue_row()
         meta = json.loads(row["source"].split(":", 1)[1])
         meta["copy_contract"] = "old-contract"
         row["source"] = "agent_offer:" + json.dumps(meta)
-        with patch.object(daily, "initial_copy_errors", return_value=[]):
-            accepted, rejected = daily.eligible([row], [], country="US")
+        accepted, rejected = daily.eligible([row], [], country="US")
         self.assertEqual([], accepted)
         self.assertIn("draft-first metadata missing/stale", rejected["lead-1"])
 
@@ -231,6 +256,7 @@ class DraftFirstV14Tests(unittest.TestCase):
             "scripts/outreach_daily_draft_first_retry.py",
             "scripts/outreach_draft_first_prepare.py",
             "scripts/outreach_draft_first_prepare_retry.py",
+            "scripts/outreach_draft_first_user_contract.py",
         ):
             text = Path(path).read_text(encoding="utf-8").casefold()
             self.assertNotIn("import smtplib", text)
