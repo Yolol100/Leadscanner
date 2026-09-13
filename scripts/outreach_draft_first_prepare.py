@@ -8,11 +8,12 @@ import sys
 from typing import Mapping
 
 from outreach_agent_prepare import CONTACT_HEADERS, CONTACT_SHEET, FULL_QUEUE_HEADERS, LEAD_HEADERS, LEAD_SHEET, PROSPECT_HEADERS, PROSPECT_SHEET
-from outreach_agent_prepare_v2 import _copy_with_value, _cta_variant
+from outreach_agent_prepare_v2 import _cta_variant
+from outreach_draft_first_user_contract import build_copy as _copy_with_value
 from outreach_sender import QUEUE_SHEET, build_sheets_service, ensure_expected_headers, get_values, rows_from_values
 import outreach_daily_batch_drafts as draft_base
 from outreach_site_personalization import personalize_from_evidence
-from prospect_agent_qualification import AGENT_CATALOG, AGENT_QUALIFICATION_HEADERS, AGENT_QUALIFICATION_SHEET
+from prospect_agent_qualification import AGENT_QUALIFICATION_HEADERS, AGENT_QUALIFICATION_SHEET
 from prospect_discovery import host_key, hosts_related
 from prospect_intelligence import canonical_domain
 from prospect_target_policy import canonical_country
@@ -114,12 +115,6 @@ def append_row(service, spreadsheet_id: str, sheet: str, headers: list[str], row
 
 
 def verified_qualification_personalization(candidate: Mapping[str, object], q: Mapping[str, object]):
-    """Reuse official-site evidence already verified by the qualification stage.
-
-    Qualification only writes fact/idea/evidence_url after fetching and classifying the
-    candidate's official site. Reusing that evidence prevents a second serial HTTP fetch
-    during prepare while keeping provenance tied to the same official domain.
-    """
     website = text(candidate.get("website"))
     evidence_url = text(q.get("evidence_url"))
     observation = text(q.get("fact"))
