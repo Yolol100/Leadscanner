@@ -161,9 +161,22 @@ class HardenedRoleTests(unittest.TestCase):
             )
         self.assertEqual(errors, protected)
 
-    def test_wrapper_replaces_base_gates_used_by_selection(self):
-        self.assertIs(base._role_is_usable, hardened.hardened_role_is_usable)
-        self.assertIs(base.candidate_errors, hardened.hardened_candidate_errors)
+    def test_wrapper_scopes_base_gates_to_v2_selection(self):
+        self.assertIs(base._role_is_usable, hardened._ORIGINAL_ROLE_IS_USABLE)
+        self.assertIs(base.candidate_errors, hardened._ORIGINAL_CANDIDATE_ERRORS)
+        seen = {}
+
+        def probe():
+            seen["role"] = base._role_is_usable
+            seen["errors"] = base.candidate_errors
+            return 7
+
+        result = hardened._with_hardened_gates(probe)
+        self.assertEqual(result, 7)
+        self.assertIs(seen["role"], hardened.hardened_role_is_usable)
+        self.assertIs(seen["errors"], hardened.hardened_candidate_errors)
+        self.assertIs(base._role_is_usable, hardened._ORIGINAL_ROLE_IS_USABLE)
+        self.assertIs(base.candidate_errors, hardened._ORIGINAL_CANDIDATE_ERRORS)
 
 
 if __name__ == "__main__":
