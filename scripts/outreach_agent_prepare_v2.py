@@ -8,6 +8,7 @@ import outreach_agent_prepare as legacy
 from outreach_copy_preflight import followup_copy_errors, initial_copy_errors
 from outreach_site_personalization import personalize_from_evidence
 from prospect_agent_qualification import AGENT_CATALOG
+from prospect_discovery import host_key, hosts_related
 from prospect_target_policy import canonical_country
 
 AUTOMATION_ID = "agent_sales_prepare_v2"
@@ -182,8 +183,58 @@ def _with_legacy_v2_globals(callable_, *args, **kwargs):
         legacy.followup_copy_errors = old["followup_copy_errors"]
 
 
+def _draft_state(candidate, qualification) -> tuple[str, str]:
+    tier = legacy._text(qualification.get("tier")).upper()
+    try:
+        potential = int(legacy._text(qualification.get("customer_potential")) or "0")
+    except ValueError as exc:
+        raise ValueError("customer_potential must be numeric") from exc
+    candidate_status = legacy._text(candidate.get("status")).casefold()
+    qualification_status = legacy._text(qualification.get("status")).casefold()
+    if potential < 6:
+        raise ValueError("draft preparation requires customer_potential >= 6")
+    if tier == "A" and candidate_status == "qualified" and qualification_status == "qualified":
+        return tier, str(potential)
+    if tier == "B" and candidate_status == "hold" and qualification_status == "hold":
+        return tier, str(potential)
+    raise ValueError("draft preparation requires A/qualified or B/hold evidence")
+
+
+def _contact_for_legacy(candidate, contact):
+    website_host = host_key(str(candidate.get("website", "")))
+    source_host = host_key(str(contact.get("source_url", "")))
+    if not website_host or not source_host or not hosts_related(website_host, source_host):
+        raise ValueError("contact source must be on the official site")
+    if legacy._text(contact.get("mx_status")).casefold() != "present":
+        raise ValueError("contact MX presence is required")
+    status = legacy._text(contact.get("status")).casefold()
+    if status not in {"ready", "manual_review"}:
+        raise ValueError("contact must be ready or manual_review for draft preparation")
+    legacy_contact = dict(contact)
+    legacy_contact["status"] = "ready"
+    legacy_contact["domain_alignment"] = "aligned"
+    return legacy_contact
+
+
 def build_prepared_row(candidate, qualification, contact, **kwargs):
-    row = _with_legacy_v2_globals(_original_build_prepared_row, candidate, qualification, contact, **kwargs)
+    actual_tier, actual_potential = _draft_state(candidate, qualification)
+    legacy_candidate = dict(candidate)
+    legacy_qualification = dict(qualification)
+    legacy_contact = _contact_for_legacy(candidate, contact)
+
+    if actual_tier == "B":
+        legacy_candidate["status"] = "qualified"
+        legacy_qualification["tier"] = "A"
+        legacy_qualification["status"] = "qualified"
+        legacy_qualification["customer_potential"] = "8"
+
+    row = _with_legacy_v2_globals(
+        _original_build_prepared_row,
+        legacy_candidate,
+        legacy_qualification,
+        legacy_contact,
+        **kwargs,
+    )
     source = str(row.get("source", ""))
     if not source.startswith("agent_offer:"):
         raise ValueError("prepared row must contain agent_offer evidence")
@@ -208,6 +259,8 @@ def build_prepared_row(candidate, qualification, contact, **kwargs):
 
     metadata["automation"] = AUTOMATION_ID
     metadata["campaign_target_agent_type"] = found if target == "auto" else target
+    metadata["qualification_tier"] = actual_tier
+    metadata["customer_potential"] = actual_potential
     metadata["fact"] = personalization.observation
     metadata["idea"] = personalization.value
     metadata["evidence_url"] = personalization.evidence_url
