@@ -49,14 +49,12 @@ class ProspectSignalWorkflowTests(unittest.TestCase):
         self.assertNotIn("outreach_direct_smtp_runtime", runtime)
         self.assertNotIn("ContactCandidates", runtime)
 
-    def test_machine_contract_registers_signal_collector_as_advisory(self):
-        contract = json.loads((ROOT / "toolkit-contract.json").read_text(encoding="utf-8"))
-        capability = contract["capabilities"]["prospect_signal_discovery"]
+    def test_v17_registry_keeps_signal_collection_bounded_and_no_send(self):
+        registry = json.loads((ROOT / "tool-registry.json").read_text(encoding="utf-8"))
+        capability = registry["capabilities"]["prospect_signal_discovery"]
+        self.assertEqual(capability["workflow"], ".github/workflows/prospect-signal-discovery.yml")
+        self.assertEqual(capability["role"], "bounded_official_site_signal_evidence")
         self.assertEqual(capability["send_permission"], "none")
-        self.assertFalse(capability["automatic_score_effect"])
-        self.assertEqual(capability["scheduled_default"], "validate")
-        self.assertEqual(capability["scheduled_discover_gate"], "PROSPECT_SIGNAL_DISCOVERY_ENABLED=true")
-        self.assertEqual(capability["required_secrets"], ["GOOGLE_SERVICE_ACCOUNT_JSON"])
 
 
 if __name__ == "__main__":
