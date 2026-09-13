@@ -93,7 +93,14 @@ class OutreachAgentPrepareV2Tests(unittest.TestCase):
             "fact": "Op jullie website kunnen bezoekers direct een afspraak maken.",
             "idea": "Een AI Front Desk & Sales Agent kan eerste vragen beantwoorden.",
         }
-        contact = {"checked_at": "2026-09-08T15:00:00Z", "email": "info@voorbeeld.nl", "status": "ready"}
+        contact = {
+            "checked_at": "2026-09-08T15:00:00Z",
+            "email": "info@voorbeeld.nl",
+            "status": "ready",
+            "source_url": "https://voorbeeld.nl/contact/",
+            "domain_alignment": "aligned",
+            "mx_status": "present",
+        }
         return candidate, qualification, contact
 
     @staticmethod
@@ -114,6 +121,8 @@ class OutreachAgentPrepareV2Tests(unittest.TestCase):
             row = build_prepared_row(candidate, qualification, contact)
         meta = json.loads(row["source"].split(":", 1)[1])
         self.assertEqual(meta["campaign_target_agent_type"], "front_desk_sales")
+        self.assertEqual(meta["qualification_tier"], "A")
+        self.assertEqual(meta["customer_potential"], "8")
         self.assertEqual(meta["value_asset_type"], "process_flow")
         self.assertEqual(meta["value_asset_status"], "concept_ready")
         self.assertEqual(meta["personalization_anchor"], "Sportfysiotherapie")
@@ -124,6 +133,35 @@ class OutreachAgentPrepareV2Tests(unittest.TestCase):
         self.assertEqual(meta["copy_contract"], "evidence_personalized_v13_5")
         self.assertIn("Sportfysiotherapie", row["body"])
         self.assertNotIn("AI Front Desk", row["body"])
+
+    def test_b_hold_payload_preserves_real_tier_and_accepts_official_external_contact(self):
+        candidate, qualification, contact = self._ready()
+        candidate["status"] = "hold"
+        qualification["tier"] = "B"
+        qualification["status"] = "hold"
+        qualification["customer_potential"] = "7"
+        contact["email"] = "sales@external-mail.example"
+        contact["status"] = "manual_review"
+        contact["domain_alignment"] = "external_domain"
+        with patch.dict(os.environ, {"AGENT_SALES_TARGET_TYPE": "front_desk_sales", "OUTREACH_CTA_VARIANT": "A"}, clear=False), patch(
+            "outreach_agent_prepare_v2.personalize_from_evidence", return_value=self._personalization()
+        ):
+            row = build_prepared_row(candidate, qualification, contact)
+        meta = json.loads(row["source"].split(":", 1)[1])
+        self.assertEqual(meta["qualification_tier"], "B")
+        self.assertEqual(meta["customer_potential"], "7")
+        self.assertEqual(row["compliance_status"], "manual_review")
+        self.assertEqual(row["status"], "prepared")
+
+    def test_prepare_blocks_contact_without_official_source_or_mx(self):
+        candidate, qualification, contact = self._ready()
+        contact["source_url"] = "https://directory.example.net/company"
+        with self.assertRaisesRegex(ValueError, "official site"):
+            build_prepared_row(candidate, qualification, contact)
+        contact["source_url"] = "https://voorbeeld.nl/contact/"
+        contact["mx_status"] = "unknown"
+        with self.assertRaisesRegex(ValueError, "MX"):
+            build_prepared_row(candidate, qualification, contact)
 
     def test_prepare_blocks_campaign_mismatch_before_personalization(self):
         candidate, qualification, contact = self._ready()
