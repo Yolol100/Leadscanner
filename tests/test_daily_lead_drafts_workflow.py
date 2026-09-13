@@ -109,7 +109,7 @@ class DailyLeadDraftWorkflowTests(unittest.TestCase):
         script = SCRIPT.read_text(encoding="utf-8")
         self.assertIn("target must be between 1 and 50", script)
         hardened = HARDENED_SCRIPT.read_text(encoding="utf-8")
-        self.assertIn("chunk_target = min(50, remaining)", hardened)
+        self.assertIn("chunk = min(50, left)", hardened)
 
 
 if __name__ == "__main__":
