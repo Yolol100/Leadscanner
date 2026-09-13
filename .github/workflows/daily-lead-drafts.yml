@@ -130,9 +130,10 @@ jobs:
           set -euo pipefail
           target="$TARGET"
           discovery=$(( target * 3 ))
-          [ "$discovery" -ge 200 ] || discovery=200
+          [ "$discovery" -le 200 ] || discovery=200
+          [ "$discovery" -ge 50 ] || discovery=50
           per_cycle="$target"
-          [ "$per_cycle" -ge 50 ] || per_cycle=50
+          [ "$per_cycle" -le 50 ] || per_cycle=50
           {
             echo "OUTREACH_DAILY_LIMIT=$target"
             echo "PROSPECT_DISCOVERY_MAX_TOTAL=$discovery"
@@ -184,9 +185,9 @@ jobs:
           mkdir -p daily-evidence
 
           retry_transient() {
-            local max_attempts=5
+            local max_attempts=6
             local attempt=1
-            local delay=5
+            local delay=20
             local status=0
             while true; do
               if "$@"; then
@@ -202,21 +203,26 @@ jobs:
               sleep "$delay"
               attempt=$((attempt+1))
               delay=$((delay*2))
+              [ "$delay" -le 120 ] || delay=120
             done
           }
 
           while true; do
             cycle=$((cycle+1))
             echo "REFILL_CYCLE=$cycle"
-            out="$(python3 scripts/outreach_daily_batch_drafts_v2.py --count-only --target "$target" --agent-type "$requested_agent" --country '${{ steps.command.outputs.country }}' --run-key '${{ steps.command.outputs.run_key }}')"
+            out="$(retry_transient python3 scripts/outreach_daily_batch_drafts_v2.py --count-only --target "$target" --agent-type "$requested_agent" --country '${{ steps.command.outputs.country }}' --run-key '${{ steps.command.outputs.run_key }}')"
             printf '%s\n' "$out" | tee "daily-evidence/ready-before-$cycle.log"
             ready="$(printf '%s\n' "$out" | sed -n 's/^DAILY_DRAFT_READY=\([0-9][0-9]*\).*/\1/p' | tail -n 1)"
             test -n "$ready"
             [ "$ready" -ge "$target" ] && break
 
             retry_transient python3 scripts/prospect_discovery_runtime.py --mode discover --report "daily-evidence/discovery-$cycle.json"
-            python3 scripts/prospect_candidate_sanitizer.py | tee "daily-evidence/sanitizer-$cycle.log"
-            python3 scripts/prospect_signal_discovery_runtime.py --mode discover --report "daily-evidence/signal-$cycle.json"
+            sleep 10
+            sanitizer_out="$(retry_transient python3 scripts/prospect_candidate_sanitizer.py)"
+            printf '%s\n' "$sanitizer_out" | tee "daily-evidence/sanitizer-$cycle.log"
+            sleep 5
+            retry_transient python3 scripts/prospect_signal_discovery_runtime.py --mode discover --report "daily-evidence/signal-$cycle.json"
+            sleep 15
 
             if [ "$requested_agent" = auto ]; then
               agents='front_desk_sales quote_intake review_concierge customer_support commerce'
@@ -226,14 +232,20 @@ jobs:
 
             for agent in $agents; do
               export AGENT_SALES_TARGET_TYPE="$agent"
-              python3 scripts/prospect_agent_qualification.py --mode qualify --report "daily-evidence/qualification-$cycle-$agent.json"
-              python3 scripts/prospect_campaign_gate.py --mode audit --report "daily-evidence/campaign-gate-$cycle-$agent.json"
-              python3 scripts/prospect_contact_enrichment_campaign.py
-              python3 scripts/prospect_intelligence_runtime.py --mode refresh --report "daily-evidence/intelligence-$cycle-$agent.json"
-              python3 scripts/outreach_daily_prepare_new.py | tee "daily-evidence/prepare-$cycle-$agent.log"
+              retry_transient python3 scripts/prospect_agent_qualification.py --mode qualify --report "daily-evidence/qualification-$cycle-$agent.json"
+              sleep 4
+              retry_transient python3 scripts/prospect_campaign_gate.py --mode audit --report "daily-evidence/campaign-gate-$cycle-$agent.json"
+              sleep 4
+              retry_transient python3 scripts/prospect_contact_enrichment_campaign.py
+              sleep 4
+              retry_transient python3 scripts/prospect_intelligence_runtime.py --mode refresh --report "daily-evidence/intelligence-$cycle-$agent.json"
+              sleep 4
+              prepare_out="$(retry_transient python3 scripts/outreach_daily_prepare_new.py)"
+              printf '%s\n' "$prepare_out" | tee "daily-evidence/prepare-$cycle-$agent.log"
+              sleep 15
             done
 
-            out="$(python3 scripts/outreach_daily_batch_drafts_v2.py --count-only --target "$target" --agent-type "$requested_agent" --country '${{ steps.command.outputs.country }}' --run-key '${{ steps.command.outputs.run_key }}')"
+            out="$(retry_transient python3 scripts/outreach_daily_batch_drafts_v2.py --count-only --target "$target" --agent-type "$requested_agent" --country '${{ steps.command.outputs.country }}' --run-key '${{ steps.command.outputs.run_key }}')"
             printf '%s\n' "$out" | tee "daily-evidence/ready-after-$cycle.log"
             ready="$(printf '%s\n' "$out" | sed -n 's/^DAILY_DRAFT_READY=\([0-9][0-9]*\).*/\1/p' | tail -n 1)"
             test -n "$ready"
@@ -249,6 +261,7 @@ jobs:
               echo "BLOCKED_NO_PROGRESS ready=$ready target=$target cycles=$cycle"
               exit 3
             fi
+            sleep 20
           done
           echo "REFILL_TARGET=green ready=$ready target=$target"
 
