@@ -10,12 +10,12 @@ HARDENED_SCRIPT = ROOT / "scripts" / "outreach_daily_batch_drafts_v2.py"
 class DailyLeadDraftWorkflowTests(unittest.TestCase):
     def test_trigger_is_owner_bound_and_single_command(self):
         text = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("types: [opened]", text)
+        self.assertIn("types: [opened, reopened]", text)
         self.assertIn("github.actor == 'Yolol100'", text)
         self.assertIn("github.ref == 'refs/heads/main'", text)
         self.assertIn("CREATE DAILY LEAD DRAFTS", text)
         self.assertIn("COMMAND=CREATE_DAILY_LEAD_DRAFTS", text)
-        self.assertIn("cancel-in-progress: false", text)
+        self.assertIn("cancel-in-progress: true", text)
 
     def test_route_is_draft_only_and_never_invokes_smtp_send(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
@@ -35,6 +35,13 @@ class DailyLeadDraftWorkflowTests(unittest.TestCase):
         self.assertNotIn("for pass in 1 2 3 4", text)
         self.assertRegex(text, r'\[ "\$ready" -ge "\$target" \]')
         self.assertIn("retry_transient", text)
+
+    def test_refill_commands_have_fail_closed_timeout(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("local timeout_seconds=1800", text)
+        self.assertIn('timeout --signal=TERM --kill-after=30s "${timeout_seconds}s" "$@"', text)
+        self.assertIn('if [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then', text)
+        self.assertIn("COMMAND_TIMEOUT", text)
 
     def test_refill_rediscovers_and_requalifies_when_short(self):
         text = WORKFLOW.read_text(encoding="utf-8")
