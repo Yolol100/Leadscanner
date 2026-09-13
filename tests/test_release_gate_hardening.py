@@ -1,3 +1,4 @@
+import json
 import unittest
 from pathlib import Path
 
@@ -7,13 +8,12 @@ WORKFLOWS = ROOT / ".github" / "workflows"
 
 
 class ReleaseGateHardeningTests(unittest.TestCase):
-    def test_live_outreach_requires_green_sender_readiness(self):
-        text = (WORKFLOWS / "outreach-smtp.yml").read_text(encoding="utf-8")
-        section = text.split("- name: Run live sender readiness gate", 1)[1].split(
-            "- name: Run LeadPromo copy preflight", 1
-        )[0]
-        self.assertIn("OUTREACH_READINESS_REQUIRE_GREEN: 'true'", section)
-        self.assertIn("outreach_sender_readiness.py", section)
+    def test_legacy_live_smtp_workflow_is_not_on_default_branch(self):
+        self.assertFalse((WORKFLOWS / "outreach-smtp.yml").exists())
+        registry = json.loads((ROOT / "tool-registry.json").read_text(encoding="utf-8"))
+        self.assertTrue(registry["policy"]["draft_only"])
+        self.assertEqual(registry["policy"]["send_permission"], "none")
+        self.assertNotIn("outreach-smtp.yml", json.dumps(registry, sort_keys=True))
 
     def test_myhost_draft_route_is_manual_only_and_self_only(self):
         text = (WORKFLOWS / "myhost-draft-test.yml").read_text(encoding="utf-8")
