@@ -18,18 +18,12 @@ class DependencySecurityTests(unittest.TestCase):
         self.assertIn("pip-audit==2.10.1", text)
         self.assertIn("python3 -m pip_audit --requirement requirements-outreach.txt", text)
 
-    def test_toolkit_versions_match_package_dependencies(self):
+    def test_filter_contract_does_not_duplicate_scanner_dependency_versions(self):
         package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
         contract = json.loads((ROOT / "toolkit-contract.json").read_text(encoding="utf-8"))
-        tools = {item["id"]: item["version"] for item in contract["scanner_tools"]}
-        expected = {
-            "crawlee": package["dependencies"]["crawlee"],
-            "playwright": package["dependencies"]["playwright"],
-            "axe-core": package["dependencies"]["@axe-core/playwright"],
-            "linkinator": package["dependencies"]["linkinator"],
-            "lighthouse": package["dependencies"]["lighthouse"],
-        }
-        self.assertEqual(expected, {key: tools[key] for key in expected})
+        self.assertNotIn("scanner_tools", contract)
+        for dependency in ("crawlee", "playwright", "@axe-core/playwright", "linkinator", "lighthouse"):
+            self.assertIn(dependency, package["dependencies"])
 
 
 if __name__ == "__main__":
