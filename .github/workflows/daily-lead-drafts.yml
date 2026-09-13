@@ -183,6 +183,28 @@ jobs:
           cycle=0
           mkdir -p daily-evidence
 
+          retry_transient() {
+            local max_attempts=5
+            local attempt=1
+            local delay=5
+            local status=0
+            while true; do
+              if "$@"; then
+                return 0
+              else
+                status=$?
+              fi
+              if [ "$attempt" -ge "$max_attempts" ]; then
+                echo "TRANSIENT_RETRY_EXHAUSTED attempts=$attempt status=$status command=$1"
+                return "$status"
+              fi
+              echo "TRANSIENT_RETRY attempt=$attempt status=$status command=$1 next_delay=${delay}s"
+              sleep "$delay"
+              attempt=$((attempt+1))
+              delay=$((delay*2))
+            done
+          }
+
           while true; do
             cycle=$((cycle+1))
             echo "REFILL_CYCLE=$cycle"
@@ -192,7 +214,7 @@ jobs:
             test -n "$ready"
             [ "$ready" -ge "$target" ] && break
 
-            python3 scripts/prospect_discovery_runtime.py --mode discover --report "daily-evidence/discovery-$cycle.json"
+            retry_transient python3 scripts/prospect_discovery_runtime.py --mode discover --report "daily-evidence/discovery-$cycle.json"
             python3 scripts/prospect_candidate_sanitizer.py | tee "daily-evidence/sanitizer-$cycle.log"
             python3 scripts/prospect_signal_discovery_runtime.py --mode discover --report "daily-evidence/signal-$cycle.json"
 
