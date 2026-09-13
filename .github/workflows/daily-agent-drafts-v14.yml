@@ -141,6 +141,15 @@ jobs:
           test -n "${OUTREACH_MAIL_PASSWORD:-}"
           python3 scripts/outreach_private_config.py
 
+      - name: Capture pre-run net-new baseline
+        if: steps.command.outputs.mode == 'create'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p daily-evidence
+          python3 scripts/outreach_draft_first_baseline.py --output daily-draft-baseline.json | tee daily-evidence/baseline.log
+          grep -q '^DRAFT_FIRST_BASELINE=green .*smtp_send=not_invoked$' daily-evidence/baseline.log
+
       - name: Refill review-ready drafts
         if: steps.command.outputs.mode == 'create'
         env:
@@ -150,6 +159,8 @@ jobs:
           DAILY_DRAFT_COUNTRY: ${{ steps.command.outputs.country }}
           PROSPECT_DISCOVERY_PREFERRED_COUNTRIES: ${{ steps.command.outputs.country }}
           PROSPECT_DISCOVERY_EXCLUDE_AGENCIES: 'true'
+          DRAFT_FIRST_BASELINE_FILE: daily-draft-baseline.json
+          DRAFT_FIRST_REQUIRE_NET_NEW: 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -165,8 +176,6 @@ jobs:
             test -n "$ready"
             [ "$ready" -ge "$target" ] && break
 
-            # Use already-qualified/contact-proven unqueued stock before paying the
-            # discovery cost. This preserves every v14 gate and only fills the shortfall.
             python3 scripts/outreach_draft_first_prepare_retry.py | tee "daily-evidence/prepare-stock-$cycle.log"
             out="$(python3 scripts/outreach_daily_draft_first_retry.py --count-only --target "$target" --country '${{ steps.command.outputs.country }}' --run-key '${{ steps.command.outputs.run_key }}')"
             printf '%s\n' "$out" | tee "daily-evidence/ready-stock-$cycle.log"
@@ -191,10 +200,13 @@ jobs:
             [ "$no_progress" -lt 4 ] || { echo "BLOCKED_DRAFT_FIRST_NO_PROGRESS ready=$ready target=$target"; exit 3; }
           done
           [ "$ready" -ge "$target" ] || { echo "BLOCKED_DRAFT_FIRST_TARGET ready=$ready target=$target"; exit 3; }
-          echo "DRAFT_FIRST_REFILL=green ready=$ready target=$target"
+          echo "DRAFT_FIRST_REFILL=green ready=$ready target=$target net_new=1"
 
       - name: Create IMAP review drafts
         if: steps.command.outputs.mode == 'create'
+        env:
+          DRAFT_FIRST_BASELINE_FILE: daily-draft-baseline.json
+          DRAFT_FIRST_REQUIRE_NET_NEW: 'true'
         run: |
           set -euo pipefail
           python3 scripts/outreach_daily_draft_first_retry.py --target '${{ steps.command.outputs.target }}' --country '${{ steps.command.outputs.country }}' --run-key '${{ steps.command.outputs.run_key }}' | tee daily-draft-run.log
@@ -211,21 +223,30 @@ jobs:
           target = int(os.environ['TARGET'])
           selection = json.load(open('daily-draft-selection.json', encoding='utf-8'))
           receipts = json.load(open('daily-draft-receipts.json', encoding='utf-8'))
+          baseline = json.load(open('daily-draft-baseline.json', encoding='utf-8'))
           selected = selection['selected']
           assert len(selected) == target
           assert len(receipts) == target
           selected_ids = {x['lead_id'] for x in selected}
+          selected_hosts = {x['website_host'] for x in selected}
+          selected_emails = {x['email'] for x in selected}
           receipt_ids = {x['lead_id'] for x in receipts}
+          baseline_ids = set(baseline['lead_ids'])
+          baseline_hosts = set(baseline['domains'])
+          baseline_emails = set(baseline['emails'])
           assert len(selected_ids) == target
           assert receipt_ids == selected_ids
-          assert len({x['website_host'] for x in selected}) == target
-          assert len({x['email'] for x in selected}) == target
+          assert len(selected_hosts) == target
+          assert len(selected_emails) == target
+          assert selected_ids.isdisjoint(baseline_ids)
+          assert selected_hosts.isdisjoint(baseline_hosts)
+          assert selected_emails.isdisjoint(baseline_emails)
           assert len({x['test_id'] for x in receipts}) == target
           assert all(x['readback_count'] == 1 for x in receipts)
           assert all(x['action'] in {'appended', 'existing'} for x in receipts)
           assert selection['send_permission'] == 'none'
           assert selection['smtp_send'] == 'not_invoked'
-          print(f'DRAFT_FIRST_CLOSURE=green target={target} readback=1 receipt_match=1 smtp_send=not_invoked')
+          print(f'DRAFT_FIRST_CLOSURE=green target={target} net_new=1 readback=1 receipt_match=1 smtp_send=not_invoked')
           PY
 
       - name: Upload evidence
@@ -236,6 +257,7 @@ jobs:
           path: |
             v14-test.log
             daily-evidence/
+            daily-draft-baseline.json
             daily-draft-selection.json
             daily-draft-receipts.json
             daily-draft-run.log
@@ -254,5 +276,5 @@ jobs:
           set -euo pipefail
           [ "$JOB_STATUS" = success ] && result=green || result=blocked
           version="${SOURCE_SET_VERSION:-unverified}"
-          body="DRAFT_FIRST_LEADS=$result\nSOURCE_SET_VERSION=$version\nTRANSPORT=IMAP_DRAFT_ONLY\nSMTP_SEND=not_invoked"
+          body="DRAFT_FIRST_LEADS=$result\nSOURCE_SET_VERSION=$version\nNET_NEW_REQUIRED=true\nTRANSPORT=IMAP_DRAFT_ONLY\nSMTP_SEND=not_invoked"
           curl --fail-with-body --silent --show-error -X POST -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer ${GH_TOKEN}" -H 'X-GitHub-Api-Version: 2022-11-28' "https://api.github.com/repos/${REPOSITORY}/issues/${ISSUE_NUMBER}/comments" -d "$(jq -n --arg body "$body" '{body:$body}')" >/dev/null
