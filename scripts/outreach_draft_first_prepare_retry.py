@@ -107,8 +107,6 @@ def _target_row_is_empty(service, spreadsheet_id: str, sheet: str, headers: list
 
 
 def _append_once(service, spreadsheet_id: str, sheet: str, headers: list[str], row: Mapping[str, object]) -> None:
-    # Never use values.append for draft-first writes. A logical-table append can drift
-    # when a legacy/stray row exists. Address one explicit schema-bounded row instead.
     last_col = _column_letter(len(headers))
     row_number = _next_schema_row(service, spreadsheet_id, sheet, headers)
     if not _target_row_is_empty(service, spreadsheet_id, sheet, headers, row_number):
@@ -140,8 +138,6 @@ def append_row_retry(service, spreadsheet_id: str, sheet: str, headers: list[str
     if before > 1:
         raise RuntimeError(f"{sheet} pre-write dedupe expected at most one row; found {before}")
 
-    # One logical write only. If the transport result is ambiguous we reconcile with
-    # read-only checks. We never automatically write the same record again.
     write_error: Exception | None = None
     try:
         _append_once(service, spreadsheet_id, sheet, headers, row)
@@ -161,12 +157,7 @@ def append_row_retry(service, spreadsheet_id: str, sheet: str, headers: list[str
 
 
 def candidate_ok_draft_first(candidate, qualification, contact, *, country: str) -> bool:
-    # Project Leads v14: MX is quality evidence for draft_first, not an absolute
-    # concept blocker. Preserve every other official-site/role/fit gate by delegating
-    # to the canonical predicate after normalising only this one evidence state.
-    if _text(contact.get("mx_status")).casefold() == "missing":
-        contact = dict(contact)
-        contact["mx_status"] = "unknown"
+    # Explicit production contract: actual MX missing remains a hard block.
     return _original_candidate_ok(candidate, qualification, contact, country=country)
 
 

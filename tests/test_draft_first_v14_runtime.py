@@ -87,7 +87,7 @@ class DraftFirstV14RuntimeRegressionTests(unittest.TestCase):
         values_api.update.assert_not_called()
         values_api.append.assert_not_called()
 
-    def test_prepare_mx_missing_is_review_evidence_not_hard_block(self):
+    def test_prepare_mx_missing_is_hard_block_for_explicit_production_run(self):
         candidate = {"candidate_id": "c1", "status": "hold", "country": "US", "website": "https://example.com"}
         qualification = {
             "offer_family": "ai_agent", "agent_type": "quote_intake", "tier": "B",
@@ -97,20 +97,13 @@ class DraftFirstV14RuntimeRegressionTests(unittest.TestCase):
             "status": "manual_review", "email": "company@gmail.com", "source_url": "https://example.com/contact",
             "mx_status": "missing", "domain_alignment": "external",
         }
-        with patch.object(prepare_retry, "_original_candidate_ok", side_effect=lambda c, q, ct, *, country: ct["mx_status"] == "unknown"):
-            self.assertTrue(prepare_retry.candidate_ok_draft_first(candidate, qualification, contact, country="US"))
+        with patch.object(prepare_retry, "_original_candidate_ok", side_effect=lambda c, q, ct, *, country: ct["mx_status"] != "missing"):
+            self.assertFalse(prepare_retry.candidate_ok_draft_first(candidate, qualification, contact, country="US"))
 
-    def test_daily_mx_missing_normalises_only_runtime_evidence(self):
-        meta = {
-            "automation": "agent_sales_draft_first_v14",
-            "copy_contract": "draft_first_v14",
-            "contact_mx_status": "missing",
-        }
-        row = {"lead_id": "lead-1", "source": "agent_offer:" + json.dumps(meta)}
-        out = daily_retry._normalise_draft_mx(copy.deepcopy(row))
-        parsed = json.loads(out["source"].split(":", 1)[1])
-        self.assertEqual("unknown", parsed["contact_mx_status"])
-        self.assertEqual(row["lead_id"], out["lead_id"])
+    def test_daily_retry_does_not_normalise_missing_mx(self):
+        source = Path("scripts/outreach_daily_draft_first_retry.py").read_text(encoding="utf-8")
+        self.assertNotIn("_normalise_draft_mx", source)
+        self.assertNotIn('meta["contact_mx_status"] = "unknown"', source)
 
     def test_verified_qualification_evidence_is_reused_on_official_domain(self):
         candidate = {"website": "https://example.com/"}

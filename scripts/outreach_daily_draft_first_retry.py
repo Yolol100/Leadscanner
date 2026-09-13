@@ -34,22 +34,6 @@ def mark_concepts_retry(service, spreadsheet_id: str, selected) -> None:
     raise RuntimeError("unreachable concept-status retry state")
 
 
-def _normalise_draft_mx(row):
-    source = str(row.get("source") or "")
-    if not source.startswith("agent_offer:"):
-        return row
-    try:
-        meta = json.loads(source.split(":", 1)[1])
-    except (ValueError, TypeError):
-        return row
-    if str(meta.get("contact_mx_status") or "").strip().casefold() != "missing":
-        return row
-    out = dict(row)
-    meta["contact_mx_status"] = "unknown"
-    out["source"] = "agent_offer:" + json.dumps(meta, ensure_ascii=False, separators=(",", ":"))
-    return out
-
-
 def _truthy_env(name: str) -> bool:
     return os.getenv(name, "").strip().casefold() in {"1", "true", "yes", "on"}
 
@@ -105,11 +89,9 @@ def _filter_net_new(candidates, rejected):
 
 
 def eligible_draft_first(queue_rows, suppressions, *, country: str):
-    # Project Leads v14 treats MX as quality evidence for draft-first review, not
-    # as live-send permission. Only normalise this evidence state; all role,
-    # official-source, suppression, fit, copy and uniqueness gates stay canonical.
-    normalised = [_normalise_draft_mx(row) for row in queue_rows]
-    candidates, rejected = _original_eligible(normalised, suppressions, country=country)
+    # The explicit production task is stricter than the generic Project Leads
+    # draft policy: an actually missing MX is a hard block. Do not normalize it.
+    candidates, rejected = _original_eligible(queue_rows, suppressions, country=country)
     return _filter_net_new(candidates, rejected)
 
 
