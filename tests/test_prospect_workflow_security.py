@@ -6,7 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "prospect-discovery.yml"
 DISCOVERY = ROOT / "scripts" / "prospect_discovery.py"
-CONTRACT = ROOT / "toolkit-contract.json"
+REGISTRY = ROOT / "tool-registry.json"
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 CANONICAL_SHEET_ID = "1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI"
 
@@ -54,15 +54,15 @@ class ProspectWorkflowSecurityTests(unittest.TestCase):
         self.assertIn("PROSPECT_DISCOVERY_MAX_BYTES: ${{ vars.PROSPECT_DISCOVERY_MAX_BYTES || '2097152' }}", workflow)
         self.assertIn("HARD_MAX_BYTES = 2_097_152", discovery)
 
-    def test_machine_contract_matches_scheduled_discovery_gate(self):
-        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
-        discovery = contract["capabilities"]["prospect_discovery"]
-        self.assertEqual(discovery["scheduled_default"], "validate")
-        self.assertEqual(discovery["scheduled_discover_gate"], "PROSPECT_DISCOVERY_ENABLED=true")
-        self.assertIn(
-            "Scheduled prospect discovery remains validate-only unless PROSPECT_DISCOVERY_ENABLED=true explicitly promotes the scheduled run to discover mode.",
-            contract["boundaries"],
-        )
+    def test_v17_registry_keeps_discovery_bounded_read_only_and_no_send(self):
+        registry = json.loads(REGISTRY.read_text(encoding="utf-8"))
+        discovery = registry["capabilities"]["prospect_discovery"]
+        self.assertEqual(discovery["workflow"], ".github/workflows/prospect-discovery.yml")
+        self.assertEqual(discovery["role"], "bounded_candidate_discovery")
+        self.assertEqual(discovery["send_permission"], "none")
+        self.assertTrue(registry["policy"]["draft_only"])
+        self.assertEqual(registry["policy"]["send_permission"], "none")
 
 
-if __name__ == "__main__": unittest.main()
+if __name__ == "__main__":
+    unittest.main()
