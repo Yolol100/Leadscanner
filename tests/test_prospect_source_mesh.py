@@ -148,19 +148,15 @@ class ProspectSourceMeshTests(unittest.TestCase):
         self.assertIn('source_runs_persisted = "ProspectSourceRuns" in sheet_titles', text)
         self.assertIn("ProspectSourceRuns", text)
 
-    def test_machine_and_human_contracts_match_source_mesh(self):
-        contract = json.loads((ROOT / "toolkit-contract.json").read_text(encoding="utf-8"))
+    def test_v17_registry_keeps_source_discovery_bounded_and_outside_filter_policy(self):
         registry = json.loads((ROOT / "tool-registry.json").read_text(encoding="utf-8"))
-        discovery_contract = contract["capabilities"]["prospect_discovery"]
-        self.assertIn("directory_sitemap", discovery_contract["source_types"])
-        self.assertEqual(discovery_contract["directory_sitemap_child_hard_cap"], 3)
-        self.assertIn("ProspectSourceRuns", discovery_contract["outputs"])
-        self.assertIn("ProspectSourceRuns", registry["capabilities"]["prospect_discovery"]["writes"])
-        self.assertFalse(registry["tools"]["directory_sitemap_adapter"]["automatic_score_effect"])
+        discovery_contract = registry["capabilities"]["prospect_discovery"]
+        self.assertEqual(discovery_contract["workflow"], ".github/workflows/prospect-discovery.yml")
+        self.assertEqual(discovery_contract["role"], "bounded_candidate_discovery")
+        self.assertEqual(discovery_contract["send_permission"], "none")
         integration = (ROOT / "LEADS-INTEGRATION.md").read_text(encoding="utf-8")
-        self.assertIn("`directory_sitemap`", integration)
-        self.assertIn("`ProspectSourceRuns`", integration)
-        self.assertIn("nooit kwalificatie of send permission", integration)
+        self.assertIn("Generic discovery, signal evidence", integration)
+        self.assertNotIn("ProspectSourceRuns", integration)
 
 
 if __name__ == "__main__":
