@@ -7,10 +7,26 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = ROOT / ".github" / "workflows"
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 
+RETIRED_WORKFLOWS = (
+    "outreach-smtp.yml",
+    "live-outreach-command.yml",
+    "one-time-us-outreach.yml",
+    "daily-agent-drafts-v14.yml",
+    "daily-lead-drafts-v16.yml",
+    "daily-lead-drafts.yml",
+    "leads-autopilot.yml",
+    "leads-replacement-continue.yml",
+    "reprepare-agent-lead-command.yml",
+    "sync-myhost-drafts-command.yml",
+    "myhost-draft-command.yml",
+    "prospect-intelligence.yml",
+)
+
 
 class LeadsWorkflowSecurityTests(unittest.TestCase):
-    def test_retired_smtp_workflow_is_absent(self):
-        self.assertFalse((WORKFLOWS / "outreach-smtp.yml").exists())
+    def test_retired_parallel_workflows_are_absent(self):
+        for workflow in RETIRED_WORKFLOWS:
+            self.assertFalse((WORKFLOWS / workflow).exists(), workflow)
 
     def test_default_registry_is_v17_draft_only_and_no_send(self):
         registry = json.loads((ROOT / "tool-registry.json").read_text(encoding="utf-8"))
@@ -20,11 +36,13 @@ class LeadsWorkflowSecurityTests(unittest.TestCase):
         self.assertTrue(policy["draft_only"])
         self.assertEqual(policy["send_permission"], "none")
 
-    def test_registered_default_surface_has_no_live_smtp_entrypoint(self):
+    def test_registered_default_surface_has_no_live_or_parallel_entrypoint(self):
         registry = json.loads((ROOT / "tool-registry.json").read_text(encoding="utf-8"))
         raw = json.dumps(registry, sort_keys=True)
         self.assertNotIn("outreach-smtp.yml", raw)
         self.assertNotIn("outreach_direct_smtp_runtime.py", raw)
+        for workflow in RETIRED_WORKFLOWS:
+            self.assertNotIn(workflow, raw)
 
     def test_registered_remote_actions_are_sha_pinned(self):
         registry = json.loads((ROOT / "tool-registry.json").read_text(encoding="utf-8"))
