@@ -221,7 +221,7 @@ class DraftFirstV14Tests(unittest.TestCase):
 
     def test_workflow_has_source_pin_tests_retry_paths_and_no_smtp_sender(self):
         workflow = Path(".github/workflows/daily-agent-drafts-v14.yml").read_text(encoding="utf-8")
-        self.assertIn("EXPECTED_SOURCE_SET_VERSION: 14.0.1-draft-first", workflow)
+        self.assertIn("EXPECTED_SOURCE_SET_VERSION: 14.0.3-draft-recovery", workflow)
         self.assertIn("test_draft_first_v14*.py", workflow)
         self.assertIn("outreach_draft_first_prepare_retry.py", workflow)
         self.assertIn("outreach_daily_draft_first_retry.py", workflow)
