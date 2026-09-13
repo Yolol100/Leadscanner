@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import time
 from pathlib import Path
 
 import outreach_daily_batch_drafts as base
@@ -13,7 +14,22 @@ from prospect_target_policy import canonical_country
 
 _ORIGINAL_ROLE_IS_USABLE = base._role_is_usable
 _ORIGINAL_CANDIDATE_ERRORS = base.candidate_errors
+_ORIGINAL_LOAD_STATE = base._load_state
 AGENTS = tuple(base.AGENT_HINTS)
+_TRANSIENT_HTTP_STATUSES = {408, 429, 500, 502, 503, 504}
+_TRANSIENT_ERROR_MARKERS = (
+    "rate limit",
+    "quota",
+    "ssl",
+    "eof occurred",
+    "timed out",
+    "timeout",
+    "connection reset",
+    "temporarily unavailable",
+    "backend error",
+    "internal error",
+    "service unavailable",
+)
 
 
 def hardened_role_is_usable(address: str) -> bool:
@@ -118,16 +134,57 @@ def hardened_candidate_errors(
     return errors
 
 
+def _transient_http_status(exc: Exception) -> int | None:
+    response = getattr(exc, "resp", None)
+    status = getattr(response, "status", None)
+    try:
+        return int(status) if status is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_transient_sheet_error(exc: Exception) -> bool:
+    status = _transient_http_status(exc)
+    if status in _TRANSIENT_HTTP_STATUSES:
+        return True
+    text = str(exc).casefold()
+    return any(marker in text for marker in _TRANSIENT_ERROR_MARKERS)
+
+
+def _retrying_load_state(service, spreadsheet_id: str, *, max_attempts: int = 6):
+    delay = 5
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return _ORIGINAL_LOAD_STATE(service, spreadsheet_id)
+        except Exception as exc:
+            if not _is_transient_sheet_error(exc):
+                raise
+            if attempt >= max_attempts:
+                raise RuntimeError(
+                    f"Sheets state load transient failure after {max_attempts} attempts: {exc}"
+                ) from exc
+            print(
+                f"SHEETS_LOAD_RETRY attempt={attempt} next_delay={delay}s detail={exc}",
+                file=base.sys.stderr,
+            )
+            time.sleep(delay)
+            delay = min(delay * 2, 60)
+    raise RuntimeError("unreachable Sheets retry state")
+
+
 def _with_hardened_gates(callable_, *args, **kwargs):
     old_role = base._role_is_usable
     old_errors = base.candidate_errors
+    old_load_state = base._load_state
     base._role_is_usable = hardened_role_is_usable
     base.candidate_errors = hardened_candidate_errors
+    base._load_state = _retrying_load_state
     try:
         return callable_(*args, **kwargs)
     finally:
         base._role_is_usable = old_role
         base.candidate_errors = old_errors
+        base._load_state = old_load_state
 
 
 def _load_json(path: str, default):
@@ -142,7 +199,7 @@ def _eligible_by_agent(country: str):
     if not spreadsheet_id or not base.os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip():
         raise RuntimeError("OUTREACH_SPREADSHEET_ID and GOOGLE_SERVICE_ACCOUNT_JSON are required")
     service = base.build_sheets_service()
-    state = base._load_state(service, spreadsheet_id)
+    state = _retrying_load_state(service, spreadsheet_id)
     output = {}
     for agent in AGENTS:
         eligible, _ = _with_hardened_gates(
