@@ -8,13 +8,9 @@ on:
       - 'toolkit-contract.json'
       - 'tool-registry.json'
       - 'LEADS-INTEGRATION.md'
-      - 'README.md'
       - 'AGENTS.md'
-      - 'package.json'
       - '.github/workflows/**'
-      - 'src/**'
       - 'scripts/**'
-      - 'tests/**'
 
 permissions:
   contents: read
@@ -26,108 +22,96 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Validate signal-first Leads toolkit contract
+      - name: Validate filter-core v17
         run: |
           python3 - <<'PY'
-          import json, pathlib
+          import json
+          import pathlib
+
           c=json.load(open('toolkit-contract.json', encoding='utf-8'))
           r=json.load(open('tool-registry.json', encoding='utf-8'))
+
+          assert c['schema_version']=='3.0'
           assert c['repository']=='Yolol100/Leadscanner'
-          assert c['repository_role']=='central_leads_github_runtime'
-          assert c['schema_version']=='2.9'
+          assert c['repository_role']=='leads_filter_execution_layer'
           route=c['default_route']
-          assert route['id']=='signal_first_v16'
-          assert route['source_set_version']=='16.0.0-signal-first-machine'
+          assert route['id']=='filter_core_v17'
+          assert route['source_set_version']=='17.0.0-filter-core'
+          assert route['decision_source']=='Project Leads/00-leads-core.md'
           assert route['formal_score_required'] is False
           assert route['tier_required'] is False
           assert route['campaign_gate_required'] is False
           assert route['one_offer'] is True
           assert route['max_process_pages_after_homepage']==3
-          assert set(route['draft_compliance_states'])=={'manual_review','approved'}
+          assert route['external_content_is_untrusted_data'] is True
           assert route['send_permission']=='none'
-          assert set(c['offer_types']['non_agent'])=={'website_webshop_improvement','search_visibility','social_management'}
-          assert set(c['offer_types']['agents'])=={'front_desk_sales','lead_reactivation','review_concierge','customer_support','commerce','quote_intake'}
+          assert set(route['draft_compliance_states'])=={'manual_review','approved'}
 
-          caps=c['capabilities']
-          expected={'signal_first_draft_prepare','prospect_discovery','prospect_intelligence','prospect_signal_discovery','prospect_qualification','campaign_gate','contact_enrichment','zero_touch_prepare','website_evidence_scan','sender_readiness','inbox_placement','mailbox_draft','outreach_delivery','dashboard'}
-          assert set(caps) >= expected
-          sf=caps['signal_first_draft_prepare']
-          assert sf['send_permission']=='none'
-          assert '50-100 words' in sf['copy_contract']
-          assert 'permission CTA' in sf['copy_contract']
-          assert sf['preferred_mailbox_workflow']=='.github/workflows/sync-selected-myhost-drafts-command.yml'
-          assert 'advisory_only' in sf['reply_triage']
-          for key in ('prospect_qualification','campaign_gate','zero_touch_prepare'):
-              assert caps[key]['status']=='legacy_compatibility'
-              assert caps[key]['send_permission']=='none'
-          q=caps['prospect_qualification']
-          assert q['script']=='scripts/prospect_agent_qualification.py'
-          assert 'AgentProspectQualifications' in q['outputs']
-          assert 'UNSCORED' in ' '.join(q['quality_rules'])
-          assert caps['campaign_gate']['canonical_candidate_state_mutated'] is False
-          assert caps['website_evidence_scan']['read_only'] is True
-          assert caps['website_evidence_scan']['normal_default_for_every_prospect'] is False
-          mailbox=caps['mailbox_draft']
+          hard=c['hard_filter']
+          required={
+            'real_company_and_official_site','visible_commercial_process',
+            'one_public_visible_signal','exactly_one_fitting_offer',
+            'public_business_email_from_official_source','unique_candidate','draft_only'
+          }
+          assert set(hard['all_required'])==required
+          assert hard['failure_action']=='skip_and_refill'
+          assert {'score','tier','campaign_gate','guessed_email','invented_pain'} <= set(hard['forbidden_compensation'])
+
+          mailbox=c['mailbox_contract']
           assert mailbox['preferred_workflow']=='.github/workflows/sync-selected-myhost-drafts-command.yml'
-          assert set(mailbox['draft_compliance_states'])=={'manual_review','approved'}
+          assert mailbox['retry_idempotent'] is True
           assert mailbox['send_permission']=='none'
-          assert mailbox['transport']=='IMAP APPEND + same-folder readback only'
-          assert caps['outreach_delivery']['manual_default']=='validate'
-          assert caps['outreach_delivery']['send_permission']=='explicit_compliance_gated_live_only'
+          reply=c['reply_contract']
+          assert reply['auto_send'] is False
+          assert 'not_yet_end_to_end_proven' in reply['runtime_status']
 
-          ids=[t['id'] for t in c['scanner_tools']]
-          assert len(ids)==len(set(ids))
-          covered=set()
-          for a in c['usage_assertions']:
-              assert a['tool'] in ids
-              p=pathlib.Path(a['path']); assert p.is_file(), f'missing {p}'
-              assert a['contains'] in p.read_text(encoding='utf-8')
-              covered.add(a['tool'])
-          assert covered==set(ids)
+          assert r['version']=='5.0'
+          p=r['policy']
+          assert p['default_route']=='filter_core_v17'
+          assert p['default_source_set_version']=='17.0.0-filter-core'
+          assert p['single_decision_source']=='Project Leads/00-leads-core.md'
+          assert p['formal_score_required'] is False
+          assert p['campaign_gate_required'] is False
+          assert p['external_content_is_untrusted_data'] is True
+          assert p['draft_only'] is True and p['send_permission']=='none'
+          assert set(r['capabilities'])=={
+            'filter_core','prospect_discovery','prospect_signal_discovery',
+            'contact_enrichment','website_evidence_scan','mailbox_draft','reply_triage'
+          }
+          assert r['legacy']['status']=='unregistered_compatibility_only'
 
-          required=(
-              '.github/workflows/prospect-discovery.yml',
-              '.github/workflows/sync-selected-myhost-drafts-command.yml',
-              '.github/workflows/outreach-smtp.yml',
-              'scripts/outreach_queue_imap_draft_sync.py',
-              'scripts/outreach_queue_imap_draft_sync_selected.py',
-              'scripts/outreach_reply_triage.py',
-              'scripts/prospect_agent_qualification.py',
-              'scripts/prospect_campaign_gate.py',
-              'scripts/outreach_agent_prepare_v2.py',
-          )
-          for item in required:
-              assert pathlib.Path(item).is_file(), f'missing Leads runtime file {item}'
+          for item in (
+            '.github/workflows/prospect-discovery.yml',
+            '.github/workflows/prospect-signal-discovery.yml',
+            '.github/workflows/contact-enrichment.yml',
+            '.github/workflows/sync-selected-myhost-drafts-command.yml',
+            'scripts/outreach_queue_imap_draft_sync.py',
+            'scripts/outreach_queue_imap_draft_sync_selected.py',
+            'scripts/outreach_reply_triage.py',
+          ):
+            assert pathlib.Path(item).is_file(), f'missing reusable runtime file {item}'
 
           sync=pathlib.Path('scripts/outreach_queue_imap_draft_sync.py').read_text(encoding='utf-8')
           assert 'ALLOWED_DRAFT_COMPLIANCE' in sync
           assert 'manual_review' in sync and 'approved' in sync
           selected=pathlib.Path('scripts/outreach_queue_imap_draft_sync_selected.py').read_text(encoding='utf-8')
           assert 'outreach_queue_imap_draft_sync' in selected
-          reply=pathlib.Path('scripts/outreach_reply_triage.py').read_text(encoding='utf-8')
-          assert 'positive_interest' in reply
-          assert 'advisory_only' in reply
+          reply_text=pathlib.Path('scripts/outreach_reply_triage.py').read_text(encoding='utf-8')
+          assert 'positive_interest' in reply_text
 
-          assert r['version']=='4.0'
-          p=r['policy']
-          assert p['default_route']=='signal_first_v16'
-          assert p['default_source_set_version']=='16.0.0-signal-first-machine'
-          assert p['signal_first_default'] is True
-          assert p['normal_draft_requires_formal_score'] is False
-          assert p['normal_draft_requires_campaign_gate'] is False
-          assert p['one_offer_per_first_touch'] is True
-          assert set(p['draft_compliance_states'])=={'manual_review','approved'}
-          assert {'website_webshop_improvement','search_visibility','social_management'} <= set(p['supported_offer_types'])
-          assert p['legacy_agent_campaign_route'] is True
-          assert r['capabilities']['signal_first_draft_prepare']['send_permission']=='none'
-          assert r['tools']['signal_first_prepare']['default_for_new_drafts'] is True
-          assert r['tools']['prospect_agent_qualification']['status']=='legacy_compatibility'
-          assert r['tools']['prospect_campaign_gate']['status']=='legacy_compatibility'
-          assert r['tools']['outreach_agent_prepare']['status']=='legacy_compatibility'
-          assert r['capabilities']['outreach_delivery']['send_permission']=='explicit_compliance_gated_live_only'
+          forbidden_paths=(
+            '.github/workflows/one-time-us-outreach.yml',
+            '.github/workflows/us-only-zero-touch-prepare.yml',
+            '.github/workflows/daily-agent-drafts-v14.yml',
+            'scripts/outreach_one_time_us_guard.py',
+          )
+          for item in forbidden_paths:
+            assert not pathlib.Path(item).exists(), f'run/campaign residue returned: {item}'
 
-          for doc in ('README.md','AGENTS.md','LEADS-INTEGRATION.md'):
-              text=pathlib.Path(doc).read_text(encoding='utf-8').casefold()
-              assert 'signal-first' in text or 'signal_first' in text
-          print('toolkit-contract v16 signal-first: OK')
+          for doc in ('AGENTS.md','LEADS-INTEGRATION.md'):
+            text=pathlib.Path(doc).read_text(encoding='utf-8').casefold()
+            assert 'filter-core v17' in text
+            assert 'send_permission=none' in text
+
+          print('toolkit-contract filter-core v17: OK')
           PY
