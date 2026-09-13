@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import os
 import re
 from typing import Iterable
 
@@ -168,6 +169,12 @@ def apply_source_policy(
 
 def prioritize_sources(sources: Iterable[SourceSpec], preferred_countries: Iterable[str]) -> list[SourceSpec]:
     order = {canonical_country(country): index for index, country in enumerate(preferred_countries)}
+    required_country = canonical_country(os.environ.get("DAILY_DRAFT_COUNTRY"))
     indexed = list(enumerate(sources))
+    if required_country:
+        indexed = [
+            pair for pair in indexed
+            if canonical_country(pair[1].country) == required_country
+        ]
     indexed.sort(key=lambda pair: (order.get(canonical_country(pair[1].country), len(order) + 1), pair[0]))
     return [source for _, source in indexed]
