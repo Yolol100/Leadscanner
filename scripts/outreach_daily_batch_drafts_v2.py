@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 
 import outreach_daily_batch_drafts as base
+from prospect_discovery import hosts_related
 from prospect_target_policy import canonical_country
 
 
@@ -34,6 +35,37 @@ def hardened_role_is_usable(address: str) -> bool:
     return True
 
 
+def _draft_qualification_ok(candidate, qualification) -> bool:
+    tier = base._text(qualification.get("tier")).upper()
+    candidate_status = base._text(candidate.get("status")).casefold()
+    qualification_status = base._text(qualification.get("status")).casefold()
+    potential = base._score(qualification.get("customer_potential"))
+    if potential < 6:
+        return False
+    if tier == "A":
+        return candidate_status == "qualified" and qualification_status == "qualified"
+    if tier == "B":
+        return candidate_status == "hold" and qualification_status == "hold"
+    return False
+
+
+def _official_contact_ok(queue_row, candidate, contact) -> bool:
+    website = base._text(candidate.get("website") or queue_row.get("website"))
+    website_host = base.host_key(website)
+    evidence_host = base.host_key(base._text(contact.get("source_url")))
+    recipient = base._email(queue_row.get("email"))
+    contact_email = base._email(contact.get("email"))
+    return bool(
+        website_host
+        and evidence_host
+        and hosts_related(website_host, evidence_host)
+        and recipient
+        and contact_email == recipient
+        and base._text(contact.get("status")).casefold() in {"ready", "manual_review"}
+        and base._text(contact.get("mx_status")).casefold() == "present"
+    )
+
+
 def hardened_candidate_errors(
     queue_row, *, agent_type: str, country: str, candidate, qualification, contact,
     source, lead_statuses, suppressed_emails, suppressed_domains,
@@ -50,6 +82,34 @@ def hardened_candidate_errors(
         suppressed_emails=suppressed_emails,
         suppressed_domains=suppressed_domains,
     )
+
+    qualification_ok = bool(candidate and qualification and _draft_qualification_ok(candidate, qualification))
+    if qualification_ok:
+        removable = {
+            "candidate is not qualified",
+            "qualification status is not qualified",
+            "qualification tier is not A",
+            "customer potential is below A threshold",
+        }
+        errors = [item for item in errors if item not in removable]
+
+        meta = base._parse_meta(queue_row.get("source"))
+        tier = base._text(qualification.get("tier")).upper()
+        if (
+            meta
+            and base._text(meta.get("qualification_tier")).upper() == tier
+            and base._score(meta.get("customer_potential")) >= 6
+        ):
+            errors = [item for item in errors if item != "queue metadata does not prove A-tier qualification"]
+
+    if contact and _official_contact_ok(queue_row, candidate, contact):
+        contact_removable = {
+            "recipient domain is not aligned to official website",
+            "contact is not ready",
+            "contact domain alignment is not proven",
+        }
+        errors = [item for item in errors if item not in contact_removable]
+
     queue_country = canonical_country(base._text(queue_row.get("country")))
     source_country = canonical_country(base._text(source.get("country"))) if source else ""
     if source_country and source_country != queue_country:
