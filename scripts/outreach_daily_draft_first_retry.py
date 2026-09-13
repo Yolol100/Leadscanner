@@ -74,7 +74,11 @@ def _load_net_new_baseline() -> dict[str, set[str]]:
         return {"lead_ids": set(), "domains": set(), "emails": set()}
 
     lead_ids = {str(value).strip() for value in raw.get("lead_ids", []) if str(value).strip()}
-    domains = {host_key(str(value).strip()) for value in raw.get("domains", []) if host_key(str(value).strip())}
+    domains = {
+        str(value).strip().casefold().removeprefix("www.")
+        for value in raw.get("domains", [])
+        if str(value).strip()
+    }
     emails = {str(value).strip().casefold() for value in raw.get("emails", []) if str(value).strip()}
     return {"lead_ids": lead_ids, "domains": domains, "emails": emails}
 
