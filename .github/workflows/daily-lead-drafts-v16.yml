@@ -1,0 +1,305 @@
+name: Daily Leads V16 to mijn.host Drafts
+
+on:
+  issues:
+    types: [opened, reopened]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: daily-leads-v16-${{ github.event.issue.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  daily-drafts-v16:
+    if: >-
+      github.event_name == 'issues' &&
+      github.actor == 'Yolol100' &&
+      github.event.issue.title == 'CREATE DAILY LEAD DRAFTS V16' &&
+      contains(github.event.issue.body, 'COMMAND=CREATE_DAILY_LEAD_DRAFTS_V16')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    env:
+      OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
+      OUTREACH_CONFIG_SPREADSHEET_ID: ${{ vars.OUTREACH_CONFIG_SPREADSHEET_ID || '1iOBCaBq3MpsrYQiESAhjS1NMRQDXAWmkTh-U-63qzs4' }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+      OUTREACH_MAILBOXES_JSON: ${{ secrets.OUTREACH_MAILBOXES_JSON }}
+      OUTREACH_MAILBOX_ID: ${{ vars.OUTREACH_MAILBOX_ID || 'primary' }}
+      OUTREACH_DRAFT_MAILBOX_ID: ${{ vars.OUTREACH_MAILBOX_ID || 'primary' }}
+      OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+      OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+      OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+      OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME || 'Andrew Baeten' }}
+      OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
+      OUTREACH_SENDER_WEBSITE: ${{ vars.OUTREACH_SENDER_WEBSITE || 'andrewbaeten.nl' }}
+      OUTREACH_CTA_VARIANT: 'A'
+
+    steps:
+      - name: Checkout exact default-branch runtime
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-outreach.txt
+
+      - name: Install dependencies
+        run: python3 -m pip install --disable-pip-version-check --requirement requirements-outreach.txt
+
+      - name: Parse command
+        id: command
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$(jq -r '.issue.body // ""' "$GITHUB_EVENT_PATH")"
+          required(){ mapfile -t x < <(printf '%s\n' "$body" | sed -n "s/^$1=//p"); [ "${#x[@]}" -eq 1 ] && [ -n "${x[0]}" ] || exit 2; printf '%s' "${x[0]}"; }
+          optional(){ mapfile -t x < <(printf '%s\n' "$body" | sed -n "s/^$1=//p"); [ "${#x[@]}" -le 1 ] || exit 2; if [ "${#x[@]}" -eq 1 ] && [ -n "${x[0]}" ]; then printf '%s' "${x[0]}"; else printf '%s' "$2"; fi; }
+          mode="$(required MODE)"
+          agent="$(optional AGENT_TYPE auto)"
+          country="$(required COUNTRY)"
+          target="$(required TARGET)"
+          run_key="$(required RUN_KEY)"
+          source_set="$(optional SOURCE_SET_VERSION current)"
+          case "$mode" in validate|refresh|create) ;; *) exit 2;; esac
+          case "$agent" in auto|front_desk_sales|quote_intake|review_concierge|customer_support|commerce) ;; *) exit 2;; esac
+          [[ "$country" =~ ^[A-Z]{2}$ ]] || exit 2
+          [[ "$target" =~ ^[0-9]+$ ]] && [ "$target" -ge 1 ] || exit 2
+          [[ "$run_key" =~ ^[A-Za-z0-9._:-]{1,80}$ ]] || exit 2
+          printf 'mode=%s\nagent=%s\ncountry=%s\ntarget=%s\nrun_key=%s\nsource_set=%s\n' "$mode" "$agent" "$country" "$target" "$run_key" "$source_set" >> "$GITHUB_OUTPUT"
+
+      - name: Size runtime to requested target
+        env:
+          TARGET: ${{ steps.command.outputs.target }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="$TARGET"
+          discovery=$(( target * 3 ))
+          [ "$discovery" -le 200 ] || discovery=200
+          [ "$discovery" -ge 50 ] || discovery=50
+          per_cycle="$target"
+          [ "$per_cycle" -le 50 ] || per_cycle=50
+          {
+            echo "OUTREACH_DAILY_LIMIT=$target"
+            echo "PROSPECT_DISCOVERY_MAX_TOTAL=$discovery"
+            echo "PROSPECT_DISCOVERY_TARGET_NEW=$discovery"
+            echo "PROSPECT_SIGNAL_MAX_CANDIDATES=$per_cycle"
+            echo "PROSPECT_QUALIFICATION_MAX_PER_RUN=$per_cycle"
+            echo "CONTACT_ENRICHMENT_MAX_PER_RUN=$per_cycle"
+            echo "PROSPECT_INTELLIGENCE_MAX_TARGETS=$per_cycle"
+            echo "OUTREACH_PREPARE_MAX_PER_RUN=$per_cycle"
+          } >> "$GITHUB_ENV"
+
+      - name: Validate current v16 pool without writes
+        if: steps.command.outputs.mode == 'validate'
+        run: |
+          set -euo pipefail
+          test -n "${GOOGLE_SERVICE_ACCOUNT_JSON:-}"
+          python3 scripts/outreach_daily_batch_drafts_v16.py --count-only --target '${{ steps.command.outputs.target }}' --agent-type '${{ steps.command.outputs.agent }}' --country '${{ steps.command.outputs.country }}' --run-key '${{ steps.command.outputs.run_key }}' | tee daily-draft-count.log
+          grep -q '^DAILY_DRAFT_READY=' daily-draft-count.log
+          echo 'DAILY_DRAFT_V16_VALIDATE=green mailbox_write=not_invoked smtp_send=not_invoked'
+
+      - name: Refresh safe unsent copy to v16 contract
+        if: steps.command.outputs.mode == 'refresh' || steps.command.outputs.mode == 'create'
+        run: |
+          set -euo pipefail
+          test -n "${GOOGLE_SERVICE_ACCOUNT_JSON:-}"
+          python3 scripts/outreach_agent_copy_refresh_batch_v16.py --country '${{ steps.command.outputs.country }}' --limit 500 --report outreach-agent-copy-refresh-batch-v16.json | tee outreach-agent-copy-refresh-batch-v16.log
+          grep -q '^OUTREACH_COPY_REFRESH_V16=green ' outreach-agent-copy-refresh-batch-v16.log
+
+      - name: Count v16 pool after refresh
+        if: steps.command.outputs.mode == 'refresh'
+        run: |
+          set -euo pipefail
+          python3 scripts/outreach_daily_batch_drafts_v16.py --count-only --target '${{ steps.command.outputs.target }}' --agent-type '${{ steps.command.outputs.agent }}' --country '${{ steps.command.outputs.country }}' --run-key '${{ steps.command.outputs.run_key }}' | tee daily-draft-count.log
+          grep -q '^DAILY_DRAFT_READY=' daily-draft-count.log
+          echo 'DAILY_DRAFT_V16_REFRESH=green mailbox_write=not_invoked smtp_send=not_invoked'
+
+      - name: Require create credentials
+        if: steps.command.outputs.mode == 'create'
+        run: |
+          set -euo pipefail
+          test -n "${GOOGLE_SERVICE_ACCOUNT_JSON:-}"
+          test -n "${OUTREACH_MAIL_PASSWORD:-}"
+          python3 scripts/outreach_private_config.py
+
+      - name: Refill v16 until requested target is ready
+        if: steps.command.outputs.mode == 'create'
+        env:
+          PROSPECT_DISCOVERY_MODE: discover
+          PROSPECT_DISCOVERY_PREFERRED_COUNTRIES: ${{ steps.command.outputs.country }}
+          PROSPECT_DISCOVERY_EXCLUDE_AGENCIES: 'true'
+          PROSPECT_SIGNAL_MODE: discover
+          PROSPECT_QUALIFICATION_MODE: qualify
+          CONTACT_ENRICHMENT_MODE: discover
+          PROSPECT_INTELLIGENCE_MODE: refresh
+          OUTREACH_PREPARE_MODE: prepare
+          DAILY_DRAFT_COUNTRY: ${{ steps.command.outputs.country }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          target='${{ steps.command.outputs.target }}'
+          requested_agent='${{ steps.command.outputs.agent }}'
+          previous=-1
+          no_progress=0
+          cycle=0
+          mkdir -p daily-evidence
+
+          retry_transient() {
+            local max_attempts=6
+            local attempt=1
+            local delay=20
+            local status=0
+            local timeout_seconds=1800
+            while true; do
+              if timeout --signal=TERM --kill-after=30s "${timeout_seconds}s" "$@"; then
+                return 0
+              else
+                status=$?
+              fi
+              if [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then
+                echo "COMMAND_TIMEOUT status=$status command=$1 timeout_seconds=$timeout_seconds"
+                return "$status"
+              fi
+              if [ "$attempt" -ge "$max_attempts" ]; then
+                echo "TRANSIENT_RETRY_EXHAUSTED attempts=$attempt status=$status command=$1"
+                return "$status"
+              fi
+              echo "TRANSIENT_RETRY attempt=$attempt status=$status command=$1 next_delay=${delay}s"
+              sleep "$delay"
+              attempt=$((attempt+1))
+              delay=$((delay*2))
+              [ "$delay" -le 120 ] || delay=120
+            done
+          }
+
+          while true; do
+            cycle=$((cycle+1))
+            echo "REFILL_V16_CYCLE=$cycle"
+            out="$(retry_transient python3 scripts/outreach_daily_batch_drafts_v16.py --count-only --target "$target" --agent-type "$requested_agent" --country '${{ steps.command.outputs.country }}' --run-key '${{ steps.command.outputs.run_key }}')"
+            printf '%s\n' "$out" | tee "daily-evidence/ready-before-$cycle.log"
+            ready="$(printf '%s\n' "$out" | sed -n 's/^DAILY_DRAFT_READY=\([0-9][0-9]*\).*/\1/p' | tail -n 1)"
+            test -n "$ready"
+            [ "$ready" -ge "$target" ] && break
+
+            retry_transient python3 scripts/prospect_discovery_runtime.py --mode discover --report "daily-evidence/discovery-$cycle.json"
+            sleep 10
+            sanitizer_out="$(retry_transient python3 scripts/prospect_candidate_sanitizer.py)"
+            printf '%s\n' "$sanitizer_out" | tee "daily-evidence/sanitizer-$cycle.log"
+            sleep 5
+            retry_transient python3 scripts/prospect_signal_discovery_runtime.py --mode discover --report "daily-evidence/signal-$cycle.json"
+            sleep 15
+
+            if [ "$requested_agent" = auto ]; then
+              agents='front_desk_sales quote_intake review_concierge customer_support commerce'
+            else
+              agents="$requested_agent"
+            fi
+
+            for agent in $agents; do
+              export AGENT_SALES_TARGET_TYPE="$agent"
+              retry_transient python3 scripts/prospect_agent_qualification.py --mode qualify --report "daily-evidence/qualification-$cycle-$agent.json"
+              sleep 4
+              retry_transient python3 scripts/prospect_contact_enrichment_v16.py
+              sleep 4
+              retry_transient python3 scripts/prospect_intelligence_runtime.py --mode refresh --report "daily-evidence/intelligence-$cycle-$agent.json"
+              sleep 4
+              prepare_out="$(retry_transient python3 scripts/outreach_daily_prepare_v16.py)"
+              printf '%s\n' "$prepare_out" | tee "daily-evidence/prepare-$cycle-$agent.log"
+              sleep 12
+            done
+
+            out="$(retry_transient python3 scripts/outreach_daily_batch_drafts_v16.py --count-only --target "$target" --agent-type "$requested_agent" --country '${{ steps.command.outputs.country }}' --run-key '${{ steps.command.outputs.run_key }}')"
+            printf '%s\n' "$out" | tee "daily-evidence/ready-after-$cycle.log"
+            ready="$(printf '%s\n' "$out" | sed -n 's/^DAILY_DRAFT_READY=\([0-9][0-9]*\).*/\1/p' | tail -n 1)"
+            test -n "$ready"
+            [ "$ready" -ge "$target" ] && break
+
+            if [ "$ready" -le "$previous" ]; then
+              no_progress=$((no_progress+1))
+            else
+              no_progress=0
+            fi
+            previous="$ready"
+            if [ "$no_progress" -ge 5 ]; then
+              echo "BLOCKED_NO_PROGRESS ready=$ready target=$target cycles=$cycle"
+              exit 3
+            fi
+            sleep 20
+          done
+          echo "REFILL_V16_TARGET=green ready=$ready target=$target"
+
+      - name: Create exact v16 IMAP drafts and verify readback
+        if: steps.command.outputs.mode == 'create'
+        run: |
+          set -euo pipefail
+          python3 scripts/outreach_daily_batch_drafts_v16.py --target '${{ steps.command.outputs.target }}' --agent-type '${{ steps.command.outputs.agent }}' --country '${{ steps.command.outputs.country }}' --run-key '${{ steps.command.outputs.run_key }}' | tee daily-draft-run.log
+          grep -q '^DAILY_LEAD_DRAFTS=green .*smtp_send=not_invoked$' daily-draft-run.log
+          grep -q "drafts=${{ steps.command.outputs.target }}" daily-draft-run.log
+
+      - name: Audit exact closure evidence
+        if: steps.command.outputs.mode == 'create'
+        env:
+          TARGET: ${{ steps.command.outputs.target }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          target = int(os.environ['TARGET'])
+          selection = json.load(open('daily-draft-selection.json', encoding='utf-8'))
+          receipts = json.load(open('daily-draft-receipts.json', encoding='utf-8'))
+          selected = selection.get('selected', [])
+          assert len(selected) == target, (len(selected), target)
+          assert len(receipts) == target, (len(receipts), target)
+          lead_ids = [x['lead_id'] for x in selected]
+          hosts = [x['website_host'] for x in selected]
+          receipt_ids = [x['lead_id'] for x in receipts]
+          test_ids = [x['test_id'] for x in receipts]
+          assert len(set(lead_ids)) == target
+          assert len(set(hosts)) == target
+          assert len(set(receipt_ids)) == target
+          assert len(set(test_ids)) == target
+          assert set(receipt_ids) == set(lead_ids)
+          assert all(x.get('readback_count') == 1 for x in receipts)
+          assert selection.get('send_permission') == 'none'
+          print(f'CLOSURE_V16_AUDIT=green target={target} unique_leads={target} unique_domains={target} readback=1 smtp_send=not_invoked')
+          PY
+
+      - name: Upload v16 closure evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: daily-lead-drafts-v16-${{ github.run_id }}
+          path: |
+            daily-evidence/
+            outreach-agent-copy-refresh-batch-v16.json
+            outreach-agent-copy-refresh-batch-v16.log
+            daily-draft-count.log
+            daily-draft-selection.json
+            daily-draft-receipts.json
+            daily-draft-error.json
+            daily-draft-run.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Report v16 result on command issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -euo pipefail
+          [ "$JOB_STATUS" = success ] && result=green || result=blocked
+          body="DAILY_LEAD_DRAFT_V16_COMMAND=$result\nMODE=${{ steps.command.outputs.mode }}\nTARGET=${{ steps.command.outputs.target }}\nAGENT_MODE=${{ steps.command.outputs.agent }}\nSOURCE_SET_VERSION=${{ steps.command.outputs.source_set }}\nCOPY_CONTRACT=evidence_personalized_v16\nTRANSPORT=IMAP_DRAFT_ONLY\nSMTP_SEND=not_invoked"
+          curl --fail-with-body --silent --show-error -X POST -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer ${GH_TOKEN}" -H 'X-GitHub-Api-Version: 2022-11-28' "https://api.github.com/repos/${REPOSITORY}/issues/${ISSUE_NUMBER}/comments" -d "$(jq -n --arg body "$body" '{body:$body}')" >/dev/null
+          if [ "$JOB_STATUS" = success ]; then
+            curl --fail-with-body --silent --show-error -X PATCH -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer ${GH_TOKEN}" -H 'X-GitHub-Api-Version: 2022-11-28' "https://api.github.com/repos/${REPOSITORY}/issues/${ISSUE_NUMBER}" -d '{"state":"closed","state_reason":"completed"}' >/dev/null
+          fi
