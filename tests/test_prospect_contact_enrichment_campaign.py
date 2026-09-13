@@ -8,8 +8,22 @@ import prospect_contact_enrichment_campaign as c
 class CampaignContactFilterTests(unittest.TestCase):
     def setUp(self):
         c._qualification_by_id = {
-            "1": {"candidate_id": "1", "status": "qualified", "tier": "A", "agent_type": "front_desk_sales"},
-            "2": {"candidate_id": "2", "status": "qualified", "tier": "A", "agent_type": "commerce"},
+            "1": {
+                "candidate_id": "1",
+                "status": "qualified",
+                "tier": "A",
+                "offer_family": "ai_agent",
+                "agent_type": "front_desk_sales",
+                "customer_potential": "8",
+            },
+            "2": {
+                "candidate_id": "2",
+                "status": "qualified",
+                "tier": "A",
+                "offer_family": "ai_agent",
+                "agent_type": "commerce",
+                "customer_potential": "8",
+            },
         }
         c._target_agent_type = "front_desk_sales"
 
