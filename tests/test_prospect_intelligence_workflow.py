@@ -44,26 +44,20 @@ class ProspectIntelligenceWorkflowTests(unittest.TestCase):
         self.assertNotIn("outreach_direct_smtp_runtime.py", text)
         self.assertNotIn("contact-enrichment", text)
 
-    def test_machine_contract_and_registry_keep_intelligence_advisory(self):
+    def test_v17_default_contract_does_not_register_intelligence_as_a_filter_gate(self):
         contract = json.loads((ROOT / "toolkit-contract.json").read_text(encoding="utf-8"))
         registry = json.loads((ROOT / "tool-registry.json").read_text(encoding="utf-8"))
-        discovery = contract["capabilities"]["prospect_discovery"]
-        intelligence = contract["capabilities"]["prospect_intelligence"]
-        self.assertIn("ProspectObservations", discovery["outputs"])
-        self.assertIn("PROSPECT_DISCOVERY_TARGET_NEW", discovery["optional_variables"])
-        self.assertEqual(intelligence["send_permission"], "none")
-        self.assertFalse(intelligence["automatic_score_effect"])
-        self.assertEqual(intelligence["scheduled_default"], "validate")
-        self.assertEqual(intelligence["scheduled_refresh_gate"], "PROSPECT_INTELLIGENCE_ENABLED=true")
-        self.assertTrue(registry["policy"]["prospect_intelligence_advisory_only"])
-        self.assertFalse(registry["tools"]["prospect_intelligence"]["automatic_score_effect"])
+        self.assertEqual(contract["default_route"]["id"], "filter_core_v17")
+        self.assertEqual(registry["policy"]["default_route"], "filter_core_v17")
+        self.assertEqual(registry["capabilities"]["prospect_discovery"]["send_permission"], "none")
+        self.assertNotIn("prospect_intelligence", registry["capabilities"])
 
-    def test_integration_contract_documents_target_gap_and_intelligence_boundaries(self):
+    def test_integration_contract_keeps_intelligence_outside_the_default_surface(self):
         text = (ROOT / "LEADS-INTEGRATION.md").read_text(encoding="utf-8")
-        self.assertIn("PROSPECT_DISCOVERY_TARGET_NEW", text)
-        self.assertIn("target_gap", text)
-        self.assertIn("Capability 9 — prospect_intelligence", text)
-        self.assertIn("wijzigen nooit zelfstandig Customer Potential", text)
+        self.assertIn("Generic discovery, signal evidence", text)
+        self.assertIn("Positive reply triage remains advisory", text)
+        self.assertNotIn("PROSPECT_DISCOVERY_TARGET_NEW", text)
+        self.assertNotIn("Capability 9", text)
 
 
 if __name__ == "__main__":
