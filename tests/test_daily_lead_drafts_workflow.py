@@ -28,13 +28,13 @@ class DailyLeadDraftWorkflowTests(unittest.TestCase):
 
     def test_refill_is_target_driven_not_fixed_pass_count(self):
         text = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("Refill until target or bounded continuation", text)
+        self.assertIn("Refill until requested target is ready", text)
         self.assertIn("while true", text)
         self.assertIn("REFILL_TARGET=green", text)
-        self.assertIn("BLOCKED_NO_NEW_APPROVED_OUTPUT", text)
-        self.assertIn("BLOCKED_BOUNDED_REFILL", text)
+        self.assertIn("BLOCKED_NO_PROGRESS", text)
         self.assertNotIn("for pass in 1 2 3 4", text)
         self.assertRegex(text, r'\[ "\$ready" -ge "\$target" \]')
+        self.assertIn("retry_transient", text)
 
     def test_refill_rediscovers_and_requalifies_when_short(self):
         text = WORKFLOW.read_text(encoding="utf-8")
@@ -52,8 +52,10 @@ class DailyLeadDraftWorkflowTests(unittest.TestCase):
         for name in required:
             self.assertIn(name, text)
         self.assertNotIn("AGENT_SALES_TARGET_TYPE: auto", text)
-        self.assertIn('discovered="$(python3 -c', text)
-        self.assertIn('[ "$no_progress" -ge 3 ] && [ "$no_new" -ge 3 ]', text)
+        self.assertIn("agents='front_desk_sales quote_intake review_concierge customer_support commerce'", text)
+        self.assertIn('export AGENT_SALES_TARGET_TYPE="$agent"', text)
+        self.assertIn('[ "$no_progress" -ge 5 ]', text)
+        self.assertIn("[ \"$per_cycle\" -le 50 ] || per_cycle=50", text)
         helper = (ROOT / "scripts" / "outreach_daily_prepare_new.py").read_text(encoding="utf-8")
         self.assertIn("from outreach_agent_prepare_v2 import build_prepared_row", helper)
         self.assertIn("candidate_id in queued_ids", helper)
@@ -69,7 +71,9 @@ class DailyLeadDraftWorkflowTests(unittest.TestCase):
         self.assertIn("assert len(set(lead_ids)) == target", text)
         self.assertIn("assert len(set(hosts)) == target", text)
         self.assertIn("assert all(x.get('readback_count') == 1 for x in receipts)", text)
-        self.assertIn("13.6.0-refill-audit", text)
+        self.assertIn("SOURCE_SET_VERSION", text)
+        self.assertIn("default: current", text)
+        self.assertNotIn("13.6.0-refill-audit", text)
 
     def test_blocked_issue_stays_open_for_continuation(self):
         text = WORKFLOW.read_text(encoding="utf-8")
@@ -96,11 +100,16 @@ class DailyLeadDraftWorkflowTests(unittest.TestCase):
         self.assertNotIn("RECIPIENT=", text)
         self.assertNotIn("OUTREACH_MAIL_PASSWORD=", text)
 
-    def test_target_is_hard_capped_at_50(self):
+    def test_target_has_no_workflow_hard_cap_and_uses_bounded_internal_chunks(self):
         text = WORKFLOW.read_text(encoding="utf-8")
-        self.assertRegex(text, r'\[ "\$target" -le 50 \]')
+        self.assertIn("Number of drafts to create; no workflow hard cap", text)
+        self.assertIn('[[ "$target" =~ ^[0-9]+$ ]] && [ "$target" -ge 1 ]', text)
+        self.assertNotIn('[ "$target" -le 50 ]', text)
+        self.assertIn('[ "$per_cycle" -le 50 ] || per_cycle=50', text)
         script = SCRIPT.read_text(encoding="utf-8")
         self.assertIn("target must be between 1 and 50", script)
+        hardened = HARDENED_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("chunk_target = min(50, remaining)", hardened)
 
 
 if __name__ == "__main__":
