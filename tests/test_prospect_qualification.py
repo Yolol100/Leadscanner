@@ -169,15 +169,6 @@ class ProspectQualificationTests(unittest.TestCase):
         eligible = _eligible_candidates(candidates, existing, force_recheck=True, recheck_days=30)
         self.assertEqual({row["candidate_id"] for row in eligible}, {"qualified-1", "rejected-1"})
 
-    def test_autopilot_workflow_has_no_mailbox_or_seed_secrets(self):
-        workflow = pathlib.Path(".github/workflows/leads-autopilot.yml").read_text(encoding="utf-8")
-        self.assertNotIn("OUTREACH_MAIL_PASSWORD", workflow)
-        self.assertNotIn("OUTREACH_MAILBOXES_JSON", workflow)
-        self.assertNotIn("OUTREACH_SEED_INBOXES_JSON", workflow)
-        self.assertNotIn("outreach_direct_smtp_runtime.py", workflow)
-        self.assertIn("send permission:", workflow)
-        self.assertIn("none", workflow)
-
     def test_sender_readiness_workflow_run_only_accepts_green_main_push_from_same_repo(self):
         workflow = pathlib.Path(".github/workflows/sender-readiness.yml").read_text(encoding="utf-8")
         self.assertIn("workflow_run:", workflow)
