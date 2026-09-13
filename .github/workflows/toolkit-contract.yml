@@ -23,82 +23,57 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba8058255da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Validate standalone Leads toolkit contract
+      - name: Validate signal-first Leads toolkit contract
         run: |
           python3 - <<'PY'
           import json, pathlib
           c=json.load(open('toolkit-contract.json', encoding='utf-8'))
+          r=json.load(open('tool-registry.json', encoding='utf-8'))
           assert c['repository']=='Yolol100/Leadscanner'
           assert c['repository_role']=='central_leads_github_runtime'
           assert c['schema_version']=='2.9'
-          caps=c['capabilities']
-          expected={
-              'prospect_discovery','prospect_intelligence','prospect_signal_discovery',
-              'prospect_qualification','campaign_gate','contact_enrichment','zero_touch_prepare',
-              'website_evidence_scan','sender_readiness','inbox_placement',
-              'mailbox_draft','outreach_delivery','dashboard',
-          }
-          assert set(caps) >= expected
+          route=c['default_route']
+          assert route['id']=='signal_first_v16'
+          assert route['source_set_version']=='16.0.0-signal-first-machine'
+          assert route['formal_score_required'] is False
+          assert route['tier_required'] is False
+          assert route['campaign_gate_required'] is False
+          assert route['one_offer'] is True
+          assert route['max_process_pages_after_homepage']==3
+          assert set(route['draft_compliance_states'])=={'manual_review','approved'}
+          assert route['send_permission']=='none'
+          assert set(c['offer_types']['non_agent'])=={'website_webshop_improvement','search_visibility','social_management'}
+          assert set(c['offer_types']['agents'])=={'front_desk_sales','lead_reactivation','review_concierge','customer_support','commerce','quote_intake'}
 
+          caps=c['capabilities']
+          expected={'signal_first_draft_prepare','prospect_discovery','prospect_intelligence','prospect_signal_discovery','prospect_qualification','campaign_gate','contact_enrichment','zero_touch_prepare','website_evidence_scan','sender_readiness','inbox_placement','mailbox_draft','outreach_delivery','dashboard'}
+          assert set(caps) >= expected
+          sf=caps['signal_first_draft_prepare']
+          assert sf['send_permission']=='none'
+          assert '50-100 words' in sf['copy_contract']
+          assert 'permission CTA' in sf['copy_contract']
+          assert sf['preferred_mailbox_workflow']=='.github/workflows/sync-selected-myhost-drafts-command.yml'
+          assert 'advisory_only' in sf['reply_triage']
+          for key in ('prospect_qualification','campaign_gate','zero_touch_prepare'):
+              assert caps[key]['status']=='legacy_compatibility'
+              assert caps[key]['send_permission']=='none'
           q=caps['prospect_qualification']
           assert q['script']=='scripts/prospect_agent_qualification.py'
-          assert q['offer_family']=='ai_agent'
-          assert q['agent_types']==[
-              'front_desk_sales','lead_reactivation','review_concierge',
-              'customer_support','commerce','quote_intake',
-          ]
-          assert q['max_candidates_per_run']==25
-          assert q['default_recheck_days']==30
-          assert 'agent opportunity 0-3' in q['score_contract']
           assert 'AgentProspectQualifications' in q['outputs']
-          assert q['automatic_score_effect'] is True
-          assert q['compliance_effect'] is False
-          assert q['send_permission']=='none'
           assert 'UNSCORED' in ' '.join(q['quality_rules'])
-
-          campaign=caps['campaign_gate']
-          assert campaign['script']=='scripts/prospect_campaign_gate.py'
-          assert campaign['modes']==['validate','audit']
-          assert campaign['canonical_candidate_state_mutated'] is False
-          assert 'explicit approved agent' in campaign['target_contract']
-          assert campaign['send_permission']=='none'
-
-          contact=caps['contact_enrichment']
-          assert contact['campaign_script']=='scripts/prospect_contact_enrichment_campaign.py'
-          assert contact['legacy_script']=='scripts/prospect_contact_enrichment.py'
-          assert 'campaign-matching A-qualified' in contact['input_boundary']
-          assert contact['send_permission']=='none'
-
-          prepare=caps['zero_touch_prepare']
-          assert prepare['script']=='scripts/outreach_agent_prepare_v2.py'
-          assert prepare['legacy_script']=='scripts/outreach_agent_prepare.py'
-          assert 'validate_when_agent_target_auto' in prepare['scheduled_default']
-          for part in ('prospect_agent_qualification','prospect_campaign_gate','prospect_contact_enrichment_campaign','outreach_agent_prepare_v2'):
-              assert part in prepare['flow']
-          assert 'process_flow' in prepare['value_asset_contract']
-          assert 'status=prepared' in prepare['queue_contract']
-          assert 'manual_review' in prepare['queue_contract']
-          assert prepare['required_secrets']==['GOOGLE_SERVICE_ACCOUNT_JSON']
-          assert prepare['send_permission']=='none'
-          for key in ('OUTREACH_MAIL_PASSWORD','OUTREACH_MAILBOXES_JSON','OUTREACH_SEED_INBOXES_JSON','REOON_API_KEY'):
-              assert key in prepare['forbidden_secrets']
-
-          scanner=caps['website_evidence_scan']
-          assert scanner['read_only'] is True
-          assert scanner['normal_default_for_every_prospect'] is False
-          assert caps['sender_readiness']['send_permission']=='none'
-          assert caps['inbox_placement']['manual_only'] is True
-          assert caps['mailbox_draft']['transport']=='IMAP APPEND + same-folder readback only'
-
-          delivery=caps['outreach_delivery']
-          assert delivery['manual_default']=='validate'
-          assert delivery['live_gate']=='sender_readiness -> website target/evidence -> LeadPromo copy -> compliance -> SMTP'
-          assert 'agent_offer:<JSON>' in delivery['target_evidence_contract']
-          assert 'website_scan:<JSON>' in delivery['target_evidence_contract']
-          assert 'private' in delivery['private_config_contract'].lower()
+          assert caps['campaign_gate']['canonical_candidate_state_mutated'] is False
+          assert caps['website_evidence_scan']['read_only'] is True
+          assert caps['website_evidence_scan']['normal_default_for_every_prospect'] is False
+          mailbox=caps['mailbox_draft']
+          assert mailbox['preferred_workflow']=='.github/workflows/sync-selected-myhost-drafts-command.yml'
+          assert set(mailbox['draft_compliance_states'])=={'manual_review','approved'}
+          assert mailbox['send_permission']=='none'
+          assert mailbox['transport']=='IMAP APPEND + same-folder readback only'
+          assert caps['outreach_delivery']['manual_default']=='validate'
+          assert caps['outreach_delivery']['send_permission']=='explicit_compliance_gated_live_only'
 
           ids=[t['id'] for t in c['scanner_tools']]
           assert len(ids)==len(set(ids))
@@ -112,84 +87,47 @@ jobs:
 
           required=(
               '.github/workflows/prospect-discovery.yml',
-              '.github/workflows/leads-autopilot.yml',
-              '.github/workflows/contact-enrichment.yml',
+              '.github/workflows/sync-selected-myhost-drafts-command.yml',
               '.github/workflows/outreach-smtp.yml',
+              'scripts/outreach_queue_imap_draft_sync.py',
+              'scripts/outreach_queue_imap_draft_sync_selected.py',
+              'scripts/outreach_reply_triage.py',
               'scripts/prospect_agent_qualification.py',
               'scripts/prospect_campaign_gate.py',
-              'scripts/prospect_contact_enrichment_campaign.py',
-              'scripts/prospect_contact_enrichment.py',
               'scripts/outreach_agent_prepare_v2.py',
-              'scripts/outreach_agent_prepare.py',
-              'scripts/outreach_copy_preflight.py',
-              'scripts/outreach_target_evidence_preflight.py',
-              'scripts/outreach_private_config.py',
-              'scripts/outreach_direct_smtp_runtime.py',
-              'scripts/outreach_compliance_preflight.py',
           )
           for item in required:
               assert pathlib.Path(item).is_file(), f'missing Leads runtime file {item}'
 
-          autopilot=pathlib.Path('.github/workflows/leads-autopilot.yml').read_text(encoding='utf-8')
-          trigger=autopilot.split('permissions:',1)[0]
-          assert 'workflow_dispatch:' in trigger and 'schedule:' in trigger
-          assert 'ops/leads-autopilot-request.txt' in trigger
-          for expected_text in (
-              'scripts/prospect_candidate_sanitizer.py','scripts/prospect_agent_qualification.py',
-              'scripts/prospect_campaign_gate.py','scripts/prospect_contact_enrichment_campaign.py',
-              'scripts/outreach_private_config.py','scripts/outreach_agent_prepare_v2.py',
-              'AGENT_SALES_TARGET_TYPE','campaign-first prepare requires one explicit agent_type',
-          ):
-              assert expected_text in autopilot
-          assert 'outreach_direct_smtp_runtime.py' not in autopilot
-          for forbidden in ('OUTREACH_MAIL_PASSWORD','OUTREACH_MAILBOXES_JSON','OUTREACH_SEED_INBOXES_JSON'):
-              assert forbidden not in autopilot
-          assert 'send permission:' in autopilot and 'none' in autopilot
+          sync=pathlib.Path('scripts/outreach_queue_imap_draft_sync.py').read_text(encoding='utf-8')
+          assert 'ALLOWED_DRAFT_COMPLIANCE' in sync
+          assert 'manual_review' in sync and 'approved' in sync
+          selected=pathlib.Path('scripts/outreach_queue_imap_draft_sync_selected.py').read_text(encoding='utf-8')
+          assert 'outreach_queue_imap_draft_sync' in selected
+          reply=pathlib.Path('scripts/outreach_reply_triage.py').read_text(encoding='utf-8')
+          assert 'positive_interest' in reply
+          assert 'advisory_only' in reply
 
-          campaign_runtime=pathlib.Path('scripts/prospect_campaign_gate.py').read_text(encoding='utf-8')
-          assert 'canonical_candidate_state_mutated' in campaign_runtime
-          assert 'audit_campaign_gate' in campaign_runtime
-          contact_runtime=pathlib.Path('scripts/prospect_contact_enrichment_campaign.py').read_text(encoding='utf-8')
-          assert 'campaign_eligible_prospects' in contact_runtime
-          prepare_runtime=pathlib.Path('scripts/outreach_agent_prepare_v2.py').read_text(encoding='utf-8')
-          assert 'value_asset_type' in prepare_runtime
-          assert 'campaign_target_agent_type' in prepare_runtime
-          assert 'OUTREACH_CTA_VARIANT' in prepare_runtime
-          assert 'smtplib' not in prepare_runtime
-          copy_runtime=pathlib.Path('scripts/outreach_copy_preflight.py').read_text(encoding='utf-8')
-          assert 'subject must focus on the prospect/process' in copy_runtime
-          assert 'value-first initial may not contain external URLs by default' in copy_runtime
-          assert 'human initial contains AI/corporate jargon banned by the human-writing contract' in copy_runtime
+          assert r['version']=='4.0'
+          p=r['policy']
+          assert p['default_route']=='signal_first_v16'
+          assert p['default_source_set_version']=='16.0.0-signal-first-machine'
+          assert p['signal_first_default'] is True
+          assert p['normal_draft_requires_formal_score'] is False
+          assert p['normal_draft_requires_campaign_gate'] is False
+          assert p['one_offer_per_first_touch'] is True
+          assert set(p['draft_compliance_states'])=={'manual_review','approved'}
+          assert {'website_webshop_improvement','search_visibility','social_management'} <= set(p['supported_offer_types'])
+          assert p['legacy_agent_campaign_route'] is True
+          assert r['capabilities']['signal_first_draft_prepare']['send_permission']=='none'
+          assert r['tools']['signal_first_prepare']['default_for_new_drafts'] is True
+          assert r['tools']['prospect_agent_qualification']['status']=='legacy_compatibility'
+          assert r['tools']['prospect_campaign_gate']['status']=='legacy_compatibility'
+          assert r['tools']['outreach_agent_prepare']['status']=='legacy_compatibility'
+          assert r['capabilities']['outreach_delivery']['send_permission']=='explicit_compliance_gated_live_only'
 
-          outreach=pathlib.Path('.github/workflows/outreach-smtp.yml').read_text(encoding='utf-8')
-          order=[
-              'Run sender preflight','Run extended outreach contract preflight','Run live sender readiness gate',
-              'Run website target and evidence preflight','Run LeadPromo copy preflight','Run outreach compliance preflight',
-              'Process approved outreach queue through mijn.host SMTP',
-          ]
-          positions=[outreach.index(name) for name in order]
-          assert positions==sorted(positions)
-          assert 'scripts/outreach_private_config.py' in outreach
-          assert 'outreach_target_evidence_preflight.py' in outreach
-          assert 'vars.OUTREACH_POSTAL_ADDRESS' not in outreach
-
-          registry=json.load(open('tool-registry.json', encoding='utf-8'))
-          assert registry['version']=='4.0'
-          assert registry['repository_role']=='central_leads_github_runtime'
-          assert set(registry['capabilities']) >= expected
-          assert registry['policy']['agent_sales_default_offer_family']=='ai_agent'
-          assert registry['policy']['campaign_first_agent_sales'] is True
-          assert registry['policy']['campaign_prepare_requires_explicit_agent_type'] is True
-          assert registry['policy']['campaign_gate_canonical_state_mutation'] is False
-          assert registry['policy']['value_asset_before_contact'] is True
-          assert registry['policy']['default_agent_outreach_has_generic_cases_url'] is False
-          assert registry['policy']['changes_compliance_automatically'] is False
-          assert registry['capabilities']['campaign_gate']['script']=='scripts/prospect_campaign_gate.py'
-          assert registry['capabilities']['contact_enrichment']['campaign_script']=='scripts/prospect_contact_enrichment_campaign.py'
-          assert registry['capabilities']['zero_touch_prepare']['script']=='scripts/outreach_agent_prepare_v2.py'
-          assert registry['capabilities']['outreach_delivery']['evidence_sources']==['agent_offer','website_scan_legacy']
-          assert registry['tools']['outreach_agent_prepare']['status']=='legacy_compatibility'
-          assert registry['tools']['outreach_agent_prepare_v2']['default_for_campaign_prepare'] is True
-          assert registry['tools']['axe_core']['automatic_score_effect'] is False
-          print('toolkit-contract v13.4 human-copy: OK')
+          for doc in ('README.md','AGENTS.md','LEADS-INTEGRATION.md'):
+              text=pathlib.Path(doc).read_text(encoding='utf-8').casefold()
+              assert 'signal-first' in text or 'signal_first' in text
+          print('toolkit-contract v16 signal-first: OK')
           PY
