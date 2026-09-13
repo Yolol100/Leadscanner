@@ -60,7 +60,8 @@ DIRECTORY_NAV_LABELS = (
 DIRECTORY_PROFILE_HINTS = (
     "member", "members", "company", "companies", "business", "businesses", "profile",
     "listing", "listings", "shop", "shops", "webshop", "supplier", "suppliers",
-    "vendor", "vendors", "manufacturer", "manufacturers",
+    "vendor", "vendors", "manufacturer", "manufacturers", "lid", "leden", "bedrijf",
+    "bedrijven", "winkel", "winkels",
 )
 DIRECTORY_PROFILE_NAV_SEGMENTS = {
     "about", "contact", "privacy", "terms", "cookie", "cookies", "login", "register",
@@ -199,7 +200,10 @@ def _profile_link_score(target: str, label: str) -> int:
         score += 5
     if any(segment in DIRECTORY_PROFILE_NAV_SEGMENTS for segment in segments):
         score -= 8
-    if any(token in label_norm for token in ("member", "company", "business", "supplier", "manufacturer")):
+    if any(token in label_norm for token in (
+        "member", "company", "business", "supplier", "manufacturer", "lid", "leden",
+        "bedrijf", "bedrijven", "winkel", "winkels",
+    )):
         score += 2
     if any(token == label_norm or token in label_norm for token in DIRECTORY_NAV_LABELS):
         score -= 4
