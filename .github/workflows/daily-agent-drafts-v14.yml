@@ -29,7 +29,7 @@ on:
       source_set_version:
         description: Exact Project Leads source contract
         required: true
-        default: 14.0.1-draft-first
+        default: 14.0.3-draft-recovery
         type: string
 
 permissions:
@@ -48,7 +48,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
-      EXPECTED_SOURCE_SET_VERSION: 14.0.1-draft-first
+      EXPECTED_SOURCE_SET_VERSION: 14.0.3-draft-recovery
       OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
       OUTREACH_CONFIG_SPREADSHEET_ID: ${{ vars.OUTREACH_CONFIG_SPREADSHEET_ID || '1iOBCaBq3MpsrYQiESAhjS1NMRQDXAWmkTh-U-63qzs4' }}
       GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
