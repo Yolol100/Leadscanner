@@ -17,6 +17,7 @@ from outreach_agent_prepare import (
 from outreach_agent_prepare_v2 import build_prepared_row
 from outreach_sender import QUEUE_SHEET, build_sheets_service, ensure_expected_headers, get_values, rows_from_values
 from prospect_agent_qualification import AGENT_CATALOG, AGENT_QUALIFICATION_HEADERS, AGENT_QUALIFICATION_SHEET
+from prospect_discovery import host_key, hosts_related
 from prospect_intelligence import canonical_domain
 from prospect_target_policy import canonical_country
 
@@ -57,6 +58,31 @@ def append_row(service, spreadsheet_id: str, sheet: str, headers: list[str], row
     ).execute()
 
 
+def _draft_qualification_ok(candidate, qualification) -> bool:
+    tier = text(qualification.get("tier")).upper()
+    candidate_status = text(candidate.get("status")).casefold()
+    qualification_status = text(qualification.get("status")).casefold()
+    try:
+        potential = int(text(qualification.get("customer_potential")) or "0")
+    except ValueError:
+        return False
+    if potential < 6:
+        return False
+    if tier == "A":
+        return candidate_status == "qualified" and qualification_status == "qualified"
+    if tier == "B":
+        return candidate_status == "hold" and qualification_status == "hold"
+    return False
+
+
+def _official_contact(candidate, contact) -> bool:
+    website = text(candidate.get("website"))
+    source_url = text(contact.get("source_url"))
+    website_host = host_key(website)
+    source_host = host_key(source_url)
+    return bool(website_host and source_host and hosts_related(website_host, source_host))
+
+
 def eligible(candidate, qualification, contact, *, agent_type: str, country: str, queued_ids: set[str], lead_statuses: dict[str, set[str]]) -> bool:
     candidate_id = text(candidate.get("candidate_id"))
     domain = canonical_domain(candidate.get("website"))
@@ -65,27 +91,23 @@ def eligible(candidate, qualification, contact, *, agent_type: str, country: str
     statuses = lead_statuses.get(domain, set())
     if statuses and not statuses.issubset(ALLOWED_EXISTING_LEAD_STATUSES):
         return False
-    if text(candidate.get("status")).casefold() != "qualified":
-        return False
     if canonical_country(text(candidate.get("country"))) != country:
         return False
     if text(qualification.get("candidate_id")) != candidate_id:
         return False
-    if text(qualification.get("status")).casefold() != "qualified" or text(qualification.get("tier")).upper() != "A":
+    if not _draft_qualification_ok(candidate, qualification):
         return False
     if text(qualification.get("offer_family")).casefold() != "ai_agent":
         return False
     if text(qualification.get("agent_type")).casefold() != agent_type:
         return False
-    try:
-        potential = int(text(qualification.get("customer_potential")) or "0")
-    except ValueError:
+    if text(contact.get("candidate_id")) != candidate_id:
         return False
-    if potential < 8:
+    if text(contact.get("status")).casefold() not in {"ready", "manual_review"}:
         return False
-    if text(contact.get("candidate_id")) != candidate_id or text(contact.get("status")).casefold() != "ready":
+    if text(contact.get("mx_status")).casefold() != "present":
         return False
-    if text(contact.get("domain_alignment")).casefold() != "aligned" or text(contact.get("mx_status")).casefold() != "present":
+    if not _official_contact(candidate, contact):
         return False
     return True
 
