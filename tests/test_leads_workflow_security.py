@@ -72,6 +72,14 @@ class LeadsWorkflowSecurityTests(unittest.TestCase):
         for forbidden in ("OUTREACH_MAIL_PASSWORD", "OUTREACH_MAILBOXES_JSON", "REOON_API_KEY"):
             self.assertNotIn(forbidden, text)
 
+    def test_selected_draft_sync_serializes_mailbox_writes(self):
+        text = (WORKFLOWS / "sync-selected-myhost-drafts-command.yml").read_text(encoding="utf-8")
+        header = text.split("\njobs:\n", 1)[0]
+        self.assertIn("group: sync-selected-myhost-drafts-${{ vars.OUTREACH_MAILBOX_ID || 'primary' }}", header)
+        self.assertIn("cancel-in-progress: false", header)
+        self.assertIn("queue: max", header)
+        self.assertNotIn("github.event.issue.number", header)
+
 
 if __name__ == "__main__":
     unittest.main()
