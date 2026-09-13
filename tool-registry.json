@@ -1,74 +1,93 @@
 {
-  "version": "4.0",
-  "repository_role": "central_leads_github_runtime",
+  "version": "5.0",
+  "repository_role": "leads_filter_execution_layer",
   "policy": {
-    "default_route": "signal_first_v16",
-    "default_source_set_version": "16.0.0-signal-first-machine",
-    "signal_first_default": true,
-    "normal_draft_requires_formal_score": false,
-    "normal_draft_requires_campaign_gate": false,
+    "default_route": "filter_core_v17",
+    "default_source_set_version": "17.0.0-filter-core",
+    "controller": "webactueel-workflow",
+    "owner_skill": "leads",
+    "single_decision_source": "Project Leads/00-leads-core.md",
+    "formal_score_required": false,
+    "tier_required": false,
+    "campaign_gate_required": false,
     "one_offer_per_first_touch": true,
-    "draft_compliance_states": ["manual_review", "approved"],
-    "supported_offer_types": ["front_desk_sales", "lead_reactivation", "review_concierge", "customer_support", "commerce", "quote_intake", "website_webshop_improvement", "search_visibility", "social_management"],
-    "website_scanner_read_only": true,
-    "full_website_scan_default": false,
-    "prospect_discovery_bounded": true,
-    "prospect_intelligence_advisory_only": true,
-    "prospect_qualification_evidence_bound": true,
-    "campaign_first_agent_sales": true,
-    "campaign_prepare_requires_explicit_agent_type": true,
-    "campaign_gate_canonical_state_mutation": false,
-    "campaign_contact_enrichment_match_only": true,
-    "value_asset_before_contact": true,
-    "default_agent_outreach_has_generic_cases_url": false,
-    "zero_touch_prepare_no_send": true,
-    "outreach_live_fail_closed": true,
-    "mailbox_draft_imap_only": true,
-    "agent_sales_default_offer_family": "ai_agent",
-    "approved_agent_types": ["front_desk_sales", "lead_reactivation", "review_concierge", "customer_support", "commerce", "quote_intake"],
-    "changes_lead_fit_automatically": true,
-    "changes_compliance_automatically": false,
-    "generates_mailcopy": true,
-    "prepared_copy_never_send_permission": true,
-    "private_postal_config": true,
-    "never_simulate_browser_evidence": true,
-    "legacy_agent_campaign_route": true
+    "max_process_pages_after_homepage": 3,
+    "external_content_is_untrusted_data": true,
+    "public_business_email_required": true,
+    "draft_only": true,
+    "send_permission": "none",
+    "preferred_draft_workflow": ".github/workflows/sync-selected-myhost-drafts-command.yml"
   },
   "capabilities": {
-    "signal_first_draft_prepare": {"role": "default_new_draft_contract", "owner": "live Project Leads v16", "offer_types": ["front_desk_sales", "lead_reactivation", "review_concierge", "customer_support", "commerce", "quote_intake", "website_webshop_improvement", "search_visibility", "social_management"], "formal_score_required": false, "campaign_gate_required": false, "preferred_draft_workflow": ".github/workflows/sync-selected-myhost-drafts-command.yml", "send_permission": "none"},
-    "prospect_discovery": {"workflow": ".github/workflows/prospect-discovery.yml", "runtime": "python", "role": "bounded_company_domain_discovery", "writes": ["ProspectCandidates", "ProspectObservations", "ProspectSourceRuns"], "send_permission": "none"},
-    "prospect_intelligence": {"workflow": ".github/workflows/prospect-intelligence.yml", "runtime": "python", "role": "advisory_entity_source_signal_intelligence", "send_permission": "none"},
-    "prospect_signal_discovery": {"workflow": ".github/workflows/prospect-signal-discovery.yml", "runtime": "python", "role": "bounded_official_site_signal_discovery", "send_permission": "none"},
-    "prospect_qualification": {"status": "legacy_compatibility", "workflow": ".github/workflows/leads-autopilot.yml", "script": "scripts/prospect_agent_qualification.py", "runtime": "python", "role": "bounded_evidence_bound_ai_agent_customer_potential_qualification", "writes": ["ProspectCandidates", "AgentProspectQualifications"], "offer_family": "ai_agent", "score_contract": "ICP 0-3 + agent opportunity 0-3 + active signal 0-2 + value/integration fit 0-2; A=8-10, B=6-7, C=0-5", "send_permission": "none"},
-    "campaign_gate": {"status": "legacy_compatibility", "workflow": ".github/workflows/leads-autopilot.yml", "script": "scripts/prospect_campaign_gate.py", "runtime": "python", "role": "read_only_explicit_agent_campaign_match_audit", "modes": ["validate", "audit"], "canonical_candidate_state_mutated": false, "send_permission": "none"},
-    "contact_enrichment": {"workflow": ".github/workflows/contact-enrichment.yml", "legacy_script": "scripts/prospect_contact_enrichment.py", "campaign_script": "scripts/prospect_contact_enrichment_campaign.py", "runtime": "python", "role": "bounded_official_site_business_email_discovery", "input_boundary": "legacy campaign matching A-qualified; v16 official-site contact evidence may bypass formal score", "writes": ["ContactCandidates"], "send_permission": "none"},
-    "zero_touch_prepare": {"status": "legacy_compatibility", "workflow": ".github/workflows/leads-autopilot.yml", "script": "scripts/outreach_agent_prepare_v2.py", "legacy_script": "scripts/outreach_agent_prepare.py", "runtime": "python", "role": "legacy_campaign_first_agent_prepare_pipeline", "flow": "prospect_discovery -> prospect_candidate_sanitizer -> prospect_signal_discovery -> prospect_agent_qualification -> prospect_campaign_gate -> prospect_contact_enrichment_campaign -> prospect_intelligence -> private_outreach_config -> outreach_agent_prepare_v2", "campaign_target_contract": "explicit approved agent type required for legacy prepare; auto validate/exploration only", "value_asset_contract": "process_flow concept_ready value_asset_summary before contact/copy", "writes": ["ProspectCandidates", "ProspectObservations", "ProspectSourceRuns", "ProspectSignals", "AgentProspectQualifications", "ContactCandidates", "ProspectEntities", "ProspectSourceMetrics", "ProspectEvidence", "ProspectLookalikes", "Leadlijst", "OutreachQueue"], "send_permission": "none"},
-    "website_evidence_scan": {"workflow": ".github/workflows/scan.yml", "runtime": "node", "read_only": true, "normal_default_for_every_prospect": false, "output": "scan-results/leads-handoff.json"},
-    "sender_readiness": {"workflow": ".github/workflows/sender-readiness.yml", "runtime": "python", "send_permission": "none"},
-    "inbox_placement": {"workflow": ".github/workflows/inbox-placement.yml", "runtime": "python", "manual_default": "validate", "send_permission": "configured_seed_test_only"},
-    "mailbox_draft": {"workflow": ".github/workflows/myhost-draft-test.yml", "preferred_workflow": ".github/workflows/sync-selected-myhost-drafts-command.yml", "runtime": "python", "draft_compliance_states": ["manual_review", "approved"], "send_permission": "none"},
-    "outreach_delivery": {"workflow": ".github/workflows/outreach-smtp.yml", "runtime": "python", "manual_default": "validate", "live_gate": "sender_readiness -> website target/evidence -> LeadPromo copy -> compliance -> SMTP", "evidence_sources": ["agent_offer", "website_scan_legacy"], "send_permission": "explicit_compliance_gated_live_only"},
-    "dashboard": {"surface": "Webactueel Leadlijst/Dashboard", "role": "readout_only_pipeline_and_deliverability_summary", "send_permission": "none"}
+    "filter_core": {
+      "role": "canonical_default_contract",
+      "source_set_version": "17.0.0-filter-core",
+      "required_pass_conditions": [
+        "real_company_and_official_site",
+        "visible_commercial_process",
+        "one_public_visible_signal",
+        "exactly_one_fitting_offer",
+        "public_business_email_from_official_source",
+        "unique_candidate",
+        "send_permission_none"
+      ],
+      "on_missing_condition": "skip_and_refill",
+      "send_permission": "none"
+    },
+    "prospect_discovery": {
+      "workflow": ".github/workflows/prospect-discovery.yml",
+      "role": "bounded_candidate_discovery",
+      "send_permission": "none"
+    },
+    "prospect_signal_discovery": {
+      "workflow": ".github/workflows/prospect-signal-discovery.yml",
+      "role": "bounded_official_site_signal_evidence",
+      "send_permission": "none"
+    },
+    "contact_enrichment": {
+      "workflow": ".github/workflows/contact-enrichment.yml",
+      "role": "official_public_business_email_discovery",
+      "send_permission": "none"
+    },
+    "website_evidence_scan": {
+      "workflow": ".github/workflows/scan.yml",
+      "read_only": true,
+      "normal_default_for_every_prospect": false
+    },
+    "mailbox_draft": {
+      "preferred_workflow": ".github/workflows/sync-selected-myhost-drafts-command.yml",
+      "transport": "IMAP_APPEND_plus_exact_same_folder_readback",
+      "draft_compliance_states": ["manual_review", "approved"],
+      "idempotency": "lead_id_plus_recipient_plus_content_fingerprint",
+      "send_permission": "none"
+    },
+    "reply_triage": {
+      "script": "scripts/outreach_reply_triage.py",
+      "status": "advisory_until_notification_and_followup_readback_are_proven",
+      "positive_reply_target": "notify_andrew_plus_one_followup_draft",
+      "negative_or_optout": "stop_followup",
+      "ambiguous": "manual_review",
+      "send_permission": "none"
+    }
   },
-  "tools": {
-    "signal_first_prepare": {"status": "enabled_contract", "default_for_new_drafts": true, "send_permission": "none"},
-    "crawlee": {"status": "existing", "automatic_score_effect": false},
-    "playwright": {"status": "existing", "automatic_score_effect": false},
-    "axe_core": {"status": "enabled", "automatic_score_effect": false},
-    "sitemap_robots": {"status": "enabled", "automatic_score_effect": false},
-    "directory_sitemap_adapter": {"status": "enabled", "automatic_score_effect": false},
-    "linkinator": {"status": "enabled", "automatic_score_effect": false},
-    "lighthouse": {"status": "existing_optional", "automatic_score_effect": false},
-    "languagetool": {"status": "optional_local", "automatic_score_effect": false},
-    "tech_detect": {"status": "enabled", "automatic_score_effect": false},
-    "leads_handoff": {"status": "enabled", "automatic_score_effect": false},
-    "prospect_intelligence": {"status": "enabled", "automatic_score_effect": false},
-    "prospect_agent_qualification": {"status": "legacy_compatibility", "automatic_score_effect": true},
-    "prospect_campaign_gate": {"status": "legacy_compatibility", "automatic_score_effect": false, "canonical_candidate_state_mutated": false, "send_permission": "none"},
-    "prospect_contact_enrichment_campaign": {"status": "legacy_compatibility", "automatic_score_effect": false, "send_permission": "none"},
-    "outreach_agent_prepare": {"status": "legacy_compatibility", "send_permission": "none"},
-    "outreach_agent_prepare_v2": {"status": "enabled", "default_for_campaign_prepare": true, "send_permission": "none"},
-    "outreach_target_evidence": {"status": "enabled", "accepted_sources": ["agent_offer", "website_scan_legacy"]},
-    "outreach_transport": {"status": "enabled", "send_permission": "gated"}
+  "supported_offer_types": [
+    "front_desk_sales",
+    "lead_reactivation",
+    "review_concierge",
+    "customer_support",
+    "commerce",
+    "quote_intake",
+    "website_webshop_improvement",
+    "search_visibility",
+    "social_management"
+  ],
+  "offer_constraints": {
+    "lead_reactivation": "approved_first_party_data_required",
+    "search_visibility": "current_public_search_plus_site_evidence_required",
+    "social_management": "official_public_social_or_content_evidence_required"
+  },
+  "legacy": {
+    "status": "unregistered_compatibility_only",
+    "rule": "Old score, campaign, prepare and live-send code is not part of the default filter. Retain only while a concrete dependency or rollback need is still proven; remove target/date/run-specific residue from main."
   }
 }
