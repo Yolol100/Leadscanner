@@ -50,6 +50,20 @@ def _selected_target_rows(values: list[list[str]], _prefix: str, expected_count:
         raise RuntimeError("selected queue rows contain a blank recipient email")
     if len(set(recipients)) != len(recipients):
         raise RuntimeError("selected queue rows contain duplicate recipient emails")
+
+    selected_ids = set(_SELECTED_IDS)
+    selected_recipients = set(recipients)
+    conflicts: list[str] = []
+    for row in all_rows:
+        lead_id = (row.get("lead_id") or "").strip()
+        recipient = base._normalize_email(row.get("email", ""))
+        if lead_id and lead_id not in selected_ids and recipient and recipient in selected_recipients:
+            conflicts.append(f"{recipient} -> {lead_id}")
+    if conflicts:
+        raise RuntimeError(
+            "selected recipient email is also assigned to another OutreachQueue lead: "
+            + ", ".join(sorted(conflicts))
+        )
     return rows
 
 
