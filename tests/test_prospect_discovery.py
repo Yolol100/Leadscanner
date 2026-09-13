@@ -73,6 +73,15 @@ class ProspectDiscoveryTests(unittest.TestCase):
         result=module.discover_source(source,fetch)
         self.assertEqual([item.website for item in result],["https://acme.example/"])
 
+    def test_directory_index_prioritizes_dutch_leden_profile(self):
+        source=module.SourceSpec(source_id="leden",source_type="directory_index",source_url="https://directory.example/leden",max_candidates=1,approved=True)
+        page=module.parse_page(
+            "<a href='/partners/acme'>Neutrale partner</a><a href='/leden/bravo'>Bravo BV</a>",
+            source.source_url,
+        )
+        profiles=module.directory_profile_urls(source,page,limit=1)
+        self.assertEqual(profiles,["https://directory.example/leden/bravo"])
+
     def test_known_hosts_do_not_consume_source_output_quota(self):
         source=module.SourceSpec(source_id="directory",source_type="directory_page",source_url="https://directory.example/list",max_candidates=2,approved=True)
         pages={
