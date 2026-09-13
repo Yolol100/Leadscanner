@@ -9,7 +9,7 @@ import sys
 from typing import Mapping
 
 import outreach_daily_batch_drafts as base
-from outreach_copy_preflight import initial_copy_errors
+from outreach_draft_first_user_contract import initial_copy_errors
 from outreach_sender import build_sheets_service, get_values, rows_from_values
 from prospect_discovery import host_key, hosts_related
 from prospect_target_policy import canonical_country
@@ -56,8 +56,6 @@ def meaningful_personalization(meta: Mapping[str, object], website: str) -> tupl
     normalized = re.sub(r"\s+", " ", anchor).strip().casefold().rstrip(".:;!?")
     if normalized in GENERIC_NAV_ANCHORS or normalized.startswith("skip to content"):
         return False, "generic navigation personalization anchor"
-    # A phone number, icon label, or other punctuation-only fragment is not a
-    # business-process observation and cannot count as evidence personalization.
     if not re.search(r"[a-zA-Z]{3,}", anchor):
         return False, "non-semantic personalization anchor"
     observation_normalized = re.sub(r"\s+", " ", observation).strip().casefold().rstrip(".:;!?")
@@ -166,8 +164,6 @@ def run(*, target: int, country: str, run_key: str, count_only: bool) -> int:
 
     if not os.getenv("OUTREACH_MAIL_PASSWORD", "").strip():
         raise RuntimeError("OUTREACH_MAIL_PASSWORD is required for IMAP draft creation")
-    if canonical_country(country) == "US" and not os.getenv("OUTREACH_POSTAL_ADDRESS", "").strip():
-        raise RuntimeError("OUTREACH_POSTAL_ADDRESS is required for US commercial drafts")
     daily_limit = int(os.getenv("OUTREACH_DAILY_LIMIT", "50") or "50")
     mailboxes = base.enabled_mailboxes(base.load_mailboxes_from_env(mode="validate", default_daily_limit=daily_limit))
     mailbox_id = os.getenv("OUTREACH_DRAFT_MAILBOX_ID", "primary").strip() or "primary"
