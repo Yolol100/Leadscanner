@@ -1,6 +1,8 @@
+import os
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
@@ -85,6 +87,17 @@ class ProspectTargetPolicyTests(unittest.TestCase):
         ]
         ordered = policy.prioritize_sources(sources, policy.DEFAULT_PREFERRED_COUNTRIES)
         self.assertEqual([item.source_id for item in ordered], ["s3", "s2", "s1", "s4"])
+
+    def test_daily_draft_country_restricts_discovery_sources(self):
+        sources = [
+            self.source(country="DE"),
+            discovery.SourceSpec("s2", "seed_site", "https://nl.example/", "Nederland", approved=True),
+            discovery.SourceSpec("s3", "seed_site", "https://us.example/", "US", approved=True),
+            discovery.SourceSpec("s4", "seed_site", "https://nl2.example/", "NL", approved=True),
+        ]
+        with patch.dict(os.environ, {"DAILY_DRAFT_COUNTRY": "NL"}, clear=False):
+            ordered = policy.prioritize_sources(sources, policy.DEFAULT_PREFERRED_COUNTRIES)
+        self.assertEqual([item.source_id for item in ordered], ["s2", "s4"])
 
 
 if __name__ == "__main__":
