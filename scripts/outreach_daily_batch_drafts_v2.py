@@ -11,6 +11,7 @@ from prospect_discovery import hosts_related
 from prospect_target_policy import canonical_country
 
 
+_ORIGINAL_ROLE_IS_USABLE = base._role_is_usable
 _ORIGINAL_CANDIDATE_ERRORS = base.candidate_errors
 AGENTS = tuple(base.AGENT_HINTS)
 
@@ -117,8 +118,16 @@ def hardened_candidate_errors(
     return errors
 
 
-base._role_is_usable = hardened_role_is_usable
-base.candidate_errors = hardened_candidate_errors
+def _with_hardened_gates(callable_, *args, **kwargs):
+    old_role = base._role_is_usable
+    old_errors = base.candidate_errors
+    base._role_is_usable = hardened_role_is_usable
+    base.candidate_errors = hardened_candidate_errors
+    try:
+        return callable_(*args, **kwargs)
+    finally:
+        base._role_is_usable = old_role
+        base.candidate_errors = old_errors
 
 
 def _load_json(path: str, default):
@@ -136,7 +145,8 @@ def _eligible_by_agent(country: str):
     state = base._load_state(service, spreadsheet_id)
     output = {}
     for agent in AGENTS:
-        eligible, _ = base.eligible_candidates(
+        eligible, _ = _with_hardened_gates(
+            base.eligible_candidates,
             state[0], agent_type=agent, country=country, candidates=state[1], qualifications=state[2],
             contacts=state[3], sources=state[4], leads=state[5], suppressions=state[6],
         )
@@ -194,7 +204,8 @@ def _run_chunks(*, target: int, agent_type: str, country: str, run_key: str) -> 
             while left > 0:
                 chunk_no += 1
                 chunk = min(50, left)
-                rc = base.process(
+                rc = _with_hardened_gates(
+                    base.process,
                     target=chunk,
                     agent_type=agent,
                     country=country,
