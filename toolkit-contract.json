@@ -97,6 +97,7 @@
     "Leadscanner executes bounded Leads policy; it is not a second process controller.",
     "Signal-first v16 is the default for new drafts; formal scoring and campaign gate are legacy compatibility, not mandatory.",
     "Start with homepage and only process-relevant pages; a full website scan is not required for every prospect.",
+    "Scheduled prospect discovery remains validate-only unless PROSPECT_DISCOVERY_ENABLED=true explicitly promotes the scheduled run to discover mode.",
     "Search visibility requires public search evidence plus site evidence; social management requires official public content/social evidence.",
     "One first-touch prospect gets one offer and one permission CTA.",
     "No prospect pain, volume, revenue, ROI, price, result, review, name or email is invented.",
