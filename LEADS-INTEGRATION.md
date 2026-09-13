@@ -18,6 +18,14 @@ Voor een normaal nieuw concept zijn formele Customer Potential-score, A/B/C-tier
 - About/Team/Contact alleen wanneer nodig voor een betrouwbare naam of zakelijk e-mailadres.
 - Geen duidelijk publiek signaal of passend aanbod: prospect overslaan.
 
+### Discovery- en intelligence-infrastructuur
+
+De v16 signal-first route blijft de commerciële standaard, terwijl de bestaande discovery-capabilities als ondersteunende infrastructuur beschikbaar blijven. `PROSPECT_DISCOVERY_TARGET_NEW` is een begrensde target-fill variabele; wanneer de runtime het gevraagde aantal niet op echte bronnen kan halen, rapporteert zij `target_gap` en verzint geen prospects.
+
+De bronadapter `directory_sitemap` mag begrensd same-host directory-profielen volgen. Bronruns kunnen in `ProspectSourceRuns` worden geregistreerd voor bewijs en diagnose; discovery-observaties geven nooit kwalificatie of send permission.
+
+Capability 9 — prospect_intelligence blijft adviserend. Prospect intelligence en observaties wijzigen nooit zelfstandig Customer Potential, compliance of send permission.
+
 ### Eén aanbod
 
 Ondersteunde agentoffers:
