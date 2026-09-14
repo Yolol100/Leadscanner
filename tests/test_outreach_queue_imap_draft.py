@@ -2,12 +2,36 @@ import os
 import unittest
 from unittest.mock import patch
 
+from outreach_copy_v17_2 import build_curiosity_first_copy
 from outreach_queue_imap_draft import (
     inject_private_postal_for_draft,
     resolve_queue_row,
     suppression_sets,
     validate_queue_row,
 )
+
+
+def good_row(**overrides):
+    copy = build_curiosity_first_copy(
+        company="Example",
+        language="en",
+        subject="Quote requests Example",
+        observation='I noticed your site routes visitors directly to "Request a quote" for roofing work',
+        friction="That can create avoidable back-and-forth before the basic request details are complete",
+        example_label="mini-flow",
+    )
+    row = {
+        "lead_id": "prospect-abc",
+        "email": "prospect@example.com",
+        "subject": copy.subject,
+        "body": copy.body,
+        "status": "manual_review",
+        "compliance_status": "approved",
+        "stage": "1",
+        "sender_email": "info@andrewbaeten.nl",
+    }
+    row.update(overrides)
+    return row
 
 
 class QueueImapDraftTests(unittest.TestCase):
@@ -45,29 +69,26 @@ class QueueImapDraftTests(unittest.TestCase):
                 os.environ["OUTREACH_POSTAL_ADDRESS"] = old
 
     def test_valid_manual_review_row_can_be_drafted(self):
-        row = {
-            "lead_id": "prospect-abc", "email": "prospect@example.com", "subject": "Quote requests at Example",
-            "body": "Hello", "status": "manual_review", "compliance_status": "approved", "stage": "1",
-            "sender_email": "info@andrewbaeten.nl",
-        }
-        self.assertEqual(validate_queue_row(row, sender_email="info@andrewbaeten.nl"), [])
+        self.assertEqual(validate_queue_row(good_row(), sender_email="info@andrewbaeten.nl"), [])
+
+    def test_solution_spoiler_is_blocked_before_draft(self):
+        row = good_row()
+        row["body"] = row["body"].replace(
+            "I made one small mini-flow for Example that makes the opportunity concrete.",
+            "For you, that could mean: customers answer five questions first and then the team receives a complete request.",
+        )
+        errors = validate_queue_row(row, sender_email="info@andrewbaeten.nl")
+        self.assertTrue(any(error.startswith("copy contract:") for error in errors))
+        self.assertTrue(any("full solution" in error for error in errors))
 
     def test_draft_blocks_suppressed_or_already_sent_rows(self):
-        row = {
-            "lead_id": "prospect-abc", "email": "prospect@example.com", "subject": "Quote requests at Example",
-            "body": "Hello", "status": "manual_review", "compliance_status": "approved", "stage": "1",
-            "sender_email": "info@andrewbaeten.nl", "sent_at": "2026-09-09T08:00:00Z",
-        }
+        row = good_row(sent_at="2026-09-09T08:00:00Z")
         errors = validate_queue_row(row, sender_email="info@andrewbaeten.nl", suppressed_domains={"example.com"})
         self.assertIn("queue row already has send/reply/bounce evidence", errors)
         self.assertIn("recipient is suppressed", errors)
 
     def test_draft_requires_approved_compliance_and_sender_match(self):
-        row = {
-            "lead_id": "prospect-abc", "email": "prospect@example.com", "subject": "Quote requests at Example",
-            "body": "Hello", "status": "prepared", "compliance_status": "manual_review", "stage": "1",
-            "sender_email": "other@example.com",
-        }
+        row = good_row(status="prepared", compliance_status="manual_review", sender_email="other@example.com")
         errors = validate_queue_row(row, sender_email="info@andrewbaeten.nl")
         self.assertIn("compliance_status is not approved", errors)
         self.assertIn("queue sender does not match configured mailbox sender", errors)
