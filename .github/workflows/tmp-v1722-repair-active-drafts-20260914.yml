@@ -16,10 +16,10 @@ jobs:
   repair:
     if: >-
       github.actor == 'Yolol100' &&
-      github.event.issue.title == 'REPAIR ACTIVE V17.2.2 DRAFTS' &&
-      contains(github.event.issue.body, 'COMMAND=REPAIR_ACTIVE_V1722_DRAFTS')
+      github.event.issue.title == 'REPAIR ACTIVE V17.2.2 ROWS' &&
+      contains(github.event.issue.body, 'COMMAND=REPAIR_ACTIVE_V1722_ROWS')
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -36,30 +36,12 @@ jobs:
       - name: Install isolated dependencies
         run: python3 -m pip install --disable-pip-version-check --requirement requirements-outreach.txt
 
-      - name: Parse repair cohort
-        id: command
-        shell: bash
-        run: |
-          set -euo pipefail
-          body="$(jq -r '.issue.body // ""' "$GITHUB_EVENT_PATH")"
-          expected="$(printf '%s\n' "$body" | sed -n 's/^EXPECTED_COUNT=//p')"
-          ids="$(printf '%s\n' "$body" | sed -n 's/^LEAD_IDS=//p')"
-          if ! [[ "$expected" =~ ^[0-9]{1,3}$ ]] || [ "$expected" -lt 1 ] || [ "$expected" -gt 500 ]; then
-            echo 'Invalid EXPECTED_COUNT.' >&2; exit 2
-          fi
-          if [ -z "$ids" ]; then echo 'Missing LEAD_IDS.' >&2; exit 2; fi
-          count="$(printf '%s' "$ids" | tr ',' '\n' | sed '/^[[:space:]]*$/d' | wc -l | tr -d ' ')"
-          if [ "$count" != "$expected" ]; then echo "Lead count mismatch: expected $expected got $count" >&2; exit 2; fi
-          echo "expected=$expected" >> "$GITHUB_OUTPUT"
-          echo "lead_ids=$ids" >> "$GITHUB_OUTPUT"
-
-      - name: Rewrite selected queue bodies with rollback and exact readback
+      - name: Repair exact active queue rows with rollback and readback
         id: repair
+        continue-on-error: true
         env:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
-          EXPECTED_COUNT: ${{ steps.command.outputs.expected }}
-          LEAD_IDS: ${{ steps.command.outputs.lead_ids }}
         shell: bash
         run: |
           set -euo pipefail
@@ -69,74 +51,77 @@ jobs:
           from outreach_copy_v17_2 import POLICY_VERSION, initial_copy_errors
           from outreach_queue_imap_draft import QUEUE_SHEET, build_sheets_service, get_values, rows_from_values
 
-          spreadsheet_id=os.environ['OUTREACH_SPREADSHEET_ID']
-          expected=int(os.environ['EXPECTED_COUNT'])
-          ids=[x.strip() for x in os.environ['LEAD_IDS'].split(',') if x.strip()]
-          if len(ids)!=expected or len(set(ids))!=expected:
-              raise SystemExit('invalid or duplicate repair cohort')
-
-          service=build_sheets_service()
-          rows=rows_from_values(get_values(service, spreadsheet_id, QUEUE_SHEET))
-          by_id={}
-          for idx,row in enumerate(rows,start=2):
-              lead_id=str(row.get('lead_id') or '').strip()
-              if lead_id in ids:
-                  if lead_id in by_id:
-                      raise SystemExit(f'duplicate lead_id in queue: {lead_id}')
-                  by_id[lead_id]=(idx,row)
-          missing=sorted(set(ids)-set(by_id))
+          TARGET_ROWS = (
+              list(range(70, 81)) + list(range(82, 102)) + list(range(103, 115)) +
+              list(range(116, 122)) + [123, 133, 143] + list(range(145, 150)) +
+              [152] + list(range(197, 237))
+          )
+          assert len(TARGET_ROWS) == 98 and len(set(TARGET_ROWS)) == 98
+          spreadsheet_id = os.environ['OUTREACH_SPREADSHEET_ID']
+          service = build_sheets_service()
+          queue_rows = rows_from_values(get_values(service, spreadsheet_id, QUEUE_SHEET))
+          by_row = {idx: row for idx, row in enumerate(queue_rows, start=2)}
+          missing = [row for row in TARGET_ROWS if row not in by_row]
           if missing:
-              raise SystemExit('missing lead ids: '+','.join(missing))
+              raise SystemExit('missing target rows: ' + ','.join(map(str, missing)))
 
-          def paras(body):
-              return [p.strip() for p in re.split(r'\n\s*\n',str(body or '').strip()) if p.strip()]
+          def paragraphs(body):
+              return [p.strip() for p in re.split(r'\n\s*\n', str(body or '').strip()) if p.strip()]
+
           def clean(value):
               return ' '.join(str(value or '').strip().split()).rstrip('.!?')
+
           def source_meta(value):
-              text=str(value or '')
+              text = str(value or '')
               try:
-                  return json.loads(text.split(':',1)[1] if ':' in text else text)
+                  return json.loads(text.split(':', 1)[1] if ':' in text else text)
               except Exception:
                   return {}
 
-          observation_overrides={
-              'prospect-4dc6e43f8817ed3f377e': 'I noticed that your Request a Quote or Sample route asks for contact details, application and part description'
+          observation_overrides = {
+              71: 'I noticed that your Request a Quote or Sample route asks for contact details, application and part description'
           }
-          backup=[]; updates=[]; generated={}
-          for lead_id in ids:
-              sheet_row,row=by_id[lead_id]
-              status=str(row.get('status') or '').strip().lower()
-              compliance=str(row.get('compliance_status') or '').strip().lower()
-              verification=str(row.get('verification_status') or '').strip().lower()
-              last_error=str(row.get('last_error') or '')
-              if status not in {'prepared','manual_review'}:
+          backup = []
+          updates = []
+          selected_ids = []
+
+          for sheet_row in TARGET_ROWS:
+              row = by_row[sheet_row]
+              lead_id = str(row.get('lead_id') or '').strip()
+              if not lead_id:
+                  raise SystemExit(f'row {sheet_row}: missing lead_id')
+              status = str(row.get('status') or '').strip().lower()
+              compliance = str(row.get('compliance_status') or '').strip().lower()
+              verification = str(row.get('verification_status') or '').strip().lower()
+              last_error = str(row.get('last_error') or '')
+              if status not in {'prepared', 'manual_review'}:
                   raise SystemExit(f'{lead_id}: ineligible status {status}')
-              if compliance not in {'prepared','manual_review','approved'}:
+              if compliance not in {'prepared', 'manual_review', 'approved'}:
                   raise SystemExit(f'{lead_id}: ineligible compliance {compliance}')
-              if verification not in {'official_site_ready','manual_web_verified'}:
-                  raise SystemExit(f'{lead_id}: evidence must be reverified ({verification})')
+              if verification not in {'official_site_ready', 'manual_web_verified'}:
+                  raise SystemExit(f'{lead_id}: evidence needs reverification ({verification})')
               if 'delivery status notification' in last_error.lower():
-                  raise SystemExit(f'{lead_id}: bounced lead must not be repaired/reactivated')
+                  raise SystemExit(f'{lead_id}: bounced lead must stay excluded')
 
-              company=clean(row.get('company'))
-              old_body=str(row.get('body') or '')
-              subject=str(row.get('subject') or '').strip()
-              parts=paras(old_body)
-              if len(parts)<2:
-                  raise SystemExit(f'{lead_id}: current queue body has no evidence paragraph')
-              observation=clean(observation_overrides.get(lead_id) or parts[1])
-              if len(observation)<30:
-                  raise SystemExit(f'{lead_id}: observation too weak')
-              meta=source_meta(row.get('source'))
-              offer_type=str(meta.get('agent_type') or meta.get('offer_type') or '')
-              lang='nl' if old_body.lstrip().startswith(('Beste','Hoi','Geachte')) or 'Geen interesse' in old_body else 'en'
-              greeting=old_body.split('\n',1)[0].strip() or ('Beste team,' if lang=='nl' else 'Hi team,')
+              company = clean(row.get('company'))
+              subject = str(row.get('subject') or '').strip()
+              old_body = str(row.get('body') or '')
+              parts = paragraphs(old_body)
+              if len(parts) < 2:
+                  raise SystemExit(f'{lead_id}: no evidence paragraph in current queue copy')
+              observation = clean(observation_overrides.get(sheet_row) or parts[1])
+              if len(observation) < 30:
+                  raise SystemExit(f'{lead_id}: evidence observation is too weak')
+              meta = source_meta(row.get('source'))
+              offer_type = str(meta.get('agent_type') or meta.get('offer_type') or '')
+              lang = 'nl' if old_body.lstrip().startswith(('Beste', 'Hoi', 'Geachte')) or 'Geen interesse' in old_body else 'en'
+              greeting = old_body.split('\n', 1)[0].strip() or ('Beste team,' if lang == 'nl' else 'Hi team,')
 
-              if lang=='nl':
-                  label='voorbeeld' if offer_type=='commerce' else 'mini-flow'
-                  friction='Daar zit één punt dat ik zelf serieus zou laten checken, omdat het precies op een belangrijk moment in dit proces zit en mogelijk onnodige frictie geeft.'
-                  body=(
-                      f'{greeting}\n\n{observation}.\n\n{friction}\n\n'
+              if lang == 'nl':
+                  label = 'voorbeeld' if offer_type == 'commerce' else 'mini-flow'
+                  body = (
+                      f'{greeting}\n\n{observation}.\n\n'
+                      'Daar zit één punt dat ik zelf serieus zou laten checken, omdat het precies op een belangrijk moment in dit proces zit en mogelijk onnodige frictie geeft.\n\n'
                       f'Ik heb voor {company} één klein {label} gemaakt dat de mogelijke verbetering concreet maakt.\n\n'
                       'Zal ik het voorbeeld sturen?\n\n'
                       'Geen interesse? Een kort "nee" is genoeg.\n\n'
@@ -144,111 +129,169 @@ jobs:
                       'Met vriendelijke groet,\nAndrew Baeten\nandrewbaeten.nl'
                   )
               else:
-                  label='sketch' if offer_type=='commerce' else 'mini-flow'
-                  friction='One point there is worth checking because it sits at an important moment in that process and may be creating avoidable friction.'
-                  body=(
-                      f'{greeting}\n\n{observation}.\n\n{friction}\n\n'
+                  label = 'sketch' if offer_type == 'commerce' else 'mini-flow'
+                  body = (
+                      f'{greeting}\n\n{observation}.\n\n'
+                      'One point there is worth checking because it sits at an important moment in that process and may be creating avoidable friction.\n\n'
                       f'I made one small {label} for {company} that makes the possible improvement concrete.\n\n'
                       'Want me to send the example?\n\n'
                       'Not interested? A quick "no" is enough.\n\n'
                       'This is a commercial message.\n\n'
                       'Best regards,\nAndrew Baeten\n{{OUTREACH_POSTAL_ADDRESS}}\nandrewbaeten.nl'
                   )
-              errors=initial_copy_errors(subject,body)
-              if errors:
-                  raise SystemExit(f'{lead_id}: generated V17.2.2 body failed copy gate: {errors}')
-              backup.append({'lead_id':lead_id,'row':sheet_row,'old_body':old_body,'new_body':body})
-              updates.append({'range':f"'{QUEUE_SHEET}'!G{sheet_row}",'values':[[body]]})
-              generated[lead_id]=body
 
-          with open('v1722-body-repair-backup.json','w',encoding='utf-8') as fh:
-              json.dump({'policy_version':POLICY_VERSION,'count':len(backup),'rows':backup},fh,ensure_ascii=False,indent=2); fh.write('\n')
+              errors = initial_copy_errors(subject, body)
+              if errors:
+                  raise SystemExit(f'{lead_id}: generated body failed V17.2.2 copy gate: {errors}')
+              selected_ids.append(lead_id)
+              backup.append({'lead_id': lead_id, 'row': sheet_row, 'old_body': old_body, 'new_body': body})
+              updates.append({'range': f"'{QUEUE_SHEET}'!G{sheet_row}", 'values': [[body]]})
+
+          if len(selected_ids) != 98 or len(set(selected_ids)) != 98:
+              raise SystemExit('selected active lead cohort is not exactly 98 unique leads')
+          with open('selected-lead-ids.txt', 'w', encoding='utf-8') as fh:
+              fh.write('\n'.join(selected_ids) + '\n')
+          with open('v1722-body-repair-backup.json', 'w', encoding='utf-8') as fh:
+              json.dump({'policy_version': POLICY_VERSION, 'count': len(backup), 'rows': backup}, fh, ensure_ascii=False, indent=2)
+              fh.write('\n')
 
           def write(data):
               return service.spreadsheets().values().batchUpdate(
                   spreadsheetId=spreadsheet_id,
-                  body={'valueInputOption':'RAW','data':data},
+                  body={'valueInputOption': 'RAW', 'data': data},
               ).execute()
-          def readback():
-              ranges=[f"'{QUEUE_SHEET}'!G{x['row']}" for x in backup]
-              out=service.spreadsheets().values().batchGet(spreadsheetId=spreadsheet_id,ranges=ranges).execute()
-              vals=[]
-              for vr in out.get('valueRanges',[]):
-                  rowsv=vr.get('values') or []
-                  vals.append(str(rowsv[0][0]) if rowsv and rowsv[0] else '')
-              return vals
 
-          wrote=False
+          def readback():
+              ranges = [f"'{QUEUE_SHEET}'!G{x['row']}" for x in backup]
+              out = service.spreadsheets().values().batchGet(spreadsheetId=spreadsheet_id, ranges=ranges).execute()
+              values = []
+              for vr in out.get('valueRanges', []):
+                  rv = vr.get('values') or []
+                  values.append(str(rv[0][0]) if rv and rv[0] else '')
+              return values
+
+          wrote = False
           try:
-              write(updates); wrote=True
-              actual=readback()
-              if len(actual)!=len(backup):
+              write(updates)
+              wrote = True
+              actual = readback()
+              if len(actual) != len(backup):
                   raise RuntimeError(f'readback count {len(actual)} != {len(backup)}')
-              bad=[]
-              for item,value in zip(backup,actual):
-                  if value!=item['new_body']:
-                      bad.append(item['lead_id'])
-                  elif initial_copy_errors(str(by_id[item['lead_id']][1].get('subject') or '').strip(),value):
-                      bad.append(item['lead_id'])
-              if bad:
-                  raise RuntimeError('exact readback/copy gate failed: '+','.join(bad))
+              failures = []
+              for item, value in zip(backup, actual):
+                  row = by_row[item['row']]
+                  subject = str(row.get('subject') or '').strip()
+                  if value != item['new_body'] or initial_copy_errors(subject, value):
+                      failures.append(item['lead_id'])
+              if failures:
+                  raise RuntimeError('exact readback/copy validation failed: ' + ','.join(failures))
           except Exception:
               if wrote:
-                  rollback=[{'range':f"'{QUEUE_SHEET}'!G{x['row']}",'values':[[x['old_body']]]} for x in backup]
+                  rollback = [{'range': f"'{QUEUE_SHEET}'!G{x['row']}", 'values': [[x['old_body']]]} for x in backup]
                   write(rollback)
-                  rb=readback()
-                  if len(rb)!=len(backup) or any(v!=x['old_body'] for x,v in zip(backup,rb)):
-                      raise RuntimeError('repair failed and rollback readback also failed')
+                  restored = readback()
+                  if len(restored) != len(backup) or any(v != x['old_body'] for x, v in zip(backup, restored)):
+                      raise RuntimeError('repair failed and rollback readback failed')
               raise
 
-          result={'status':'green','policy_version':POLICY_VERSION,'target':len(backup),'updated':len(backup),'readback':len(backup),'smtp_send':'not_invoked'}
-          with open('v1722-body-repair-result.json','w',encoding='utf-8') as fh:
-              json.dump(result,fh,indent=2); fh.write('\n')
-          print(f"V1722_QUEUE_BODY_REPAIR=green target={len(backup)} updated={len(backup)} readback={len(backup)} smtp_send=not_invoked")
+          result = {'status': 'green', 'policy_version': POLICY_VERSION, 'target': 98, 'updated': 98, 'readback': 98, 'smtp_send': 'not_invoked'}
+          with open('v1722-body-repair-result.json', 'w', encoding='utf-8') as fh:
+              json.dump(result, fh, indent=2)
+              fh.write('\n')
+          print('V1722_QUEUE_BODY_REPAIR=green target=98 updated=98 readback=98 smtp_send=not_invoked')
           PY
 
-      - name: Upload private rollback evidence
+      - name: Load private outreach config
+        if: steps.repair.outcome == 'success'
+        env:
+          OUTREACH_CONFIG_SPREADSHEET_ID: ${{ vars.OUTREACH_CONFIG_SPREADSHEET_ID || '1iOBCaBq3MpsrYQiESAhjS1NMRQDXAWmkTh-U-63qzs4' }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python3 scripts/outreach_private_config.py
+
+      - name: Preflight exact repaired drafts
+        id: preflight
+        if: steps.repair.outcome == 'success'
+        continue-on-error: true
+        env: &draft_env
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
+          OUTREACH_DAILY_LIMIT: '100'
+          OUTREACH_DRAFT_MAILBOX_ID: ${{ vars.OUTREACH_MAILBOX_ID || 'primary' }}
+          OUTREACH_MAILBOX_ID: ${{ vars.OUTREACH_MAILBOX_ID || 'primary' }}
+          OUTREACH_SMTP_HOST: ${{ vars.OUTREACH_SMTP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_SMTP_PORT: ${{ vars.OUTREACH_SMTP_PORT || '587' }}
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME || 'Andrew Baeten' }}
+          OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_MAILBOXES_JSON: ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/outreach_queue_imap_draft_sync_selected.py --lead-id-file selected-lead-ids.txt --expected-count 98 --report sync-preflight.json | tee sync-preflight.txt
+          grep -q '^MYHOST_SELECTED_DRAFT_SYNC=preflight_green ' sync-preflight.txt
+          grep -q 'smtp_send=not_invoked' sync-preflight.txt
+
+      - name: Apply repaired drafts to mijn.host and exact readback
+        id: apply
+        if: steps.repair.outcome == 'success' && steps.preflight.outcome == 'success'
+        continue-on-error: true
+        env: *draft_env
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/outreach_queue_imap_draft_sync_selected.py --lead-id-file selected-lead-ids.txt --expected-count 98 --apply --report sync-result.json | tee sync-result.txt
+          grep -q '^MYHOST_SELECTED_DRAFT_SYNC=green ' sync-result.txt
+          grep -q 'final_readback=98' sync-result.txt
+          grep -q 'smtp_send=not_invoked' sync-result.txt
+
+      - name: Upload private repair evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: v1722-active-body-repair-${{ github.run_id }}-${{ github.run_attempt }}
+          name: v1722-active-repair-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
+            selected-lead-ids.txt
             v1722-body-repair-backup.json
             v1722-body-repair-result.json
+            sync-preflight.json
+            sync-preflight.txt
+            sync-result.json
+            sync-result.txt
           if-no-files-found: warn
           retention-days: 3
 
       - name: Report counts only and close
-        if: always() && steps.command.outcome == 'success'
+        if: always()
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
-          OUTCOME: ${{ steps.repair.outcome }}
-          EXPECTED_COUNT: ${{ steps.command.outputs.expected }}
+          REPAIR_OUTCOME: ${{ steps.repair.outcome }}
+          PREFLIGHT_OUTCOME: ${{ steps.preflight.outcome }}
+          APPLY_OUTCOME: ${{ steps.apply.outcome }}
         shell: bash
         run: |
           set -euo pipefail
-          if [ -f v1722-body-repair-result.json ]; then
-            detail="$(python3 - <<'PY'
-          import json
-          d=json.load(open('v1722-body-repair-result.json',encoding='utf-8'))
-          print(f"policy={d['policy_version']} target={d['target']} updated={d['updated']} readback={d['readback']}")
-          PY
-          )"
+          if [ "$REPAIR_OUTCOME" = success ] && [ "$PREFLIGHT_OUTCOME" = success ] && [ "$APPLY_OUTCOME" = success ] && grep -q '^MYHOST_SELECTED_DRAFT_SYNC=green ' sync-result.txt 2>/dev/null; then
+            state='V1722_ACTIVE_REPAIR=green'
+            detail="$(tail -n 1 sync-result.txt)"
           else
-            detail='result_missing'
+            state='V1722_ACTIVE_REPAIR=blocked'
+            detail="$(tail -n 1 sync-result.txt 2>/dev/null || tail -n 1 sync-preflight.txt 2>/dev/null || echo 'queue_or_mailbox_repair_failed')"
           fi
-          body="V1722_QUEUE_BODY_REPAIR_COMMAND=${OUTCOME}\nEXPECTED_COUNT=${EXPECTED_COUNT}\n${detail}\nSMTP_SEND=not_invoked"
+          body="${state}\nTARGET=98\nQUEUE_REPAIR=${REPAIR_OUTCOME}\nMAILBOX_PREFLIGHT=${PREFLIGHT_OUTCOME}\nMAILBOX_APPLY=${APPLY_OUTCOME}\n${detail}\nSMTP_SEND=not_invoked"
           payload="$(jq -n --arg body "$body" '{body:$body}')"
           curl --fail-with-body --silent --show-error -X POST -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer ${GH_TOKEN}" -H 'X-GitHub-Api-Version: 2022-11-28' "https://api.github.com/repos/${REPOSITORY}/issues/${ISSUE_NUMBER}/comments" -d "$payload" >/dev/null
           close_payload="$(jq -n '{state:"closed",state_reason:"completed"}')"
           curl --fail-with-body --silent --show-error -X PATCH -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer ${GH_TOKEN}" -H 'X-GitHub-Api-Version: 2022-11-28' "https://api.github.com/repos/${REPOSITORY}/issues/${ISSUE_NUMBER}" -d "$close_payload" >/dev/null
 
-      - name: Fail closed when repair failed
-        if: steps.repair.outcome != 'success'
+      - name: Fail closed unless queue and mailbox are exact green
+        if: steps.repair.outcome != 'success' || steps.preflight.outcome != 'success' || steps.apply.outcome != 'success'
         shell: bash
         run: |
-          echo 'V17.2.2 queue body repair failed closed.' >&2
+          echo 'V17.2.2 active repair did not complete exactly.' >&2
           echo 'SMTP_SEND=not_invoked'
           exit 1
