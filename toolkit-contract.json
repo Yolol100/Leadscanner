@@ -71,6 +71,10 @@
   },
   "reply_contract": {
     "classifier": "scripts/outreach_reply_triage.py",
+    "preferred_workflow": ".github/workflows/positive-reply-handoff.yml",
+    "handoff_script": "scripts/outreach_positive_reply_handoff.py",
+    "draft_idempotency_key": "positive-reply-<reply_id>",
+    "notification_target": "github_issue_assigned_to_Yolol100",
     "positive": "notify_andrew_plus_one_followup_draft_when_runtime_is_proven",
     "negative_or_optout": "stop_followup",
     "ambiguous": "manual_review",
