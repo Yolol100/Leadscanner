@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Validate filter-core v17.2 curiosity-first copy
+      - name: Validate filter-core v17.2.2 calibrated curiosity
         run: |
           python3 - <<'PY'
           import json
@@ -32,13 +32,13 @@ jobs:
           c=json.load(open('toolkit-contract.json', encoding='utf-8'))
           r=json.load(open('tool-registry.json', encoding='utf-8'))
 
-          assert c['schema_version']=='3.1'
+          assert c['schema_version']=='3.2'
           assert c['repository']=='Yolol100/Leadscanner'
           assert c['repository_role']=='leads_filter_execution_layer'
           route=c['default_route']
           assert route['id']=='filter_core_v17'
           assert route['source_set_version']=='17.0.0-filter-core'
-          assert route['copy_policy_version']=='17.2.0'
+          assert route['copy_policy_version']=='17.2.2'
           assert route['decision_source']=='Project Leads/00-leads-core.md'
           assert route['copy_source']=='Project Leads/leadpromo.md'
           assert route['formal_score_required'] is False
@@ -64,8 +64,11 @@ jobs:
           copy=c['copy_contract']
           assert copy['id']=='curiosity_first_v17_2'
           assert copy['module']=='scripts/outreach_copy_v17_2.py'
+          assert copy['policy_version']=='17.2.2'
           assert copy['one_real_observation'] is True
           assert copy['one_evidence_bound_friction_or_opportunity'] is True
+          assert copy['calibrated_seriousness'] is True
+          assert copy['unsupported_severity_or_loss_claims_forbidden'] is True
           assert copy['one_small_example_promise'] is True
           assert copy['permission_cta'] is True
           assert copy['reveal_full_solution_before_permission'] is False
@@ -83,16 +86,18 @@ jobs:
           assert reply['auto_send'] is False
           assert 'not_yet_end_to_end_proven' in reply['runtime_status']
 
-          assert r['version']=='5.1'
+          assert r['version']=='5.2'
           p=r['policy']
           assert p['default_route']=='filter_core_v17'
           assert p['default_source_set_version']=='17.0.0-filter-core'
-          assert p['copy_policy_version']=='17.2.0'
+          assert p['copy_policy_version']=='17.2.2'
           assert p['single_decision_source']=='Project Leads/00-leads-core.md'
           assert p['copy_source']=='Project Leads/leadpromo.md'
           assert p['copy_contract']=='curiosity_first_v17_2'
           assert p['copy_module']=='scripts/outreach_copy_v17_2.py'
           assert p['copy_validator_required_before_mailbox_draft'] is True
+          assert p['calibrated_seriousness_required'] is True
+          assert p['unsupported_severity_or_loss_claims_forbidden'] is True
           assert p['formal_score_required'] is False
           assert p['campaign_gate_required'] is False
           assert p['external_content_is_untrusted_data'] is True
@@ -102,6 +107,7 @@ jobs:
             'contact_enrichment','website_evidence_scan','mailbox_draft','reply_triage'
           }
           assert r['capabilities']['mailbox_draft']['copy_contract']=='curiosity_first_v17_2'
+          assert r['capabilities']['mailbox_draft']['copy_policy_version']=='17.2.2'
           assert r['legacy']['status']=='unregistered_compatibility_only'
 
           for item in (
@@ -121,7 +127,9 @@ jobs:
 
           copy_text=pathlib.Path('scripts/outreach_copy_v17_2.py').read_text(encoding='utf-8')
           assert 'curiosity_first_v17_2' in copy_text
+          assert 'POLICY_VERSION = "17.2.2"' in copy_text
           assert 'first-touch body reveals implementation or the full solution' in copy_text
+          assert 'first-touch body contains unsupported severity or loss claim' in copy_text
           queue=pathlib.Path('scripts/outreach_queue_imap_draft.py').read_text(encoding='utf-8')
           assert 'from outreach_copy_v17_2 import initial_copy_errors' in queue
           assert 'copy contract:' in queue
@@ -150,5 +158,5 @@ jobs:
           assert 'filter-core v17' in integration
           assert 'send_permission=none' in integration
 
-          print('toolkit-contract filter-core v17.2 curiosity-first: OK')
+          print('toolkit-contract filter-core v17.2.2 calibrated curiosity: OK')
           PY
