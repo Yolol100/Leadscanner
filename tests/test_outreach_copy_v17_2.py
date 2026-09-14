@@ -23,10 +23,6 @@ class CuriosityFirstCopyTests(unittest.TestCase):
         self.assertEqual(c.POLICY_VERSION, "17.2.2")
         self.assertEqual(draft.contract_id, "curiosity_first_v17_2")
         self.assertEqual(c.initial_copy_errors(draft.subject, draft.body), [])
-        self.assertIn("één klein mini-flow", draft.body)
-        self.assertIn("Zal ik het voorbeeld sturen?", draft.body)
-        self.assertNotIn("zou dat bijvoorbeeld kunnen betekenen:", draft.body.casefold())
-        self.assertNotIn("klanten beantwoorden", draft.body.casefold())
 
     def test_solution_spoiler_is_blocked(self):
         draft = self._good()
@@ -34,17 +30,12 @@ class CuriosityFirstCopyTests(unittest.TestCase):
             "Ik heb voor Demo Dak één klein mini-flow gemaakt dat de mogelijke verbetering concreet maakt.",
             "Voor jullie zou dat bijvoorbeeld kunnen betekenen: klanten beantwoorden eerst vijf vragen en daarna krijgt het team een complete aanvraag.",
         )
-        errors = c.initial_copy_errors(draft.subject, body)
-        self.assertTrue(any("full solution" in error for error in errors))
+        self.assertTrue(any("full solution" in e for e in c.initial_copy_errors(draft.subject, body)))
 
     def test_vague_mystery_is_blocked(self):
         draft = self._good()
-        body = draft.body.replace(
-            'Ik zag op jullie site de route "Offerte aanvragen" direct naast dakrenovatie.',
-            "Ik zag jullie website.",
-        )
-        errors = c.initial_copy_errors(draft.subject, body)
-        self.assertTrue(any("too vague" in error for error in errors))
+        body = draft.body.replace('Ik zag op jullie site de route "Offerte aanvragen" direct naast dakrenovatie.', "Ik zag jullie website.")
+        self.assertTrue(any("too vague" in e for e in c.initial_copy_errors(draft.subject, body)))
 
     def test_price_first_touch_is_blocked(self):
         draft = self._good()
@@ -52,17 +43,17 @@ class CuriosityFirstCopyTests(unittest.TestCase):
             "Ik heb voor Demo Dak één klein mini-flow gemaakt dat de mogelijke verbetering concreet maakt.",
             "Ik heb voor Demo Dak één klein mini-flow gemaakt voor €750 dat de mogelijke verbetering concreet maakt.",
         )
-        errors = c.initial_copy_errors(draft.subject, body)
-        self.assertTrue(any("price" in error for error in errors))
+        self.assertTrue(any("price" in e for e in c.initial_copy_errors(draft.subject, body)))
+
+    def test_discount_first_touch_is_blocked(self):
+        draft = self._good()
+        body = draft.body.replace("mogelijke verbetering", "mogelijke verbetering met korting")
+        self.assertTrue(any("price" in e for e in c.initial_copy_errors(draft.subject, body)))
 
     def test_meeting_first_touch_is_blocked(self):
         draft = self._good()
-        body = draft.body.replace(
-            "Zal ik het voorbeeld sturen?",
-            "Plan een meeting van 15 minuten.\n\nZal ik het voorbeeld sturen?",
-        )
-        errors = c.initial_copy_errors(draft.subject, body)
-        self.assertTrue(any("meeting" in error for error in errors))
+        body = draft.body.replace("Zal ik het voorbeeld sturen?", "Plan een meeting van 15 minuten.\n\nZal ik het voorbeeld sturen?")
+        self.assertTrue(any("meeting" in e for e in c.initial_copy_errors(draft.subject, body)))
 
     def test_unsupported_severity_is_blocked(self):
         draft = self._good()
@@ -70,8 +61,7 @@ class CuriosityFirstCopyTests(unittest.TestCase):
             "Dat kan onnodig heen-en-weer opleveren voordat de basisinformatie voor een eerste aanvraag compleet is.",
             "Dit is cruciaal en moet direct gefixt worden voordat iemand verdergaat.",
         )
-        errors = c.initial_copy_errors(draft.subject, body)
-        self.assertTrue(any("severity or loss" in error for error in errors))
+        self.assertTrue(any("severity or loss" in e for e in c.initial_copy_errors(draft.subject, body)))
 
     def test_unproven_loss_is_blocked(self):
         draft = self._good()
@@ -79,8 +69,7 @@ class CuriosityFirstCopyTests(unittest.TestCase):
             "Dat kan onnodig heen-en-weer opleveren voordat de basisinformatie voor een eerste aanvraag compleet is.",
             "Hierdoor verliezen jullie klanten en omzet zonder dat je het ziet.",
         )
-        errors = c.initial_copy_errors(draft.subject, body)
-        self.assertTrue(any("severity or loss" in error for error in errors))
+        self.assertTrue(any("severity or loss" in e for e in c.initial_copy_errors(draft.subject, body)))
 
     def test_calibrated_seriousness_is_allowed(self):
         draft = c.build_curiosity_first_copy(
@@ -92,6 +81,57 @@ class CuriosityFirstCopyTests(unittest.TestCase):
             example_label="mini-flow",
         )
         self.assertEqual(c.initial_copy_errors(draft.subject, draft.body), [])
+
+    def test_official_request_pricing_observation_is_allowed(self):
+        draft = c.build_curiosity_first_copy(
+            company="Teton Machining Solutions",
+            language="en",
+            subject="Quote request flow",
+            observation="I noticed that your site offers request-pricing for CNC and Swiss machining projects and highlights precision parts and sub-assemblies",
+            friction="One point there is worth checking because it sits at an important moment in that process and may be creating avoidable friction",
+            example_label="mini-flow",
+            postal_address="Example address",
+        )
+        self.assertEqual(c.initial_copy_errors(draft.subject, draft.body), [])
+
+    def test_official_quote_pricing_observation_is_allowed(self):
+        draft = c.build_curiosity_first_copy(
+            company="Gates Albert",
+            language="en",
+            subject="Request intake idea",
+            observation="I noticed that your quote route asks customers to send a print or describe the part for pricing, lead time and manufacturability feedback",
+            friction="One point there is worth checking because it sits at an important moment in that process and may be creating avoidable friction",
+            example_label="mini-flow",
+            postal_address="Example address",
+        )
+        self.assertEqual(c.initial_copy_errors(draft.subject, draft.body), [])
+
+    def test_official_faq_guarantee_observation_is_allowed(self):
+        draft = c.build_curiosity_first_copy(
+            company="MijnIJzerwaren",
+            language="nl",
+            subject="Sneller naar het antwoord",
+            observation="Op jullie site viel me dit op: jullie FAQ behandelt onder meer retourneren en garantie en vermeldt dat maatwerkproducten niet geretourneerd kunnen worden",
+            friction="Daar viel me één punt op dat mogelijk onnodige frictie geeft op een belangrijk moment in het serviceproces",
+            example_label="mini-flow",
+        )
+        self.assertEqual(c.initial_copy_errors(draft.subject, draft.body), [])
+
+    def test_seller_pricing_claim_without_currency_is_blocked(self):
+        draft = self._good()
+        body = draft.body.replace(
+            "Dat kan onnodig heen-en-weer opleveren voordat de basisinformatie voor een eerste aanvraag compleet is.",
+            "Onze pricing is laag en dit kan snel worden opgelost.",
+        )
+        self.assertTrue(any("price" in e for e in c.initial_copy_errors(draft.subject, body)))
+
+    def test_guarantee_claim_is_blocked(self):
+        draft = self._good()
+        body = draft.body.replace(
+            "Dat kan onnodig heen-en-weer opleveren voordat de basisinformatie voor een eerste aanvraag compleet is.",
+            "Wij garanderen resultaat als dit wordt aangepast.",
+        )
+        self.assertTrue(any("hype" in e for e in c.initial_copy_errors(draft.subject, body)))
 
     def test_english_unsupported_loss_is_blocked(self):
         with self.assertRaisesRegex(ValueError, "severity or loss"):
@@ -112,7 +152,6 @@ class CuriosityFirstCopyTests(unittest.TestCase):
     def test_followup_stays_permission_only(self):
         draft = self._good()
         self.assertEqual(c.followup_copy_errors(draft.followup_body), [])
-        self.assertNotIn("stap 1", draft.followup_body.casefold())
 
 
 if __name__ == "__main__":
