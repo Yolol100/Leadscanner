@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass
 
 CONTRACT_ID = "curiosity_first_v17_2"
+POLICY_VERSION = "17.2.2"
 OPT_OUT_NL = 'Geen interesse? Een kort "nee" is genoeg.'
 OPT_OUT_EN = 'Not interested? A quick "no" is enough.'
 COMMERCIAL_NL = "Dit is een commercieel bericht."
@@ -39,6 +40,18 @@ PRICE_PATTERNS = (
 HYPE_PATTERNS = (
     re.compile(r"(?i)\b(?:gegarandeerd|garantie|guaranteed|guarantees|last chance|laatste kans|only today|alleen vandaag)\b"),
 )
+UNSUPPORTED_SEVERITY_LOSS_PATTERNS = (
+    re.compile(r"(?i)\b(?:cruciaal|kritiek|kritisch|urgent|dringend|crucial|critical)\b"),
+    re.compile(r"(?i)\b(?:moet|moeten)\s+(?:direct|meteen|onmiddellijk)\b"),
+    re.compile(r"(?i)\b(?:must|needs? to)\s+(?:be\s+)?(?:fixed|fix|solved|resolved)\s+(?:immediately|right now|urgently)\b"),
+    re.compile(r"(?i)\b(?:direct|meteen|onmiddellijk)\s+(?:fixen|oplossen|repareren)\b"),
+    re.compile(r"(?i)\b(?:verlies|verliest|verliezen|mislopen|misloopt)\b.{0,50}\b(?:klanten|omzet|geld|aanvragen|leads)\b"),
+    re.compile(r"(?i)\b(?:klanten|omzet|geld|aanvragen|leads)\b.{0,50}\b(?:verlies|verliest|verliezen|mislopen|misloopt)\b"),
+    re.compile(r"(?i)\b(?:laat|laten)\b.{0,35}\b(?:geld|omzet|klanten|aanvragen|leads)\b.{0,20}\bliggen\b"),
+    re.compile(r"(?i)\b(?:losing|lose|lost)\b.{0,50}\b(?:customers?|revenue|money|leads?|sales)\b"),
+    re.compile(r"(?i)\b(?:customers?|revenue|money|leads?|sales)\b.{0,50}\b(?:losing|lose|lost)\b"),
+    re.compile(r"(?i)\bleav(?:e|ing)\b.{0,25}\b(?:money|revenue|sales)\b.{0,20}\bon the table\b"),
+)
 MEETING_PATTERNS = (
     re.compile(r"(?i)\b(?:plan|boek|reserveer|schedule|book)\b.{0,60}\b(?:call|meeting|gesprek|agenda|minuten|minutes)\b"),
 )
@@ -72,6 +85,8 @@ def _subject_errors(subject: str) -> list[str]:
         errors.append("subject must describe the prospect signal, not AI or automation")
     if any(pattern.search(value) for pattern in HYPE_PATTERNS):
         errors.append("clickbait or pressure subject is not allowed")
+    if any(pattern.search(value) for pattern in UNSUPPORTED_SEVERITY_LOSS_PATTERNS):
+        errors.append("subject may not use unsupported severity or loss language")
     return errors
 
 
@@ -92,7 +107,6 @@ def _observation_from_body(body: str) -> str:
     parts = _paragraphs(body)
     if len(parts) < 2:
         return ""
-    # First paragraph is salutation in the canonical shape.
     return parts[1]
 
 
@@ -110,6 +124,8 @@ def initial_copy_errors(subject: str, body: str) -> list[str]:
         errors.append("first-touch body may not contain external URLs by default")
     if any(pattern.search(text) for pattern in HYPE_PATTERNS):
         errors.append("first-touch body contains hype or unsupported pressure")
+    if any(pattern.search(text) for pattern in UNSUPPORTED_SEVERITY_LOSS_PATTERNS):
+        errors.append("first-touch body contains unsupported severity or loss claim")
     if any(pattern.search(text) for pattern in MEETING_PATTERNS):
         errors.append("first-touch body may not use a default meeting ask")
     if any(pattern.search(text) for pattern in PRICE_PATTERNS):
@@ -162,11 +178,12 @@ def followup_copy_errors(body: str) -> list[str]:
         errors.append("follow-up reveals implementation before permission")
     if any(pattern.search(text) for pattern in PRICE_PATTERNS):
         errors.append("follow-up may not contain price or discount language")
+    if any(pattern.search(text) for pattern in UNSUPPORTED_SEVERITY_LOSS_PATTERNS):
+        errors.append("follow-up contains unsupported severity or loss claim")
     if any(pattern.search(text) for pattern in MEETING_PATTERNS):
         errors.append("follow-up may not use a default meeting ask")
     language = _language_from_body(text)
     if not language:
-        # Follow-up does not repeat the commercial disclosure, so infer from opt-out.
         language = "nl" if OPT_OUT_NL in text else "en" if OPT_OUT_EN in text else ""
     if language == "nl":
         if sum(text.count(cta) for cta in CTA_NL) != 1:
@@ -195,6 +212,8 @@ def _clean_fragment(value: str, *, field: str) -> str:
         raise ValueError(f"{field} contains solution-spoiler language")
     if any(pattern.search(text) for pattern in PRICE_PATTERNS):
         raise ValueError(f"{field} contains price language")
+    if any(pattern.search(text) for pattern in UNSUPPORTED_SEVERITY_LOSS_PATTERNS):
+        raise ValueError(f"{field} contains unsupported severity or loss claim")
     return text.rstrip(".!?")
 
 
@@ -265,5 +284,5 @@ def build_curiosity_first_copy(
 
     errors = initial_copy_errors(subject, body) + followup_copy_errors(followup)
     if errors:
-        raise ValueError("generated copy violates V17.2: " + "; ".join(errors))
+        raise ValueError("generated copy violates V17.2.2: " + "; ".join(errors))
     return CopyDraft(subject, body, "", followup, 4)
