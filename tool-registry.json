@@ -1,12 +1,17 @@
 {
-  "version": "5.0",
+  "version": "5.1",
   "repository_role": "leads_filter_execution_layer",
   "policy": {
     "default_route": "filter_core_v17",
     "default_source_set_version": "17.0.0-filter-core",
+    "copy_policy_version": "17.2.0",
     "controller": "webactueel-workflow",
     "owner_skill": "leads",
     "single_decision_source": "Project Leads/00-leads-core.md",
+    "copy_source": "Project Leads/leadpromo.md",
+    "copy_contract": "curiosity_first_v17_2",
+    "copy_module": "scripts/outreach_copy_v17_2.py",
+    "copy_validator_required_before_mailbox_draft": true,
     "formal_score_required": false,
     "tier_required": false,
     "campaign_gate_required": false,
@@ -56,6 +61,8 @@
     },
     "mailbox_draft": {
       "preferred_workflow": ".github/workflows/sync-selected-myhost-drafts-command.yml",
+      "copy_validator": "scripts/outreach_copy_v17_2.py::initial_copy_errors",
+      "copy_contract": "curiosity_first_v17_2",
       "transport": "IMAP_APPEND_plus_exact_same_folder_readback",
       "draft_compliance_states": ["manual_review", "approved"],
       "idempotency": "lead_id_plus_recipient_plus_content_fingerprint",
@@ -92,6 +99,6 @@
   },
   "legacy": {
     "status": "unregistered_compatibility_only",
-    "rule": "Old score, campaign, prepare and live-send code is not part of the default filter. Retain only while a concrete dependency or rollback need is still proven; remove target/date/run-specific residue from main."
+    "rule": "Old score, campaign, prepare, solution-first copy and live-send code is not part of the default filter. Retain only while a concrete dependency or rollback need is still proven; remove target/date/run-specific residue from main."
   }
 }
