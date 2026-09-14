@@ -53,6 +53,12 @@ jobs:
           fi
           echo "expected_count=$expected_count" >> "$GITHUB_OUTPUT"
 
+      - name: Load private outreach config
+        env:
+          OUTREACH_CONFIG_SPREADSHEET_ID: ${{ vars.OUTREACH_CONFIG_SPREADSHEET_ID || '1iOBCaBq3MpsrYQiESAhjS1NMRQDXAWmkTh-U-63qzs4' }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python3 scripts/outreach_private_config.py
+
       - name: Audit actual Drafts bodies read-only
         id: audit
         env:
@@ -61,8 +67,6 @@ jobs:
           OUTREACH_DAILY_LIMIT: '100'
           OUTREACH_DRAFT_MAILBOX_ID: ${{ vars.OUTREACH_MAILBOX_ID || 'primary' }}
           OUTREACH_MAILBOX_ID: ${{ vars.OUTREACH_MAILBOX_ID || 'primary' }}
-          OUTREACH_SMTP_HOST: ${{ vars.OUTREACH_SMTP_HOST || 'mail.andrewbaeten.nl' }}
-          OUTREACH_SMTP_PORT: ${{ vars.OUTREACH_SMTP_PORT || '587' }}
           OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
           OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
           OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
@@ -82,6 +86,7 @@ jobs:
           import os
           import re
           import ssl
+          from collections import Counter
           from email import policy
           from email.parser import BytesParser
           from email.utils import getaddresses
@@ -91,8 +96,14 @@ jobs:
           from outreach_copy_v17_2 import POLICY_VERSION, initial_copy_errors
           from outreach_imap_draft import choose_mailbox, detect_drafts_folder
           from outreach_mailboxes import enabled_mailboxes, load_mailboxes_from_env
-          from outreach_queue_imap_draft import QUEUE_SHEET, build_sheets_service, get_values, rows_from_values
-          from outreach_queue_imap_draft_sync import _normalize_email, _uid_search
+          from outreach_queue_imap_draft import (
+              QUEUE_SHEET,
+              build_sheets_service,
+              get_values,
+              inject_private_postal_for_draft,
+              rows_from_values,
+          )
+          from outreach_queue_imap_draft_sync import _normalize_email, _normalize_text, _uid_search
 
           expected = int(os.environ['EXPECTED_COUNT'])
           spreadsheet_id = os.environ['OUTREACH_SPREADSHEET_ID']
@@ -112,21 +123,16 @@ jobs:
               row_sender = _normalize_email(row.get('sender_email', ''))
               if not email or (row_sender and row_sender != sender):
                   continue
-              by_recipient.setdefault(email, []).append({
-                  'row': idx,
+              item = dict(row)
+              item.update({
+                  '_row': idx,
                   'lead_id': (row.get('lead_id') or '').strip(),
                   'subject': (row.get('subject') or '').strip(),
                   'body': (row.get('body') or '').strip(),
-                  'company': (row.get('company') or '').strip(),
-                  'website': (row.get('website') or '').strip(),
                   'status': (row.get('status') or '').strip().lower(),
-                  'compliance_status': (row.get('compliance_status') or '').strip().lower(),
-                  'verification_status': (row.get('verification_status') or '').strip().lower(),
-                  'verification_checked_at': (row.get('verification_checked_at') or '').strip(),
                   'last_error': (row.get('last_error') or '').strip(),
-                  'source': (row.get('source') or '').strip(),
-                  'compliance_basis': (row.get('compliance_basis') or '').strip(),
               })
+              by_recipient.setdefault(email, []).append(item)
 
           def raw_message(imap, uid):
               status, data = imap.uid('FETCH', str(uid), '(BODY.PEEK[])')
@@ -170,7 +176,7 @@ jobs:
           imap = imaplib.IMAP4_SSL(mailbox.imap_host, mailbox.imap_port, ssl_context=context)
           report = {
               'policy_version': POLICY_VERSION,
-              'mode': 'read_only_actual_body_audit',
+              'mode': 'read_only_rendered_parity_audit',
               'expected_count': expected,
               'sender_email': sender,
               'smtp_send': 'not_invoked',
@@ -209,54 +215,67 @@ jobs:
                   basis = 'recipient_subject' if subject_candidates else ('recipient' if recipient_candidates else 'none')
                   candidate_ids = sorted(chosen)
                   selected = chosen[candidate_ids[0]] if len(candidate_ids) == 1 else None
-                  errors = initial_copy_errors(subject, body)
                   entry = {
                       'uid': str(uid),
                       'recipients': recipients,
-                      'subject': subject,
-                      'body_sha256': hashlib.sha256(body.encode('utf-8')).hexdigest(),
-                      'copy_errors': errors,
-                      'copy_pass': not errors,
+                      'subject_sha256': hashlib.sha256(subject.encode('utf-8')).hexdigest(),
+                      'body_sha256': hashlib.sha256(_normalize_text(body).encode('utf-8')).hexdigest(),
                       'match_basis': basis,
                       'candidate_lead_ids': candidate_ids,
                       'candidate_count': len(candidate_ids),
                   }
                   if selected:
-                      qbody = selected['body']
+                      queue_subject = selected['subject']
+                      queue_body = selected['body']
+                      rendered_body = inject_private_postal_for_draft(selected, queue_body)
+                      subject_match = queue_subject == subject
+                      body_match = _normalize_text(rendered_body) == _normalize_text(body)
+                      copy_errors = initial_copy_errors(queue_subject, queue_body)
+                      bounced = selected['status'] == 'bounced' or 'delivery status notification' in selected['last_error'].lower()
+                      active_pass = (not bounced) and subject_match and body_match and not copy_errors
                       entry.update({
                           'lead_id': selected['lead_id'],
-                          'queue_row': selected['row'],
-                          'company': selected['company'],
-                          'website': selected['website'],
-                          'queue_subject_match': selected['subject'] == subject,
-                          'queue_body_sha256': hashlib.sha256(qbody.encode('utf-8')).hexdigest(),
-                          'queue_body_match': qbody == body,
+                          'queue_row': selected['_row'],
                           'status': selected['status'],
-                          'compliance_status': selected['compliance_status'],
-                          'verification_status': selected['verification_status'],
-                          'verification_checked_at': selected['verification_checked_at'],
-                          'last_error': selected['last_error'],
-                          'source': selected['source'],
-                          'compliance_basis': selected['compliance_basis'],
+                          'bounced_excluded': bounced,
+                          'copy_errors': copy_errors,
+                          'queue_subject_match': subject_match,
+                          'queue_body_match': body_match,
+                          'active_copy_pass': active_pass,
+                          'queue_body_sha256': hashlib.sha256(_normalize_text(rendered_body).encode('utf-8')).hexdigest(),
                       })
                   report['drafts'].append(entry)
 
-              report['drafts'].sort(key=lambda x: ((x.get('recipients') or [''])[0], x.get('subject',''), x.get('uid','')))
-              sender_drafts = len(report['drafts'])
-              report['counts'] = {
-                  'sender_drafts': sender_drafts,
-                  'copy_pass': sum(bool(x['copy_pass']) for x in report['drafts']),
-                  'copy_fail': sum(not bool(x['copy_pass']) for x in report['drafts']),
+              report['drafts'].sort(key=lambda x: ((x.get('recipients') or [''])[0], x.get('lead_id',''), x.get('uid','')))
+              mapped_ids = [x.get('lead_id') for x in report['drafts'] if x.get('lead_id')]
+              lead_counts = Counter(mapped_ids)
+              duplicate_drafts = sum(count - 1 for count in lead_counts.values() if count > 1)
+              active = [x for x in report['drafts'] if x.get('lead_id') and not x.get('bounced_excluded')]
+              bounced = [x for x in report['drafts'] if x.get('bounced_excluded')]
+              counts = {
+                  'sender_drafts': len(report['drafts']),
                   'mapped_one': sum(x['candidate_count'] == 1 for x in report['drafts']),
                   'ambiguous': sum(x['candidate_count'] > 1 for x in report['drafts']),
-                  'unmapped': sum(x['candidate_count'] == 0 for x in report['drafts']),
-                  'queue_body_match': sum(x.get('queue_body_match') is True for x in report['drafts']),
-                  'queue_body_mismatch': sum(x.get('queue_body_match') is False for x in report['drafts']),
-                  'bounced': sum(bool(x.get('last_error')) and 'delivery status notification' in x.get('last_error','').lower() for x in report['drafts']),
+                  'orphan': sum(x['candidate_count'] == 0 for x in report['drafts']),
+                  'active_target': len(active),
+                  'active_pass': sum(bool(x.get('active_copy_pass')) for x in active),
+                  'active_fail': sum(not bool(x.get('active_copy_pass')) for x in active),
+                  'active_queue_match': sum(bool(x.get('queue_subject_match')) and bool(x.get('queue_body_match')) for x in active),
+                  'active_queue_mismatch': sum(not (bool(x.get('queue_subject_match')) and bool(x.get('queue_body_match'))) for x in active),
+                  'bounced_excluded': len(bounced),
+                  'duplicate_drafts': duplicate_drafts,
+                  'stale_drafts': sum(not bool(x.get('queue_body_match')) for x in active),
               }
-              report['status'] = 'green' if sender_drafts == expected else 'blocked'
-              if sender_drafts != expected:
-                  report['blockers'] = [f'expected {expected} sender drafts; found {sender_drafts}']
+              report['counts'] = counts
+              blockers = []
+              if counts['sender_drafts'] != expected:
+                  blockers.append(f"expected {expected} sender drafts; found {counts['sender_drafts']}")
+              if counts['ambiguous'] or counts['orphan'] or counts['duplicate_drafts']:
+                  blockers.append('mapping, orphan, or duplicate draft remains')
+              if counts['active_fail'] or counts['active_queue_mismatch'] or counts['stale_drafts']:
+                  blockers.append('active draft copy/parity failure remains')
+              report['blockers'] = blockers
+              report['status'] = 'green' if not blockers else 'blocked'
           finally:
               try:
                   imap.logout()
@@ -269,10 +288,10 @@ jobs:
           c = report['counts']
           print(
               'MYHOST_V1722_COPY_AUDIT=' + report['status'] +
-              f" sender_drafts={c['sender_drafts']} copy_pass={c['copy_pass']} copy_fail={c['copy_fail']}" +
-              f" mapped_one={c['mapped_one']} ambiguous={c['ambiguous']} unmapped={c['unmapped']}" +
-              f" queue_body_match={c['queue_body_match']} queue_body_mismatch={c['queue_body_mismatch']}" +
-              f" bounced={c['bounced']} smtp_send=not_invoked"
+              f" sender_drafts={c['sender_drafts']} active_target={c['active_target']} active_pass={c['active_pass']} active_fail={c['active_fail']}" +
+              f" bounced_excluded={c['bounced_excluded']} mapped_one={c['mapped_one']} ambiguous={c['ambiguous']} orphan={c['orphan']}" +
+              f" duplicate_drafts={c['duplicate_drafts']} active_queue_match={c['active_queue_match']} active_queue_mismatch={c['active_queue_mismatch']}" +
+              f" stale_drafts={c['stale_drafts']} smtp_send=not_invoked"
           )
           if report['status'] != 'green':
               raise SystemExit(2)
@@ -303,7 +322,8 @@ jobs:
           import json
           d=json.load(open('myhost-v1722-copy-audit.json',encoding='utf-8'))
           c=d.get('counts',{})
-          print(f"sender_drafts={c.get('sender_drafts',0)} copy_pass={c.get('copy_pass',0)} copy_fail={c.get('copy_fail',0)} mapped_one={c.get('mapped_one',0)} ambiguous={c.get('ambiguous',0)} unmapped={c.get('unmapped',0)} queue_body_match={c.get('queue_body_match',0)} queue_body_mismatch={c.get('queue_body_mismatch',0)} bounced={c.get('bounced',0)}")
+          keys=('sender_drafts','active_target','active_pass','active_fail','bounced_excluded','mapped_one','ambiguous','orphan','duplicate_drafts','active_queue_match','active_queue_mismatch','stale_drafts')
+          print(' '.join(f"{key}={c.get(key,0)}" for key in keys))
           PY
           )"
           else
@@ -317,7 +337,7 @@ jobs:
             -H 'X-GitHub-Api-Version: 2022-11-28' \
             "https://api.github.com/repos/${REPOSITORY}/issues/${ISSUE_NUMBER}/comments" \
             -d "$payload" >/dev/null
-          close_payload="$(jq -n '{state:"closed", state_reason:"completed"}')"
+          close_payload="$(jq -n '{state:"closed",state_reason:"completed"}')"
           curl --fail-with-body --silent --show-error -X PATCH \
             -H 'Accept: application/vnd.github+json' \
             -H "Authorization: Bearer ${GH_TOKEN}" \
@@ -325,10 +345,9 @@ jobs:
             "https://api.github.com/repos/${REPOSITORY}/issues/${ISSUE_NUMBER}" \
             -d "$close_payload" >/dev/null
 
-      - name: Fail closed when audit failed
+      - name: Fail closed unless full mailbox parity is green
         if: steps.audit.outcome != 'success'
-        shell: bash
         run: |
-          echo 'Read-only actual-body audit failed.' >&2
+          echo 'V17.2.2 mailbox audit did not complete exactly.' >&2
           echo 'SMTP_SEND=not_invoked'
           exit 1
