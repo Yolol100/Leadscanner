@@ -63,6 +63,10 @@
     },
     "reply_triage": {
       "script": "scripts/outreach_reply_triage.py",
+      "workflow": ".github/workflows/positive-reply-handoff.yml",
+      "handoff_script": "scripts/outreach_positive_reply_handoff.py",
+      "draft_idempotency": "positive-reply-<reply_id>",
+      "notification_target": "github_issue_assigned_to_Yolol100",
       "status": "advisory_until_notification_and_followup_readback_are_proven",
       "positive_reply_target": "notify_andrew_plus_one_followup_draft",
       "negative_or_optout": "stop_followup",
