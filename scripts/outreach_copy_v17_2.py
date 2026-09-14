@@ -33,13 +33,35 @@ SOLUTION_SPOILER_PATTERNS = (
     re.compile(r"(?i)\bklanten\s+beantwoorden\b.{0,80}\bvragen\b"),
     re.compile(r"(?i)\bcustomers?\s+answer\b.{0,80}\bquestions?\b"),
 )
-PRICE_PATTERNS = (
+
+# Hard commercial price/pressure signals are never acceptable in first touch.
+HARD_PRICE_PATTERNS = (
     re.compile(r"(?i)(?:€|\$|£)\s*\d"),
-    re.compile(r"(?i)\b(?:prijs|prijzen|kosten|fee|tarief|korting|price|pricing|cost|costs|discount)\b"),
+    re.compile(r"(?i)\b(?:korting|discount)\b"),
 )
-HYPE_PATTERNS = (
-    re.compile(r"(?i)\b(?:gegarandeerd|garantie|guaranteed|guarantees|last chance|laatste kans|only today|alleen vandaag)\b"),
+SOFT_PRICE_TERM = re.compile(r"(?i)\b(?:prijs|prijzen|kosten|fee|tarief|price|pricing|cost|costs)\b")
+OBSERVATION_EVIDENCE_CONTEXT = re.compile(
+    r"(?i)\b(?:site|website|pagina|page|faq|formulier|form|route|flow|offerte|quote|request|aanvraag|"
+    r"upload|print|part|product|service|section|sectie|knop|button|checkout|cart|retour|return)\b"
 )
+SELLER_PRICE_CLAIM = re.compile(
+    r"(?i)\b(?:ik|wij|we|i)\b.{0,35}\b(?:prijs|prijzen|kosten|fee|tarief|price|pricing|cost|costs)\b"
+)
+
+PRESSURE_PATTERNS = (
+    re.compile(r"(?i)\b(?:gegarandeerd|guaranteed|guarantees|last chance|laatste kans|only today|alleen vandaag)\b"),
+)
+GUARANTEE_TERM = re.compile(r"(?i)\b(?:garantie|guarantee|guarantees|warranty)\b")
+GUARANTEE_CLAIM_PATTERNS = (
+    re.compile(r"(?i)\b(?:ik|wij|we|i)\b.{0,30}\b(?:garandeer|garanderen|guarantee|guarantees)\b"),
+    re.compile(r"(?i)\bgarantie\s+(?:op|voor)\s+(?:resultaat|resultaten|omzet|klanten|aanvragen|leads)\b"),
+    re.compile(r"(?i)\bguarantee(?:d|s)?\s+(?:results?|revenue|sales|customers?|leads?)\b"),
+)
+
+# Compatibility tuple used by follow-up checks and external imports.
+PRICE_PATTERNS = HARD_PRICE_PATTERNS + (SOFT_PRICE_TERM,)
+HYPE_PATTERNS = PRESSURE_PATTERNS + (GUARANTEE_TERM,)
+
 UNSUPPORTED_SEVERITY_LOSS_PATTERNS = (
     re.compile(r"(?i)\b(?:cruciaal|kritiek|kritisch|urgent|dringend|crucial|critical)\b"),
     re.compile(r"(?i)\b(?:moet|moeten)\s+(?:direct|meteen|onmiddellijk)\b"),
@@ -110,6 +132,33 @@ def _observation_from_body(body: str) -> str:
     return parts[1]
 
 
+def _body_without_observation(body: str) -> str:
+    parts = _paragraphs(body)
+    if len(parts) < 2:
+        return str(body or "")
+    return "\n\n".join(parts[:1] + parts[2:])
+
+
+def _observation_allows_soft_price_term(observation: str) -> bool:
+    text = str(observation or "")
+    return bool(
+        SOFT_PRICE_TERM.search(text)
+        and OBSERVATION_EVIDENCE_CONTEXT.search(text)
+        and not SELLER_PRICE_CLAIM.search(text)
+        and not any(pattern.search(text) for pattern in HARD_PRICE_PATTERNS)
+    )
+
+
+def _observation_allows_guarantee_term(observation: str) -> bool:
+    text = str(observation or "")
+    return bool(
+        GUARANTEE_TERM.search(text)
+        and OBSERVATION_EVIDENCE_CONTEXT.search(text)
+        and not any(pattern.search(text) for pattern in GUARANTEE_CLAIM_PATTERNS)
+        and not any(pattern.search(text) for pattern in PRESSURE_PATTERNS)
+    )
+
+
 def initial_copy_errors(subject: str, body: str) -> list[str]:
     text = str(body or "").strip()
     errors = _subject_errors(subject)
@@ -120,15 +169,28 @@ def initial_copy_errors(subject: str, body: str) -> list[str]:
     if words < 50 or words > 100:
         errors.append("first-touch body must stay within about 50-100 words")
 
+    observation = _observation_from_body(text)
+    non_observation = _body_without_observation(text)
+
     if re.search(r"https?://", text):
         errors.append("first-touch body may not contain external URLs by default")
-    if any(pattern.search(text) for pattern in HYPE_PATTERNS):
+    if any(pattern.search(text) for pattern in PRESSURE_PATTERNS):
+        errors.append("first-touch body contains hype or unsupported pressure")
+    if any(pattern.search(text) for pattern in GUARANTEE_CLAIM_PATTERNS):
+        errors.append("first-touch body contains hype or unsupported pressure")
+    if GUARANTEE_TERM.search(non_observation):
+        errors.append("first-touch body contains hype or unsupported pressure")
+    elif GUARANTEE_TERM.search(observation) and not _observation_allows_guarantee_term(observation):
         errors.append("first-touch body contains hype or unsupported pressure")
     if any(pattern.search(text) for pattern in UNSUPPORTED_SEVERITY_LOSS_PATTERNS):
         errors.append("first-touch body contains unsupported severity or loss claim")
     if any(pattern.search(text) for pattern in MEETING_PATTERNS):
         errors.append("first-touch body may not use a default meeting ask")
-    if any(pattern.search(text) for pattern in PRICE_PATTERNS):
+    if any(pattern.search(text) for pattern in HARD_PRICE_PATTERNS):
+        errors.append("first-touch body may not contain price or discount language")
+    if SOFT_PRICE_TERM.search(non_observation):
+        errors.append("first-touch body may not contain price or discount language")
+    elif SOFT_PRICE_TERM.search(observation) and not _observation_allows_soft_price_term(observation):
         errors.append("first-touch body may not contain price or discount language")
     if any(pattern.search(text) for pattern in SOLUTION_SPOILER_PATTERNS):
         errors.append("first-touch body reveals implementation or the full solution")
@@ -138,7 +200,6 @@ def initial_copy_errors(subject: str, body: str) -> list[str]:
         errors.append("first-touch body must use the canonical NL or EN disclosure shape")
         return errors
 
-    observation = _observation_from_body(text)
     if not observation or any(pattern.fullmatch(observation.strip()) for pattern in GENERIC_OBSERVATION_PATTERNS):
         errors.append("first-touch observation is too vague to be evidence-bound")
 
@@ -210,8 +271,22 @@ def _clean_fragment(value: str, *, field: str) -> str:
         raise ValueError(f"{field} is required")
     if any(pattern.search(text) for pattern in SOLUTION_SPOILER_PATTERNS):
         raise ValueError(f"{field} contains solution-spoiler language")
-    if any(pattern.search(text) for pattern in PRICE_PATTERNS):
-        raise ValueError(f"{field} contains price language")
+    if field == "observation":
+        if any(pattern.search(text) for pattern in HARD_PRICE_PATTERNS):
+            raise ValueError(f"{field} contains price language")
+        if SOFT_PRICE_TERM.search(text) and not _observation_allows_soft_price_term(text):
+            raise ValueError(f"{field} contains price language")
+        if any(pattern.search(text) for pattern in PRESSURE_PATTERNS):
+            raise ValueError(f"{field} contains hype or pressure language")
+        if any(pattern.search(text) for pattern in GUARANTEE_CLAIM_PATTERNS):
+            raise ValueError(f"{field} contains guarantee claim")
+        if GUARANTEE_TERM.search(text) and not _observation_allows_guarantee_term(text):
+            raise ValueError(f"{field} contains guarantee claim")
+    else:
+        if any(pattern.search(text) for pattern in PRICE_PATTERNS):
+            raise ValueError(f"{field} contains price language")
+        if any(pattern.search(text) for pattern in HYPE_PATTERNS):
+            raise ValueError(f"{field} contains hype or pressure language")
     if any(pattern.search(text) for pattern in UNSUPPORTED_SEVERITY_LOSS_PATTERNS):
         raise ValueError(f"{field} contains unsupported severity or loss claim")
     return text.rstrip(".!?")
