@@ -6,6 +6,7 @@ import os
 import re
 from typing import Iterable
 
+from outreach_copy_v17_2 import initial_copy_errors
 from outreach_imap_draft import append_verified_draft, choose_mailbox
 from outreach_mailboxes import enabled_mailboxes, load_mailboxes_from_env
 from prospect_target_policy import canonical_country
@@ -89,10 +90,14 @@ def validate_queue_row(
         errors.append("only the initial stage can be drafted")
     if "@" not in recipient:
         errors.append("recipient email is invalid")
-    if not row.get("subject", "").strip():
+    subject = row.get("subject", "").strip()
+    body = row.get("body", "").strip()
+    if not subject:
         errors.append("subject is missing")
-    if not row.get("body", "").strip():
+    if not body:
         errors.append("body is missing")
+    if subject and body:
+        errors.extend(f"copy contract: {error}" for error in initial_copy_errors(subject, body))
     if any(row.get(field, "").strip() for field in TERMINAL_FIELDS):
         errors.append("queue row already has send/reply/bounce evidence")
     configured_sender = _normalize_email(row.get("sender_email", ""))
