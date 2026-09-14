@@ -20,6 +20,7 @@ class CuriosityFirstCopyTests(unittest.TestCase):
 
     def test_generator_is_curiosity_first(self):
         draft = self._good()
+        self.assertEqual(c.POLICY_VERSION, "17.2.2")
         self.assertEqual(draft.contract_id, "curiosity_first_v17_2")
         self.assertEqual(c.initial_copy_errors(draft.subject, draft.body), [])
         self.assertIn("één klein mini-flow", draft.body)
@@ -62,6 +63,47 @@ class CuriosityFirstCopyTests(unittest.TestCase):
         )
         errors = c.initial_copy_errors(draft.subject, body)
         self.assertTrue(any("meeting" in error for error in errors))
+
+    def test_unsupported_severity_is_blocked(self):
+        draft = self._good()
+        body = draft.body.replace(
+            "Dat kan onnodig heen-en-weer opleveren voordat de basisinformatie voor een eerste aanvraag compleet is.",
+            "Dit is cruciaal en moet direct gefixt worden voordat iemand verdergaat.",
+        )
+        errors = c.initial_copy_errors(draft.subject, body)
+        self.assertTrue(any("severity or loss" in error for error in errors))
+
+    def test_unproven_loss_is_blocked(self):
+        draft = self._good()
+        body = draft.body.replace(
+            "Dat kan onnodig heen-en-weer opleveren voordat de basisinformatie voor een eerste aanvraag compleet is.",
+            "Hierdoor verliezen jullie klanten en omzet zonder dat je het ziet.",
+        )
+        errors = c.initial_copy_errors(draft.subject, body)
+        self.assertTrue(any("severity or loss" in error for error in errors))
+
+    def test_calibrated_seriousness_is_allowed(self):
+        draft = c.build_curiosity_first_copy(
+            company="Demo Dak",
+            language="nl",
+            subject="Offerte aanvragen Demo",
+            observation='Ik zag op jullie site de route "Offerte aanvragen" direct naast dakrenovatie',
+            friction="Daar viel me één punt op dat ik zelf serieus zou laten checken, omdat het precies op een belangrijk moment in de offerteaanvraag zit",
+            example_label="mini-flow",
+        )
+        self.assertEqual(c.initial_copy_errors(draft.subject, draft.body), [])
+
+    def test_english_unsupported_loss_is_blocked(self):
+        with self.assertRaisesRegex(ValueError, "severity or loss"):
+            c.build_curiosity_first_copy(
+                company="Demo Roofing",
+                language="en",
+                subject="Quote request flow",
+                observation="I noticed the quote request sits directly next to the roof replacement service",
+                friction="This is critical and you are losing customers and revenue here",
+                example_label="mini-flow",
+                postal_address="Example address",
+            )
 
     def test_generic_subject_length_is_blocked(self):
         draft = self._good()
