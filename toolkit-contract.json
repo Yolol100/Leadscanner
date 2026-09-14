@@ -1,5 +1,5 @@
 {
-  "schema_version": "3.0",
+  "schema_version": "3.1",
   "owner_skill": "leads",
   "project_id": "project-leads",
   "repository": "Yolol100/Leadscanner",
@@ -7,9 +7,11 @@
   "default_route": {
     "id": "filter_core_v17",
     "source_set_version": "17.0.0-filter-core",
+    "copy_policy_version": "17.2.0",
     "controller": "webactueel-workflow",
     "owner_skill": "leads",
     "decision_source": "Project Leads/00-leads-core.md",
+    "copy_source": "Project Leads/leadpromo.md",
     "steps": [
       "prospect_discovery",
       "relevant_official_page_read",
@@ -17,6 +19,7 @@
       "one_offer",
       "official_public_contact",
       "research_copy",
+      "copy_gate",
       "mailbox_draft",
       "exact_readback",
       "reply_handoff"
@@ -53,18 +56,27 @@
     "social_management": "official_public_social_or_content_evidence_required"
   },
   "copy_contract": {
+    "id": "curiosity_first_v17_2",
+    "module": "scripts/outreach_copy_v17_2.py",
+    "policy_source": "Project Leads/leadpromo.md",
     "subject_words": "2-6",
     "body_words": "about_50-100",
-    "content_sentences": "3-4_short",
     "one_real_observation": true,
+    "one_evidence_bound_friction_or_opportunity": true,
+    "one_small_example_promise": true,
     "one_offer": true,
     "permission_cta": true,
+    "reveal_full_solution_before_permission": false,
+    "price_first_touch": false,
+    "vague_mystery": false,
     "default_meeting_ask": false,
-    "invented_proof_roi_results": false
+    "invented_proof_roi_results": false,
+    "required_before_mailbox_draft": true
   },
   "mailbox_contract": {
     "preferred_workflow": ".github/workflows/sync-selected-myhost-drafts-command.yml",
     "transport": "IMAP_APPEND_plus_exact_readback",
+    "copy_gate": "scripts/outreach_copy_v17_2.py::initial_copy_errors",
     "dedupe": ["lead_id", "recipient", "content_fingerprint"],
     "retry_idempotent": true,
     "send_permission": "none"
@@ -89,7 +101,7 @@
   ],
   "repository_hygiene": [
     "No target-specific, date-specific, run-specific or hardcoded prospect cohort workflow belongs on the default branch.",
-    "Generic discovery, evidence, contact and IMAP-draft capabilities may remain reusable.",
-    "Legacy score/campaign/send code is unregistered compatibility only until a concrete dependency or rollback need is cleared."
+    "Generic discovery, evidence, contact, curiosity-first copy validation and IMAP-draft capabilities may remain reusable.",
+    "Legacy score/campaign/send/copy code is unregistered compatibility only until a concrete dependency or rollback need is cleared."
   ]
 }
