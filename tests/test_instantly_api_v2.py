@@ -32,6 +32,30 @@ SPEC = {
         "/api/v2/leads/list": {
             "post": {"operationId": "listLeads", "tags": ["Lead"]},
         },
+        "/api/v2/leads/add": {
+            "post": {"operationId": "bulkAddLeads", "tags": ["Lead"]},
+        },
+        "/api/v2/ai-agents/sales/{id}": {
+            "patch": {"operationId": "patchSalesAgent", "tags": ["AISalesAgent"]},
+        },
+        "/api/v2/webhooks": {
+            "post": {"operationId": "createWebhook", "tags": ["Webhook"]},
+        },
+        "/api/v2/workspace-members": {
+            "post": {"operationId": "createWorkspaceMember", "tags": ["Workspace"]},
+        },
+        "/api/v2/block-lists-entries": {
+            "post": {"operationId": "createBlockListEntry", "tags": ["BlockList"]},
+        },
+        "/api/v2/accounts/{id}": {
+            "patch": {"operationId": "patchAccount", "tags": ["Account"]},
+        },
+        "/api/v2/supersearch-enrichment/saved-searches": {
+            "post": {
+                "operationId": "createSavedSearch",
+                "tags": ["SuperSearchEnrichment"],
+            },
+        },
     }
 }
 
@@ -65,9 +89,36 @@ class InstantlyApiV2Tests(unittest.TestCase):
     def test_risk_classification(self):
         self.assertEqual(classify_risk("GET", "/api/v2/emails"), "read")
         self.assertEqual(classify_risk("DELETE", "/api/v2/leads/{id}"), "destructive")
-        self.assertEqual(classify_risk("POST", "/api/v2/campaigns/{id}/activate", "activateCampaign"), "high_impact")
-        self.assertEqual(classify_risk("POST", "/api/v2/emails/reply", "replyToEmail"), "high_impact")
-        self.assertEqual(classify_risk("POST", "/api/v2/campaigns", "createCampaign"), "write")
+        self.assertEqual(
+            classify_risk(
+                "POST", "/api/v2/campaigns/{id}/activate", "activateCampaign"
+            ),
+            "high_impact",
+        )
+        self.assertEqual(
+            classify_risk("POST", "/api/v2/emails/reply", "replyToEmail"),
+            "high_impact",
+        )
+        self.assertEqual(
+            classify_risk("PATCH", "/api/v2/campaigns/{id}", "updateCampaign"),
+            "high_impact",
+        )
+        self.assertEqual(
+            classify_risk("POST", "/api/v2/webhooks", "createWebhook"),
+            "high_impact",
+        )
+        self.assertEqual(
+            classify_risk("POST", "/api/v2/campaigns", "createCampaign"),
+            "write",
+        )
+        self.assertEqual(
+            classify_risk(
+                "POST",
+                "/api/v2/supersearch-enrichment/saved-searches",
+                "createSavedSearch",
+            ),
+            "write",
+        )
 
     def test_query_pairs_preserve_repeated_values(self):
         pairs = _query_pairs({"tag_ids": ["a", "b"], "active": True})
@@ -100,6 +151,43 @@ class InstantlyApiV2Tests(unittest.TestCase):
                 apply=True,
             )
         self.assertEqual(client.calls, [])
+
+    def test_direct_executor_blocks_all_shared_high_impact_surfaces(self):
+        cases = (
+            ("PATCH", "/campaigns/abc-123"),
+            ("PATCH", "/ai-agents/sales/agent-1"),
+            ("POST", "/leads/add"),
+            ("POST", "/webhooks"),
+            ("POST", "/workspace-members"),
+            ("POST", "/block-lists-entries"),
+            ("PATCH", "/accounts/account-1"),
+        )
+        for method, path in cases:
+            with self.subTest(method=method, path=path):
+                client = FakeClient()
+                with self.assertRaises(InstantlyApiError):
+                    execute_operation(
+                        client=client,
+                        spec=SPEC,
+                        method=method,
+                        path=path,
+                        apply=True,
+                    )
+                self.assertEqual(client.calls, [])
+
+    def test_supersearch_saved_search_is_not_false_positive_high_impact(self):
+        client = FakeClient()
+        result, _, _ = execute_operation(
+            client=client,
+            spec=SPEC,
+            method="POST",
+            path="/supersearch-enrichment/saved-searches",
+            body={"name": "Dutch SMEs"},
+            apply=True,
+        )
+        self.assertEqual(result.risk, "write")
+        self.assertTrue(result.applied)
+        self.assertEqual(len(client.calls), 1)
 
     def test_high_impact_executes_with_exact_confirmation(self):
         client = FakeClient()
