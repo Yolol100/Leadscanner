@@ -97,7 +97,7 @@ A method/path is rejected unless it exists in that official v2 schema. This avoi
 
 Because this repository is public, full request/response payloads are never transported through public issue content. The private Google Sheet tabs `InstantlyCommands` and `InstantlyResults` carry request bodies and private results. The public issue contains only an opaque `REQUEST_ID` and uses title `INSTANTLY API`.
 
-Writes default to plan-only. DELETE and externally consequential operations such as email reply/forward/test-send, campaign activation/resume, account resume/warmup changes, API-key operations, workspace removal/ownership, OAuth, enrichment, DFY/order and inbox-placement tests additionally require the exact generated `CONFIRM-...` token before execution. Optional verification must use a read-only official GET endpoint.
+Writes default to plan-only. `.github/workflows/instantly-full-api-command.yml` runs `scripts/instantly_command_guard.py` before the API executor. The guard matches the requested operation against the current official OpenAPI schema and requires the exact `CONFIRM-...` token for destructive/high-impact operations. This includes AI Agent changes, lead adds/moves/assignment/lifecycle changes, live campaign edits/control, sender-account changes, webhook changes, workspace membership/administration and suppression changes. Existing executor-level confirmation rules remain as an additional safety layer.
 
 This parity layer does not change Project Leads ownership or policy. For prospect/outreach behavior, live Project Leads validation, suppression, evidence and copy gates remain binding even though the generic API layer is technically capable of broader account administration.
 
@@ -105,7 +105,7 @@ See `docs/INSTANTLY-API-V2-FULL-SURFACE.md` for the private transport, risk mode
 
 ## Dynamic product-surface audit
 
-The Instantly UI changes faster than a static integration document. `scripts/instantly_surface_audit.py` now compares the current official OpenAPI schema against the main product surfaces and reports each surface as `read_write`, `read_only` or `not_proven`.
+The Instantly UI changes faster than a static integration document. `scripts/instantly_surface_audit.py` compares the current official OpenAPI schema against the main product surfaces and reports each surface as `read_write`, `read_only` or `not_proven`.
 
 Run locally:
 
@@ -119,6 +119,6 @@ Or create a GitHub issue owned by `Yolol100` with title exactly:
 
 The issue workflow needs no Instantly API key because it audits the public official schema only. The safe public result contains capability classifications, not account data.
 
-This audit is the required preflight before claiming that ChatGPT/Leadscanner can control a visible Instantly surface. In particular, Instantly AI Business Details, Customer Profiles, Guidance, Saved memories, Copilot chats/tasks/settings, full AI Agent configuration, native Automation builder, CRM Calls/SMS/Tasks and Website Visitors configuration remain `NOT_PROVEN` unless the current official v2 schema exposes matching operations.
+The audit intentionally distinguishes AI Agent configuration from Instantly AI/Copilot memory. A live 2026-09-16 schema audit proved public v2 administration for AI Sales Agent and its guidance rules, Inbox Manager and its guidance, AI Lead Finder, AI Deliverability Agent and SuperSearch saved searches. It did not prove current public v2 control for Copilot Business Details, Customer Profiles, Saved memories, Copilot chats/tasks, native Automations, CRM Calls/SMS/Tasks or Website Visitors configuration. Re-run the audit before relying on this snapshot.
 
 See `docs/INSTANTLY-SURFACE-COVERAGE.md` for the control boundary and operating guidance.
