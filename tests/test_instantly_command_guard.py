@@ -20,6 +20,18 @@ SPEC = {
         "/api/v2/leads/add": {
             "post": {"operationId": "bulkAddLeads", "tags": ["Lead"]},
         },
+        "/api/v2/webhooks": {
+            "post": {"operationId": "createWebhook", "tags": ["Webhook"]},
+        },
+        "/api/v2/workspace-members": {
+            "post": {"operationId": "createWorkspaceMember", "tags": ["Workspace"]},
+        },
+        "/api/v2/block-lists-entries": {
+            "post": {"operationId": "createBlockListEntry", "tags": ["BlockList"]},
+        },
+        "/api/v2/accounts/{id}": {
+            "patch": {"operationId": "patchAccount", "tags": ["Account"]},
+        },
         "/api/v2/supersearch-enrichment/saved-searches": {
             "post": {"operationId": "createSavedSearch", "tags": ["SuperSearchEnrichment"]},
         },
@@ -81,6 +93,19 @@ class InstantlyCommandGuardTests(unittest.TestCase):
         }
         with self.assertRaises(ValueError):
             guard_request(request, spec=SPEC)
+
+    def test_admin_and_suppression_writes_require_confirmation(self):
+        cases = (
+            ("POST", "/webhooks"),
+            ("POST", "/workspace-members"),
+            ("POST", "/block-lists-entries"),
+            ("PATCH", "/accounts/account-1"),
+        )
+        for method, path in cases:
+            with self.subTest(method=method, path=path):
+                request = {"method": method, "path": path, "apply": True}
+                with self.assertRaises(ValueError):
+                    guard_request(request, spec=SPEC)
 
     def test_safe_configuration_write_can_apply_without_extra_guard(self):
         request = {
