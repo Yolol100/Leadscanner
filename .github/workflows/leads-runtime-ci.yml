@@ -6,10 +6,12 @@ on:
       - '.github/workflows/**'
       - 'scripts/**'
       - 'tests/**/*.py'
+      - 'docs/**'
       - 'requirements-outreach.txt'
       - 'README.md'
       - 'AGENTS.md'
       - 'LEADS-INTEGRATION.md'
+      - 'INSTANTLY-INTEGRATION.md'
       - 'tool-registry.json'
       - 'toolkit-contract.json'
   push:
@@ -18,10 +20,12 @@ on:
       - '.github/workflows/**'
       - 'scripts/**'
       - 'tests/**/*.py'
+      - 'docs/**'
       - 'requirements-outreach.txt'
       - 'README.md'
       - 'AGENTS.md'
       - 'LEADS-INTEGRATION.md'
+      - 'INSTANTLY-INTEGRATION.md'
       - 'tool-registry.json'
       - 'toolkit-contract.json'
 
@@ -64,7 +68,7 @@ jobs:
           PYTHONPATH: scripts
         run: python3 -m unittest discover -s tests -p 'test_*.py' -v
 
-      - name: Assert CI cannot send mail or create mailbox drafts
+      - name: Assert CI cannot send mail, mutate Instantly, or create mailbox drafts
         shell: bash
         run: |
           set -euo pipefail
@@ -72,4 +76,5 @@ jobs:
           test -z "${OUTREACH_MAILBOXES_JSON:-}"
           test -z "${GOOGLE_SERVICE_ACCOUNT_JSON:-}"
           test -z "${OUTREACH_DRAFT_CONFIRM:-}"
+          test -z "${INSTANTLY_API_KEY:-}"
           echo "CI_SAFE_MODE=green"
