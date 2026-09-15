@@ -141,16 +141,19 @@ def load_openapi(*, url: str = OPENAPI_URL, timeout: float = 30.0) -> dict[str, 
     return spec
 
 
-def classify_risk(method: str, template_path: str, operation_id: str = "") -> str:
-    method = method.upper()
-    text = re.sub(r"[^a-z0-9]+", "", f"{template_path} {operation_id}".lower())
+def requires_high_impact_confirmation(method: str, path: str, operation_id: str = "") -> bool:
+    """Return whether a Webactueel Instantly write needs an exact confirmation token."""
+    method = (method or "").upper().strip()
+    path = normalize_path(path)
+    operation = re.sub(r"[^a-z0-9]+", "", (operation_id or "").lower())
+    text = re.sub(r"[^a-z0-9]+", "", f"{path} {operation_id}".lower())
     if method == "GET":
-        return "read"
+        return False
     if method == "DELETE":
-        return "destructive"
+        return True
 
-    # Capabilities with an immediate external/irreversible effect require an exact
-    # confirmation token even though the API method may be POST/PATCH.
+    # Immediate external, administrative or irreversible effects already guarded
+    # by the generic executor before this policy was shared with the workflow guard.
     high_impact_markers = (
         "replytoemail",
         "forwardemail",
@@ -159,19 +162,111 @@ def classify_risk(method: str, template_path: str, operation_id: str = "") -> st
         "resumecampaign",
         "resumesubsequence",
         "resumeaccount",
+        "resumeapausedaccount",
         "warmupenable",
         "warmupdisable",
+        "enablewarmup",
+        "disablewarmup",
         "workspaceowner",
         "workspaceremoval",
         "removefromworkspace",
         "apikey",
         "dfy",
         "order",
-        "enrich",
         "inboxplacementtest",
         "oauth",
     )
     if any(marker in text for marker in high_impact_markers):
+        return True
+
+    # Enrichment writes can spend credits or automatically alter lead resources.
+    # Saved-search CRUD is intentionally excluded and remains a normal plan-first write.
+    enrichment_markers = (
+        "createenrichment",
+        "createanenrichment",
+        "createaienrichment",
+        "runenrichment",
+        "enrichleadsfromsupersearch",
+        "updateenrichmentsettings",
+    )
+    if any(marker in operation for marker in enrichment_markers):
+        return True
+
+    # Active AI-agent/guidance changes can affect prospecting, replies or delivery.
+    if path.startswith("/api/v2/ai-agents/"):
+        return True
+
+    # Lead staging/moves/assignment can immediately change live campaign state.
+    lead_markers = (
+        "/api/v2/leads/add",
+        "/api/v2/leads/move",
+        "/api/v2/leads/update-interest-status",
+        "/api/v2/leads/bulk-assign",
+        "/api/v2/leads/subsequence/",
+    )
+    if any(path.startswith(marker) for marker in lead_markers):
+        return True
+    if path == "/api/v2/leads" and method == "POST":
+        return True
+
+    # Editing or controlling a campaign can affect already queued sends.
+    campaign_markers = (
+        "activatecampaign",
+        "pausecampaign",
+        "patchcampaign",
+        "updatecampaign",
+        "addcampaignvariables",
+        "addvariables",
+        "sharecampaign",
+        "createfromexport",
+        "resumesubsequence",
+        "pausesubsequence",
+        "patchcampaignsubsequence",
+        "moveleads",
+        "bulkaddleads",
+    )
+    if any(marker in operation for marker in campaign_markers):
+        return True
+
+    # Webhooks can transmit workspace event data to external destinations.
+    if path.startswith("/api/v2/webhooks") and method != "GET":
+        return True
+
+    # Workspace access-control and workspace-level mutations are administrative.
+    if path.startswith("/api/v2/workspace-members") or path.startswith(
+        "/api/v2/workspace-group-members"
+    ):
+        return True
+    if path.startswith("/api/v2/workspaces/current") and method != "GET":
+        return True
+
+    # Suppression changes directly affect who may receive outreach.
+    if (
+        path.startswith("/api/v2/block-lists-entries")
+        or path.startswith("/api/v2/block-list-entries")
+    ) and method != "GET":
+        return True
+
+    # Sender configuration can alter identity, routing, sending or deliverability.
+    if path.startswith("/api/v2/accounts") and method in {"PATCH", "POST"}:
+        readish_account_ops = {
+            "getwarmupanalytics",
+            "getdailyaccountanalytics",
+            "testaccountvitals",
+        }
+        if operation not in readish_account_ops:
+            return True
+
+    return False
+
+
+def classify_risk(method: str, template_path: str, operation_id: str = "") -> str:
+    method = method.upper()
+    if method == "GET":
+        return "read"
+    if method == "DELETE":
+        return "destructive"
+    if requires_high_impact_confirmation(method, template_path, operation_id):
         return "high_impact"
     return "write"
 
