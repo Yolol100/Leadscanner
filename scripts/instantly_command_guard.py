@@ -9,82 +9,13 @@ from instantly_api_v2 import (
     load_openapi,
     match_operation,
     normalize_path,
+    requires_high_impact_confirmation,
 )
 
 
 def needs_exact_confirmation(method: str, path: str, operation_id: str = "") -> bool:
-    method = (method or "").upper().strip()
-    path = normalize_path(path)
-    operation = (operation_id or "").lower()
-    if method == "GET":
-        return False
-    if method == "DELETE":
-        return True
-
-    # Changes to AI agents can immediately alter prospecting, approvals, replies,
-    # credit usage or deliverability behavior when an agent is active.
-    if path.startswith("/api/v2/ai-agents/"):
-        return True
-
-    # Adding/moving/assigning leads can start or alter live outreach when the
-    # destination campaign is active. The generic admin route therefore treats
-    # these as high-impact even when the underlying endpoint is POST/PATCH.
-    lead_markers = (
-        "/api/v2/leads/add",
-        "/api/v2/leads/move",
-        "/api/v2/leads/update-interest-status",
-        "/api/v2/leads/bulk-assign",
-        "/api/v2/leads/subsequence/",
-    )
-    if any(path.startswith(marker) for marker in lead_markers):
-        return True
-    if path == "/api/v2/leads" and method == "POST":
-        return True
-
-    # Editing or controlling a campaign can affect already queued sends.
-    campaign_markers = (
-        "activatecampaign",
-        "pausecampaign",
-        "patchcampaign",
-        "addvariables",
-        "sharecampaign",
-        "createfromexport",
-        "resumesubsequence",
-        "pausesubsequence",
-        "patchcampaignsubsequence",
-        "moveleads",
-        "bulkaddleads",
-    )
-    if any(marker in operation for marker in campaign_markers):
-        return True
-
-    # Webhooks can send workspace event data to an external destination.
-    if path.startswith("/api/v2/webhooks") and method != "GET":
-        return True
-
-    # Access-control and workspace-level changes are administrative writes.
-    if path.startswith("/api/v2/workspace-members") or path.startswith(
-        "/api/v2/workspace-group-members"
-    ):
-        return True
-    if path.startswith("/api/v2/workspaces/current") and method != "GET":
-        return True
-
-    # Suppression changes directly affect who may receive outreach.
-    if path.startswith("/api/v2/block-lists-entries") and method != "GET":
-        return True
-
-    # Sender configuration can change identity, routing or deliverability.
-    if path.startswith("/api/v2/accounts") and method in {"PATCH", "POST"}:
-        readish_account_ops = {
-            "getwarmupanalytics",
-            "getdailyaccountanalytics",
-            "testaccountvitals",
-        }
-        if operation not in readish_account_ops:
-            return True
-
-    return False
+    """Compatibility wrapper around the executor's single high-impact policy."""
+    return requires_high_impact_confirmation(method, path, operation_id)
 
 
 def guard_request(
@@ -102,7 +33,7 @@ def guard_request(
     live_spec = spec if spec is not None else load_openapi()
     operation = match_operation(live_spec, method, normalized_path)
     token = confirmation_token(method, normalized_path, query, body if body is not None else {})
-    sensitive = needs_exact_confirmation(method, normalized_path, operation.operation_id)
+    sensitive = operation.risk in {"destructive", "high_impact"}
 
     if sensitive and apply and str(request.get("confirmation") or "").strip() != token:
         raise ValueError("exact confirmation token is required by the Webactueel high-impact guard")
