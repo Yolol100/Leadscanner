@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -9,16 +10,14 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 API_ORIGIN = "https://api.instantly.ai"
 API_PREFIX = "/api/v2"
 OPENAPI_URL = "https://api.instantly.ai/openapi/api_v2.json"
 HTTP_METHODS = {"GET", "POST", "PATCH", "DELETE", "PUT"}
-SENSITIVE_KEY_RE = re.compile(
-    r"(?:email|phone|body|subject|content|first_name|last_name|name|signature|password|token|api[_-]?key|secret|authorization|custom_variables)",
-    re.IGNORECASE,
-)
+MAX_OPENAPI_BYTES = 25_000_000
+MAX_RESPONSE_BYTES = 10_000_000
 
 
 class InstantlyApiError(RuntimeError):
@@ -73,12 +72,14 @@ def _canonical_json(value: Any) -> str:
 
 
 def confirmation_token(method: str, path: str, query: Any, body: Any) -> str:
-    material = "\n".join([
-        method.upper(),
-        path,
-        _canonical_json(query if query is not None else {}),
-        _canonical_json(body if body is not None else {}),
-    ])
+    material = "\n".join(
+        [
+            method.upper(),
+            path,
+            _canonical_json(query if query is not None else {}),
+            _canonical_json(body if body is not None else {}),
+        ]
+    )
     return "CONFIRM-" + hashlib.sha256(material.encode("utf-8")).hexdigest()[:24]
 
 
@@ -113,21 +114,28 @@ def load_openapi(*, url: str = OPENAPI_URL, timeout: float = 30.0) -> dict[str, 
     local_path = os.getenv("INSTANTLY_OPENAPI_FILE", "").strip()
     if local_path:
         with open(local_path, encoding="utf-8") as handle:
-            return json.load(handle)
-    request = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": "webactueel-leadscanner/instantly-api-v2"})
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            raw = response.read(25_000_001)
-    except urllib.error.HTTPError as exc:
-        raise InstantlyApiError(f"OpenAPI fetch failed with HTTP {exc.code}") from exc
-    except urllib.error.URLError as exc:
-        raise InstantlyApiError("OpenAPI fetch failed") from exc
-    if len(raw) > 25_000_000:
-        raise InstantlyApiError("OpenAPI response exceeded safety limit")
-    try:
-        spec = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise InstantlyApiError("OpenAPI response was invalid JSON") from exc
+            spec = json.load(handle)
+    else:
+        request = urllib.request.Request(
+            url,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "webactueel-leadscanner/instantly-api-v2",
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                raw = response.read(MAX_OPENAPI_BYTES + 1)
+        except urllib.error.HTTPError as exc:
+            raise InstantlyApiError(f"OpenAPI fetch failed with HTTP {exc.code}") from exc
+        except urllib.error.URLError as exc:
+            raise InstantlyApiError("OpenAPI fetch failed") from exc
+        if len(raw) > MAX_OPENAPI_BYTES:
+            raise InstantlyApiError("OpenAPI response exceeded safety limit")
+        try:
+            spec = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise InstantlyApiError("OpenAPI response was invalid JSON") from exc
     if not isinstance(spec, dict) or not isinstance(spec.get("paths"), dict):
         raise InstantlyApiError("OpenAPI document is missing paths")
     return spec
@@ -135,29 +143,35 @@ def load_openapi(*, url: str = OPENAPI_URL, timeout: float = 30.0) -> dict[str, 
 
 def classify_risk(method: str, template_path: str, operation_id: str = "") -> str:
     method = method.upper()
-    text = f"{template_path} {operation_id}".lower()
+    text = re.sub(r"[^a-z0-9]+", "", f"{template_path} {operation_id}".lower())
     if method == "GET":
         return "read"
     if method == "DELETE":
         return "destructive"
-    high_effect_markers = (
-        "/emails/reply",
-        "/emails/forward",
-        "/emails/test",
-        "/campaigns/{id}/activate",
-        "/campaigns/{id}/resume",
-        "/subsequences/{id}/resume",
-        "workspace removal",
-        "schedule-current-workspace-removal",
-        "change-workspace-owner",
+
+    # Capabilities with an immediate external/irreversible effect require an exact
+    # confirmation token even though the API method may be POST/PATCH.
+    high_impact_markers = (
+        "replytoemail",
+        "forwardemail",
+        "sendtestemail",
+        "activatecampaign",
+        "resumecampaign",
+        "resumesubsequence",
+        "resumeaccount",
+        "warmupenable",
+        "warmupdisable",
+        "workspaceowner",
+        "workspaceremoval",
+        "removefromworkspace",
+        "apikey",
         "dfy",
-        "api-key",
-        "api key",
         "order",
-        "enrichment",
-        "inbox-placement-tests",
+        "enrich",
+        "inboxplacementtest",
+        "oauth",
     )
-    if any(marker in text for marker in high_effect_markers):
+    if any(marker in text for marker in high_impact_markers):
         return "high_impact"
     return "write"
 
@@ -169,16 +183,19 @@ def match_operation(spec: Mapping[str, Any], method: str, path: str) -> Operatio
     concrete = normalize_path(path)
     candidates: list[tuple[int, str, Mapping[str, Any]]] = []
     for template, item in (spec.get("paths") or {}).items():
-        if not str(template).startswith(API_PREFIX):
+        template_text = str(template)
+        if not template_text.startswith(API_PREFIX):
             continue
         operation = (item or {}).get(method.lower()) if isinstance(item, Mapping) else None
         if not isinstance(operation, Mapping):
             continue
-        if _template_regex(str(template)).fullmatch(concrete):
-            literal_score = len(re.sub(r"\{[^}]+\}", "", str(template)))
-            candidates.append((literal_score, str(template), operation))
+        if _template_regex(template_text).fullmatch(concrete):
+            literal_score = len(re.sub(r"\{[^}]+\}", "", template_text))
+            candidates.append((literal_score, template_text, operation))
     if not candidates:
-        raise InstantlyApiError("requested operation is not present in the official Instantly API v2 OpenAPI document")
+        raise InstantlyApiError(
+            "requested operation is not present in the official Instantly API v2 OpenAPI document"
+        )
     _, template, operation = max(candidates, key=lambda row: row[0])
     operation_id = str(operation.get("operationId") or "")
     tags = tuple(str(tag) for tag in (operation.get("tags") or []))
@@ -230,21 +247,38 @@ def _shape(value: Any) -> tuple[str, int | None]:
     return type(value).__name__, None
 
 
-def sanitize_public(value: Any) -> Any:
-    if isinstance(value, dict):
-        cleaned: dict[str, Any] = {}
-        for key, item in value.items():
-            if SENSITIVE_KEY_RE.search(str(key)):
-                cleaned[str(key)] = "[redacted]"
+def _query_pairs(query: Mapping[str, Any] | None) -> list[tuple[str, str]]:
+    pairs: list[tuple[str, str]] = []
+    if not query:
+        return pairs
+    for key, value in query.items():
+        if value is None:
+            continue
+        values: Sequence[Any]
+        if isinstance(value, (list, tuple)):
+            values = value
+        else:
+            values = (value,)
+        for item in values:
+            if item is None:
+                continue
+            if isinstance(item, bool):
+                rendered = str(item).lower()
+            elif isinstance(item, (dict, list, tuple)):
+                rendered = _canonical_json(item)
             else:
-                cleaned[str(key)] = sanitize_public(item)
-        return cleaned
-    if isinstance(value, list):
-        return [sanitize_public(item) for item in value[:20]]
-    if isinstance(value, str):
-        if "@" in value or len(value) > 160:
-            return "[redacted]"
-        return value
+                rendered = str(item)
+            pairs.append((str(key), rendered))
+    return pairs
+
+
+def _private_payload(value: Any, *, content_type: str = "application/json") -> Any:
+    if isinstance(value, bytes):
+        return {
+            "content_type": content_type,
+            "encoding": "base64",
+            "data": base64.b64encode(value).decode("ascii"),
+        }
     return value
 
 
@@ -256,19 +290,22 @@ class InstantlyApiV2Client:
         self._api_key = key
         self.timeout = timeout
 
-    def request(self, method: str, path: str, *, query: Mapping[str, Any] | None = None, body: Any = None) -> tuple[int, Any]:
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        query: Mapping[str, Any] | None = None,
+        body: Any = None,
+    ) -> tuple[int, Any]:
         concrete = normalize_path(path)
         url = API_ORIGIN + concrete
-        if query:
-            encoded = urllib.parse.urlencode(
-                [(str(k), str(v).lower() if isinstance(v, bool) else str(v)) for k, v in query.items() if v is not None],
-                doseq=True,
-            )
-            if encoded:
-                url += "?" + encoded
+        pairs = _query_pairs(query)
+        if pairs:
+            url += "?" + urllib.parse.urlencode(pairs)
         payload = None if body is None else _canonical_json(body).encode("utf-8")
         headers = {
-            "Accept": "application/json",
+            "Accept": "application/json, text/csv;q=0.9, */*;q=0.1",
             "Authorization": f"Bearer {self._api_key}",
             "User-Agent": "webactueel-leadscanner/instantly-api-v2",
         }
@@ -278,18 +315,18 @@ class InstantlyApiV2Client:
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 status = int(getattr(response, "status", 200))
-                raw = response.read(10_000_001)
+                content_type = response.headers.get("Content-Type", "") if hasattr(response, "headers") else ""
+                raw = response.read(MAX_RESPONSE_BYTES + 1)
         except urllib.error.HTTPError as exc:
             raise InstantlyApiError(f"Instantly API HTTP {exc.code}") from exc
         except urllib.error.URLError as exc:
             raise InstantlyApiError("Instantly API connection failed") from exc
-        if len(raw) > 10_000_000:
-            raise InstantlyApiError("Instantly API response exceeded safety limit")
+        if len(raw) > MAX_RESPONSE_BYTES:
+            raise InstantlyApiError("Instantly API response exceeded safety limit; request a smaller page/range")
         if not raw:
             return status, None
-        content_type = response.headers.get("Content-Type", "") if hasattr(response, "headers") else ""
         if "json" not in content_type.lower():
-            return status, {"non_json_response_bytes": len(raw)}
+            return status, _private_payload(raw, content_type=content_type or "application/octet-stream")
         try:
             return status, json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -310,6 +347,7 @@ def execute_operation(
 ) -> tuple[ExecuteResult, Any, Any]:
     op = match_operation(spec, method, path)
     token = confirmation_token(op.method, op.concrete_path, query or {}, body if body is not None else {})
+
     if op.risk != "read" and not apply:
         result = ExecuteResult(
             status="planned",
@@ -323,8 +361,12 @@ def execute_operation(
             verification_status="not_run",
         )
         return result, None, None
+
     if op.risk in {"destructive", "high_impact"} and confirmation.strip() != token:
-        raise InstantlyApiError("exact confirmation token is required for destructive/high-impact operations")
+        raise InstantlyApiError(
+            "exact confirmation token is required for destructive/high-impact operations"
+        )
+
     status, payload = client.request(op.method, op.concrete_path, query=query, body=body)
     shape, count = _shape(payload)
     verification_payload = None
@@ -334,9 +376,14 @@ def execute_operation(
         verify_path = str(verify.get("path") or "")
         verify_query = verify.get("query") if isinstance(verify.get("query"), Mapping) else None
         verify_body = verify.get("body")
-        match_operation(spec, verify_method, verify_path)
-        _, verification_payload = client.request(verify_method, verify_path, query=verify_query, body=verify_body)
+        verify_match = match_operation(spec, verify_method, verify_path)
+        if verify_match.risk != "read":
+            raise InstantlyApiError("verification operation must be read-only")
+        _, verification_payload = client.request(
+            verify_method, verify_path, query=verify_query, body=verify_body
+        )
         verification_status = "readback_ok"
+
     result = ExecuteResult(
         status="green",
         applied=op.risk != "read",
@@ -359,25 +406,40 @@ def _load_json_file(path: str) -> Any:
         return json.load(handle)
 
 
+def _write_json(path: str, value: Any) -> None:
+    if not path:
+        return
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(value, handle, ensure_ascii=False, indent=2, sort_keys=True)
+        handle.write("\n")
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Full-surface Instantly API v2 executor with OpenAPI validation")
+    parser = argparse.ArgumentParser(
+        description="Full-surface Instantly API v2 executor with official OpenAPI validation"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
+
     catalog_parser = sub.add_parser("catalog")
     catalog_parser.add_argument("--report", default="")
+
     request_parser = sub.add_parser("request")
     request_parser.add_argument("--request-json", required=True)
     request_parser.add_argument("--report", default="")
+    request_parser.add_argument("--private-report", default="")
     args = parser.parse_args()
+
     try:
         spec = load_openapi()
         if args.command == "catalog":
             public = catalog(spec)
+            private = {"meta": public, "response": None, "verification": None}
         else:
             request_data = _load_json_file(args.request_json)
             if not isinstance(request_data, dict):
                 raise ValueError("request JSON must be an object")
             client = InstantlyApiV2Client(os.getenv("INSTANTLY_API_KEY", ""))
-            result, _, _ = execute_operation(
+            result, response, verification = execute_operation(
                 client=client,
                 spec=spec,
                 method=str(request_data.get("method") or ""),
@@ -389,18 +451,22 @@ def main() -> int:
                 verify=request_data.get("verify") if isinstance(request_data.get("verify"), Mapping) else None,
             )
             public = result.public_dict()
-        if args.report:
-            with open(args.report, "w", encoding="utf-8") as handle:
-                json.dump(public, handle, ensure_ascii=False, indent=2, sort_keys=True)
-                handle.write("\n")
+            private = {
+                "meta": public,
+                "response": response,
+                "verification": verification,
+            }
+        _write_json(getattr(args, "report", ""), public)
+        _write_json(getattr(args, "private_report", ""), private)
         print(json.dumps(public, ensure_ascii=False, sort_keys=True))
         return 0
     except (InstantlyApiError, ValueError, OSError, json.JSONDecodeError) as exc:
         blocked = {"status": "blocked", "detail": str(exc)}
-        if getattr(args, "report", ""):
-            with open(args.report, "w", encoding="utf-8") as handle:
-                json.dump(blocked, handle, ensure_ascii=False, indent=2, sort_keys=True)
-                handle.write("\n")
+        _write_json(getattr(args, "report", ""), blocked)
+        _write_json(
+            getattr(args, "private_report", ""),
+            {"meta": blocked, "response": None, "verification": None},
+        )
         print(json.dumps(blocked, ensure_ascii=False, sort_keys=True))
         return 2
 
