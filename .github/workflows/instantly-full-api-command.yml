@@ -77,6 +77,16 @@ jobs:
             --output instantly-request.json
           chmod 600 instantly-request.json
 
+      - name: Apply Webactueel high-impact guard
+        id: guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH=scripts python3 scripts/instantly_command_guard.py \
+            --request-json instantly-request.json \
+            --report instantly-guard-result.json
+          chmod 600 instantly-guard-result.json
+
       - name: Execute official Instantly API v2 operation
         id: execute
         continue-on-error: true
@@ -113,11 +123,12 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           EXECUTE_OUTCOME: ${{ steps.execute.outcome }}
+          GUARD_OUTCOME: ${{ steps.guard.outcome }}
           REQUEST_ID: ${{ steps.command.outputs.request_id }}
         shell: bash
         run: |
           set -euo pipefail
-          if [ "$EXECUTE_OUTCOME" = 'success' ] && [ -f instantly-public-result.json ]; then
+          if [ "$GUARD_OUTCOME" = 'success' ] && [ "$EXECUTE_OUTCOME" = 'success' ] && [ -f instantly-public-result.json ]; then
             summary="$(jq -r --arg id "$REQUEST_ID" '
               "INSTANTLY_API=green\nREQUEST_ID=" + $id +
               "\nSTATUS=" + (.status // "unknown") +
@@ -144,7 +155,7 @@ jobs:
             "https://api.github.com/repos/${REPOSITORY}/issues/${ISSUE_NUMBER}/comments" \
             -d "$payload" >/dev/null
 
-          if [ "$EXECUTE_OUTCOME" = 'success' ]; then
+          if [ "$GUARD_OUTCOME" = 'success' ] && [ "$EXECUTE_OUTCOME" = 'success' ]; then
             close_payload="$(jq -n '{state:"closed", state_reason:"completed"}')"
             curl --fail-with-body --silent --show-error \
               -X PATCH \
@@ -158,8 +169,8 @@ jobs:
       - name: Delete local private payloads
         if: always()
         shell: bash
-        run: rm -f instantly-request.json instantly-public-result.json instantly-private-result.json
+        run: rm -f instantly-request.json instantly-public-result.json instantly-private-result.json instantly-guard-result.json
 
       - name: Fail closed
-        if: steps.execute.outcome != 'success' || steps.record.outcome != 'success'
+        if: steps.guard.outcome != 'success' || steps.execute.outcome != 'success' || steps.record.outcome != 'success'
         run: exit 1
