@@ -102,3 +102,23 @@ Writes default to plan-only. DELETE and externally consequential operations such
 This parity layer does not change Project Leads ownership or policy. For prospect/outreach behavior, live Project Leads validation, suppression, evidence and copy gates remain binding even though the generic API layer is technically capable of broader account administration.
 
 See `docs/INSTANTLY-API-V2-FULL-SURFACE.md` for the private transport, risk model and request format.
+
+## Dynamic product-surface audit
+
+The Instantly UI changes faster than a static integration document. `scripts/instantly_surface_audit.py` now compares the current official OpenAPI schema against the main product surfaces and reports each surface as `read_write`, `read_only` or `not_proven`.
+
+Run locally:
+
+```bash
+PYTHONPATH=scripts python3 scripts/instantly_surface_audit.py --report instantly-surface-report.json
+```
+
+Or create a GitHub issue owned by `Yolol100` with title exactly:
+
+`INSTANTLY SURFACE AUDIT`
+
+The issue workflow needs no Instantly API key because it audits the public official schema only. The safe public result contains capability classifications, not account data.
+
+This audit is the required preflight before claiming that ChatGPT/Leadscanner can control a visible Instantly surface. In particular, Instantly AI Business Details, Customer Profiles, Guidance, Saved memories, Copilot chats/tasks/settings, full AI Agent configuration, native Automation builder, CRM Calls/SMS/Tasks and Website Visitors configuration remain `NOT_PROVEN` unless the current official v2 schema exposes matching operations.
+
+See `docs/INSTANTLY-SURFACE-COVERAGE.md` for the control boundary and operating guidance.
