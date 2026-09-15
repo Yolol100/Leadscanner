@@ -52,7 +52,6 @@ jobs:
             CONNECTION_TEST|CAMPAIGN_STATUS|SYNC_SELECTED_TO_LIST|SYNC_SELECTED_TO_CAMPAIGN) ;;
             *) echo 'Unsupported command.' >&2; exit 2 ;;
           esac
-          echo "command=$command" >> "$GITHUB_OUTPUT"
 
           mapfile -t campaign_lines < <(printf '%s\n' "$body" | sed -n 's/^CAMPAIGN_ID=//p')
           mapfile -t list_lines < <(printf '%s\n' "$body" | sed -n 's/^LIST_ID=//p')
@@ -60,16 +59,56 @@ jobs:
           mapfile -t apply_lines < <(printf '%s\n' "$body" | sed -n 's/^APPLY=//p')
           mapfile -t lead_ids < <(printf '%s\n' "$body" | sed -n 's/^LEAD_ID=//p')
 
+          if [ "${#campaign_lines[@]}" -gt 1 ] || [ "${#list_lines[@]}" -gt 1 ] || [ "${#count_lines[@]}" -gt 1 ] || [ "${#apply_lines[@]}" -gt 1 ]; then
+            echo 'Duplicate scalar command fields are not allowed.' >&2
+            exit 2
+          fi
+
           campaign_id="${campaign_lines[0]:-}"
           list_id="${list_lines[0]:-}"
           expected_count="${count_lines[0]:-0}"
           apply="${apply_lines[0]:-false}"
 
+          if [ -n "$campaign_id" ] && ! [[ "$campaign_id" =~ ^[A-Za-z0-9-]{8,80}$ ]]; then
+            echo 'CAMPAIGN_ID is invalid.' >&2
+            exit 2
+          fi
+          if [ -n "$list_id" ] && ! [[ "$list_id" =~ ^[A-Za-z0-9-]{8,80}$ ]]; then
+            echo 'LIST_ID is invalid.' >&2
+            exit 2
+          fi
           if ! [[ "$expected_count" =~ ^[0-9]{1,3}$ ]] || [ "$expected_count" -gt 100 ]; then
             echo 'EXPECTED_COUNT must be 0-100.' >&2
             exit 2
           fi
           case "$apply" in true|false) ;; *) echo 'APPLY must be true or false.' >&2; exit 2 ;; esac
+
+          case "$command" in
+            CONNECTION_TEST)
+              if [ -n "$campaign_id" ] || [ -n "$list_id" ] || [ "$expected_count" -ne 0 ] || [ "${#lead_ids[@]}" -ne 0 ] || [ "$apply" != 'false' ]; then
+                echo 'CONNECTION_TEST accepts no destination, leads, count, or apply flag.' >&2
+                exit 2
+              fi
+              ;;
+            CAMPAIGN_STATUS)
+              if [ -z "$campaign_id" ] || [ -n "$list_id" ] || [ "$expected_count" -ne 0 ] || [ "${#lead_ids[@]}" -ne 0 ] || [ "$apply" != 'false' ]; then
+                echo 'CAMPAIGN_STATUS requires exactly one CAMPAIGN_ID and no write fields.' >&2
+                exit 2
+              fi
+              ;;
+            SYNC_SELECTED_TO_LIST)
+              if [ -n "$campaign_id" ] || [ -z "$list_id" ]; then
+                echo 'SYNC_SELECTED_TO_LIST requires LIST_ID only.' >&2
+                exit 2
+              fi
+              ;;
+            SYNC_SELECTED_TO_CAMPAIGN)
+              if [ -z "$campaign_id" ] || [ -n "$list_id" ]; then
+                echo 'SYNC_SELECTED_TO_CAMPAIGN requires CAMPAIGN_ID only.' >&2
+                exit 2
+              fi
+              ;;
+          esac
 
           if [[ "$command" == SYNC_SELECTED_* ]]; then
             if [ "$expected_count" -lt 1 ] || [ "${#lead_ids[@]}" -ne "$expected_count" ]; then
@@ -90,13 +129,36 @@ jobs:
             fi
           fi
 
+          echo "command=$command" >> "$GITHUB_OUTPUT"
           echo "campaign_id=$campaign_id" >> "$GITHUB_OUTPUT"
           echo "list_id=$list_id" >> "$GITHUB_OUTPUT"
           echo "expected_count=$expected_count" >> "$GITHUB_OUTPUT"
           echo "apply=$apply" >> "$GITHUB_OUTPUT"
 
-      - name: Execute safe Instantly bridge
-        id: bridge
+      - name: Execute read-only Instantly bridge
+        id: bridge_read
+        if: steps.command.outputs.command == 'CONNECTION_TEST' || steps.command.outputs.command == 'CAMPAIGN_STATUS'
+        continue-on-error: true
+        env:
+          INSTANTLY_API_KEY: ${{ secrets.INSTANTLY_API_KEY }}
+          COMMAND: ${{ steps.command.outputs.command }}
+          CAMPAIGN_ID: ${{ steps.command.outputs.campaign_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$COMMAND" in
+            CONNECTION_TEST)
+              args=(--command connection-test)
+              ;;
+            CAMPAIGN_STATUS)
+              args=(--command campaign-status --campaign-id "$CAMPAIGN_ID")
+              ;;
+          esac
+          python3 scripts/instantly_bridge.py "${args[@]}" --report instantly-result.json | tee instantly-result.txt
+
+      - name: Execute selected-lead Instantly sync
+        id: bridge_sync
+        if: steps.command.outputs.command == 'SYNC_SELECTED_TO_LIST' || steps.command.outputs.command == 'SYNC_SELECTED_TO_CAMPAIGN'
         continue-on-error: true
         env:
           INSTANTLY_API_KEY: ${{ secrets.INSTANTLY_API_KEY }}
@@ -111,12 +173,6 @@ jobs:
         run: |
           set -euo pipefail
           case "$COMMAND" in
-            CONNECTION_TEST)
-              args=(--command connection-test)
-              ;;
-            CAMPAIGN_STATUS)
-              args=(--command campaign-status --campaign-id "$CAMPAIGN_ID")
-              ;;
             SYNC_SELECTED_TO_LIST)
               args=(--command sync-selected-to-list --list-id "$LIST_ID" --lead-id-file selected-lead-ids.txt --expected-count "$EXPECTED_COUNT")
               ;;
@@ -135,11 +191,19 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
-          BRIDGE_OUTCOME: ${{ steps.bridge.outcome }}
+          COMMAND: ${{ steps.command.outputs.command }}
+          READ_OUTCOME: ${{ steps.bridge_read.outcome }}
+          SYNC_OUTCOME: ${{ steps.bridge_sync.outcome }}
         shell: bash
         run: |
           set -euo pipefail
-          if [ "$BRIDGE_OUTCOME" = 'success' ] && [ -f instantly-result.json ]; then
+          case "$COMMAND" in
+            CONNECTION_TEST|CAMPAIGN_STATUS) bridge_outcome="$READ_OUTCOME" ;;
+            SYNC_SELECTED_TO_LIST|SYNC_SELECTED_TO_CAMPAIGN) bridge_outcome="$SYNC_OUTCOME" ;;
+            *) bridge_outcome='failure' ;;
+          esac
+
+          if [ "$bridge_outcome" = 'success' ] && [ -f instantly-result.json ]; then
             summary="$(jq -r '"INSTANTLY_BRIDGE=" + (.status // "unknown") + "\nCOMMAND=" + (.command // "") + "\nMODE=" + (.mode // "read_only") + "\nTARGET=" + ((.target // 0)|tostring) + "\nSUBMITTED=" + ((.submitted // 0)|tostring) + "\nFINAL_READBACK=" + ((.final_readback // 0)|tostring) + "\nCAMPAIGN_STATUS=" + (.campaign_status // .destination_status // "") + "\nSEND_PERMISSION=none\nACTIVATION_INVOKED=false"' instantly-result.json)"
           else
             summary='INSTANTLY_BRIDGE=blocked\nSEND_PERMISSION=none\nACTIVATION_INVOKED=false'
@@ -152,15 +216,20 @@ jobs:
             -H 'X-GitHub-Api-Version: 2022-11-28' \
             "https://api.github.com/repos/${REPOSITORY}/issues/${ISSUE_NUMBER}/comments" \
             -d "$payload" >/dev/null
-          close_payload="$(jq -n '{state:"closed", state_reason:"completed"}')"
-          curl --fail-with-body --silent --show-error \
-            -X PATCH \
-            -H 'Accept: application/vnd.github+json' \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H 'X-GitHub-Api-Version: 2022-11-28' \
-            "https://api.github.com/repos/${REPOSITORY}/issues/${ISSUE_NUMBER}" \
-            -d "$close_payload" >/dev/null
+
+          if [ "$bridge_outcome" = 'success' ]; then
+            close_payload="$(jq -n '{state:"closed", state_reason:"completed"}')"
+            curl --fail-with-body --silent --show-error \
+              -X PATCH \
+              -H 'Accept: application/vnd.github+json' \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "https://api.github.com/repos/${REPOSITORY}/issues/${ISSUE_NUMBER}" \
+              -d "$close_payload" >/dev/null
+          fi
 
       - name: Fail closed
-        if: steps.bridge.outcome != 'success'
+        if: >-
+          (steps.command.outputs.command == 'CONNECTION_TEST' || steps.command.outputs.command == 'CAMPAIGN_STATUS') && steps.bridge_read.outcome != 'success' ||
+          (steps.command.outputs.command == 'SYNC_SELECTED_TO_LIST' || steps.command.outputs.command == 'SYNC_SELECTED_TO_CAMPAIGN') && steps.bridge_sync.outcome != 'success'
         run: exit 1
