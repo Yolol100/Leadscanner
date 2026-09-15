@@ -12,7 +12,12 @@ class ParitySecurityTests(unittest.TestCase):
         return (WF / name).read_text(encoding="utf-8")
 
     def test_new_workflows_pin_remote_actions(self):
-        for name in ("contact-enrichment.yml", "sender-readiness.yml", "inbox-placement.yml"):
+        for name in (
+            "contact-enrichment.yml",
+            "sender-readiness.yml",
+            "inbox-placement.yml",
+            "instantly-bridge-command.yml",
+        ):
             for line in self.read(name).splitlines():
                 line = line.strip()
                 if line.startswith("uses:") and not line.split("uses:", 1)[1].strip().startswith("./"):
@@ -43,6 +48,40 @@ class ParitySecurityTests(unittest.TestCase):
         self.assertIn("confirm_test_send", text)
         self.assertIn("OUTREACH_SEED_INBOXES_JSON", text)
         self.assertNotIn("OutreachQueue", text)
+
+    def test_instantly_bridge_is_owner_only_and_never_sends(self):
+        text = self.read("instantly-bridge-command.yml")
+        self.assertIn("github.actor == 'Yolol100'", text)
+        self.assertIn("INSTANTLY_API_KEY", text)
+        self.assertIn("SEND_PERMISSION=none", text)
+        self.assertIn("ACTIVATION_INVOKED=false", text)
+        for forbidden in (
+            "OUTREACH_MAIL_PASSWORD",
+            "OUTREACH_MAILBOXES_JSON",
+            "outreach_direct_smtp_runtime.py",
+            "activate-campaign",
+            "resume-campaign",
+        ):
+            self.assertNotIn(forbidden, text)
+
+    def test_instantly_read_only_path_does_not_receive_google_secret(self):
+        text = self.read("instantly-bridge-command.yml")
+        read_start = text.index("- name: Execute read-only Instantly bridge")
+        sync_start = text.index("- name: Execute selected-lead Instantly sync")
+        report_start = text.index("- name: Report safe result")
+        read_section = text[read_start:sync_start]
+        sync_section = text[sync_start:report_start]
+        self.assertNotIn("GOOGLE_SERVICE_ACCOUNT_JSON", read_section)
+        self.assertNotIn("OUTREACH_SPREADSHEET_ID", read_section)
+        self.assertIn("GOOGLE_SERVICE_ACCOUNT_JSON", sync_section)
+        self.assertIn("OUTREACH_SPREADSHEET_ID", sync_section)
+
+    def test_instantly_command_parser_rejects_ambiguous_destinations(self):
+        text = self.read("instantly-bridge-command.yml")
+        self.assertIn("SYNC_SELECTED_TO_LIST requires LIST_ID only.", text)
+        self.assertIn("SYNC_SELECTED_TO_CAMPAIGN requires CAMPAIGN_ID only.", text)
+        self.assertIn("CAMPAIGN_STATUS requires exactly one CAMPAIGN_ID and no write fields.", text)
+        self.assertIn("Duplicate scalar command fields are not allowed.", text)
 
 
 if __name__ == "__main__":
