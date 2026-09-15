@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import uuid
 from typing import Any
 
 from instantly_bridge import InstantlyClient, InstantlyError
+
+TEST_LIST_PREFIX = "Webactueel Bridge Self Test"
+TEST_LIST_RE = re.compile(r"^Webactueel Bridge Self Test [0-9a-f]{12}$")
 
 
 class SelfTestError(RuntimeError):
@@ -16,15 +20,56 @@ def _not_found(exc: Exception) -> bool:
     return "HTTP 404" in str(exc)
 
 
-def _safe_delete(client: InstantlyClient, path: str) -> bool:
+def _delete_and_verify(client: InstantlyClient, path: str) -> bool:
     try:
         client.request("DELETE", path)
-        return True
     except InstantlyError as exc:
-        return _not_found(exc)
+        if not _not_found(exc):
+            raise
+    try:
+        client.request("GET", path)
+    except InstantlyError as exc:
+        if _not_found(exc):
+            return True
+        raise
+    return False
+
+
+def cleanup_stale_selftests(client: InstantlyClient) -> int:
+    response = client.request(
+        "GET",
+        "/lead-lists",
+        query={"limit": 100, "search": TEST_LIST_PREFIX},
+    ) or {}
+    cleaned = 0
+    for item in response.get("items", []):
+        name = str(item.get("name") or "")
+        if not TEST_LIST_RE.fullmatch(name):
+            continue
+        list_id = str(item.get("id") or "").strip()
+        if not list_id:
+            raise SelfTestError("stale self-test list returned no id")
+        leads = client.request(
+            "POST",
+            "/leads/list",
+            body={"list_id": list_id, "limit": 100},
+        ) or {}
+        if leads.get("next_starting_after"):
+            raise SelfTestError("stale self-test list unexpectedly contains more than 100 leads")
+        for lead in leads.get("items", []):
+            lead_id = str(lead.get("id") or "").strip()
+            if not lead_id:
+                raise SelfTestError("stale self-test lead returned no id")
+            if not _delete_and_verify(client, f"/leads/{lead_id}"):
+                raise SelfTestError("stale self-test lead cleanup was not verified")
+        if not _delete_and_verify(client, f"/lead-lists/{list_id}"):
+            raise SelfTestError("stale self-test list cleanup was not verified")
+        cleaned += 1
+    return cleaned
 
 
 def run_write_selftest(client: InstantlyClient) -> dict[str, Any]:
+    stale_cleaned = cleanup_stale_selftests(client)
     marker = uuid.uuid4().hex[:12]
     list_id = ""
     lead_id = ""
@@ -33,13 +78,14 @@ def run_write_selftest(client: InstantlyClient) -> dict[str, Any]:
     readback_verified = False
     lead_cleanup = False
     list_cleanup = False
+    test_error: Exception | None = None
 
     try:
         created_list = client.request(
             "POST",
             "/lead-lists",
             body={
-                "name": f"Webactueel Bridge Self Test {marker}",
+                "name": f"{TEST_LIST_PREFIX} {marker}",
                 "has_enrichment_task": False,
             },
         ) or {}
@@ -78,29 +124,22 @@ def run_write_selftest(client: InstantlyClient) -> dict[str, Any]:
             raise SelfTestError("test lead readback did not match first_name")
         if str(readback.get("last_name") or "") != f"BridgeTest-{marker}":
             raise SelfTestError("test lead readback did not match last_name")
-        custom = readback.get("custom_variables") or {}
-        if str(custom.get("webactueel_test_marker") or "") != marker:
-            raise SelfTestError("test lead readback did not match marker")
+        payload = readback.get("payload") or {}
+        if str(payload.get("webactueel_test_marker") or "") != marker:
+            raise SelfTestError("test lead payload readback did not match marker")
         readback_verified = True
-
+    except Exception as exc:  # cleanup must run before the original failure is surfaced
+        test_error = exc
     finally:
         if lead_id:
-            lead_cleanup = _safe_delete(client, f"/leads/{lead_id}")
+            lead_cleanup = _delete_and_verify(client, f"/leads/{lead_id}")
         if list_id:
-            list_cleanup = _safe_delete(client, f"/lead-lists/{list_id}")
+            list_cleanup = _delete_and_verify(client, f"/lead-lists/{list_id}")
 
-        if lead_id:
-            try:
-                client.request("GET", f"/leads/{lead_id}")
-            except InstantlyError as exc:
-                if _not_found(exc):
-                    lead_cleanup = True
-        if list_id:
-            try:
-                client.request("GET", f"/lead-lists/{list_id}")
-            except InstantlyError as exc:
-                if _not_found(exc):
-                    list_cleanup = True
+    if test_error is not None:
+        if not all((lead_cleanup or not lead_created, list_cleanup or not list_created)):
+            raise SelfTestError(f"{test_error}; cleanup was not fully verified") from test_error
+        raise test_error
 
     if not all((list_created, lead_created, readback_verified, lead_cleanup, list_cleanup)):
         raise SelfTestError("write self-test or cleanup was not fully verified")
@@ -109,6 +148,7 @@ def run_write_selftest(client: InstantlyClient) -> dict[str, Any]:
         "status": "green",
         "command": "write-self-test",
         "mode": "isolated_write_test",
+        "stale_test_lists_cleaned": stale_cleaned,
         "list_created": True,
         "lead_created": True,
         "readback_verified": True,
@@ -140,6 +180,7 @@ def main() -> int:
         _write_report(args.report, result)
         print(
             "INSTANTLY_WRITE_SELFTEST=green "
+            f"stale_test_lists_cleaned={result['stale_test_lists_cleaned']} "
             "list_created=true lead_created=true readback_verified=true "
             "lead_cleanup=true list_cleanup=true email_used=false "
             "send_permission=none activation_invoked=false"

@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from instantly_bridge import InstantlyError
-from instantly_write_selftest import run_write_selftest
+from instantly_write_selftest import cleanup_stale_selftests, run_write_selftest
 
 
 class FakeClient:
@@ -16,6 +16,8 @@ class FakeClient:
 
     def request(self, method, path, *, query=None, body=None):
         self.calls.append((method, path, body))
+        if method == "GET" and path == "/lead-lists" and query:
+            return {"items": []}
         if method == "POST" and path == "/lead-lists":
             return {"id": "list-12345678"}
         if method == "POST" and path == "/leads/add":
@@ -34,7 +36,7 @@ class FakeClient:
                 "id": "lead-12345678",
                 "first_name": "Webactueel",
                 "last_name": f"BridgeTest-{self.marker}",
-                "custom_variables": {"webactueel_test_marker": self.marker},
+                "payload": {"webactueel_test_marker": self.marker},
             }
         if method == "DELETE" and path == "/leads/lead-12345678":
             self.lead_deleted = True
@@ -54,11 +56,43 @@ class FakeClient:
             raise AssertionError("self-test lead must not contain an email address")
 
 
+class StaleClient:
+    def __init__(self):
+        self.deleted = set()
+
+    def request(self, method, path, *, query=None, body=None):
+        if method == "GET" and path == "/lead-lists":
+            return {
+                "items": [
+                    {
+                        "id": "stale-list-12345678",
+                        "name": "Webactueel Bridge Self Test abcdef123456",
+                    },
+                    {"id": "keep-list-12345678", "name": "Webactueel Bridge Self Test Manual"},
+                ]
+            }
+        if method == "POST" and path == "/leads/list":
+            self.assertEqual(body["list_id"], "stale-list-12345678")
+            return {"items": [{"id": "stale-lead-12345678"}], "next_starting_after": None}
+        if method == "DELETE":
+            self.deleted.add(path)
+            return None
+        if method == "GET" and path in self.deleted:
+            raise InstantlyError("Instantly API HTTP 404")
+        raise AssertionError(f"unexpected request: {method} {path}")
+
+    @staticmethod
+    def assertEqual(left, right):
+        if left != right:
+            raise AssertionError(f"{left!r} != {right!r}")
+
+
 class InstantlyWriteSelfTestTests(unittest.TestCase):
     def test_write_readback_and_cleanup_without_email_or_campaign(self):
         client = FakeClient()
         result = run_write_selftest(client)
         self.assertEqual(result["status"], "green")
+        self.assertEqual(result["stale_test_lists_cleaned"], 0)
         self.assertTrue(result["list_created"])
         self.assertTrue(result["lead_created"])
         self.assertTrue(result["readback_verified"])
@@ -68,6 +102,13 @@ class InstantlyWriteSelfTestTests(unittest.TestCase):
         paths = [path for _, path, _ in client.calls]
         self.assertFalse(any("campaign" in path for path in paths))
         self.assertFalse(any("email" in path for path in paths))
+
+    def test_stale_selftest_cleanup_is_exact_and_verified(self):
+        client = StaleClient()
+        self.assertEqual(cleanup_stale_selftests(client), 1)
+        self.assertIn("/leads/stale-lead-12345678", client.deleted)
+        self.assertIn("/lead-lists/stale-list-12345678", client.deleted)
+        self.assertNotIn("/lead-lists/keep-list-12345678", client.deleted)
 
     def test_workflow_is_owner_only_and_receives_only_instantly_secret(self):
         workflow = (
