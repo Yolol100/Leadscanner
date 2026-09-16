@@ -2,7 +2,7 @@ name: Instantly Full API Command
 
 on:
   issues:
-    types: [opened]
+    types: [opened, reopened]
 
 permissions:
   contents: read
@@ -11,6 +11,7 @@ permissions:
 concurrency:
   group: instantly-full-api
   cancel-in-progress: false
+  queue: max
 
 jobs:
   run:
