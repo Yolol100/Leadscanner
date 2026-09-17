@@ -34,7 +34,7 @@ jobs:
           r=json.load(open('tool-registry.json', encoding='utf-8'))
 
           route=c['default_route']
-          assert c['schema_version']=='3.2'
+          assert c['schema_version']=='3.3'
           assert c['repository']=='Yolol100/Leadscanner'
           assert route['id']=='filter_core_v17'
           assert route['source_set_version']=='17.1.0-signal-policy'
@@ -42,6 +42,7 @@ jobs:
           assert route['copy_source_version']=='17.3.0'
           assert route['send_permission']=='none'
           assert route['one_offer'] is True
+          assert 'last_mile_evidence_guard' in route['steps']
 
           hard=set(c['hard_filter']['all_required'])
           assert 'real_company_and_official_site_or_bounded_website_absent_exception' in hard
@@ -61,9 +62,20 @@ jobs:
           assert copy['human_language_gate_required'] is True
           assert copy['prepared_artifact_claim_requires_readback'] is True
           assert copy['unsupported_inferred_claims_forbidden'] is True
-          assert c['mailbox_contract']['copy_gate']=='scripts/outreach_copy_v17_3.py::initial_copy_errors'
 
-          assert r['version']=='5.3'
+          mailbox=c['mailbox_contract']
+          assert mailbox['copy_gate']=='scripts/outreach_copy_v17_3.py::initial_copy_errors'
+          assert mailbox['last_mile_guard']=='scripts/outreach_last_mile_guard.py::validate_last_mile_rows'
+          assert mailbox['current_agent_offer_evidence_revalidation']=='required_at_preflight_and_apply'
+          assert mailbox['persisted_control_instruction_policy']=='fail_closed_before_mailbox_mutation'
+          assert mailbox['identity_policy']=='idn_punycode_or_unrelated_domain_requires_explicit_verification'
+          assert mailbox['send_permission']=='none'
+
+          reply=c['reply_contract']
+          assert reply['auto_send'] is False
+          assert reply['runtime_status']=='controlled_end_to_end_fixture_proven_with_exact_one_draft_notification_contract_and_zero_send'
+
+          assert r['version']=='5.4'
           p=r['policy']
           assert p['default_source_set_version']=='17.1.0-signal-policy'
           assert p['copy_policy_version']=='17.3.0'
@@ -71,9 +83,19 @@ jobs:
           assert p['copy_module']=='scripts/outreach_copy_v17_3.py'
           assert p['unsupported_inferred_claims_forbidden'] is True
           assert p['signal_policy_module']=='src/tools/prospect-signal-policy.mjs'
+          assert p['last_mile_guard_module']=='scripts/outreach_last_mile_guard.py'
+          assert p['current_agent_offer_evidence_revalidation_required'] is True
+          assert p['persisted_control_instructions_fail_closed'] is True
+          assert p['ambiguous_identity_requires_explicit_verification'] is True
           assert p['draft_only'] is True and p['send_permission']=='none'
           assert r['capabilities']['prospect_signal_policy']['llms_txt']=='not_standalone_search_visibility_evidence'
-          assert r['capabilities']['mailbox_draft']['copy_validator']=='scripts/outreach_copy_v17_3.py::initial_copy_errors'
+          mailbox_cap=r['capabilities']['mailbox_draft']
+          assert mailbox_cap['copy_validator']=='scripts/outreach_copy_v17_3.py::initial_copy_errors'
+          assert mailbox_cap['last_mile_guard']=='scripts/outreach_last_mile_guard.py::validate_last_mile_rows'
+          assert mailbox_cap['current_agent_offer_evidence_revalidation']=='preflight_and_apply'
+          assert mailbox_cap['persisted_control_instruction_policy']=='fail_closed'
+          assert mailbox_cap['send_permission']=='none'
+          assert r['capabilities']['reply_triage']['status']=='controlled_e2e_fixture_proven_exactly_one_draft_notification_contract_zero_send'
 
           for item in (
             'src/tools/prospect-signal-policy.mjs',
@@ -81,18 +103,26 @@ jobs:
             'scripts/outreach_copy_v17_2.py',
             'scripts/outreach_copy_v17_3.py',
             'scripts/outreach_queue_imap_draft.py',
+            'scripts/outreach_last_mile_guard.py',
             'tests/test_outreach_copy_v17_3.py',
+            'tests/test_leads_parity_closure.py',
             '.github/workflows/sync-selected-myhost-drafts-command.yml',
           ):
             assert pathlib.Path(item).is_file(), item
 
           copy_text=pathlib.Path('scripts/outreach_copy_v17_3.py').read_text(encoding='utf-8')
           queue_text=pathlib.Path('scripts/outreach_queue_imap_draft.py').read_text(encoding='utf-8')
+          selected_text=pathlib.Path('scripts/outreach_queue_imap_draft_sync_selected.py').read_text(encoding='utf-8')
+          guard_text=pathlib.Path('scripts/outreach_last_mile_guard.py').read_text(encoding='utf-8')
           assert 'POLICY_VERSION = "17.3.0"' in copy_text
           assert 'unsupported inferred claim' in copy_text
           assert 'artifact readback proof' in copy_text
           assert 'from outreach_copy_v17_3 import initial_copy_errors' in queue_text
           assert 'artifact_readback_ready' in queue_text
+          assert 'validate_last_mile_rows(rows)' in selected_text
+          assert 'live_evidence_errors' in guard_text
+          assert 'control_instruction_errors' in guard_text
+          assert 'identity_errors' in guard_text
 
           integration=pathlib.Path('LEADS-INTEGRATION.md').read_text(encoding='utf-8')
           agents=pathlib.Path('AGENTS.md').read_text(encoding='utf-8')
@@ -100,5 +130,5 @@ jobs:
           assert 'V17.3' in integration and 'send_permission=none' in integration
           assert '17.1.0-signal-policy' in agents and 'V17.3.0' in agents
           assert '63 scenarios' in readme
-          print('toolkit-contract Leads v17.1 signal policy / v17.3 copy runtime: OK')
+          print('toolkit-contract Leads v17.1 signal policy / v17.3 copy runtime + parity closure: OK')
           PY
