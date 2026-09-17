@@ -1,11 +1,11 @@
 {
-  "version": "5.4",
+  "version": "5.5",
   "repository_role": "leads_filter_execution_layer",
   "policy": {
     "default_route": "filter_core_v17",
-    "default_source_set_version": "17.1.0-signal-policy",
-    "copy_policy_version": "17.3.0",
-    "copy_source_version": "17.3.0",
+    "default_source_set_version": "17.2.0-compliance-gate",
+    "copy_policy_version": "17.3.1",
+    "copy_source_version": "17.3.1",
     "controller": "webactueel-workflow",
     "owner_skill": "leads",
     "single_decision_source": "Project Leads/00-leads-core.md",
@@ -13,6 +13,7 @@
     "copy_contract": "curiosity_first_v17_2",
     "copy_module": "scripts/outreach_copy_v17_3.py",
     "signal_policy_module": "src/tools/prospect-signal-policy.mjs",
+    "compliance_policy_module": "scripts/outreach_compliance_preflight.py",
     "last_mile_guard_module": "scripts/outreach_last_mile_guard.py",
     "copy_validator_required_before_mailbox_draft": true,
     "prepared_artifact_claim_requires_readback": true,
@@ -30,6 +31,10 @@
     "max_process_pages_after_homepage": 3,
     "external_content_is_untrusted_data": true,
     "public_business_email_required": true,
+    "contact_and_compliance_separated": true,
+    "compliance_default": "COMPLIANCE_NOT_PROVEN",
+    "compliance_pass_required_for_outreach": true,
+    "instantly_can_override_compliance": false,
     "draft_only": true,
     "send_permission": "none",
     "preferred_draft_workflow": ".github/workflows/sync-selected-myhost-drafts-command.yml"
@@ -37,22 +42,34 @@
   "capabilities": {
     "filter_core": {
       "role": "canonical_default_contract",
-      "source_set_version": "17.1.0-signal-policy",
+      "source_set_version": "17.2.0-compliance-gate",
       "required_pass_conditions": [
         "real_company_and_official_site_or_bounded_website_absent_exception",
         "visible_commercial_process_or_verified_website_absence",
         "one_public_visible_signal",
         "exactly_one_fitting_offer",
-        "public_business_email_from_official_source",
+        "contact_verified_from_official_business_source",
+        "separate_compliance_gate_passed_with_evidence",
         "unique_candidate",
         "send_permission_none"
       ],
-      "on_missing_condition": "skip_and_refill",
+      "on_missing_condition": "skip_or_block_and_refill",
+      "send_permission": "none"
+    },
+    "compliance_gate": {
+      "module": "scripts/outreach_compliance_preflight.py",
+      "default_status": "COMPLIANCE_NOT_PROVEN",
+      "pass_status": "COMPLIANCE_PASSED",
+      "blocked_status": "COMPLIANCE_BLOCKED",
+      "requires_contact_verified": true,
+      "public_email_alone_is_permission": false,
+      "instantly_override": false,
       "send_permission": "none"
     },
     "prospect_signal_policy": {
       "module": "src/tools/prospect-signal-policy.mjs",
       "website_absent_offer": "website_webshop_improvement",
+      "website_absent_compliance_bypass": false,
       "ads_and_social_activity": "discovery_priority_only",
       "llms_txt": "not_standalone_search_visibility_evidence",
       "prepared_artifact_claim": "exists_plus_verified_readback_required",
@@ -60,22 +77,24 @@
     },
     "prospect_discovery": {"workflow": ".github/workflows/prospect-discovery.yml", "role": "bounded_candidate_discovery", "send_permission": "none"},
     "prospect_signal_discovery": {"workflow": ".github/workflows/prospect-signal-discovery.yml", "role": "bounded_official_site_signal_evidence", "send_permission": "none"},
-    "contact_enrichment": {"workflow": ".github/workflows/contact-enrichment.yml", "role": "official_public_business_email_discovery", "send_permission": "none"},
+    "contact_enrichment": {"workflow": ".github/workflows/contact-enrichment.yml", "role": "official_public_business_email_discovery_only_not_compliance", "send_permission": "none"},
     "website_evidence_scan": {"workflow": ".github/workflows/scan.yml", "read_only": true, "normal_default_for_every_prospect": false},
     "mailbox_draft": {
       "preferred_workflow": ".github/workflows/sync-selected-myhost-drafts-command.yml",
       "copy_validator": "scripts/outreach_copy_v17_3.py::initial_copy_errors",
       "copy_contract": "curiosity_first_v17_2",
-      "copy_policy_version": "17.3.0",
-      "copy_source_version": "17.3.0",
+      "copy_policy_version": "17.3.1",
+      "copy_source_version": "17.3.1",
       "human_language_gate_required": true,
+      "compliance_validator": "scripts/outreach_queue_imap_draft.py::validate_queue_row",
+      "required_compliance_status": "COMPLIANCE_PASSED",
+      "required_contact_verified": true,
       "prepared_artifact_guard": "src/tools/prospect-signal-policy.mjs::canClaimPreparedArtifact",
       "last_mile_guard": "scripts/outreach_last_mile_guard.py::validate_last_mile_rows",
       "current_agent_offer_evidence_revalidation": "preflight_and_apply",
       "persisted_control_instruction_policy": "fail_closed",
       "identity_policy": "idn_punycode_or_unrelated_domain_requires_explicit_verification",
       "transport": "IMAP_APPEND_plus_exact_same_folder_readback",
-      "draft_compliance_states": ["manual_review", "approved"],
       "idempotency": "lead_id_plus_recipient_plus_content_fingerprint",
       "send_permission": "none"
     },
@@ -92,10 +111,10 @@
       "send_permission": "none"
     }
   },
-  "supported_offer_types": ["front_desk_sales","lead_reactivation","review_concierge","customer_support","commerce","quote_intake","website_webshop_improvement","search_visibility","social_management"],
+  "supported_offer_types": ["front_desk_sales", "lead_reactivation", "review_concierge", "customer_support", "commerce", "quote_intake", "website_webshop_improvement", "search_visibility", "social_management"],
   "offer_constraints": {
     "lead_reactivation": "approved_first_party_data_required",
-    "website_webshop_improvement": "site_evidence_or_verified_website_absent_route",
+    "website_webshop_improvement": "site_evidence_or_verified_website_absent_route_plus_compliance_gate",
     "search_visibility": "current_public_search_plus_site_evidence_required; llms_txt_alone_forbidden",
     "social_management": "official_public_social_or_content_evidence_required"
   },
