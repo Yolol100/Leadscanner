@@ -9,6 +9,14 @@ This repository contains a controlled Instantly API v2 bridge for Project Leads.
 - `Yolol100/Leadscanner` is execution/evidence only.
 - Normal outreach remains `send_permission=none`.
 
+## Contact and compliance boundary
+
+Contact verification and outreach compliance are separate gates.
+
+A public or Instantly-verified email only proves contact context. It does not establish outreach permission. The Leadscanner record must prove both `contact_verified=true` and `compliance_status=COMPLIANCE_PASSED` before a lead can pass the normal draft or Instantly staging validation gate.
+
+The default state is `COMPLIANCE_NOT_PROVEN`. For the Project Leads NL/EEA route, a PASS requires one documented gate from the live `00-leads-core.md`: prior valid consent, explicit designation for this type of unsolicited commercial communication with purpose match, or the applicable existing-customer-similar-services route. Generic public addresses such as `info@` are never auto-cleared. Instantly, SuperSearch, enrichment and AI Agents cannot override this state.
+
 ## What the Leads-specific bridge can do
 
 The original bridge supports four commands:
@@ -18,7 +26,7 @@ The original bridge supports four commands:
 3. `SYNC_SELECTED_TO_LIST` — dry-run or explicit apply of already validated OutreachQueue leads to an Instantly lead list.
 4. `SYNC_SELECTED_TO_CAMPAIGN` — dry-run or explicit apply of already validated OutreachQueue leads to an Instantly campaign only when the campaign is `draft` or `paused`.
 
-This Leads-specific bridge does **not** activate campaigns, resume campaigns, send emails, edit sequences, or bypass the Leads validation/suppression/copy gates.
+This Leads-specific bridge does **not** activate campaigns, resume campaigns, send emails, edit sequences, or bypass the Leads validation/suppression/copy/compliance gates.
 
 ## Secret setup
 
@@ -77,7 +85,7 @@ Because this repository is public, issue commands must contain only opaque lead 
 
 ## Leads-specific safety gates
 
-Before an Instantly lead-staging write, every selected row must already pass the existing Leadscanner `OutreachQueue` validation gate, including suppression and V17.2 copy validation.
+Before an Instantly lead-staging write, every selected row must already pass the existing Leadscanner `OutreachQueue` validation gate, including contact verification, the separate compliance gate, suppression and V17.3 copy validation.
 
 For campaign staging writes the Leads-specific bridge reads the campaign state first and refuses to add leads unless the campaign is `draft` or `paused`. It never changes campaign status.
 
@@ -99,7 +107,7 @@ Because this repository is public, full request/response payloads are never tran
 
 Writes default to plan-only. `.github/workflows/instantly-full-api-command.yml` runs `scripts/instantly_command_guard.py` before the API executor. The guard matches the requested operation against the current official OpenAPI schema and requires the exact `CONFIRM-...` token for destructive/high-impact operations. This includes AI Agent changes, lead adds/moves/assignment/lifecycle changes, live campaign edits/control, sender-account changes, webhook changes, workspace membership/administration and suppression changes. Existing executor-level confirmation rules remain as an additional safety layer.
 
-This parity layer does not change Project Leads ownership or policy. For prospect/outreach behavior, live Project Leads validation, suppression, evidence and copy gates remain binding even though the generic API layer is technically capable of broader account administration.
+This parity layer does not change Project Leads ownership or policy. For prospect/outreach behavior, live Project Leads validation, contact/compliance, suppression, evidence and copy gates remain binding even though the generic API layer is technically capable of broader account administration.
 
 See `docs/INSTANTLY-API-V2-FULL-SURFACE.md` for the private transport, risk model and request format.
 
