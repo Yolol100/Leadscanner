@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import unittest
 
+from outreach_compliance_preflight import COMPLIANCE_NOT_PROVEN
 from outreach_agent_prepare import AUTOMATION_ID, POSTAL_PLACEHOLDER, _agent_row, _prepare_eligible, build_copy, build_prepared_row
 from outreach_copy_preflight import followup_copy_errors, initial_copy_errors
 
@@ -52,15 +53,21 @@ class OutreachAgentPrepareTests(unittest.TestCase):
             "fact": "De website van Voorbeeld Tandarts biedt bezoekers een afspraak- of boekingsroute.",
             "idea": "Een AI Front Desk & Sales Agent kan voor Voorbeeld Tandarts eerste vragen beantwoorden, relevante gegevens verzamelen, leads kwalificeren en een afspraak of menselijke overdracht voorbereiden.",
         }
-        contact = {"checked_at": "2026-09-08T15:00:00Z", "email": "info@voorbeeld.nl", "status": "ready"}
+        contact = {
+            "checked_at": "2026-09-08T15:00:00Z", "email": "info@voorbeeld.nl",
+            "source_url": "https://voorbeeld.nl/contact", "status": "ready"
+        }
         return candidate, qualification, contact
 
     def test_agent_prepared_row_never_auto_approves_or_sends(self):
         candidate, qualification, contact = self._ready_inputs()
         row = build_prepared_row(candidate, qualification, contact)
         self.assertEqual(row["status"], "prepared")
-        self.assertEqual(row["compliance_status"], "manual_review")
+        self.assertEqual(row["contact_verified"], "true")
+        self.assertEqual(row["contact_source"], "https://voorbeeld.nl/contact")
+        self.assertEqual(row["compliance_status"], COMPLIANCE_NOT_PROVEN)
         self.assertEqual(row["compliance_basis"], "")
+        self.assertEqual(row["outreach_allowed"], "false")
         self.assertTrue(row["source"].startswith("agent_offer:"))
         metadata = json.loads(row["source"].split(":", 1)[1])
         self.assertEqual(metadata["automation"], AUTOMATION_ID)
