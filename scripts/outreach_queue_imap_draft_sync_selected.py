@@ -6,6 +6,7 @@ import os
 import re
 
 import outreach_queue_imap_draft_sync as base
+from outreach_last_mile_guard import validate_last_mile_rows
 from outreach_queue_imap_draft import rows_from_values
 
 LEAD_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,180}$")
@@ -64,6 +65,8 @@ def _selected_target_rows(values: list[list[str]], _prefix: str, expected_count:
             "selected recipient email is also assigned to another OutreachQueue lead: "
             + ", ".join(sorted(conflicts))
         )
+
+    validate_last_mile_rows(rows)
     return rows
 
 
