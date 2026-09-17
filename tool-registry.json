@@ -57,7 +57,7 @@
     },
     "prospect_signal_discovery": {
       "workflow": ".github/workflows/prospect-signal-discovery.yml",
-      "role": "bounded_official_signal_evidence",
+      "role": "bounded_official_site_signal_evidence",
       "send_permission": "none"
     },
     "contact_enrichment": {
