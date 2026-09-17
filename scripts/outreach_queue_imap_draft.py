@@ -6,6 +6,7 @@ import os
 import re
 from typing import Iterable
 
+from outreach_compliance_preflight import COMPLIANCE_PASSED, compliance_errors
 from outreach_copy_v17_3 import initial_copy_errors
 from outreach_imap_draft import append_verified_draft, choose_mailbox
 from outreach_mailboxes import enabled_mailboxes, load_mailboxes_from_env
@@ -88,13 +89,14 @@ def validate_queue_row(
     recipient = _normalize_email(row.get("email", ""))
     sender = _normalize_email(sender_email)
     status = row.get("status", "").strip().lower()
-    compliance = row.get("compliance_status", "").strip().lower()
+    compliance = row.get("compliance_status", "").strip().upper()
     stage = row.get("stage", "").strip()
 
     if status not in ALLOWED_DRAFT_STATUSES:
         errors.append("queue status is not draft-eligible")
-    if compliance != "approved":
-        errors.append("compliance_status is not approved")
+    if compliance != COMPLIANCE_PASSED:
+        errors.append("compliance_status is not COMPLIANCE_PASSED")
+    errors.extend(f"compliance contract: {error}" for error in compliance_errors(row))
     if stage not in {"", "1"}:
         errors.append("only the initial stage can be drafted")
     if "@" not in recipient:
