@@ -4,7 +4,7 @@
   "policy": {
     "default_route": "filter_core_v17",
     "default_source_set_version": "17.2.0-compliance-gate",
-    "copy_policy_version": "17.3.1",
+    "copy_policy_version": "17.3.0",
     "copy_source_version": "17.3.1",
     "controller": "webactueel-workflow",
     "owner_skill": "leads",
@@ -83,7 +83,7 @@
       "preferred_workflow": ".github/workflows/sync-selected-myhost-drafts-command.yml",
       "copy_validator": "scripts/outreach_copy_v17_3.py::initial_copy_errors",
       "copy_contract": "curiosity_first_v17_2",
-      "copy_policy_version": "17.3.1",
+      "copy_policy_version": "17.3.0",
       "copy_source_version": "17.3.1",
       "human_language_gate_required": true,
       "compliance_validator": "scripts/outreach_queue_imap_draft.py::validate_queue_row",
