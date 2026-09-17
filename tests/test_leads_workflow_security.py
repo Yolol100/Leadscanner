@@ -31,8 +31,8 @@ class LeadsWorkflowSecurityTests(unittest.TestCase):
     def test_default_registry_is_v17_draft_only_and_no_send(self):
         registry = json.loads((ROOT / "tool-registry.json").read_text(encoding="utf-8"))
         policy = registry["policy"]
-        self.assertEqual(policy["default_route"], "filter_core_v17")
-        self.assertEqual(policy["default_source_set_version"], "17.0.0-filter-core")
+        self.assertEqual(policy["default_route"], "filter_core_v17_1")
+        self.assertEqual(policy["default_source_set_version"], "17.1.0-signal-policy")
         self.assertTrue(policy["draft_only"])
         self.assertEqual(policy["send_permission"], "none")
 
