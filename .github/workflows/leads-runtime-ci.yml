@@ -5,8 +5,12 @@ on:
     paths:
       - '.github/workflows/**'
       - 'scripts/**'
+      - 'src/**'
+      - 'test/**'
       - 'tests/**/*.py'
       - 'docs/**'
+      - 'package.json'
+      - 'package-lock.json'
       - 'requirements-outreach.txt'
       - 'README.md'
       - 'AGENTS.md'
@@ -19,8 +23,12 @@ on:
     paths:
       - '.github/workflows/**'
       - 'scripts/**'
+      - 'src/**'
+      - 'test/**'
       - 'tests/**/*.py'
       - 'docs/**'
+      - 'package.json'
+      - 'package-lock.json'
       - 'requirements-outreach.txt'
       - 'README.md'
       - 'AGENTS.md'
@@ -33,7 +41,7 @@ permissions:
   contents: read
 
 jobs:
-  python-leads-runtime:
+  leads-runtime:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -41,6 +49,18 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.23.2'
+          cache: npm
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Run Node regressions
+        run: npm test
 
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -68,7 +88,7 @@ jobs:
           PYTHONPATH: scripts
         run: python3 -m unittest discover -s tests -p 'test_*.py' -v
 
-      - name: Assert CI cannot send mail, mutate Instantly, or create mailbox drafts
+      - name: Assert CI safe mode
         shell: bash
         run: |
           set -euo pipefail
