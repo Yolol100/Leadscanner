@@ -8,20 +8,11 @@ WORKFLOWS = ROOT / ".github" / "workflows"
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 
 RETIRED_WORKFLOWS = (
-    "outreach-smtp.yml",
-    "live-outreach-command.yml",
-    "one-time-us-outreach.yml",
-    "daily-agent-drafts-v14.yml",
-    "daily-lead-drafts-v16.yml",
-    "daily-lead-drafts.yml",
-    "leads-autopilot.yml",
-    "leads-replacement-continue.yml",
-    "reprepare-agent-lead-command.yml",
-    "sync-myhost-drafts-command.yml",
-    "myhost-draft-command.yml",
-    "prospect-intelligence.yml",
+    "outreach-smtp.yml", "live-outreach-command.yml", "one-time-us-outreach.yml",
+    "daily-agent-drafts-v14.yml", "daily-lead-drafts-v16.yml", "daily-lead-drafts.yml",
+    "leads-autopilot.yml", "leads-replacement-continue.yml", "reprepare-agent-lead-command.yml",
+    "sync-myhost-drafts-command.yml", "myhost-draft-command.yml", "prospect-intelligence.yml",
 )
-
 
 class LeadsWorkflowSecurityTests(unittest.TestCase):
     def test_retired_parallel_workflows_are_absent(self):
@@ -32,7 +23,7 @@ class LeadsWorkflowSecurityTests(unittest.TestCase):
         registry = json.loads((ROOT / "tool-registry.json").read_text(encoding="utf-8"))
         policy = registry["policy"]
         self.assertEqual(policy["default_route"], "filter_core_v17")
-        self.assertEqual(policy["default_source_set_version"], "17.0.0-filter-core")
+        self.assertEqual(policy["default_source_set_version"], "17.1.0-signal-policy")
         self.assertTrue(policy["draft_only"])
         self.assertEqual(policy["send_permission"], "none")
 
@@ -46,11 +37,7 @@ class LeadsWorkflowSecurityTests(unittest.TestCase):
 
     def test_registered_remote_actions_are_sha_pinned(self):
         registry = json.loads((ROOT / "tool-registry.json").read_text(encoding="utf-8"))
-        workflow_paths = sorted({
-            capability["workflow"]
-            for capability in registry["capabilities"].values()
-            if capability.get("workflow")
-        })
+        workflow_paths = sorted({capability["workflow"] for capability in registry["capabilities"].values() if capability.get("workflow")})
         self.assertTrue(workflow_paths)
         for relative_path in workflow_paths:
             path = ROOT / relative_path
@@ -79,7 +66,6 @@ class LeadsWorkflowSecurityTests(unittest.TestCase):
         self.assertIn("cancel-in-progress: false", header)
         self.assertIn("queue: max", header)
         self.assertNotIn("github.event.issue.number", header)
-
 
 if __name__ == "__main__":
     unittest.main()

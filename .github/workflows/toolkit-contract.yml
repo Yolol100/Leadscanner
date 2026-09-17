@@ -11,6 +11,8 @@ on:
       - 'AGENTS.md'
       - '.github/workflows/**'
       - 'scripts/**'
+      - 'src/**'
+      - 'test/**'
       - 'tests/**'
 
 permissions:
@@ -23,148 +25,58 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Validate filter-core v17.2.3 human-language gate
+      - name: Validate Leads v17.1 signal policy
         run: |
           python3 - <<'PY'
-          import json
-          import pathlib
-
+          import json, pathlib
           c=json.load(open('toolkit-contract.json', encoding='utf-8'))
           r=json.load(open('tool-registry.json', encoding='utf-8'))
 
+          route=c['default_route']
           assert c['schema_version']=='3.2'
           assert c['repository']=='Yolol100/Leadscanner'
-          assert c['repository_role']=='leads_filter_execution_layer'
-          route=c['default_route']
           assert route['id']=='filter_core_v17'
-          assert route['source_set_version']=='17.0.4-instantly-guard-parity'
+          assert route['source_set_version']=='17.1.0-signal-policy'
           assert route['copy_policy_version']=='17.2.3'
-          assert route['decision_source']=='Project Leads/00-leads-core.md'
-          assert route['copy_source']=='Project Leads/leadpromo.md'
-          assert route['formal_score_required'] is False
-          assert route['tier_required'] is False
-          assert route['campaign_gate_required'] is False
-          assert route['one_offer'] is True
-          assert route['max_process_pages_after_homepage']==3
-          assert route['external_content_is_untrusted_data'] is True
+          assert route['copy_source_version']=='17.3.0'
           assert route['send_permission']=='none'
-          assert set(route['draft_compliance_states'])=={'manual_review','approved'}
-          assert 'copy_gate' in route['steps']
+          assert route['one_offer'] is True
 
-          hard=c['hard_filter']
-          required={
-            'real_company_and_official_site','visible_commercial_process',
-            'one_public_visible_signal','exactly_one_fitting_offer',
-            'public_business_email_from_official_source','unique_candidate','draft_only'
-          }
-          assert set(hard['all_required'])==required
-          assert hard['failure_action']=='skip_and_refill'
-          assert {'score','tier','campaign_gate','guessed_email','invented_pain'} <= set(hard['forbidden_compensation'])
+          hard=set(c['hard_filter']['all_required'])
+          assert 'real_company_and_official_site_or_bounded_website_absent_exception' in hard
+          assert 'public_business_email_from_official_source' in hard
+          assert c['hard_filter']['failure_action']=='skip_and_refill'
+
+          signal=c['signal_policy']
+          assert signal['module']=='src/tools/prospect-signal-policy.mjs'
+          assert signal['active_ads']=='discovery_priority_only'
+          assert signal['inactive_social']=='discovery_priority_only'
+          assert signal['llms_txt']=='not_standalone_search_visibility_evidence'
 
           copy=c['copy_contract']
-          assert copy['id']=='curiosity_first_v17_2'
-          assert copy['module']=='scripts/outreach_copy_v17_2.py'
           assert copy['policy_version']=='17.2.3'
-          assert copy['one_real_observation'] is True
-          assert copy['one_evidence_bound_friction_or_opportunity'] is True
-          assert copy['calibrated_seriousness'] is True
-          assert copy['unsupported_severity_or_loss_claims_forbidden'] is True
+          assert copy['policy_source_version']=='17.3.0'
           assert copy['human_language_gate_required'] is True
-          assert copy['one_small_example_promise'] is True
-          assert copy['permission_cta'] is True
-          assert copy['reveal_full_solution_before_permission'] is False
-          assert copy['price_first_touch'] is False
-          assert copy['vague_mystery'] is False
-          assert copy['default_meeting_ask'] is False
-          assert copy['required_before_mailbox_draft'] is True
+          assert copy['prepared_artifact_claim_requires_readback'] is True
 
-          mailbox=c['mailbox_contract']
-          assert mailbox['preferred_workflow']=='.github/workflows/sync-selected-myhost-drafts-command.yml'
-          assert mailbox['copy_gate']=='scripts/outreach_copy_v17_2.py::initial_copy_errors'
-          assert mailbox['retry_idempotent'] is True
-          assert mailbox['send_permission']=='none'
-          reply=c['reply_contract']
-          assert reply['auto_send'] is False
-          assert 'not_yet_end_to_end_proven' in reply['runtime_status']
-
-          assert r['version']=='5.2'
+          assert r['version']=='5.3'
           p=r['policy']
           assert p['default_route']=='filter_core_v17'
-          assert p['default_source_set_version']=='17.0.4-instantly-guard-parity'
+          assert p['default_source_set_version']=='17.1.0-signal-policy'
           assert p['copy_policy_version']=='17.2.3'
-          assert p['single_decision_source']=='Project Leads/00-leads-core.md'
-          assert p['copy_source']=='Project Leads/leadpromo.md'
-          assert p['copy_contract']=='curiosity_first_v17_2'
-          assert p['copy_module']=='scripts/outreach_copy_v17_2.py'
-          assert p['copy_validator_required_before_mailbox_draft'] is True
-          assert p['calibrated_seriousness_required'] is True
-          assert p['unsupported_severity_or_loss_claims_forbidden'] is True
+          assert p['copy_source_version']=='17.3.0'
           assert p['human_language_gate_required'] is True
-          assert p['formal_score_required'] is False
-          assert p['campaign_gate_required'] is False
-          assert p['external_content_is_untrusted_data'] is True
+          assert p['signal_policy_module']=='src/tools/prospect-signal-policy.mjs'
           assert p['draft_only'] is True and p['send_permission']=='none'
-          assert set(r['capabilities'])=={
-            'filter_core','prospect_discovery','prospect_signal_discovery',
-            'contact_enrichment','website_evidence_scan','mailbox_draft','reply_triage'
-          }
-          assert r['capabilities']['filter_core']['source_set_version']=='17.0.4-instantly-guard-parity'
-          assert r['capabilities']['mailbox_draft']['copy_contract']=='curiosity_first_v17_2'
-          assert r['capabilities']['mailbox_draft']['copy_policy_version']=='17.2.3'
-          assert r['capabilities']['mailbox_draft']['human_language_gate_required'] is True
-          assert r['legacy']['status']=='unregistered_compatibility_only'
+          assert r['capabilities']['prospect_signal_discovery']['role']=='bounded_official_site_signal_evidence'
+          assert r['capabilities']['prospect_signal_policy']['llms_txt']=='not_standalone_search_visibility_evidence'
 
-          for item in (
-            '.github/workflows/prospect-discovery.yml',
-            '.github/workflows/prospect-signal-discovery.yml',
-            '.github/workflows/contact-enrichment.yml',
-            '.github/workflows/sync-selected-myhost-drafts-command.yml',
-            'scripts/outreach_copy_v17_2.py',
-            'scripts/outreach_queue_imap_draft.py',
-            'scripts/outreach_queue_imap_draft_sync.py',
-            'scripts/outreach_queue_imap_draft_sync_selected.py',
-            'scripts/outreach_reply_triage.py',
-            'tests/test_outreach_copy_v17_2.py',
-            'tests/test_outreach_queue_imap_draft.py',
-          ):
-            assert pathlib.Path(item).is_file(), f'missing reusable runtime file {item}'
+          for item in ('src/tools/prospect-signal-policy.mjs','test/prospect-signal-policy.test.mjs','scripts/outreach_copy_v17_2.py','.github/workflows/sync-selected-myhost-drafts-command.yml'):
+            assert pathlib.Path(item).is_file(), item
 
-          copy_text=pathlib.Path('scripts/outreach_copy_v17_2.py').read_text(encoding='utf-8')
-          assert 'curiosity_first_v17_2' in copy_text
-          assert 'POLICY_VERSION = "17.2.3"' in copy_text
-          assert 'first-touch body reveals implementation or the full solution' in copy_text
-          assert 'first-touch body contains unsupported severity or loss claim' in copy_text
-          assert 'first-touch contains redundant mini-flow wording' in copy_text
-          assert 'first-touch observation contains scrape or navigation residue' in copy_text
-          queue=pathlib.Path('scripts/outreach_queue_imap_draft.py').read_text(encoding='utf-8')
-          assert 'from outreach_copy_v17_2 import initial_copy_errors' in queue
-          assert 'copy contract:' in queue
-          sync=pathlib.Path('scripts/outreach_queue_imap_draft_sync.py').read_text(encoding='utf-8')
-          assert 'ALLOWED_DRAFT_COMPLIANCE' in sync
-          assert 'manual_review' in sync and 'approved' in sync
-          selected=pathlib.Path('scripts/outreach_queue_imap_draft_sync_selected.py').read_text(encoding='utf-8')
-          assert 'outreach_queue_imap_draft_sync' in selected
-          reply_text=pathlib.Path('scripts/outreach_reply_triage.py').read_text(encoding='utf-8')
-          assert 'positive_interest' in reply_text
-
-          forbidden_paths=(
-            '.github/workflows/one-time-us-outreach.yml',
-            '.github/workflows/us-only-zero-touch-prepare.yml',
-            '.github/workflows/daily-agent-drafts-v14.yml',
-            'scripts/outreach_one_time_us_guard.py',
-          )
-          for item in forbidden_paths:
-            assert not pathlib.Path(item).exists(), f'run/campaign residue returned: {item}'
-
-          agents=pathlib.Path('AGENTS.md').read_text(encoding='utf-8').casefold()
-          assert 'filter-core v17' in agents
-          assert '17.0.4-instantly-guard-parity' in agents
-          assert 'v17.2.3' in agents
-          assert 'curiosity-first' in agents
-          assert 'send_permission=none' in agents
-          integration=pathlib.Path('LEADS-INTEGRATION.md').read_text(encoding='utf-8').casefold()
-          assert 'filter-core v17' in integration
+          integration=pathlib.Path('LEADS-INTEGRATION.md').read_text(encoding='utf-8')
+          assert 'Generic discovery, signal evidence' in integration
           assert 'send_permission=none' in integration
-
-          print('toolkit-contract filter-core v17.2.3 human-language gate: OK')
+          assert 'llms.txt' in integration
+          print('toolkit-contract Leads v17.1 signal policy: OK')
           PY

@@ -1,4 +1,5 @@
 import os
+import re
 import unittest
 from unittest.mock import patch
 
@@ -73,10 +74,13 @@ class QueueImapDraftTests(unittest.TestCase):
 
     def test_solution_spoiler_is_blocked_before_draft(self):
         row = good_row()
-        row["body"] = row["body"].replace(
-            "I made one small mini-flow for Example that makes the opportunity concrete.",
+        row["body"], count = re.subn(
+            r"I made [^\n]+",
             "For you, that could mean: customers answer five questions first and then the team receives a complete request.",
+            row["body"],
+            count=1,
         )
+        self.assertEqual(count, 1, "generated first-touch must contain the example paragraph")
         errors = validate_queue_row(row, sender_email="info@andrewbaeten.nl")
         self.assertTrue(any(error.startswith("copy contract:") for error in errors))
         self.assertTrue(any("full solution" in error for error in errors))
