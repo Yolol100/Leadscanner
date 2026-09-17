@@ -13,9 +13,9 @@ class SelectedDraftSyncTests(unittest.TestCase):
     def test_blocks_selected_recipient_owned_by_another_lead(self):
         selected._SELECTED_IDS = ("lead-a",)
         values = [
-            ["lead_id", "email", "subject", "body"],
-            ["lead-a", "info@example.com", "A", "Body A"],
-            ["lead-b", "INFO@example.com", "B", "Body B"],
+            ["lead_id", "website", "email", "subject", "body"],
+            ["lead-a", "https://example.com/", "info@example.com", "A", "Body A"],
+            ["lead-b", "https://example.com/", "INFO@example.com", "B", "Body B"],
         ]
 
         with self.assertRaisesRegex(RuntimeError, "also assigned to another OutreachQueue lead"):
@@ -24,9 +24,9 @@ class SelectedDraftSyncTests(unittest.TestCase):
     def test_allows_selected_recipient_when_other_leads_use_other_addresses(self):
         selected._SELECTED_IDS = ("lead-a",)
         values = [
-            ["lead_id", "email", "subject", "body"],
-            ["lead-a", "info@example.com", "A", "Body A"],
-            ["lead-b", "sales@example.org", "B", "Body B"],
+            ["lead_id", "website", "email", "subject", "body"],
+            ["lead-a", "https://example.com/", "info@example.com", "A", "Body A"],
+            ["lead-b", "https://example.org/", "sales@example.org", "B", "Body B"],
         ]
 
         rows = selected._selected_target_rows(values, "unused", 1)
