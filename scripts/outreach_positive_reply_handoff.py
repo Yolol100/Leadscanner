@@ -44,11 +44,25 @@ def reply_subject(incoming_subject: str) -> str:
     return f"Re: {subject}"
 
 
-def followup_body() -> str:
+def _original_language(original_body: str) -> str:
+    text = str(original_body or "")
+    if "Geen interesse?" in text or "Dit is een commercieel bericht." in text or "Met vriendelijke groet" in text:
+        return "nl"
+    return "en"
+
+
+def followup_body(original_body: str = "") -> str:
+    """Create one truthful, focused post-reply draft without claiming an artifact exists."""
+    if _original_language(original_body) == "nl":
+        return (
+            "Bedankt voor je reactie.\n\n"
+            "Welk onderdeel van het idee uit mijn eerste bericht zal ik als eerste concreet maken?\n\n"
+            "Met vriendelijke groet,\nAndrew Baeten"
+        )
     return (
         "Thanks for your reply.\n\n"
-        "Happy to follow up. I’ll keep it brief and stick to the one idea from my first message.\n\n"
-        "Best,\nAndrew"
+        "Which part of the idea from my first message would be most useful for me to make concrete first?\n\n"
+        "Best regards,\nAndrew Baeten"
     )
 
 
@@ -119,7 +133,7 @@ def process_positive_replies(*, report_path: str = "") -> dict:
             mailbox,
             recipient=reply["email"],
             subject=reply_subject(reply.get("subject", "")),
-            body=followup_body(),
+            body=followup_body(lead.get("body", "")),
             test_id=test_id,
             explicit_folder=os.getenv("OUTREACH_DRAFT_FOLDER", ""),
             retries=int(os.getenv("OUTREACH_DRAFT_VERIFY_RETRIES", "3") or "3"),

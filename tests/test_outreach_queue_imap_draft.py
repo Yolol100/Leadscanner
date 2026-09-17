@@ -3,7 +3,7 @@ import re
 import unittest
 from unittest.mock import patch
 
-from outreach_copy_v17_2 import build_curiosity_first_copy
+from outreach_copy_v17_3 import build_curiosity_first_copy
 from outreach_queue_imap_draft import (
     inject_private_postal_for_draft,
     resolve_queue_row,
@@ -75,7 +75,7 @@ class QueueImapDraftTests(unittest.TestCase):
     def test_solution_spoiler_is_blocked_before_draft(self):
         row = good_row()
         row["body"], count = re.subn(
-            r"I made [^\n]+",
+            r"I can make [^\n]+",
             "For you, that could mean: customers answer five questions first and then the team receives a complete request.",
             row["body"],
             count=1,
@@ -84,6 +84,38 @@ class QueueImapDraftTests(unittest.TestCase):
         errors = validate_queue_row(row, sender_email="info@andrewbaeten.nl")
         self.assertTrue(any(error.startswith("copy contract:") for error in errors))
         self.assertTrue(any("full solution" in error for error in errors))
+
+    def test_unproven_artifact_claim_is_blocked_before_draft(self):
+        copy = build_curiosity_first_copy(
+            company="Example",
+            language="en",
+            subject="Quote requests Example",
+            observation='I noticed your site routes visitors directly to "Request a quote" for roofing work',
+            friction="That can create avoidable back-and-forth before the basic request details are complete",
+            example_label="mini-flow",
+            artifact_ready=True,
+        )
+        row = good_row(subject=copy.subject, body=copy.body)
+        errors = validate_queue_row(row, sender_email="info@andrewbaeten.nl")
+        self.assertTrue(any("artifact readback proof" in error for error in errors))
+
+    def test_proven_artifact_claim_is_allowed_before_draft(self):
+        copy = build_curiosity_first_copy(
+            company="Example",
+            language="en",
+            subject="Quote requests Example",
+            observation='I noticed your site routes visitors directly to "Request a quote" for roofing work',
+            friction="That can create avoidable back-and-forth before the basic request details are complete",
+            example_label="mini-flow",
+            artifact_ready=True,
+        )
+        row = good_row(
+            subject=copy.subject,
+            body=copy.body,
+            artifact_exists="true",
+            artifact_readback_verified="true",
+        )
+        self.assertEqual(validate_queue_row(row, sender_email="info@andrewbaeten.nl"), [])
 
     def test_draft_blocks_suppressed_or_already_sent_rows(self):
         row = good_row(sent_at="2026-09-09T08:00:00Z")

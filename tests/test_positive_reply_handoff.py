@@ -36,11 +36,22 @@ class PositiveReplyHandoffTests(unittest.TestCase):
     def test_subject_strips_header_injection(self):
         self.assertEqual(reply_subject("Hello\r\nBcc: attacker@example.test"), "Re: Hello Bcc: attacker@example.test")
 
-    def test_followup_copy_contains_no_send_instruction_or_claim(self):
+    def test_english_followup_is_one_focused_question_without_artifact_claim(self):
         body=followup_body().lower()
         self.assertIn("first message", body)
+        self.assertIn("?", body)
+        self.assertIn("make concrete first", body)
+        self.assertNotIn("is ready", body)
+        self.assertNotIn("i made", body)
         self.assertNotIn("send now", body)
         self.assertNotIn("guarantee", body)
+
+    def test_dutch_followup_uses_original_outbound_language(self):
+        body=followup_body("Geen interesse? Een kort \"nee\" is genoeg.")
+        self.assertIn("Bedankt voor je reactie", body)
+        self.assertIn("welk onderdeel", body.lower())
+        self.assertIn("?", body)
+        self.assertNotIn("ligt klaar", body.lower())
 
 
 if __name__ == "__main__":
