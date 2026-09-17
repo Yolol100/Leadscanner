@@ -3,6 +3,7 @@ import re
 import unittest
 from unittest.mock import patch
 
+from outreach_compliance_preflight import COMPLIANCE_NOT_PROVEN, COMPLIANCE_PASSED, GATE_2
 from outreach_copy_v17_3 import build_curiosity_first_copy
 from outreach_queue_imap_draft import (
     inject_private_postal_for_draft,
@@ -23,11 +24,21 @@ def good_row(**overrides):
     )
     row = {
         "lead_id": "prospect-abc",
-        "email": "prospect@example.com",
+        "email": "partnerships@example.com",
         "subject": copy.subject,
         "body": copy.body,
         "status": "manual_review",
-        "compliance_status": "approved",
+        "country": "NL",
+        "contact_verified": "true",
+        "contact_source": "https://example.com/partnerships",
+        "compliance_status": COMPLIANCE_PASSED,
+        "compliance_basis": "explicit_designation",
+        "compliance_gate_used": GATE_2,
+        "compliance_evidence": 'Official page states "business proposals: partnerships@example.com"',
+        "compliance_source": "https://example.com/partnerships",
+        "compliance_checked_at": "2026-09-18T00:00:00Z",
+        "compliance_purpose_match": "true",
+        "outreach_allowed": "true",
         "stage": "1",
         "sender_email": "info@andrewbaeten.nl",
     }
@@ -69,8 +80,27 @@ class QueueImapDraftTests(unittest.TestCase):
             if old is not None:
                 os.environ["OUTREACH_POSTAL_ADDRESS"] = old
 
-    def test_valid_manual_review_row_can_be_drafted(self):
+    def test_valid_compliance_passed_row_can_be_drafted(self):
         self.assertEqual(validate_queue_row(good_row(), sender_email="info@andrewbaeten.nl"), [])
+
+    def test_contact_verification_is_independent_and_required(self):
+        errors = validate_queue_row(good_row(contact_verified="false"), sender_email="info@andrewbaeten.nl")
+        self.assertTrue(any("contact_verified is not true" in error for error in errors))
+
+    def test_compliance_not_proven_blocks_draft(self):
+        row = good_row(
+            email="info@example.com",
+            compliance_status=COMPLIANCE_NOT_PROVEN,
+            compliance_basis="",
+            compliance_gate_used="",
+            compliance_evidence="",
+            compliance_source="",
+            compliance_checked_at="",
+            compliance_purpose_match="false",
+            outreach_allowed="false",
+        )
+        errors = validate_queue_row(row, sender_email="info@andrewbaeten.nl")
+        self.assertIn("compliance_status is not COMPLIANCE_PASSED", errors)
 
     def test_solution_spoiler_is_blocked_before_draft(self):
         row = good_row()
@@ -123,10 +153,9 @@ class QueueImapDraftTests(unittest.TestCase):
         self.assertIn("queue row already has send/reply/bounce evidence", errors)
         self.assertIn("recipient is suppressed", errors)
 
-    def test_draft_requires_approved_compliance_and_sender_match(self):
-        row = good_row(status="prepared", compliance_status="manual_review", sender_email="other@example.com")
+    def test_draft_requires_sender_match(self):
+        row = good_row(status="prepared", sender_email="other@example.com")
         errors = validate_queue_row(row, sender_email="info@andrewbaeten.nl")
-        self.assertIn("compliance_status is not approved", errors)
         self.assertIn("queue sender does not match configured mailbox sender", errors)
 
 
