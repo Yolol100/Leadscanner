@@ -150,7 +150,7 @@ class OutreachAgentPrepareV2Tests(unittest.TestCase):
         meta = json.loads(row["source"].split(":", 1)[1])
         self.assertEqual(meta["qualification_tier"], "B")
         self.assertEqual(meta["customer_potential"], "7")
-        self.assertEqual(row["compliance_status"], "manual_review")
+        self.assertEqual(row["compliance_status"], "COMPLIANCE_NOT_PROVEN")
         self.assertEqual(row["status"], "prepared")
 
     def test_prepare_blocks_contact_without_official_source_or_mx(self):
