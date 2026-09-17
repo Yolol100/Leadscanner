@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 
 CONTRACT_ID = "curiosity_first_v17_2"
-POLICY_VERSION = "17.2.2"
+POLICY_VERSION = "17.2.3"
 OPT_OUT_NL = 'Geen interesse? Een kort "nee" is genoeg.'
 OPT_OUT_EN = 'Not interested? A quick "no" is enough.'
 COMMERCIAL_NL = "Dit is een commercieel bericht."
@@ -34,7 +34,6 @@ SOLUTION_SPOILER_PATTERNS = (
     re.compile(r"(?i)\bcustomers?\s+answer\b.{0,80}\bquestions?\b"),
 )
 
-# Hard commercial price/pressure signals are never acceptable in first touch.
 HARD_PRICE_PATTERNS = (
     re.compile(r"(?i)(?:€|\$|£)\s*\d"),
     re.compile(r"(?i)\b(?:korting|discount)\b"),
@@ -58,7 +57,6 @@ GUARANTEE_CLAIM_PATTERNS = (
     re.compile(r"(?i)\bguarantee(?:d|s)?\s+(?:results?|revenue|sales|customers?|leads?)\b"),
 )
 
-# Compatibility tuple used by follow-up checks and external imports.
 PRICE_PATTERNS = HARD_PRICE_PATTERNS + (SOFT_PRICE_TERM,)
 HYPE_PATTERNS = PRESSURE_PATTERNS + (GUARANTEE_TERM,)
 
@@ -76,6 +74,31 @@ UNSUPPORTED_SEVERITY_LOSS_PATTERNS = (
 )
 MEETING_PATTERNS = (
     re.compile(r"(?i)\b(?:plan|boek|reserveer|schedule|book)\b.{0,60}\b(?:call|meeting|gesprek|agenda|minuten|minutes)\b"),
+)
+
+# V17.2.3 human-language gate. These patterns are deliberately narrow: they block
+# common scrape/navigation residue and internal labels without treating ordinary
+# prospect vocabulary as an error.
+SCRAPE_RESIDUE_PATTERNS = (
+    re.compile(r"(?i)\bskip\s+to\s+content\b"),
+    re.compile(r"(?i)^\s*(?:menu|home|search|contact)\s*$"),
+    re.compile(r"^\s*(?:\+?\d[\d\s().-]{6,})\s*$"),
+)
+INTERNAL_LABEL_PATTERNS = (
+    re.compile(r"(?i)\brequest-pricing\b"),
+    re.compile(r"(?i)\brequest-quote\b"),
+    re.compile(r"(?i)\b(?:request_pricing|request_quote)\b"),
+)
+REDUNDANT_EXAMPLE_PATTERNS = (
+    re.compile(r"(?i)\béén\s+klein\s+mini[- ]?flow\b"),
+    re.compile(r"(?i)\bone\s+small\s+mini[- ]?flow\b"),
+    re.compile(r"(?i)\bsmall\s+mini[- ]?flow\b"),
+)
+NL_IN_EN_PATTERNS = (
+    re.compile(r"(?i)\b(?:op jullie site|daar viel me|ik heb|zal ik|mag ik)\b"),
+)
+EN_IN_NL_PATTERNS = (
+    re.compile(r"(?i)\b(?:i noticed|one point|i made|want me to|would you like me to)\b"),
 )
 
 
@@ -159,6 +182,27 @@ def _observation_allows_guarantee_term(observation: str) -> bool:
     )
 
 
+def _human_language_errors(text: str, *, language: str, observation: str) -> list[str]:
+    errors: list[str] = []
+    if any(pattern.search(observation) for pattern in SCRAPE_RESIDUE_PATTERNS):
+        errors.append("first-touch observation contains scrape or navigation residue")
+    if any(pattern.search(text) for pattern in INTERNAL_LABEL_PATTERNS):
+        errors.append("first-touch contains an internal or machine-like label")
+    if any(pattern.search(text) for pattern in REDUNDANT_EXAMPLE_PATTERNS):
+        errors.append("first-touch contains redundant mini-flow wording")
+    if language == "nl" and any(pattern.search(text) for pattern in EN_IN_NL_PATTERNS):
+        errors.append("first-touch contains unnecessary language mixing")
+    if language == "en" and any(pattern.search(text) for pattern in NL_IN_EN_PATTERNS):
+        errors.append("first-touch contains unnecessary language mixing")
+
+    # Exact repeated content paragraphs are a strong signal of templating residue.
+    parts = _paragraphs(text)
+    content_parts = [p.casefold().strip(" .!?") for p in parts[1:-3] if len(p.split()) >= 4]
+    if len(content_parts) != len(set(content_parts)):
+        errors.append("first-touch repeats the same content")
+    return errors
+
+
 def initial_copy_errors(subject: str, body: str) -> list[str]:
     text = str(body or "").strip()
     errors = _subject_errors(subject)
@@ -203,6 +247,8 @@ def initial_copy_errors(subject: str, body: str) -> list[str]:
     if not observation or any(pattern.fullmatch(observation.strip()) for pattern in GENERIC_OBSERVATION_PATTERNS):
         errors.append("first-touch observation is too vague to be evidence-bound")
 
+    errors.extend(_human_language_errors(text, language=language, observation=observation))
+
     ctas = CTA_NL if language == "nl" else CTA_EN
     cta_count = sum(text.count(cta) for cta in ctas)
     if cta_count != 1:
@@ -219,8 +265,8 @@ def initial_copy_errors(subject: str, body: str) -> list[str]:
         errors.append("first-touch must contain the approved Andrew Baeten signature")
 
     promise_patterns = (
-        re.compile(r"(?i)\béén klein\b.{0,55}\b(?:voorbeeld|schets|mini-flow|postplan|uitwerking)\b"),
-        re.compile(r"(?i)\bone small\b.{0,55}\b(?:example|sketch|mini-flow|outline)\b"),
+        re.compile(r"(?i)\béén\s+(?:klein|kort|concreet|korte|kleine|concrete)\b.{0,55}\b(?:voorbeeld|schets|flow|postplan|uitwerking)\b"),
+        re.compile(r"(?i)\bone\s+(?:small|short|concrete)\b.{0,55}\b(?:example|sketch|flow|outline|post plan)\b"),
     )
     if sum(bool(pattern.search(text)) for pattern in promise_patterns) != 1:
         errors.append("first-touch must promise exactly one small concrete example")
@@ -241,12 +287,16 @@ def followup_copy_errors(body: str) -> list[str]:
         errors.append("follow-up may not contain price or discount language")
     if any(pattern.search(text) for pattern in UNSUPPORTED_SEVERITY_LOSS_PATTERNS):
         errors.append("follow-up contains unsupported severity or loss claim")
+    if any(pattern.search(text) for pattern in REDUNDANT_EXAMPLE_PATTERNS):
+        errors.append("follow-up contains redundant mini-flow wording")
     if any(pattern.search(text) for pattern in MEETING_PATTERNS):
         errors.append("follow-up may not use a default meeting ask")
     language = _language_from_body(text)
     if not language:
         language = "nl" if OPT_OUT_NL in text else "en" if OPT_OUT_EN in text else ""
     if language == "nl":
+        if any(pattern.search(text) for pattern in EN_IN_NL_PATTERNS):
+            errors.append("follow-up contains unnecessary language mixing")
         if sum(text.count(cta) for cta in CTA_NL) != 1:
             errors.append("follow-up must contain exactly one permission CTA")
         if text.count(OPT_OUT_NL) != 1:
@@ -254,6 +304,8 @@ def followup_copy_errors(body: str) -> list[str]:
         if SIGNATURE_NL not in text:
             errors.append("follow-up must contain the approved Andrew Baeten signature")
     elif language == "en":
+        if any(pattern.search(text) for pattern in NL_IN_EN_PATTERNS):
+            errors.append("follow-up contains unnecessary language mixing")
         if sum(text.count(cta) for cta in CTA_EN) != 1:
             errors.append("follow-up must contain exactly one permission CTA")
         if text.count(OPT_OUT_EN) != 1:
@@ -272,6 +324,10 @@ def _clean_fragment(value: str, *, field: str) -> str:
     if any(pattern.search(text) for pattern in SOLUTION_SPOILER_PATTERNS):
         raise ValueError(f"{field} contains solution-spoiler language")
     if field == "observation":
+        if any(pattern.search(text) for pattern in SCRAPE_RESIDUE_PATTERNS):
+            raise ValueError(f"{field} contains scrape or navigation residue")
+        if any(pattern.search(text) for pattern in INTERNAL_LABEL_PATTERNS):
+            raise ValueError(f"{field} contains an internal or machine-like label")
         if any(pattern.search(text) for pattern in HARD_PRICE_PATTERNS):
             raise ValueError(f"{field} contains price language")
         if SOFT_PRICE_TERM.search(text) and not _observation_allows_soft_price_term(text):
@@ -292,6 +348,41 @@ def _clean_fragment(value: str, *, field: str) -> str:
     return text.rstrip(".!?")
 
 
+def _example_phrase(example_label: str, *, language: str) -> str:
+    normalized = example_label.casefold().strip()
+    nl = {
+        "mini-flow": "één korte flow",
+        "flow": "één korte flow",
+        "voorbeeld": "één concreet voorbeeld",
+        "example": "één concreet voorbeeld",
+        "schets": "één korte schets",
+        "sketch": "één korte schets",
+        "postplan": "één klein postplan",
+        "post plan": "één klein postplan",
+        "uitwerking": "één korte uitwerking",
+        "outline": "één korte uitwerking",
+    }
+    en = {
+        "mini-flow": "one short flow",
+        "flow": "one short flow",
+        "voorbeeld": "one concrete example",
+        "example": "one concrete example",
+        "schets": "one short sketch",
+        "sketch": "one short sketch",
+        "postplan": "one small post plan",
+        "post plan": "one small post plan",
+        "uitwerking": "one short outline",
+        "outline": "one short outline",
+    }
+    mapping = nl if language == "nl" else en
+    if normalized in mapping:
+        return mapping[normalized]
+    # Unknown labels are permitted only when they already read like ordinary words.
+    if re.search(r"[_/]", example_label) or any(pattern.search(example_label) for pattern in INTERNAL_LABEL_PATTERNS):
+        raise ValueError("example_label contains an internal or machine-like label")
+    return (f"één concreet {example_label}" if language == "nl" else f"one concrete {example_label}")
+
+
 def build_curiosity_first_copy(
     *,
     company: str,
@@ -303,7 +394,9 @@ def build_curiosity_first_copy(
     website: str = "andrewbaeten.nl",
     postal_address: str = "",
 ) -> CopyDraft:
-    company = _clean_fragment(company, field="company")
+    # Keep company as an input/evidence field for caller compatibility, but use a
+    # stable sentence shape so a dynamic company name cannot break grammar.
+    _clean_fragment(company, field="company")
     observation = _clean_fragment(observation, field="observation")
     friction = _clean_fragment(friction, field="friction")
     example_label = _clean_fragment(example_label, field="example_label")
@@ -315,13 +408,15 @@ def build_curiosity_first_copy(
     if any(pattern.fullmatch(observation) for pattern in GENERIC_OBSERVATION_PATTERNS):
         raise ValueError("observation is too vague to be evidence-bound")
 
+    example_phrase = _example_phrase(example_label, language=lang)
+
     if lang == "nl":
         cta = CTA_NL[0]
         body = (
             "Beste team,\n\n"
             f"{observation}.\n\n"
             f"{friction}.\n\n"
-            f"Ik heb voor {company} één klein {example_label} gemaakt dat de mogelijke verbetering concreet maakt.\n\n"
+            f"Ik heb {example_phrase} uitgewerkt die dit punt concreet maakt.\n\n"
             f"{cta}\n\n"
             f"{OPT_OUT_NL}\n\n"
             f"{COMMERCIAL_NL}\n\n"
@@ -329,7 +424,7 @@ def build_curiosity_first_copy(
         )
         followup = (
             "Beste team,\n\n"
-            f"Ik kom hier nog één keer op terug. Het kleine {example_label} voor {company} ligt klaar.\n\n"
+            "Ik kom hier nog één keer op terug. Het voorbeeld ligt klaar.\n\n"
             f"{cta}\n\n"
             f"{OPT_OUT_NL}\n\n"
             f"{SIGNATURE_NL}"
@@ -343,7 +438,7 @@ def build_curiosity_first_copy(
             "Hi team,\n\n"
             f"{observation}.\n\n"
             f"{friction}.\n\n"
-            f"I made one small {example_label} for {company} that makes the opportunity concrete.\n\n"
+            f"I made {example_phrase} to make that point concrete.\n\n"
             f"{cta}\n\n"
             f"{OPT_OUT_EN}\n\n"
             f"{COMMERCIAL_EN}\n\n"
@@ -351,7 +446,7 @@ def build_curiosity_first_copy(
         )
         followup = (
             "Hi team,\n\n"
-            f"Just following up once. The small {example_label} for {company} is ready.\n\n"
+            "Just following up once. The example is ready.\n\n"
             f"{cta}\n\n"
             f"{OPT_OUT_EN}\n\n"
             f"{SIGNATURE_EN}"
@@ -359,5 +454,5 @@ def build_curiosity_first_copy(
 
     errors = initial_copy_errors(subject, body) + followup_copy_errors(followup)
     if errors:
-        raise ValueError("generated copy violates V17.2.2: " + "; ".join(errors))
+        raise ValueError("generated copy violates V17.2.3: " + "; ".join(errors))
     return CopyDraft(subject, body, "", followup, 4)

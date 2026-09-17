@@ -18,16 +18,19 @@ class CuriosityFirstCopyTests(unittest.TestCase):
             example_label="mini-flow",
         )
 
-    def test_generator_is_curiosity_first(self):
+    def test_generator_is_v17_2_3_and_human(self):
         draft = self._good()
-        self.assertEqual(c.POLICY_VERSION, "17.2.2")
+        self.assertEqual(c.POLICY_VERSION, "17.2.3")
         self.assertEqual(draft.contract_id, "curiosity_first_v17_2")
         self.assertEqual(c.initial_copy_errors(draft.subject, draft.body), [])
+        self.assertIn("één korte flow", draft.body)
+        self.assertNotIn("één klein mini-flow", draft.body)
+        self.assertNotIn("Demo Dak één", draft.body)
 
     def test_solution_spoiler_is_blocked(self):
         draft = self._good()
         body = draft.body.replace(
-            "Ik heb voor Demo Dak één klein mini-flow gemaakt dat de mogelijke verbetering concreet maakt.",
+            "Ik heb één korte flow uitgewerkt die dit punt concreet maakt.",
             "Voor jullie zou dat bijvoorbeeld kunnen betekenen: klanten beantwoorden eerst vijf vragen en daarna krijgt het team een complete aanvraag.",
         )
         self.assertTrue(any("full solution" in e for e in c.initial_copy_errors(draft.subject, body)))
@@ -40,14 +43,14 @@ class CuriosityFirstCopyTests(unittest.TestCase):
     def test_price_first_touch_is_blocked(self):
         draft = self._good()
         body = draft.body.replace(
-            "Ik heb voor Demo Dak één klein mini-flow gemaakt dat de mogelijke verbetering concreet maakt.",
-            "Ik heb voor Demo Dak één klein mini-flow gemaakt voor €750 dat de mogelijke verbetering concreet maakt.",
+            "Ik heb één korte flow uitgewerkt die dit punt concreet maakt.",
+            "Ik heb één korte flow voor €750 uitgewerkt die dit punt concreet maakt.",
         )
         self.assertTrue(any("price" in e for e in c.initial_copy_errors(draft.subject, body)))
 
     def test_discount_first_touch_is_blocked(self):
         draft = self._good()
-        body = draft.body.replace("mogelijke verbetering", "mogelijke verbetering met korting")
+        body = draft.body.replace("dit punt concreet", "dit punt met korting concreet")
         self.assertTrue(any("price" in e for e in c.initial_copy_errors(draft.subject, body)))
 
     def test_meeting_first_touch_is_blocked(self):
@@ -82,13 +85,25 @@ class CuriosityFirstCopyTests(unittest.TestCase):
         )
         self.assertEqual(c.initial_copy_errors(draft.subject, draft.body), [])
 
-    def test_official_request_pricing_observation_is_allowed(self):
+    def test_machine_like_request_pricing_is_blocked(self):
+        with self.assertRaisesRegex(ValueError, "machine-like label"):
+            c.build_curiosity_first_copy(
+                company="Teton Machining Solutions",
+                language="en",
+                subject="Quote request flow",
+                observation="I noticed that your site offers request-pricing for CNC machining projects",
+                friction="One point there may be creating avoidable friction at an important moment in that process",
+                example_label="mini-flow",
+                postal_address="Example address",
+            )
+
+    def test_humanized_request_pricing_is_allowed(self):
         draft = c.build_curiosity_first_copy(
             company="Teton Machining Solutions",
             language="en",
             subject="Quote request flow",
-            observation="I noticed that your site offers request-pricing for CNC and Swiss machining projects and highlights precision parts and sub-assemblies",
-            friction="One point there is worth checking because it sits at an important moment in that process and may be creating avoidable friction",
+            observation="I noticed that your site lets customers request pricing for CNC machining projects",
+            friction="One point there may be creating avoidable friction at an important moment in that process",
             example_label="mini-flow",
             postal_address="Example address",
         )
@@ -116,6 +131,30 @@ class CuriosityFirstCopyTests(unittest.TestCase):
             example_label="mini-flow",
         )
         self.assertEqual(c.initial_copy_errors(draft.subject, draft.body), [])
+
+    def test_scrape_residue_is_blocked(self):
+        with self.assertRaisesRegex(ValueError, "scrape or navigation residue"):
+            c.build_curiosity_first_copy(
+                company="Demo Dak",
+                language="nl",
+                subject="Offerte aanvragen Demo",
+                observation="Skip to content Offerte aanvragen",
+                friction="Daar kan onnodige frictie ontstaan",
+                example_label="mini-flow",
+            )
+
+    def test_language_mix_is_blocked(self):
+        draft = self._good()
+        body = draft.body.replace(
+            "Dat kan onnodig heen-en-weer opleveren voordat de basisinformatie voor een eerste aanvraag compleet is.",
+            "I noticed one point in that process.",
+        )
+        self.assertTrue(any("language mixing" in e for e in c.initial_copy_errors(draft.subject, body)))
+
+    def test_redundant_mini_flow_wording_is_blocked(self):
+        draft = self._good()
+        body = draft.body.replace("één korte flow", "één klein mini-flow")
+        self.assertTrue(any("redundant mini-flow" in e for e in c.initial_copy_errors(draft.subject, body)))
 
     def test_seller_pricing_claim_without_currency_is_blocked(self):
         draft = self._good()

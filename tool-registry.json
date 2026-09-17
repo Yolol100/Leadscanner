@@ -3,8 +3,8 @@
   "repository_role": "leads_filter_execution_layer",
   "policy": {
     "default_route": "filter_core_v17",
-    "default_source_set_version": "17.0.0-filter-core",
-    "copy_policy_version": "17.2.2",
+    "default_source_set_version": "17.0.4-instantly-guard-parity",
+    "copy_policy_version": "17.2.3",
     "controller": "webactueel-workflow",
     "owner_skill": "leads",
     "single_decision_source": "Project Leads/00-leads-core.md",
@@ -14,6 +14,7 @@
     "copy_validator_required_before_mailbox_draft": true,
     "calibrated_seriousness_required": true,
     "unsupported_severity_or_loss_claims_forbidden": true,
+    "human_language_gate_required": true,
     "formal_score_required": false,
     "tier_required": false,
     "campaign_gate_required": false,
@@ -28,7 +29,7 @@
   "capabilities": {
     "filter_core": {
       "role": "canonical_default_contract",
-      "source_set_version": "17.0.0-filter-core",
+      "source_set_version": "17.0.4-instantly-guard-parity",
       "required_pass_conditions": [
         "real_company_and_official_site",
         "visible_commercial_process",
@@ -65,7 +66,8 @@
       "preferred_workflow": ".github/workflows/sync-selected-myhost-drafts-command.yml",
       "copy_validator": "scripts/outreach_copy_v17_2.py::initial_copy_errors",
       "copy_contract": "curiosity_first_v17_2",
-      "copy_policy_version": "17.2.2",
+      "copy_policy_version": "17.2.3",
+      "human_language_gate_required": true,
       "transport": "IMAP_APPEND_plus_exact_same_folder_readback",
       "draft_compliance_states": [
         "manual_review",
