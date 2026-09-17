@@ -8,6 +8,7 @@ import re
 import sys
 from typing import Mapping, Sequence
 
+from outreach_compliance_preflight import COMPLIANCE_HEADERS, COMPLIANCE_NOT_PROVEN
 from outreach_copy_preflight import followup_copy_errors, initial_copy_errors
 from outreach_sender import QUEUE_HEADERS, QUEUE_SHEET, build_sheets_service, ensure_expected_headers, get_values, rows_from_values
 from prospect_agent_qualification import AGENT_CATALOG, AGENT_QUALIFICATION_HEADERS, AGENT_QUALIFICATION_SHEET
@@ -27,7 +28,7 @@ CONTACT_HEADERS = [
     "email_domain", "domain_alignment", "mx_status", "status", "reason",
 ]
 LEAD_HEADERS = ["Bedrijf", "Website", "E-mail", "Status"]
-FULL_QUEUE_HEADERS = QUEUE_HEADERS + ["compliance_basis"]
+FULL_QUEUE_HEADERS = QUEUE_HEADERS + COMPLIANCE_HEADERS
 UK_CORPORATE_SUFFIX_RE = re.compile(r"(?i)\b(?:ltd\.?|limited|llp|plc)\b")
 CASES_URL = "https://andrewbaeten.nl/category/cases"
 POSTAL_PLACEHOLDER = "{{OUTREACH_POSTAL_ADDRESS}}"
@@ -161,7 +162,16 @@ def build_prepared_row(candidate: Mapping[str, object], qualification: Mapping[s
         "followup_body": followup_body,
         "followup_delay_days": str(delay),
         "country": country,
-        "compliance_status": "manual_review",
+        "contact_verified": "true",
+        "contact_source": _text(contact.get("source_url")) or website,
+        "compliance_status": COMPLIANCE_NOT_PROVEN,
+        "compliance_basis": "",
+        "compliance_gate_used": "",
+        "compliance_evidence": "",
+        "compliance_source": "",
+        "compliance_checked_at": "",
+        "compliance_purpose_match": "false",
+        "outreach_allowed": "false",
         "opt_out_mode": "reply_optout",
         "status": "prepared",
         "verification_status": "official_site_ready",
@@ -170,7 +180,6 @@ def build_prepared_row(candidate: Mapping[str, object], qualification: Mapping[s
         "source": "agent_offer:" + json.dumps(evidence, ensure_ascii=False, separators=(",", ":")),
         "sender_mailbox_id": _text(sender_mailbox_id) or "primary",
         "sender_email": _text(sender_email),
-        "compliance_basis": "",
     })
     return row
 
@@ -277,8 +286,14 @@ def run(mode: str, report_path: str) -> int:
             continue
         if _text(existing_row.get("status")).casefold() == "prepared":
             existing_row["status"] = "manual_review"
-            existing_row["compliance_status"] = "manual_review"
+            existing_row["compliance_status"] = COMPLIANCE_NOT_PROVEN
             existing_row["compliance_basis"] = ""
+            existing_row["compliance_gate_used"] = ""
+            existing_row["compliance_evidence"] = ""
+            existing_row["compliance_source"] = ""
+            existing_row["compliance_checked_at"] = ""
+            existing_row["compliance_purpose_match"] = "false"
+            existing_row["outreach_allowed"] = "false"
             existing_row["last_error"] = "agent_sales_prepare_reconciled: qualification/contact no longer prepare-eligible"
             reconciled += 1
             queue_changed = True
@@ -341,8 +356,8 @@ def run(mode: str, report_path: str) -> int:
         "skipped": skipped,
         "offer_family": "ai_agent",
         "send_permission": "none",
-        "compliance_status": "manual_review",
-        "note": "Prepared agent rows are evidence-bound drafts only. This capability never approves compliance or sends mail.",
+        "compliance_status": COMPLIANCE_NOT_PROVEN,
+        "note": "Prepared agent rows are evidence-bound drafts only. Contact verification is separate from compliance; this capability never approves compliance or sends mail.",
     })
     print(
         f"OUTREACH_AGENT_PREPARE=complete prepared={prepared} updated={updated} reconciled={reconciled} "
