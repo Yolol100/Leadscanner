@@ -7,7 +7,7 @@
   "default_route": {
     "id": "filter_core_v17",
     "source_set_version": "17.1.0-signal-policy",
-    "copy_policy_version": "17.2.3",
+    "copy_policy_version": "17.3.0",
     "copy_source_version": "17.3.0",
     "controller": "webactueel-workflow",
     "owner_skill": "leads",
@@ -37,12 +37,13 @@
   },
   "copy_contract": {
     "id": "curiosity_first_v17_2",
-    "module": "scripts/outreach_copy_v17_2.py",
+    "module": "scripts/outreach_copy_v17_3.py",
     "policy_source": "Project Leads/leadpromo.md",
-    "policy_version": "17.2.3",
+    "policy_version": "17.3.0",
     "policy_source_version": "17.3.0",
     "human_language_gate_required": true,
     "prepared_artifact_claim_requires_readback": true,
+    "unsupported_inferred_claims_forbidden": true,
     "one_offer": true,
     "permission_cta": true,
     "reveal_full_solution_before_permission": false,
@@ -52,7 +53,7 @@
   "mailbox_contract": {
     "preferred_workflow": ".github/workflows/sync-selected-myhost-drafts-command.yml",
     "transport": "IMAP_APPEND_plus_exact_readback",
-    "copy_gate": "scripts/outreach_copy_v17_2.py::initial_copy_errors",
+    "copy_gate": "scripts/outreach_copy_v17_3.py::initial_copy_errors",
     "prepared_artifact_guard": "src/tools/prospect-signal-policy.mjs::canClaimPreparedArtifact",
     "retry_idempotent": true,
     "send_permission": "none"

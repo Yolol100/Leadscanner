@@ -6,7 +6,7 @@ import os
 import re
 from typing import Iterable
 
-from outreach_copy_v17_2 import initial_copy_errors
+from outreach_copy_v17_3 import initial_copy_errors
 from outreach_imap_draft import append_verified_draft, choose_mailbox
 from outreach_mailboxes import enabled_mailboxes, load_mailboxes_from_env
 from prospect_target_policy import canonical_country
@@ -33,6 +33,15 @@ def _normalize_email(value: str) -> str:
 def _domain_of(value: str) -> str:
     address = _normalize_email(value)
     return address.rsplit("@", 1)[1] if "@" in address else ""
+
+
+def _bool_field(row: dict[str, str], key: str) -> bool:
+    return str(row.get(key, "") or "").strip().casefold() in {"1", "true", "yes", "on"}
+
+
+def artifact_readback_ready(row: dict[str, str]) -> bool:
+    """Fail closed: both existence and exact readback proof must be explicit."""
+    return _bool_field(row, "artifact_exists") and _bool_field(row, "artifact_readback_verified")
 
 
 def rows_from_values(values: list[list[str]]) -> list[dict[str, str]]:
@@ -97,7 +106,14 @@ def validate_queue_row(
     if not body:
         errors.append("body is missing")
     if subject and body:
-        errors.extend(f"copy contract: {error}" for error in initial_copy_errors(subject, body))
+        errors.extend(
+            f"copy contract: {error}"
+            for error in initial_copy_errors(
+                subject,
+                body,
+                artifact_ready=artifact_readback_ready(row),
+            )
+        )
     if any(row.get(field, "").strip() for field in TERMINAL_FIELDS):
         errors.append("queue row already has send/reply/bounce evidence")
     configured_sender = _normalize_email(row.get("sender_email", ""))

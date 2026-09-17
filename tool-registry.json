@@ -4,17 +4,18 @@
   "policy": {
     "default_route": "filter_core_v17",
     "default_source_set_version": "17.1.0-signal-policy",
-    "copy_policy_version": "17.2.3",
+    "copy_policy_version": "17.3.0",
     "copy_source_version": "17.3.0",
     "controller": "webactueel-workflow",
     "owner_skill": "leads",
     "single_decision_source": "Project Leads/00-leads-core.md",
     "copy_source": "Project Leads/leadpromo.md",
     "copy_contract": "curiosity_first_v17_2",
-    "copy_module": "scripts/outreach_copy_v17_2.py",
+    "copy_module": "scripts/outreach_copy_v17_3.py",
     "signal_policy_module": "src/tools/prospect-signal-policy.mjs",
     "copy_validator_required_before_mailbox_draft": true,
     "prepared_artifact_claim_requires_readback": true,
+    "unsupported_inferred_claims_forbidden": true,
     "calibrated_seriousness_required": true,
     "unsupported_severity_or_loss_claims_forbidden": true,
     "human_language_gate_required": true,
@@ -53,31 +54,15 @@
       "prepared_artifact_claim": "exists_plus_verified_readback_required",
       "send_permission": "none"
     },
-    "prospect_discovery": {
-      "workflow": ".github/workflows/prospect-discovery.yml",
-      "role": "bounded_candidate_discovery",
-      "send_permission": "none"
-    },
-    "prospect_signal_discovery": {
-      "workflow": ".github/workflows/prospect-signal-discovery.yml",
-      "role": "bounded_official_site_signal_evidence",
-      "send_permission": "none"
-    },
-    "contact_enrichment": {
-      "workflow": ".github/workflows/contact-enrichment.yml",
-      "role": "official_public_business_email_discovery",
-      "send_permission": "none"
-    },
-    "website_evidence_scan": {
-      "workflow": ".github/workflows/scan.yml",
-      "read_only": true,
-      "normal_default_for_every_prospect": false
-    },
+    "prospect_discovery": {"workflow": ".github/workflows/prospect-discovery.yml", "role": "bounded_candidate_discovery", "send_permission": "none"},
+    "prospect_signal_discovery": {"workflow": ".github/workflows/prospect-signal-discovery.yml", "role": "bounded_official_site_signal_evidence", "send_permission": "none"},
+    "contact_enrichment": {"workflow": ".github/workflows/contact-enrichment.yml", "role": "official_public_business_email_discovery", "send_permission": "none"},
+    "website_evidence_scan": {"workflow": ".github/workflows/scan.yml", "read_only": true, "normal_default_for_every_prospect": false},
     "mailbox_draft": {
       "preferred_workflow": ".github/workflows/sync-selected-myhost-drafts-command.yml",
-      "copy_validator": "scripts/outreach_copy_v17_2.py::initial_copy_errors",
+      "copy_validator": "scripts/outreach_copy_v17_3.py::initial_copy_errors",
       "copy_contract": "curiosity_first_v17_2",
-      "copy_policy_version": "17.2.3",
+      "copy_policy_version": "17.3.0",
       "copy_source_version": "17.3.0",
       "human_language_gate_required": true,
       "prepared_artifact_guard": "src/tools/prospect-signal-policy.mjs::canClaimPreparedArtifact",
@@ -99,18 +84,12 @@
       "send_permission": "none"
     }
   },
-  "supported_offer_types": [
-    "front_desk_sales", "lead_reactivation", "review_concierge", "customer_support", "commerce", "quote_intake",
-    "website_webshop_improvement", "search_visibility", "social_management"
-  ],
+  "supported_offer_types": ["front_desk_sales","lead_reactivation","review_concierge","customer_support","commerce","quote_intake","website_webshop_improvement","search_visibility","social_management"],
   "offer_constraints": {
     "lead_reactivation": "approved_first_party_data_required",
     "website_webshop_improvement": "site_evidence_or_verified_website_absent_route",
     "search_visibility": "current_public_search_plus_site_evidence_required; llms_txt_alone_forbidden",
     "social_management": "official_public_social_or_content_evidence_required"
   },
-  "legacy": {
-    "status": "unregistered_compatibility_only",
-    "rule": "Old score, campaign, prepare, solution-first copy and live-send code is not part of the default filter. Retain only while a concrete dependency or rollback need is still proven; remove target/date/run-specific residue from main."
-  }
+  "legacy": {"status": "unregistered_compatibility_only", "rule": "Old score, campaign, prepare, solution-first copy and live-send code is not part of the default filter. Retain only while a concrete dependency or rollback need is still proven; remove target/date/run-specific residue from main."}
 }

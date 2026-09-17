@@ -9,6 +9,7 @@ on:
       - 'tool-registry.json'
       - 'LEADS-INTEGRATION.md'
       - 'AGENTS.md'
+      - 'README.md'
       - '.github/workflows/**'
       - 'scripts/**'
       - 'src/**'
@@ -25,7 +26,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Validate Leads v17.1 signal policy
+      - name: Validate Leads v17.1 signal policy and v17.3 copy runtime
         run: |
           python3 - <<'PY'
           import json, pathlib
@@ -37,7 +38,7 @@ jobs:
           assert c['repository']=='Yolol100/Leadscanner'
           assert route['id']=='filter_core_v17'
           assert route['source_set_version']=='17.1.0-signal-policy'
-          assert route['copy_policy_version']=='17.2.3'
+          assert route['copy_policy_version']=='17.3.0'
           assert route['copy_source_version']=='17.3.0'
           assert route['send_permission']=='none'
           assert route['one_offer'] is True
@@ -54,29 +55,50 @@ jobs:
           assert signal['llms_txt']=='not_standalone_search_visibility_evidence'
 
           copy=c['copy_contract']
-          assert copy['policy_version']=='17.2.3'
+          assert copy['module']=='scripts/outreach_copy_v17_3.py'
+          assert copy['policy_version']=='17.3.0'
           assert copy['policy_source_version']=='17.3.0'
           assert copy['human_language_gate_required'] is True
           assert copy['prepared_artifact_claim_requires_readback'] is True
+          assert copy['unsupported_inferred_claims_forbidden'] is True
+          assert c['mailbox_contract']['copy_gate']=='scripts/outreach_copy_v17_3.py::initial_copy_errors'
 
           assert r['version']=='5.3'
           p=r['policy']
-          assert p['default_route']=='filter_core_v17'
           assert p['default_source_set_version']=='17.1.0-signal-policy'
-          assert p['copy_policy_version']=='17.2.3'
+          assert p['copy_policy_version']=='17.3.0'
           assert p['copy_source_version']=='17.3.0'
-          assert p['human_language_gate_required'] is True
+          assert p['copy_module']=='scripts/outreach_copy_v17_3.py'
+          assert p['unsupported_inferred_claims_forbidden'] is True
           assert p['signal_policy_module']=='src/tools/prospect-signal-policy.mjs'
           assert p['draft_only'] is True and p['send_permission']=='none'
-          assert r['capabilities']['prospect_signal_discovery']['role']=='bounded_official_site_signal_evidence'
           assert r['capabilities']['prospect_signal_policy']['llms_txt']=='not_standalone_search_visibility_evidence'
+          assert r['capabilities']['mailbox_draft']['copy_validator']=='scripts/outreach_copy_v17_3.py::initial_copy_errors'
 
-          for item in ('src/tools/prospect-signal-policy.mjs','test/prospect-signal-policy.test.mjs','scripts/outreach_copy_v17_2.py','.github/workflows/sync-selected-myhost-drafts-command.yml'):
+          for item in (
+            'src/tools/prospect-signal-policy.mjs',
+            'test/prospect-signal-policy.test.mjs',
+            'scripts/outreach_copy_v17_2.py',
+            'scripts/outreach_copy_v17_3.py',
+            'scripts/outreach_queue_imap_draft.py',
+            'tests/test_outreach_copy_v17_3.py',
+            '.github/workflows/sync-selected-myhost-drafts-command.yml',
+          ):
             assert pathlib.Path(item).is_file(), item
 
+          copy_text=pathlib.Path('scripts/outreach_copy_v17_3.py').read_text(encoding='utf-8')
+          queue_text=pathlib.Path('scripts/outreach_queue_imap_draft.py').read_text(encoding='utf-8')
+          assert 'POLICY_VERSION = "17.3.0"' in copy_text
+          assert 'unsupported inferred claim' in copy_text
+          assert 'artifact readback proof' in copy_text
+          assert 'from outreach_copy_v17_3 import initial_copy_errors' in queue_text
+          assert 'artifact_readback_ready' in queue_text
+
           integration=pathlib.Path('LEADS-INTEGRATION.md').read_text(encoding='utf-8')
-          assert 'Generic discovery, signal evidence' in integration
-          assert 'send_permission=none' in integration
-          assert 'llms.txt' in integration
-          print('toolkit-contract Leads v17.1 signal policy: OK')
+          agents=pathlib.Path('AGENTS.md').read_text(encoding='utf-8')
+          readme=pathlib.Path('README.md').read_text(encoding='utf-8')
+          assert 'V17.3' in integration and 'send_permission=none' in integration
+          assert '17.1.0-signal-policy' in agents and 'V17.3.0' in agents
+          assert '63 scenarios' in readme
+          print('toolkit-contract Leads v17.1 signal policy / v17.3 copy runtime: OK')
           PY
