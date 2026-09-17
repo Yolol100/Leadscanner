@@ -23,9 +23,22 @@ class LeadsWorkflowSecurityTests(unittest.TestCase):
         registry = json.loads((ROOT / "tool-registry.json").read_text(encoding="utf-8"))
         policy = registry["policy"]
         self.assertEqual(policy["default_route"], "filter_core_v17")
-        self.assertEqual(policy["default_source_set_version"], "17.1.0-signal-policy")
+        self.assertEqual(policy["default_source_set_version"], "17.2.0-compliance-gate")
         self.assertTrue(policy["draft_only"])
         self.assertEqual(policy["send_permission"], "none")
+        self.assertTrue(policy["contact_and_compliance_separated"])
+        self.assertEqual(policy["compliance_default"], "COMPLIANCE_NOT_PROVEN")
+        self.assertTrue(policy["compliance_pass_required_for_outreach"])
+        self.assertFalse(policy["instantly_can_override_compliance"])
+
+    def test_filter_core_requires_contact_and_compliance_separately(self):
+        registry = json.loads((ROOT / "tool-registry.json").read_text(encoding="utf-8"))
+        required = set(registry["capabilities"]["filter_core"]["required_pass_conditions"])
+        self.assertIn("contact_verified_from_official_business_source", required)
+        self.assertIn("separate_compliance_gate_passed_with_evidence", required)
+        self.assertEqual(registry["capabilities"]["compliance_gate"]["default_status"], "COMPLIANCE_NOT_PROVEN")
+        self.assertFalse(registry["capabilities"]["compliance_gate"]["public_email_alone_is_permission"])
+        self.assertFalse(registry["capabilities"]["compliance_gate"]["instantly_override"])
 
     def test_registered_default_surface_has_no_live_or_parallel_entrypoint(self):
         registry = json.loads((ROOT / "tool-registry.json").read_text(encoding="utf-8"))
