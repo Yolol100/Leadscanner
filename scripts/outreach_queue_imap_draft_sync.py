@@ -26,7 +26,7 @@ from outreach_queue_imap_draft import (
     validate_queue_row,
 )
 
-ALLOWED_DRAFT_COMPLIANCE = {"manual_review", "approved"}
+ALLOWED_DRAFT_COMPLIANCE = {"compliance_passed"}
 
 
 @dataclass(frozen=True)
