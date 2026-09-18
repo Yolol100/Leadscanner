@@ -39,7 +39,7 @@ jobs:
           assert route['id']=='filter_core_v17'
           assert route['source_set_version']=='17.2.2-maps-source-revalidation'
           assert route['copy_policy_version']=='17.3.0'
-          assert route['copy_source_version']=='17.3.1'
+          assert route['copy_source_version']=='17.3.2'
           assert route['send_permission']=='none'
           assert route['one_offer'] is True
           assert route['contact_and_compliance_separated'] is True
@@ -95,7 +95,7 @@ jobs:
           copy=c['copy_contract']
           assert copy['module']=='scripts/outreach_copy_v17_3.py'
           assert copy['policy_version']=='17.3.0'
-          assert copy['policy_source_version']=='17.3.1'
+          assert copy['policy_source_version']=='17.3.2'
           assert copy['compliance_prerequisite']=='COMPLIANCE_PASSED'
           assert copy['human_language_gate_required'] is True
           assert copy['prepared_artifact_claim_requires_readback'] is True
@@ -123,7 +123,7 @@ jobs:
           p=r['policy']
           assert p['default_source_set_version']=='17.2.2-maps-source-revalidation'
           assert p['copy_policy_version']=='17.3.0'
-          assert p['copy_source_version']=='17.3.1'
+          assert p['copy_source_version']=='17.3.2'
           assert p['copy_module']=='scripts/outreach_copy_v17_3.py'
           assert p['compliance_policy_module']=='scripts/outreach_compliance_preflight.py'
           assert p['contact_and_compliance_separated'] is True
