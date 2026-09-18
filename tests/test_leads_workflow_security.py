@@ -23,7 +23,7 @@ class LeadsWorkflowSecurityTests(unittest.TestCase):
         registry = json.loads((ROOT / "tool-registry.json").read_text(encoding="utf-8"))
         policy = registry["policy"]
         self.assertEqual(policy["default_route"], "filter_core_v17")
-        self.assertEqual(policy["default_source_set_version"], "17.2.0-compliance-gate")
+        self.assertEqual(policy["default_source_set_version"], "17.2.1-public-discovery-contact-priority")
         self.assertTrue(policy["draft_only"])
         self.assertEqual(policy["send_permission"], "none")
         self.assertTrue(policy["contact_and_compliance_separated"])
