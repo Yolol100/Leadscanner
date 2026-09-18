@@ -61,6 +61,18 @@ class ContactEnrichmentTests(unittest.TestCase):
         self.assertEqual(result.email, "marketing@example.nl")
         self.assertEqual(result.contact_priority_tier, "department")
 
+    def test_localpart_alone_does_not_prove_named_person(self):
+        self.assertEqual(
+            m.contact_role_and_priority("jan.jansen@example.nl", ""),
+            ("", "generic"),
+        )
+
+    def test_source_label_can_prove_named_person_identity(self):
+        self.assertEqual(
+            m.contact_role_and_priority("jan.jansen@example.nl", "Jan Jansen"),
+            ("", "named_person"),
+        )
+
     def test_only_qualified_unseen_prospects_are_eligible(self):
         rows = [
             {"candidate_id": "1", "status": "qualified", "website": "https://a.nl"},
