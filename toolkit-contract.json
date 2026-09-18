@@ -1,19 +1,34 @@
 {
-  "schema_version": "3.3",
+  "schema_version": "3.4",
   "owner_skill": "leads",
   "project_id": "project-leads",
   "repository": "Yolol100/Leadscanner",
   "repository_role": "leads_filter_execution_layer",
   "default_route": {
     "id": "filter_core_v17",
-    "source_set_version": "17.2.0-compliance-gate",
+    "source_set_version": "17.2.1-public-discovery-contact-priority",
     "copy_policy_version": "17.3.0",
     "copy_source_version": "17.3.1",
     "controller": "webactueel-workflow",
     "owner_skill": "leads",
     "decision_source": "Project Leads/00-leads-core.md",
     "copy_source": "Project Leads/leadpromo.md",
-    "steps": ["prospect_discovery","relevant_official_evidence","hard_filter","one_offer","official_public_contact","compliance_gate","research_copy","copy_gate","last_mile_evidence_guard","mailbox_draft","exact_readback","reply_handoff"],
+    "steps": [
+      "public_accountless_discovery",
+      "prospect_discovery",
+      "relevant_official_evidence",
+      "hard_filter",
+      "one_offer",
+      "official_public_contact",
+      "contact_priority_selection",
+      "compliance_gate",
+      "research_copy",
+      "copy_gate",
+      "last_mile_evidence_guard",
+      "mailbox_draft",
+      "exact_readback",
+      "reply_handoff"
+    ],
     "formal_score_required": false,
     "tier_required": false,
     "campaign_gate_required": false,
@@ -26,16 +41,39 @@
     "send_permission": "none"
   },
   "hard_filter": {
-    "all_required": ["real_company_and_official_site_or_bounded_website_absent_exception","visible_commercial_process_or_verified_website_absence","one_public_visible_signal","exactly_one_fitting_offer","contact_verified_from_official_business_source","separate_compliance_gate_passed_with_evidence","unique_candidate","draft_only"],
+    "all_required": [
+      "real_company_and_official_site_or_bounded_website_absent_exception",
+      "visible_commercial_process_or_verified_website_absence",
+      "one_public_visible_signal",
+      "exactly_one_fitting_offer",
+      "contact_verified_from_official_business_source",
+      "separate_compliance_gate_passed_with_evidence",
+      "unique_candidate",
+      "draft_only"
+    ],
     "failure_action": "skip_and_refill",
-    "forbidden_compensation": ["score","tier","campaign_gate","guessed_email","invented_pain","inferred_budget","llms_txt_only","instantly_verification","public_email_without_compliance"]
+    "forbidden_compensation": [
+      "score",
+      "tier",
+      "campaign_gate",
+      "guessed_email",
+      "invented_pain",
+      "inferred_budget",
+      "llms_txt_only",
+      "instantly_verification",
+      "public_email_without_compliance"
+    ]
   },
   "compliance_contract": {
     "module": "scripts/outreach_compliance_preflight.py",
     "default_status": "COMPLIANCE_NOT_PROVEN",
     "pass_status": "COMPLIANCE_PASSED",
     "blocked_status": "COMPLIANCE_BLOCKED",
-    "gates": ["gate_1_consent","gate_2_explicit_designation","gate_3_existing_customer_similar"],
+    "gates": [
+      "gate_1_consent",
+      "gate_2_explicit_designation",
+      "gate_3_existing_customer_similar"
+    ],
     "requires_contact_verified": true,
     "public_email_alone_is_permission": false,
     "generic_public_email_auto_clear": false,
@@ -97,7 +135,47 @@
     "Public or Instantly-verified email does not establish outreach permission.",
     "Generic public email is never auto-cleared for compliance.",
     "Instantly cannot override Project Leads compliance state.",
-    "Normal filter execution never invokes SMTP/live-send."
+    "Normal filter execution never invokes SMTP/live-send.",
+    "Google Maps/search/directory results are discovery only and never bypass current official-site validation.",
+    "Email provider choice never proves role, trust or outreach permission; decision-maker priority requires role-linked official evidence."
   ],
-  "repository_hygiene": ["No target-, date-, run- or cohort-specific data belongs on main."]
+  "repository_hygiene": [
+    "No target-, date-, run- or cohort-specific data belongs on main."
+  ],
+  "discovery_contract": {
+    "account_required": false,
+    "api_key_required": false,
+    "allowed_external_start_points": [
+      "google_maps_or_equivalent_public_local_search",
+      "google_search_operators",
+      "public_trade_member_business_directories",
+      "official_public_business_profiles"
+    ],
+    "google_maps_repo_scrape": false,
+    "external_results_are_candidate_discovery_only": true,
+    "official_site_revalidation_required": true,
+    "batch_order": [
+      "collect_candidates",
+      "dedupe",
+      "official_site_validation",
+      "signal",
+      "one_offer",
+      "contact_research"
+    ]
+  },
+  "contact_selection_contract": {
+    "module": "scripts/prospect_contact_enrichment.py",
+    "priority_order": [
+      "decision_maker",
+      "department",
+      "named_person",
+      "generic"
+    ],
+    "decision_maker_requires_role_linked_official_source": true,
+    "free_mail_provider_is_priority_signal": false,
+    "free_mail_allowed_only_when_official_business_source_publishes_exact_address": true,
+    "guessed_or_constructed_email": false,
+    "external_domain_requires_identity_review": true,
+    "compliance_separate": true
+  }
 }
