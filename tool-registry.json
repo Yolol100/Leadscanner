@@ -1,9 +1,9 @@
 {
-  "version": "5.6",
+  "version": "5.7",
   "repository_role": "leads_filter_execution_layer",
   "policy": {
     "default_route": "filter_core_v17",
-    "default_source_set_version": "17.2.1-public-discovery-contact-priority",
+    "default_source_set_version": "17.2.2-maps-source-revalidation",
     "copy_policy_version": "17.3.0",
     "copy_source_version": "17.3.1",
     "controller": "webactueel-workflow",
@@ -46,12 +46,18 @@
       "named_person",
       "generic"
     ],
-    "free_mail_provider_is_priority_signal": false
+    "free_mail_provider_is_priority_signal": false,
+    "google_maps_ephemeral_only": true,
+    "google_maps_content_persisted": false,
+    "google_maps_can_prove_website_absent": false,
+    "named_person_requires_source_identity": true,
+    "email_localpart_alone_can_prove_named_person": false,
+    "private_postal_address_required_for_commercial_draft": true
   },
   "capabilities": {
     "filter_core": {
       "role": "canonical_default_contract",
-      "source_set_version": "17.2.0-compliance-gate",
+      "source_set_version": "17.2.2-maps-source-revalidation",
       "required_pass_conditions": [
         "real_company_and_official_site_or_bounded_website_absent_exception",
         "visible_commercial_process_or_verified_website_absence",
@@ -90,14 +96,18 @@
       "send_permission": "none",
       "sources": [
         "approved_public_directory_page_or_index_or_sitemap",
-        "external_google_maps_or_public_local_search_candidate",
+        "external_google_maps_ephemeral_candidate_only",
         "external_google_search_operator_candidate",
         "public_trade_member_directory_candidate"
       ],
       "account_required": false,
       "api_key_required": false,
       "google_maps_repo_scrape": false,
-      "official_site_revalidation_required": true
+      "official_site_revalidation_required": true,
+      "google_maps_ephemeral_only": true,
+      "google_maps_content_persisted": false,
+      "google_maps_can_prove_website_absent": false,
+      "canonical_candidate_requires_official_site_or_permitted_non_maps_source": true
     },
     "prospect_signal_discovery": {
       "workflow": ".github/workflows/prospect-signal-discovery.yml",
@@ -119,7 +129,9 @@
       "output_fields": [
         "contact_role",
         "contact_priority_tier"
-      ]
+      ],
+      "named_person_requires_source_identity": true,
+      "email_localpart_alone_can_prove_named_person": false
     },
     "website_evidence_scan": {
       "workflow": ".github/workflows/scan.yml",
@@ -143,7 +155,10 @@
       "identity_policy": "idn_punycode_or_unrelated_domain_requires_explicit_verification",
       "transport": "IMAP_APPEND_plus_exact_same_folder_readback",
       "idempotency": "lead_id_plus_recipient_plus_content_fingerprint",
-      "send_permission": "none"
+      "send_permission": "none",
+      "private_postal_address_required": true,
+      "private_postal_address_source": "private_config_only",
+      "private_postal_address_injected_at_last_mile": true
     },
     "reply_triage": {
       "script": "scripts/outreach_reply_triage.py",
