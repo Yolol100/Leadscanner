@@ -23,13 +23,19 @@ class LeadsWorkflowSecurityTests(unittest.TestCase):
         registry = json.loads((ROOT / "tool-registry.json").read_text(encoding="utf-8"))
         policy = registry["policy"]
         self.assertEqual(policy["default_route"], "filter_core_v17")
-        self.assertEqual(policy["default_source_set_version"], "17.2.1-public-discovery-contact-priority")
+        self.assertEqual(policy["default_source_set_version"], "17.2.2-maps-source-revalidation")
         self.assertTrue(policy["draft_only"])
         self.assertEqual(policy["send_permission"], "none")
         self.assertTrue(policy["contact_and_compliance_separated"])
         self.assertEqual(policy["compliance_default"], "COMPLIANCE_NOT_PROVEN")
         self.assertTrue(policy["compliance_pass_required_for_outreach"])
         self.assertFalse(policy["instantly_can_override_compliance"])
+        self.assertTrue(policy["google_maps_ephemeral_only"])
+        self.assertFalse(policy["google_maps_content_persisted"])
+        self.assertFalse(policy["google_maps_can_prove_website_absent"])
+        self.assertTrue(policy["named_person_requires_source_identity"])
+        self.assertFalse(policy["email_localpart_alone_can_prove_named_person"])
+        self.assertTrue(policy["private_postal_address_required_for_commercial_draft"])
 
     def test_filter_core_requires_contact_and_compliance_separately(self):
         registry = json.loads((ROOT / "tool-registry.json").read_text(encoding="utf-8"))
