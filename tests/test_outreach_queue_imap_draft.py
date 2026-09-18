@@ -62,7 +62,7 @@ class QueueImapDraftTests(unittest.TestCase):
         self.assertEqual(emails, {"stop@example.com"})
         self.assertEqual(domains, {"blocked.test"})
 
-    def test_us_draft_injects_private_address_at_runtime(self):
+    def test_placeholder_draft_injects_private_address_at_runtime(self):
         row = {"country": "US"}
         body = "Best regards,\nAndrew Baeten\n{{OUTREACH_POSTAL_ADDRESS}}\nandrewbaeten.nl"
         with patch.dict(os.environ, {"OUTREACH_POSTAL_ADDRESS": "123 Example Street\nExample City\nExample Country"}, clear=False):
@@ -71,11 +71,18 @@ class QueueImapDraftTests(unittest.TestCase):
         self.assertIn("Andrew Baeten\n123 Example Street", rendered)
         self.assertTrue(rendered.endswith("Example Country\nandrewbaeten.nl"))
 
-    def test_us_draft_fails_closed_without_private_address(self):
+    def test_nl_draft_appends_private_address_when_copy_has_no_placeholder(self):
+        body = "Met vriendelijke groet,\nAndrew Baeten\nandrewbaeten.nl"
+        with patch.dict(os.environ, {"OUTREACH_POSTAL_ADDRESS": "Zakelijk postadres 1\n3011 AA Rotterdam"}, clear=False):
+            rendered = inject_private_postal_for_draft({"country": "NL"}, body)
+        self.assertTrue(rendered.endswith("Zakelijk postadres 1\n3011 AA Rotterdam"))
+        self.assertEqual(rendered.count("Zakelijk postadres 1"), 1)
+
+    def test_commercial_draft_fails_closed_without_private_address(self):
         old = os.environ.pop("OUTREACH_POSTAL_ADDRESS", None)
         try:
             with self.assertRaises(RuntimeError):
-                inject_private_postal_for_draft({"country": "US"}, "{{OUTREACH_POSTAL_ADDRESS}}")
+                inject_private_postal_for_draft({"country": "NL"}, "Met vriendelijke groet")
         finally:
             if old is not None:
                 os.environ["OUTREACH_POSTAL_ADDRESS"] = old
