@@ -97,7 +97,7 @@ def queue_row(subject="Subject A"):
         "subject": subject,
         "body": "Reviewed body",
         "status": "manual_review",
-        "compliance_status": "approved",
+        "compliance_status": "COMPLIANCE_PASSED",
         "stage": "1",
         "sender_email": "info@andrewbaeten.nl",
         "sent_at": "",
