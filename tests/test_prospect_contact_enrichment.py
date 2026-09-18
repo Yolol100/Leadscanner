@@ -45,7 +45,7 @@ class ContactEnrichmentTests(unittest.TestCase):
             result = m.discover_contact("https://example.nl", fetch=lambda url: page)
         self.assertEqual(result.email, "owner@gmail.com")
         self.assertEqual(result.contact_priority_tier, "decision_maker")
-        self.assertIn("eigenaar", result.contact_role)
+        self.assertEqual(result.contact_role, "founder")
         self.assertEqual(result.status, "manual_review")
 
     def test_department_address_beats_generic_when_no_decision_maker_is_proven(self):
