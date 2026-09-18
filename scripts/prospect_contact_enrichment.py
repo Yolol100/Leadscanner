@@ -22,6 +22,7 @@ PROSPECT_HEADERS = [
 CONTACT_HEADERS = [
     "candidate_id", "checked_at", "company", "website", "email", "source_url",
     "email_domain", "domain_alignment", "mx_status", "status", "reason",
+    "contact_role", "contact_priority_tier",
 ]
 
 EMAIL_RE = re.compile(r"(?<![A-Z0-9._%+-])([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,63})(?![A-Z0-9._%+-])", re.I)
@@ -29,7 +30,19 @@ CONTACT_HINTS = (
     "contact", "contacteer", "contacten", "over-ons", "over ons", "about",
     "team", "bedrijf", "organisatie", "klantenservice", "customer-service",
 )
-ROLE_PRIORITY = {"info": 0, "contact": 1, "hello": 2, "hallo": 3, "sales": 4, "office": 5, "service": 6}
+GENERIC_LOCAL_PARTS = {
+    "info", "contact", "hello", "hallo", "office", "mail", "post",
+}
+DEPARTMENT_LOCAL_PARTS = {
+    "business", "partnership", "partnerships", "commercial", "commercieel", "sales",
+    "marketing", "ecommerce", "e-commerce", "operations", "service", "support",
+    "klantenservice", "customerservice", "supplier", "suppliers",
+}
+DECISION_ROLE_TOKENS = (
+    "owner", "founder", "co-founder", "cofounder", "eigenaar", "directeur", "directie",
+    "managing director", "ceo", "chief executive", "bestuurder", "zaakvoerder", "proprietor",
+)
+CONTACT_PRIORITY = {"decision_maker": 0, "department": 1, "named_person": 2, "generic": 3}
 BLOCKED_LOCAL_PARTS = {
     "noreply", "no-reply", "donotreply", "do-not-reply", "mailer-daemon",
     "postmaster", "abuse", "privacy", "dmarc", "bounce", "bounces",
@@ -99,9 +112,28 @@ def is_allowed_business_address(address: str) -> bool:
     local_key = local.replace("_", "-").casefold()
     if local_key in BLOCKED_LOCAL_PARTS or local_key.startswith("no-reply") or local_key.startswith("noreply"):
         return False
-    if domain in FREE_MAIL_DOMAINS:
-        return False
     return True
+
+
+def contact_role_and_priority(address: str, label: str = "") -> tuple[str, str]:
+    """Rank only evidence-bound public business contacts; provider choice never adds priority."""
+    address = normalize_email(address)
+    if not address or "@" not in address:
+        return "", "generic"
+    local, domain = address.rsplit("@", 1)
+    local_key = local.casefold()
+    label_key = re.sub(r"\s+", " ", str(label or "")).strip().casefold()
+
+    for token in DECISION_ROLE_TOKENS:
+        if token in label_key:
+            return token, "decision_maker"
+    if local_key in DEPARTMENT_LOCAL_PARTS:
+        return local_key, "department"
+    if local_key in GENERIC_LOCAL_PARTS:
+        return "", "generic"
+    if domain in FREE_MAIL_DOMAINS:
+        return "", "generic"
+    return "", "named_person"
 
 
 @dataclass(frozen=True)
@@ -113,16 +145,22 @@ class ContactCandidate:
     mx_status: str
     status: str
     reason: str
+    contact_role: str
+    contact_priority_tier: str
 
     def rank(self) -> tuple[int, int, int, str]:
-        local = self.email.split("@", 1)[0].casefold()
-        return (0 if self.domain_alignment == "aligned" else 1, ROLE_PRIORITY.get(local, 50), 0 if self.source_kind == "mailto" else 1, self.email)
+        return (
+            CONTACT_PRIORITY.get(self.contact_priority_tier, 9),
+            0 if self.domain_alignment == "aligned" else 1,
+            0 if self.source_kind == "mailto" else 1,
+            self.email,
+        )
 
 
-def extract_addresses(page, source_url: str, website: str) -> list[tuple[str, str, str]]:
-    found: list[tuple[str, str, str]] = []
+def extract_addresses(page, source_url: str, website: str) -> list[tuple[str, str, str, str]]:
+    found: list[tuple[str, str, str, str]] = []
     seen: set[str] = set()
-    for target, _ in page.links:
+    for target, label in page.links:
         if not target.lower().startswith("mailto:"):
             continue
         raw = target[7:].split("?", 1)[0]
@@ -130,12 +168,12 @@ def extract_addresses(page, source_url: str, website: str) -> list[tuple[str, st
             address = normalize_email(part)
             if address and address not in seen and is_allowed_business_address(address):
                 seen.add(address)
-                found.append((address, source_url, "mailto"))
+                found.append((address, source_url, "mailto", str(label or "")))
     for match in EMAIL_RE.finditer(page.text or ""):
         address = normalize_email(match.group(1))
         if address and address not in seen and is_allowed_business_address(address):
             seen.add(address)
-            found.append((address, source_url, "text"))
+            found.append((address, source_url, "text", ""))
     return found
 
 
@@ -172,14 +210,15 @@ def discover_contact(website: str, *, fetch: Callable[[str], str], resolver: Cal
         except DiscoveryError:
             continue
         raw_candidates.extend(extract_addresses(page, page_url, website))
-    unique: dict[str, tuple[str, str]] = {}
-    for address, source_url, source_kind in raw_candidates:
-        unique.setdefault(address, (source_url, source_kind))
+    unique: dict[str, tuple[str, str, str]] = {}
+    for address, source_url, source_kind, source_label in raw_candidates:
+        unique.setdefault(address, (source_url, source_kind, source_label))
     candidates: list[ContactCandidate] = []
-    for address, (source_url, source_kind) in unique.items():
+    for address, (source_url, source_kind, source_label) in unique.items():
         domain = email_domain(address)
         alignment = "aligned" if aligned_domain(website, domain) else "external_domain"
         mx = mx_status(domain, resolver)
+        contact_role, priority_tier = contact_role_and_priority(address, source_label)
         if mx == "missing":
             status, reason = "blocked", "public business address found on official site but receiving domain has no MX record"
         elif alignment != "aligned":
@@ -188,7 +227,13 @@ def discover_contact(website: str, *, fetch: Callable[[str], str], resolver: Cal
             status, reason = "manual_review", "public business address found on official site; MX lookup could not be proven"
         else:
             status, reason = "ready", "public business address found on official site with aligned domain and MX present"
-        candidates.append(ContactCandidate(address, source_url, source_kind, alignment, mx, status, reason))
+        reason += f"; contact_priority_tier={priority_tier}"
+        if contact_role:
+            reason += f"; contact_role={contact_role}"
+        candidates.append(ContactCandidate(
+            address, source_url, source_kind, alignment, mx, status, reason,
+            contact_role, priority_tier,
+        ))
     if not candidates:
         return None
     candidates.sort(key=lambda candidate: candidate.rank())
@@ -234,6 +279,8 @@ def contact_output(row: Mapping[str, str], *, fetch: Callable[[str], str]) -> tu
         "email_domain": "",
         "domain_alignment": "",
         "mx_status": "",
+        "contact_role": "",
+        "contact_priority_tier": "",
     }
     try:
         candidate = discover_contact(website, fetch=fetch)
@@ -258,6 +305,8 @@ def contact_output(row: Mapping[str, str], *, fetch: Callable[[str], str]) -> tu
         "mx_status": candidate.mx_status,
         "status": candidate.status,
         "reason": candidate.reason,
+        "contact_role": candidate.contact_role,
+        "contact_priority_tier": candidate.contact_priority_tier,
     }, candidate.status == "ready"
 
 
