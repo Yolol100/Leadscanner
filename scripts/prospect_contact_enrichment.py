@@ -43,6 +43,11 @@ DECISION_ROLE_TOKENS = (
     "managing director", "ceo", "chief executive", "bestuurder", "zaakvoerder", "proprietor",
 )
 CONTACT_PRIORITY = {"decision_maker": 0, "department": 1, "named_person": 2, "generic": 3}
+PERSON_LABEL_STOPWORDS = {
+    "email", "e-mail", "mail", "contact", "contacteer", "contact us", "reach us",
+    "send email", "stuur mail", "team", "office", "support", "service", "sales",
+    "marketing", "business", "partnership", "partnerships", "commercial",
+}
 BLOCKED_LOCAL_PARTS = {
     "noreply", "no-reply", "donotreply", "do-not-reply", "mailer-daemon",
     "postmaster", "abuse", "privacy", "dmarc", "bounce", "bounces",
@@ -115,6 +120,28 @@ def is_allowed_business_address(address: str) -> bool:
     return True
 
 
+def person_label_proves_identity(address: str, label: str = "") -> bool:
+    """Require source-label evidence before treating a mailbox as a named person."""
+    address = normalize_email(address)
+    raw_label = str(label or "").strip()
+    if not address or not raw_label or normalize_email(raw_label):
+        return False
+    label_key = re.sub(r"\s+", " ", raw_label).strip().casefold()
+    if label_key in PERSON_LABEL_STOPWORDS:
+        return False
+    if any(stop == label_key for stop in PERSON_LABEL_STOPWORDS):
+        return False
+    words = re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ'’-]*", raw_label)
+    if not 1 <= len(words) <= 4:
+        return False
+    if any(word.casefold() in PERSON_LABEL_STOPWORDS for word in words):
+        return False
+    local = address.split("@", 1)[0].casefold()
+    local_parts = [part for part in re.split(r"[._+\-]+", local) if len(part) >= 2]
+    compact_label = re.sub(r"[^a-z0-9]+", "", label_key)
+    return any(re.sub(r"[^a-z0-9]+", "", part) in compact_label for part in local_parts)
+
+
 def contact_role_and_priority(address: str, label: str = "") -> tuple[str, str]:
     """Rank only evidence-bound public business contacts; provider choice never adds priority."""
     address = normalize_email(address)
@@ -131,9 +158,9 @@ def contact_role_and_priority(address: str, label: str = "") -> tuple[str, str]:
         return local_key, "department"
     if local_key in GENERIC_LOCAL_PARTS:
         return "", "generic"
-    if domain in FREE_MAIL_DOMAINS:
-        return "", "generic"
-    return "", "named_person"
+    if person_label_proves_identity(address, label):
+        return "", "named_person"
+    return "", "generic"
 
 
 @dataclass(frozen=True)
