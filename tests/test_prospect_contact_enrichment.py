@@ -28,10 +28,38 @@ class ContactEnrichmentTests(unittest.TestCase):
         self.assertEqual(result.status, "manual_review")
         self.assertEqual(result.domain_alignment, "external_domain")
 
-    def test_noreply_and_free_mail_are_rejected(self):
+    def test_noreply_is_rejected_but_official_free_mail_can_be_contact_evidence(self):
         self.assertFalse(m.is_allowed_business_address("noreply@example.nl"))
-        self.assertFalse(m.is_allowed_business_address("hello@gmail.com"))
+        self.assertTrue(m.is_allowed_business_address("hello@gmail.com"))
         self.assertTrue(m.is_allowed_business_address("contact@example.nl"))
+
+    def test_decision_maker_role_beats_generic_even_on_external_provider(self):
+        page = Page(
+            "info@example.nl owner@example.com",
+            [
+                ("mailto:info@example.nl", "General contact"),
+                ("mailto:owner@gmail.com", "Founder / eigenaar"),
+            ],
+        )
+        with patch.object(m, "root_url", return_value="https://example.nl/"), patch.object(m, "parse_page", return_value=page), patch.object(m, "mx_status", return_value="present"), patch.object(m, "host_key", side_effect=lambda url: "example.nl" if "example.nl" in url else ("gmail.com" if "gmail.com" in url else "example.com")):
+            result = m.discover_contact("https://example.nl", fetch=lambda url: page)
+        self.assertEqual(result.email, "owner@gmail.com")
+        self.assertEqual(result.contact_priority_tier, "decision_maker")
+        self.assertIn("eigenaar", result.contact_role)
+        self.assertEqual(result.status, "manual_review")
+
+    def test_department_address_beats_generic_when_no_decision_maker_is_proven(self):
+        page = Page(
+            "info@example.nl marketing@example.nl",
+            [
+                ("mailto:info@example.nl", "Contact"),
+                ("mailto:marketing@example.nl", "Marketing"),
+            ],
+        )
+        with patch.object(m, "root_url", return_value="https://example.nl/"), patch.object(m, "parse_page", return_value=page), patch.object(m, "mx_status", return_value="present"), patch.object(m, "host_key", return_value="example.nl"):
+            result = m.discover_contact("https://example.nl", fetch=lambda url: page)
+        self.assertEqual(result.email, "marketing@example.nl")
+        self.assertEqual(result.contact_priority_tier, "department")
 
     def test_only_qualified_unseen_prospects_are_eligible(self):
         rows = [
@@ -73,12 +101,15 @@ class ContactEnrichmentTests(unittest.TestCase):
             mx_status="present",
             status="ready",
             reason="public business address found on official site with aligned domain and MX present",
+            contact_role="",
+            contact_priority_tier="generic",
         )
         with patch.object(m, "discover_contact", return_value=candidate):
             output, is_ready = m.contact_output(row, fetch=lambda url: "")
         self.assertTrue(is_ready)
         self.assertEqual(output["status"], "ready")
         self.assertEqual(output["email"], "info@ready.example")
+        self.assertEqual(output["contact_priority_tier"], "generic")
 
 
 if __name__ == "__main__":
