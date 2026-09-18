@@ -42,8 +42,23 @@ def rows_from_values(values: list[list[str]]) -> list[dict[str, str]]:
 
 
 def selected_rows(rows: Iterable[dict[str, str]], lead_ids: list[str]) -> list[dict[str, str]]:
-    by_id = {row.get("lead_id", "").strip(): row for row in rows if row.get("lead_id", "").strip()}
+    by_id: dict[str, dict[str, str]] = {}
+    duplicates: set[str] = set()
+    for row in rows:
+        lead_id = row.get("lead_id", "").strip()
+        if not lead_id:
+            continue
+        if lead_id in by_id:
+            duplicates.add(lead_id)
+        else:
+            by_id[lead_id] = row
+
+    selected_duplicates = sorted(lead_id for lead_id in lead_ids if lead_id in duplicates)
+    if selected_duplicates:
+        raise RuntimeError("Duplicate lead IDs in DraftQueue: " + ", ".join(selected_duplicates))
+
     missing = [lead_id for lead_id in lead_ids if lead_id not in by_id]
     if missing:
         raise RuntimeError("Missing lead IDs: " + ", ".join(missing))
+
     return [by_id[lead_id] for lead_id in lead_ids]
