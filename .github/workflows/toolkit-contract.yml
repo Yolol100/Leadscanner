@@ -26,7 +26,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Validate Leads v17.2 compliance policy and v17.3 copy runtime
+      - name: Validate Leads v17.2.1 discovery/contact policy and v17.3 copy runtime
         run: |
           python3 - <<'PY'
           import json, pathlib
@@ -34,10 +34,10 @@ jobs:
           r=json.load(open('tool-registry.json', encoding='utf-8'))
 
           route=c['default_route']
-          assert c['schema_version']=='3.3'
+          assert c['schema_version']=='3.4'
           assert c['repository']=='Yolol100/Leadscanner'
           assert route['id']=='filter_core_v17'
-          assert route['source_set_version']=='17.2.0-compliance-gate'
+          assert route['source_set_version']=='17.2.1-public-discovery-contact-priority'
           assert route['copy_policy_version']=='17.3.0'
           assert route['copy_source_version']=='17.3.1'
           assert route['send_permission']=='none'
@@ -45,8 +45,24 @@ jobs:
           assert route['contact_and_compliance_separated'] is True
           assert route['compliance_default']=='COMPLIANCE_NOT_PROVEN'
           assert route['required_compliance_status']=='COMPLIANCE_PASSED'
+          assert 'public_accountless_discovery' in route['steps']
+          assert 'contact_priority_selection' in route['steps']
           assert 'compliance_gate' in route['steps']
           assert 'last_mile_evidence_guard' in route['steps']
+
+          discovery=c['discovery_contract']
+          assert discovery['account_required'] is False
+          assert discovery['api_key_required'] is False
+          assert discovery['google_maps_repo_scrape'] is False
+          assert discovery['external_results_are_candidate_discovery_only'] is True
+          assert discovery['official_site_revalidation_required'] is True
+
+          selection=c['contact_selection_contract']
+          assert selection['priority_order']==['decision_maker','department','named_person','generic']
+          assert selection['decision_maker_requires_role_linked_official_source'] is True
+          assert selection['free_mail_provider_is_priority_signal'] is False
+          assert selection['guessed_or_constructed_email'] is False
+          assert selection['compliance_separate'] is True
 
           hard=set(c['hard_filter']['all_required'])
           assert 'real_company_and_official_site_or_bounded_website_absent_exception' in hard
@@ -94,9 +110,9 @@ jobs:
           assert reply['auto_send'] is False
           assert reply['runtime_status']=='controlled_end_to_end_fixture_proven_with_exact_one_draft_notification_contract_and_zero_send'
 
-          assert r['version']=='5.5'
+          assert r['version']=='5.6'
           p=r['policy']
-          assert p['default_source_set_version']=='17.2.0-compliance-gate'
+          assert p['default_source_set_version']=='17.2.1-public-discovery-contact-priority'
           assert p['copy_policy_version']=='17.3.0'
           assert p['copy_source_version']=='17.3.1'
           assert p['copy_module']=='scripts/outreach_copy_v17_3.py'
@@ -105,6 +121,10 @@ jobs:
           assert p['compliance_default']=='COMPLIANCE_NOT_PROVEN'
           assert p['compliance_pass_required_for_outreach'] is True
           assert p['instantly_can_override_compliance'] is False
+          assert p['accountless_public_discovery'] is True
+          assert p['google_maps_external_discovery_only'] is True
+          assert p['contact_priority_order']==['decision_maker','department','named_person','generic']
+          assert p['free_mail_provider_is_priority_signal'] is False
           assert p['unsupported_inferred_claims_forbidden'] is True
           assert p['signal_policy_module']=='src/tools/prospect-signal-policy.mjs'
           assert p['last_mile_guard_module']=='scripts/outreach_last_mile_guard.py'
@@ -166,8 +186,8 @@ jobs:
           integration=pathlib.Path('LEADS-INTEGRATION.md').read_text(encoding='utf-8')
           agents=pathlib.Path('AGENTS.md').read_text(encoding='utf-8')
           readme=pathlib.Path('README.md').read_text(encoding='utf-8')
-          assert 'filter-core v17.2' in integration and 'COMPLIANCE_NOT_PROVEN' in integration and 'send_permission=none' in integration
-          assert '17.2.0-compliance-gate' in agents and 'COMPLIANCE_NOT_PROVEN' in agents
-          assert '63 scenarios' in readme and 'COMPLIANCE_NOT_PROVEN' in readme
-          print('toolkit-contract Leads v17.2 compliance policy / v17.3 copy runtime + parity closure: OK')
+          assert 'filter-core v17.2.1' in integration and 'COMPLIANCE_NOT_PROVEN' in integration and 'send_permission=none' in integration
+          assert '17.2.1-public-discovery-contact-priority' in agents and 'COMPLIANCE_NOT_PROVEN' in agents
+          assert '68 scenarios' in readme and 'COMPLIANCE_NOT_PROVEN' in readme
+          print('toolkit-contract Leads v17.2.1 discovery/contact policy / v17.3 copy runtime + parity closure: OK')
           PY
