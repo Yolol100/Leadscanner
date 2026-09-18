@@ -130,18 +130,16 @@ def validate_queue_row(
 
 
 def inject_private_postal_for_draft(row: dict[str, str], body: str) -> str:
-    text = str(body or "")
-    country = canonical_country(row.get("country", ""))
-    if country != "US":
-        if POSTAL_PLACEHOLDER in text:
-            raise RuntimeError("non-US draft unexpectedly contains the private postal placeholder")
-        return text
+    """Inject the private business postal address into every commercial draft at last mile."""
+    text = str(body or "").strip()
     address = os.getenv("OUTREACH_POSTAL_ADDRESS", "").strip()
     if not address:
-        raise RuntimeError("OUTREACH_POSTAL_ADDRESS is required for US commercial draft")
-    if POSTAL_PLACEHOLDER not in text:
-        raise RuntimeError("US commercial draft is missing the private postal placeholder")
-    return text.replace(POSTAL_PLACEHOLDER, address)
+        raise RuntimeError("OUTREACH_POSTAL_ADDRESS is required for commercial draft")
+    if POSTAL_PLACEHOLDER in text:
+        return text.replace(POSTAL_PLACEHOLDER, address)
+    if address.casefold() in text.casefold():
+        return text
+    return text + "\n\n" + address
 
 
 def build_sheets_service():
