@@ -37,7 +37,7 @@ The runtime audit is designed to distinguish, for example:
 
 Never collapse those categories into a generic `AI memory` capability claim.
 
-A live runtime audit on 2026-09-16 proved current official v2 operations for AI Sales Agent administration/guidance, Inbox Manager administration/guidance, AI Lead Finder, AI Deliverability Agent and SuperSearch saved searches. The same audit did not prove public v2 control for Copilot Business Details, Customer Profiles, Saved memories, Copilot chat/task state, native Automations, CRM Calls/SMS/Tasks or Website Visitors configuration. Re-run the audit before relying on this snapshot because Instantly can add or rename endpoints.
+A live runtime audit on 2026-09-18 proved current official v2 operations for AI Sales Agent administration/guidance, Inbox Manager administration/guidance, AI Lead Finder, AI Deliverability Agent and SuperSearch saved searches. The same audit did not prove public v2 control for Copilot Business Details, Customer Profiles, Saved memories, Copilot chat/task state, native Automations, CRM Calls/SMS/Tasks or Website Visitors configuration. Re-run the audit before relying on this snapshot because Instantly can add or rename endpoints.
 
 ## Safety boundary
 
