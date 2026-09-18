@@ -1,3 +1,0 @@
-# Lokale batchinvoer voor Leadscanner.
-# Kopieer dit bestand naar sites.txt en zet daarna per regel een target-URL.
-# sites.txt is runtime-input en mag niet worden gecommit.

@@ -1,7 +1,7 @@
-node_modules/
-scan-results/
-playwright-report/
-test-results/
-.DS_Store
-sites.txt
-requests/scan.json
+__pycache__/
+*.pyc
+.venv/
+.env
+*.log
+sync-result.json
+selected-lead-ids.txt
