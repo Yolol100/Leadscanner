@@ -20,7 +20,7 @@ The default compliance state is `COMPLIANCE_NOT_PROVEN`. A row may become `COMPL
 
 ## Copy
 
-First-touch remains short, curiosity-first and one-offer. `scripts/outreach_copy_v17_3.py` is the active runtime validator/generator for Project Leads `leadpromo.md`; runtime copy policy remains V17.3.0 while the active source is V17.3.1 because V17.3.1 adds the upstream compliance prerequisite. It blocks unsupported Ads/social/`llms.txt` inferences and enforces artifact truth: claim an example is already made only when artifact existence and verified readback are supplied; otherwise offer to make it. `scripts/outreach_copy_v17_2.py` remains compatibility-only and is not the registered mailbox copygate.
+First-touch remains short, curiosity-first and one-offer. `scripts/outreach_copy_v17_3.py` is the active runtime validator/generator for Project Leads `leadpromo.md`; runtime copy policy remains V17.3.0 while the active source is V17.3.2 because V17.3.2 keeps the upstream compliance prerequisite and adds the last-mile sender/footer requirement. It blocks unsupported Ads/social/`llms.txt` inferences and enforces artifact truth: claim an example is already made only when artifact existence and verified readback are supplied; otherwise offer to make it. `scripts/outreach_copy_v17_2.py` remains compatibility-only and is not the registered mailbox copygate.
 
 The mailbox route derives artifact readiness fail-closed from both `artifact_exists` and `artifact_readback_verified`; absent or partial proof is treated as false. `send_permission=none` remains unchanged.
 
