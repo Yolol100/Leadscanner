@@ -1,4 +1,4 @@
-# Leads integration — filter-core v17.2
+# Leads integration — filter-core v17.2.1
 
 Leadscanner is the generic execution/evidence layer. `webactueel-workflow` remains controller; live Project Leads remains policy truth.
 
@@ -6,11 +6,13 @@ Default: `company -> current evidence -> one signal -> one offer -> official pub
 
 Normal prospects require the live homepage plus at most three relevant process pages. A bounded `website_absent` exception passes only with a current official business profile, direct proof that no website link exists, a verified public business email and the same separate compliance gate; its only offer is `website_webshop_improvement`.
 
+Accountless public discovery may start from Google Maps or an equivalent public local-search surface, Google Search operators, public trade/member/business directories, or approved directory sources. These are candidate sources only. Leadscanner never treats a Maps/search/directory result as qualification truth and does not scrape Google Maps or bypass platform limits; normal prospects are revalidated on the current official site.
+
 Generic discovery, signal evidence and source discovery remain bounded evidence capabilities outside filter policy. Active Ads and inactive official social accounts are discovery-priority signals only; they do not prove budget, pain or urgency. Missing/broken `llms.txt` is not standalone Google/AI visibility evidence. `src/tools/prospect-signal-policy.mjs` enforces these generic boundaries.
 
 ## Contact versus compliance
 
-`contact_verified` proves only that the address belongs to the business/contact context. It never proves permission for cold commercial outreach.
+`contact_verified` proves only that the address belongs to the business/contact context. It never proves permission for cold commercial outreach. Contact selection prefers a role-linked decision maker first, then a relevant department/purpose address, then another named business contact, and finally a generic address. A Gmail/Outlook/free-mail provider never adds priority; an external/free-mail address counts only when the official business source publishes that exact address.
 
 The default compliance state is `COMPLIANCE_NOT_PROVEN`. A row may become `COMPLIANCE_PASSED` only with documented evidence for one live Project Leads route: prior valid consent, explicit designation for receiving this type of unsolicited commercial communication with purpose match, or the applicable existing-customer/similar-services exception. Generic public addresses such as `info@` are never auto-cleared. Instantly, SuperSearch, enrichment and email verification cannot override this gate.
 
