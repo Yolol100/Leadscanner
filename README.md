@@ -34,6 +34,6 @@ De normale route gebruikt `workflow_dispatch` op **Create selected mijn.host con
 - `lead_ids`: komma- of newlinegescheiden DraftQueue-ID's;
 - `expected_count`: exact verwacht aantal.
 
-Daarmee is geen GitHub-issue, comment of close-write nodig. De oude issuecommand blijft alleen als backwards-compatible fallback.
+Daarmee is geen GitHub-issue, comment of close-write nodig. De workflow heeft geen issue-trigger of issue-schrijfpermissie.
 
 De conceptbody wordt niet meer intern aangepast: `DraftQueue.body` is de definitieve body en wordt exact via IMAP teruggelezen. Er is geen SMTP-sendroute.
