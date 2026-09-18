@@ -26,7 +26,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Validate Leads v17.2.1 discovery/contact policy and v17.3 copy runtime
+      - name: Validate Leads v17.2.2 Maps/source policy and v17.3 copy runtime
         run: |
           python3 - <<'PY'
           import json, pathlib
@@ -34,10 +34,10 @@ jobs:
           r=json.load(open('tool-registry.json', encoding='utf-8'))
 
           route=c['default_route']
-          assert c['schema_version']=='3.4'
+          assert c['schema_version']=='3.5'
           assert c['repository']=='Yolol100/Leadscanner'
           assert route['id']=='filter_core_v17'
-          assert route['source_set_version']=='17.2.1-public-discovery-contact-priority'
+          assert route['source_set_version']=='17.2.2-maps-source-revalidation'
           assert route['copy_policy_version']=='17.3.0'
           assert route['copy_source_version']=='17.3.1'
           assert route['send_permission']=='none'
@@ -54,12 +54,18 @@ jobs:
           assert discovery['account_required'] is False
           assert discovery['api_key_required'] is False
           assert discovery['google_maps_repo_scrape'] is False
+          assert discovery['google_maps_ephemeral_discovery_only'] is True
+          assert discovery['google_maps_content_persisted'] is False
+          assert discovery['google_maps_can_prove_website_absent'] is False
+          assert discovery['canonical_candidate_requires_official_site_or_permitted_non_maps_source'] is True
           assert discovery['external_results_are_candidate_discovery_only'] is True
           assert discovery['official_site_revalidation_required'] is True
 
           selection=c['contact_selection_contract']
           assert selection['priority_order']==['decision_maker','department','named_person','generic']
           assert selection['decision_maker_requires_role_linked_official_source'] is True
+          assert selection['named_person_requires_source_identity'] is True
+          assert selection['email_localpart_alone_can_prove_named_person'] is False
           assert selection['free_mail_provider_is_priority_signal'] is False
           assert selection['guessed_or_constructed_email'] is False
           assert selection['compliance_separate'] is True
@@ -104,15 +110,18 @@ jobs:
           assert mailbox['current_agent_offer_evidence_revalidation']=='required_at_preflight_and_apply'
           assert mailbox['persisted_control_instruction_policy']=='fail_closed_before_mailbox_mutation'
           assert mailbox['identity_policy']=='idn_punycode_or_unrelated_domain_requires_explicit_verification'
+          assert mailbox['private_postal_address_required'] is True
+          assert mailbox['private_postal_address_injected_at_last_mile'] is True
+          assert mailbox['sender_identity_and_easy_optout_required'] is True
           assert mailbox['send_permission']=='none'
 
           reply=c['reply_contract']
           assert reply['auto_send'] is False
           assert reply['runtime_status']=='controlled_end_to_end_fixture_proven_with_exact_one_draft_notification_contract_and_zero_send'
 
-          assert r['version']=='5.6'
+          assert r['version']=='5.7'
           p=r['policy']
-          assert p['default_source_set_version']=='17.2.1-public-discovery-contact-priority'
+          assert p['default_source_set_version']=='17.2.2-maps-source-revalidation'
           assert p['copy_policy_version']=='17.3.0'
           assert p['copy_source_version']=='17.3.1'
           assert p['copy_module']=='scripts/outreach_copy_v17_3.py'
@@ -123,6 +132,12 @@ jobs:
           assert p['instantly_can_override_compliance'] is False
           assert p['accountless_public_discovery'] is True
           assert p['google_maps_external_discovery_only'] is True
+          assert p['google_maps_ephemeral_only'] is True
+          assert p['google_maps_content_persisted'] is False
+          assert p['google_maps_can_prove_website_absent'] is False
+          assert p['named_person_requires_source_identity'] is True
+          assert p['email_localpart_alone_can_prove_named_person'] is False
+          assert p['private_postal_address_required_for_commercial_draft'] is True
           assert p['contact_priority_order']==['decision_maker','department','named_person','generic']
           assert p['free_mail_provider_is_priority_signal'] is False
           assert p['unsupported_inferred_claims_forbidden'] is True
@@ -146,6 +161,8 @@ jobs:
           assert mailbox_cap['last_mile_guard']=='scripts/outreach_last_mile_guard.py::validate_last_mile_rows'
           assert mailbox_cap['current_agent_offer_evidence_revalidation']=='preflight_and_apply'
           assert mailbox_cap['persisted_control_instruction_policy']=='fail_closed'
+          assert mailbox_cap['private_postal_address_required'] is True
+          assert mailbox_cap['private_postal_address_injected_at_last_mile'] is True
           assert mailbox_cap['send_permission']=='none'
           assert r['capabilities']['reply_triage']['status']=='controlled_e2e_fixture_proven_exactly_one_draft_notification_contract_zero_send'
 
@@ -186,8 +203,9 @@ jobs:
           integration=pathlib.Path('LEADS-INTEGRATION.md').read_text(encoding='utf-8')
           agents=pathlib.Path('AGENTS.md').read_text(encoding='utf-8')
           readme=pathlib.Path('README.md').read_text(encoding='utf-8')
-          assert 'filter-core v17.2.1' in integration and 'COMPLIANCE_NOT_PROVEN' in integration and 'send_permission=none' in integration
-          assert '17.2.1-public-discovery-contact-priority' in agents and 'COMPLIANCE_NOT_PROVEN' in agents
-          assert '68 scenarios' in readme and 'COMPLIANCE_NOT_PROVEN' in readme
-          print('toolkit-contract Leads v17.2.1 discovery/contact policy / v17.3 copy runtime + parity closure: OK')
+          assert 'filter-core v17.2.2' in integration and 'COMPLIANCE_NOT_PROVEN' in integration and 'send_permission=none' in integration
+          assert '17.2.2-maps-source-revalidation' in agents and 'COMPLIANCE_NOT_PROVEN' in agents
+          assert '71 scenarios' in readme and 'COMPLIANCE_NOT_PROVEN' in readme
+          assert 'OUTREACH_POSTAL_ADDRESS is required for commercial draft' in queue_text
+          print('toolkit-contract Leads v17.2.2 Maps/source policy / v17.3 copy runtime + parity closure: OK')
           PY
