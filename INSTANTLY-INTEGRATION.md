@@ -127,6 +127,6 @@ Or create a GitHub issue owned by `Yolol100` with title exactly:
 
 The issue workflow needs no Instantly API key because it audits the public official schema only. The safe public result contains capability classifications, not account data.
 
-The audit intentionally distinguishes AI Agent configuration from Instantly AI/Copilot memory. A live 2026-09-16 schema audit proved public v2 administration for AI Sales Agent and its guidance rules, Inbox Manager and its guidance, AI Lead Finder, AI Deliverability Agent and SuperSearch saved searches. It did not prove current public v2 control for Copilot Business Details, Customer Profiles, Saved memories, Copilot chats/tasks, native Automations, CRM Calls/SMS/Tasks or Website Visitors configuration. Re-run the audit before relying on this snapshot.
+The audit intentionally distinguishes AI Agent configuration from Instantly AI/Copilot memory. A live 2026-09-18 schema audit proved public v2 administration for AI Sales Agent and its guidance rules, Inbox Manager and its guidance, AI Lead Finder, AI Deliverability Agent and SuperSearch saved searches. It did not prove current public v2 control for Copilot Business Details, Customer Profiles, Saved memories, Copilot chats/tasks, native Automations, CRM Calls/SMS/Tasks or Website Visitors configuration. Re-run the audit before relying on this snapshot.
 
 See `docs/INSTANTLY-SURFACE-COVERAGE.md` for the control boundary and operating guidance.
