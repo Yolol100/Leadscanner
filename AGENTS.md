@@ -4,7 +4,7 @@
 
 This repository executes Leads work; it does not own the overall process. `webactueel-workflow` is controller and live Project Leads is canonical policy.
 
-For normal lead work, use `filter_core_v17` / source set `17.2.2-maps-source-revalidation` with Project Leads `leadpromo.md` V17.3.1:
+For normal lead work, use `filter_core_v17` / source set `17.2.2-maps-source-revalidation` with Project Leads `leadpromo.md` V17.3.2:
 
 1. discover candidates accountlessly when useful through Google Maps/equivalent public local search, Google Search operators, public trade/member/business directories or approved directory sources; Google Maps is ephemeral discovery only: never scrape, bulk-export or persist Maps content, then visit the official website/webshop and rebuild stored lead evidence there; Maps cannot prove `website_absent`;
 2. verify a real company and official site, or use the bounded `website_absent` exception only when a current official business profile proves the company and directly proves no website link is present;
