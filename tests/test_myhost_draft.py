@@ -59,7 +59,12 @@ class DraftTests(unittest.TestCase):
             },
             clear=False,
         ):
-            return build_message(row, "Zakelijk postadres 1, Rotterdam")
+            return build_message(row)
+
+    def test_queue_body_is_final_body(self):
+        row = self.row()
+        msg = self.message()
+        self.assertEqual(msg.get_content().strip(), row["body"].strip())
 
     def test_exact_message_match(self):
         expected = self.message()
