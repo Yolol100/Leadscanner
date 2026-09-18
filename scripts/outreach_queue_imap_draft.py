@@ -10,7 +10,6 @@ from outreach_compliance_preflight import COMPLIANCE_PASSED, compliance_errors
 from outreach_copy_v17_3 import initial_copy_errors
 from outreach_imap_draft import append_verified_draft, choose_mailbox
 from outreach_mailboxes import enabled_mailboxes, load_mailboxes_from_env
-from prospect_target_policy import canonical_country
 
 QUEUE_SHEET = "OutreachQueue"
 SUPPRESSION_SHEET = "Suppression"
