@@ -30,4 +30,7 @@ jobs:
           set -euo pipefail
           ! grep -R --line-number --include='*.py' -E 'smtplib|sendmail\(|SMTP\(' scripts
           grep -q 'IMAP_DRAFT_ONLY' scripts/sync_selected_drafts.py
+          ! grep -E 'load_private_postal_address|postal_address' scripts/sync_selected_drafts.py scripts/myhost_draft.py
+          grep -q 'workflow_dispatch:' .github/workflows/sync-selected-myhost-drafts-command.yml
+          grep -q "github.event_name == 'issues'" .github/workflows/sync-selected-myhost-drafts-command.yml
           echo 'DRAFT_ONLY_CORE=green'
