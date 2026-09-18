@@ -2,7 +2,7 @@
 
 De enige flow is:
 
-**Google Maps -> officiële website/webshop -> één aanbod -> beste publieke zakelijke e-mail -> korte mail -> controle -> mijn.host-concept -> stop.**
+**Google Maps -> officiële website/webshop -> passend aanbod -> beste publieke zakelijke e-mail -> korte mail -> controle -> mijn.host-concept -> stop.**
 
 ChatGPT/Leads doet de inhoudelijke stappen. Deze repo doet alleen de technische eindcontrole en het mijn.host-concept. Er is geen SMTP-sendroute.
 
@@ -29,13 +29,11 @@ De twee source-URL's moeten op de officiële website/webshop staan. Zo kan de la
 
 ## Mijn.host command
 
-Maak een GitHub issue met titel `SYNC SELECTED MYHOST DRAFTS` en body:
+De normale route gebruikt `workflow_dispatch` op **Create selected mijn.host concepts** met:
 
-```text
-COMMAND=SYNC_SELECTED_MYHOST_DRAFTS
-EXPECTED_COUNT=2
-LEAD_ID=lead-1
-LEAD_ID=lead-2
-```
+- `lead_ids`: komma- of newlinegescheiden DraftQueue-ID's;
+- `expected_count`: exact verwacht aantal.
 
-Alleen GitHub-gebruiker `Yolol100` kan de workflow starten. Na exacte IMAP-readback stopt de flow.
+Daarmee is geen GitHub-issue, comment of close-write nodig. De oude issuecommand blijft alleen als backwards-compatible fallback.
+
+De conceptbody wordt niet meer intern aangepast: `DraftQueue.body` is de definitieve body en wordt exact via IMAP teruggelezen. Er is geen SMTP-sendroute.
