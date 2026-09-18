@@ -1,6 +1,16 @@
 name: Create selected mijn.host concepts
 
 on:
+  workflow_dispatch:
+    inputs:
+      lead_ids:
+        description: "Comma- or newline-separated DraftQueue lead IDs"
+        required: true
+        type: string
+      expected_count:
+        description: "Expected number of selected lead IDs"
+        required: true
+        type: string
   issues:
     types: [opened]
 
@@ -15,9 +25,12 @@ concurrency:
 jobs:
   create-drafts:
     if: >-
-      github.actor == 'Yolol100' &&
-      github.event.issue.title == 'SYNC SELECTED MYHOST DRAFTS' &&
-      contains(github.event.issue.body, 'COMMAND=SYNC_SELECTED_MYHOST_DRAFTS')
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.actor == 'Yolol100' &&
+        github.event.issue.title == 'SYNC SELECTED MYHOST DRAFTS' &&
+        contains(github.event.issue.body, 'COMMAND=SYNC_SELECTED_MYHOST_DRAFTS')
+      )
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -32,10 +45,18 @@ jobs:
       - name: Parse selected lead IDs
         id: command
         shell: bash
+        env:
+          DISPATCH_LEAD_IDS: ${{ inputs.lead_ids }}
+          DISPATCH_EXPECTED_COUNT: ${{ inputs.expected_count }}
         run: |
           set -euo pipefail
-          jq -r '.issue.body // "" | split("\n")[] | select(startswith("LEAD_ID=")) | sub("^LEAD_ID="; "")' "$GITHUB_EVENT_PATH" > selected-lead-ids.txt
-          expected="$(jq -r '.issue.body // "" | split("\n")[] | select(startswith("EXPECTED_COUNT=")) | sub("^EXPECTED_COUNT="; "")' "$GITHUB_EVENT_PATH")"
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            printf '%s\n' "$DISPATCH_LEAD_IDS" | tr ',' '\n' | sed '/^[[:space:]]*$/d; s/^[[:space:]]*//; s/[[:space:]]*$//' > selected-lead-ids.txt
+            expected="$DISPATCH_EXPECTED_COUNT"
+          else
+            jq -r '.issue.body // "" | split("\n")[] | select(startswith("LEAD_ID=")) | sub("^LEAD_ID="; "")' "$GITHUB_EVENT_PATH" > selected-lead-ids.txt
+            expected="$(jq -r '.issue.body // "" | split("\n")[] | select(startswith("EXPECTED_COUNT=")) | sub("^EXPECTED_COUNT="; "")' "$GITHUB_EVENT_PATH")"
+          fi
           if ! [[ "$expected" =~ ^[0-9]{1,3}$ ]] || [ "$expected" -lt 1 ] || [ "$expected" -gt 100 ]; then
             echo 'EXPECTED_COUNT must be 1-100' >&2; exit 2
           fi
@@ -62,7 +83,7 @@ jobs:
           grep -q '^MYHOST_DRAFT_SYNC=green ' sync-result.txt
           grep -q 'smtp_send=not_available' sync-result.txt
       - name: Comment and close
-        if: always()
+        if: always() && github.event_name == 'issues'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
