@@ -14,10 +14,8 @@ def _normalize_text(value: str) -> str:
     return str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
 
 
-def build_message(row: dict[str, str], postal_address: str) -> EmailMessage:
+def build_message(row: dict[str, str]) -> EmailMessage:
     body = row["body"].strip()
-    if postal_address.casefold() not in body.casefold():
-        body = body + "\n\n" + postal_address
 
     msg = EmailMessage(policy=SMTP)
     msg["From"] = f'{os.getenv("OUTREACH_SENDER_NAME", "Andrew Baeten")} <{os.getenv("OUTREACH_SENDER_EMAIL", "info@andrewbaeten.nl")}>'
