@@ -10,7 +10,7 @@ from myhost_draft import append_and_verify, build_message, connect_imap, find_dr
 from private_config import load_private_postal_address
 from sheets import build_service, get_values, rows_from_values, selected_rows
 
-QUEUE_SHEET = "OutreachQueue"
+QUEUE_SHEET = "DraftQueue"
 
 
 def parse_ids(path: str, expected_count: int) -> list[str]:
@@ -50,6 +50,7 @@ def run(lead_id_file: str, expected_count: int, report: str | None = None) -> di
         "count": len(messages),
         "lead_ids": lead_ids,
         "transport": "IMAP_DRAFT_ONLY",
+        "readback": "TO_SUBJECT_BODY_EXACT",
         "smtp_send": "not_available",
     }
     if report:
@@ -68,7 +69,10 @@ def main() -> int:
     except Exception as exc:
         print(f"MYHOST_DRAFT_SYNC=blocked detail={exc}")
         return 2
-    print(f"MYHOST_DRAFT_SYNC=green count={result['count']} transport=IMAP_DRAFT_ONLY smtp_send=not_available")
+    print(
+        f"MYHOST_DRAFT_SYNC=green count={result['count']} "
+        "transport=IMAP_DRAFT_ONLY readback=TO_SUBJECT_BODY_EXACT smtp_send=not_available"
+    )
     return 0
 
 

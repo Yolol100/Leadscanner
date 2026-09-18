@@ -1,28 +1,31 @@
 # Leadscanner
 
-Eén simpele flow:
+De enige flow is:
 
-1. Zoek een bedrijf via Google Maps.
-2. Open de echte website of webshop.
-3. Kies precies één passend aanbod.
-4. Zoek het beste publieke zakelijke e-mailadres: beslisser -> afdeling -> algemeen adres.
-5. Maak één korte persoonlijke mail.
-6. Controleer de mail.
-7. Zet de geselecteerde lead als concept in mijn.host.
-8. Stop. Andrew controleert en verstuurt zelf.
+**Google Maps -> officiële website/webshop -> één aanbod -> beste publieke zakelijke e-mail -> korte mail -> controle -> mijn.host-concept -> stop.**
 
-Google Maps is alleen het startpunt. Sla pas leaddata op nadat de website/webshop of een andere toegestane officiële bedrijfsbron is gecontroleerd.
+ChatGPT/Leads doet de inhoudelijke stappen. Deze repo doet alleen de technische eindcontrole en het mijn.host-concept. Er is geen SMTP-sendroute.
 
-Deze repository verstuurt nooit e-mail. Er staat geen SMTP-sendroute in de core.
+## Canonieke uitvoerprompt
 
-## Repo-rol
+Gebruik deze prompt voor een leadrun:
 
-ChatGPT/Leads doet stappen 1 t/m 6 en zet de gecontroleerde lead in `OutreachQueue`.
-Deze repo doet alleen stap 7: geselecteerde lead-ID's lezen, de rij controleren, een IMAP-concept maken en exact teruglezen.
+> Zoek [AANTAL] nieuwe bedrijven via Google Maps binnen [BRANCHE/REGIO]. Gebruik Maps alleen om kandidaten te vinden. Open voor iedere kandidaat de echte officiële website of webshop en ga alleen verder als bedrijf en website aantoonbaar bij elkaar horen. Kies precies één passend aanbod op basis van één concrete, actuele observatie op die website. Bewaar de observatie én de exacte bron-URL. Zoek daarna het beste publieke zakelijke e-mailadres in deze volgorde: bewezen beslisser, passende afdeling, algemeen bedrijfsadres. Raad of bouw nooit een e-mailadres. Bewaar de exacte pagina waarop het e-mailadres publiek staat. Schrijf één korte natuurlijke mail met één observatie, één aanbod, één kleine permission-CTA, Andrew Baeten + andrewbaeten.nl en een simpele afmelding. Controleer alle feiten, bron-URL's, e-mail, aanbod, taal en placeholders. Zet alleen volledig gecontroleerde leads in DraftQueue. Maak daarna uitsluitend mijn.host IMAP-concepten. Lees ieder concept terug en vergelijk ontvanger, onderwerp en body exact. Verzend niets. Stop na groene readback zodat Andrew zelf kan controleren en verzenden.
 
-## Benodigde velden in OutreachQueue
+## Actieve DraftQueue
 
-`lead_id`, `company`, `website`, `email`, `subject`, `body`
+Alleen deze velden zijn actief:
+
+`lead_id`, `company`, `website`, `offer`, `observation`, `observation_source_url`, `email`, `email_source_url`, `subject`, `body`
+
+Toegestane `offer`-waarden:
+
+- `website_webshop`
+- `wordpress_elementor`
+- `seo`
+- `conversion_contact`
+
+De twee source-URL's moeten op de officiële website/webshop staan. Zo kan de laatste controle bewijzen waar observatie en e-mail vandaan kwamen.
 
 ## Mijn.host command
 
@@ -35,4 +38,4 @@ LEAD_ID=lead-1
 LEAD_ID=lead-2
 ```
 
-Alleen GitHub-gebruiker `Yolol100` kan deze workflow starten.
+Alleen GitHub-gebruiker `Yolol100` kan de workflow starten. Na exacte IMAP-readback stopt de flow.

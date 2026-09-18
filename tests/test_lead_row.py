@@ -9,18 +9,51 @@ class LeadRowTests(unittest.TestCase):
             "lead_id": "lead-1",
             "company": "Voorbeeld BV",
             "website": "https://example.nl/",
+            "offer": "conversion_contact",
+            "observation": "De offertepagina vraagt niet duidelijk wat de volgende stap is.",
+            "observation_source_url": "https://example.nl/offerte/",
             "email": "info@example.nl",
+            "email_source_url": "https://example.nl/contact/",
             "subject": "Kleine website kans",
             "body": (
-                "Beste team, op jullie website zag ik dat de contactroute voor nieuwe aanvragen vrij algemeen is. "
-                "Ik kan één kort voorbeeld maken van een duidelijkere eerste stap die beter past bij jullie website. "
-                "Zal ik het voorbeeld sturen? Geen interesse? Een kort nee is genoeg. "
+                "Beste team, op jullie offertepagina zag ik dat de volgende stap voor een nieuwe aanvraag niet "
+                "duidelijk wordt uitgelegd. Ik kan één kort voorbeeld maken van een duidelijkere contactroute die "
+                "beter aansluit op deze pagina. Zal ik het voorbeeld sturen? Geen interesse? Een kort nee is genoeg. "
                 "Met vriendelijke groet, Andrew Baeten, andrewbaeten.nl"
             ),
         }
 
     def test_valid_row(self):
         self.assertEqual(validate_row(self.base())["lead_id"], "lead-1")
+
+    def test_missing_evidence_url_blocks(self):
+        row = self.base()
+        row["observation_source_url"] = ""
+        with self.assertRaises(ValueError):
+            validate_row(row)
+
+    def test_external_observation_source_blocks(self):
+        row = self.base()
+        row["observation_source_url"] = "https://other.example/contact/"
+        with self.assertRaises(ValueError):
+            validate_row(row)
+
+    def test_external_email_source_blocks(self):
+        row = self.base()
+        row["email_source_url"] = "https://directory.example/company/"
+        with self.assertRaises(ValueError):
+            validate_row(row)
+
+    def test_subdomain_source_is_allowed(self):
+        row = self.base()
+        row["email_source_url"] = "https://contact.example.nl/team/"
+        self.assertEqual(validate_row(row)["email"], "info@example.nl")
+
+    def test_invalid_offer_blocks(self):
+        row = self.base()
+        row["offer"] = "everything"
+        with self.assertRaises(ValueError):
+            validate_row(row)
 
     def test_placeholder_blocks(self):
         row = self.base()
