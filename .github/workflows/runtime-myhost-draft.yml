@@ -1,0 +1,75 @@
+name: Create mijn.host concept from runtime branch
+
+on:
+  workflow_run:
+    workflows: ["Queue mijn.host draft runtime request"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: myhost-drafts
+  cancel-in-progress: false
+
+jobs:
+  create-draft:
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'create' && startsWith(github.event.workflow_run.head_branch, 'runtime/myhost-draft/') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.repository.default_branch }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python3 -m pip install --disable-pip-version-check -r requirements.txt
+      - name: Resolve selected DraftQueue lead
+        id: command
+        env:
+          RUNTIME_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          set -euo pipefail
+          lead_id="$(PYTHONPATH=scripts python3 scripts/runtime_branch.py --branch "$RUNTIME_BRANCH")"
+          printf '%s\n' "$lead_id" > selected-lead-ids.txt
+          echo 'expected=1' >> "$GITHUB_OUTPUT"
+      - name: Create concept and verify readback
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          OUTREACH_SPREADSHEET_ID: ${{ vars.OUTREACH_SPREADSHEET_ID || '1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI' }}
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME || 'Andrew Baeten' }}
+          OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
+        run: |
+          PYTHONPATH=scripts python3 scripts/sync_selected_drafts.py \
+            --lead-id-file selected-lead-ids.txt \
+            --expected-count '${{ steps.command.outputs.expected }}' \
+            --report sync-result.json | tee sync-result.txt
+          grep -q '^MYHOST_DRAFT_SYNC=green ' sync-result.txt
+          grep -q 'smtp_send=not_available' sync-result.txt
+
+  cleanup-runtime-branch:
+    if: ${{ always() && github.event.workflow_run.event == 'create' && startsWith(github.event.workflow_run.head_branch, 'runtime/myhost-draft/') }}
+    needs: create-draft
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions:
+      contents: write
+    steps:
+      - name: Delete temporary runtime branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUNTIME_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          set -euo pipefail
+          case "$RUNTIME_BRANCH" in
+            runtime/myhost-draft/*) ;;
+            *) echo 'Unexpected runtime branch' >&2; exit 2 ;;
+          esac
+          gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$RUNTIME_BRANCH"
