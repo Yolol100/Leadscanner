@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 from lead_row import validate_row
-from myhost_draft import append_and_verify, build_message, connect_imap, find_drafts_folder
+from myhost_draft import append_many_and_verify, build_message, connect_imap, find_drafts_folder
 from sheets import build_service, get_values, rows_from_values, selected_rows
 
 QUEUE_SHEET = "DraftQueue"
@@ -35,8 +35,11 @@ def run(lead_id_file: str, expected_count: int, report: str | None = None) -> di
     client = connect_imap()
     try:
         folder = find_drafts_folder(client)
-        for row, msg in messages:
-            append_and_verify(client, folder, msg, row["lead_id"])
+        append_many_and_verify(
+            client,
+            folder,
+            [(row["lead_id"], msg) for row, msg in messages],
+        )
     finally:
         try:
             client.logout()
