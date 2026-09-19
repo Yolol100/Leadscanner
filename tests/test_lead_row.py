@@ -1,6 +1,6 @@
 import unittest
 
-from lead_row import validate_row
+from lead_row import ALLOWED_OFFERS, validate_row
 
 
 class LeadRowTests(unittest.TestCase):
@@ -9,7 +9,7 @@ class LeadRowTests(unittest.TestCase):
             "lead_id": "lead-1",
             "company": "Voorbeeld BV",
             "website": "https://example.nl/",
-            "offer": "conversion_contact",
+            "offer": "website_webshop",
             "observation": "De offertepagina vraagt niet duidelijk wat de volgende stap is.",
             "observation_source_url": "https://example.nl/offerte/",
             "email": "info@example.nl",
@@ -25,6 +25,23 @@ class LeadRowTests(unittest.TestCase):
 
     def test_valid_row(self):
         self.assertEqual(validate_row(self.base())["lead_id"], "lead-1")
+
+    def test_exact_four_offers_are_allowed(self):
+        self.assertEqual(
+            ALLOWED_OFFERS,
+            {"ai_agents", "social_media", "search_visibility", "website_webshop"},
+        )
+        for offer in sorted(ALLOWED_OFFERS):
+            row = self.base()
+            row["offer"] = offer
+            self.assertEqual(validate_row(row)["offer"], offer)
+
+    def test_legacy_offer_labels_block(self):
+        for offer in ["conversion_contact", "wordpress_elementor", "seo"]:
+            row = self.base()
+            row["offer"] = offer
+            with self.assertRaises(ValueError):
+                validate_row(row)
 
     def test_missing_evidence_url_blocks(self):
         row = self.base()
