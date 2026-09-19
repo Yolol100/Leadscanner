@@ -17,10 +17,10 @@ REQUIRED = (
     "body",
 )
 ALLOWED_OFFERS = {
+    "ai_agents",
+    "social_media",
+    "search_visibility",
     "website_webshop",
-    "wordpress_elementor",
-    "seo",
-    "conversion_contact",
 }
 PLACEHOLDER_RE = re.compile(r"\{\{|\}\}|\[NAME\]|\[BEDRIJF\]", re.I)
 
