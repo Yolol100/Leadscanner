@@ -34,4 +34,10 @@ jobs:
           grep -q 'workflow_dispatch:' .github/workflows/sync-selected-myhost-drafts-command.yml
           ! grep -q '^  issues:' .github/workflows/sync-selected-myhost-drafts-command.yml
           ! grep -q 'issues: write' .github/workflows/sync-selected-myhost-drafts-command.yml
+          grep -q '^  create:' .github/workflows/runtime-myhost-request.yml
+          ! grep -q 'OUTREACH_MAIL_PASSWORD' .github/workflows/runtime-myhost-request.yml
+          grep -q '^  workflow_run:' .github/workflows/runtime-myhost-draft.yml
+          grep -q "ref: \${{ github.event.repository.default_branch }}" .github/workflows/runtime-myhost-draft.yml
+          grep -q 'smtp_send=not_available' .github/workflows/runtime-myhost-draft.yml
+          grep -q 'runtime/myhost-draft/' scripts/runtime_branch.py
           echo 'DRAFT_ONLY_CORE=green'
