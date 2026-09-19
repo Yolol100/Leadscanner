@@ -1,4 +1,5 @@
 import os
+import time
 import unittest
 from email.parser import BytesParser
 from email.policy import SMTP
@@ -138,6 +139,33 @@ class DraftTests(unittest.TestCase):
         self.assertEqual(len(client.messages), 100)
         self.assertEqual(client.append_calls, 100)
         self.assertEqual(client.select_calls, 102)
+
+    def test_batch_load_sizes_1_10_25_50_100(self):
+        for count in (1, 10, 25, 50, 100):
+            with self.subTest(count=count):
+                client = FakeIMAP()
+                batch = self.batch(count)
+                started = time.perf_counter()
+                append_many_and_verify(client, "Drafts", batch)
+                elapsed = time.perf_counter() - started
+
+                self.assertEqual(len(client.messages), count)
+                self.assertEqual(client.append_calls, count)
+                self.assertEqual(client.select_calls, count + 1)
+                self.assertEqual(
+                    len(
+                        {
+                            str(
+                                BytesParser(policy=SMTP)
+                                .parsebytes(raw)
+                                .get("X-Webactueel-Lead-ID", "")
+                            )
+                            for raw in client.messages
+                        }
+                    ),
+                    count,
+                )
+                print(f"BATCH_BENCH count={count} seconds={elapsed:.6f}")
 
     def test_batch_partial_failure_can_resume_idempotently(self):
         client = FailingIMAP(fail_on_append=51)
