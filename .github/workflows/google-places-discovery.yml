@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       max_results_per_query:
-        description: "Maximum Places results per query (1-60)"
+        description: "Maximum Places results per query (1-20)"
         required: true
         default: "20"
         type: string
@@ -47,8 +47,8 @@ jobs:
           set -euo pipefail
           printf '%s\n' "$DISCOVERY_QUERIES" | sed '/^[[:space:]]*$/d; s/^[[:space:]]*//; s/[[:space:]]*$//' > discovery-queries.txt
           [ -s discovery-queries.txt ] || { echo 'At least one non-empty query is required' >&2; exit 2; }
-          if ! [[ "$MAX_RESULTS_PER_QUERY" =~ ^[0-9]{1,2}$ ]] || [ "$MAX_RESULTS_PER_QUERY" -lt 1 ] || [ "$MAX_RESULTS_PER_QUERY" -gt 60 ]; then
-            echo 'max_results_per_query must be 1-60' >&2
+          if ! [[ "$MAX_RESULTS_PER_QUERY" =~ ^[0-9]{1,2}$ ]] || [ "$MAX_RESULTS_PER_QUERY" -lt 1 ] || [ "$MAX_RESULTS_PER_QUERY" -gt 20 ]; then
+            echo 'max_results_per_query must be 1-20' >&2
             exit 2
           fi
       - name: Run official Google Places discovery
@@ -63,7 +63,11 @@ jobs:
             echo 'GOOGLE_SERVICE_ACCOUNT_JSON is required. The Google Cloud project must have billing and Places API (New) enabled.' >&2
             exit 2
           }
-          PYTHONPATH=scripts python3 scripts/google_places_discovery.py             --queries-file discovery-queries.txt             --max-results-per-query "$MAX_RESULTS_PER_QUERY"             --region-code "$REGION_CODE"             --output results/google-places-discovery.json
+          PYTHONPATH=scripts python3 scripts/google_places_discovery.py \
+            --queries-file discovery-queries.txt \
+            --max-results-per-query "$MAX_RESULTS_PER_QUERY" \
+            --region-code "$REGION_CODE" \
+            --output results/google-places-discovery.json
       - name: Upload bounded discovery handoff
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
