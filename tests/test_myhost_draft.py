@@ -4,14 +4,17 @@ from email.parser import BytesParser
 from email.policy import SMTP
 from unittest.mock import patch
 
-from myhost_draft import append_and_verify, build_message, exact_message_matches
+from myhost_draft import append_and_verify, append_many_and_verify, build_message, exact_message_matches
 
 
 class FakeIMAP:
     def __init__(self):
         self.messages = []
+        self.select_calls = 0
+        self.append_calls = 0
 
     def select(self, folder, readonly=True):
+        self.select_calls += 1
         return "OK", [str(len(self.messages)).encode()]
 
     def search(self, charset, *criteria):
@@ -29,26 +32,42 @@ class FakeIMAP:
         return "OK", [(b"1 (RFC822)", raw)]
 
     def append(self, folder, flags, date_time, raw):
+        self.append_calls += 1
+        self.messages.append(raw)
+        return "OK", [b"APPEND completed"]
+
+
+class FailingIMAP(FakeIMAP):
+    def __init__(self, fail_on_append: int):
+        super().__init__()
+        self.fail_on_append = fail_on_append
+        self.failure_enabled = True
+
+    def append(self, folder, flags, date_time, raw):
+        next_call = self.append_calls + 1
+        self.append_calls = next_call
+        if self.failure_enabled and next_call == self.fail_on_append:
+            return "NO", [b"simulated append failure"]
         self.messages.append(raw)
         return "OK", [b"APPEND completed"]
 
 
 class DraftTests(unittest.TestCase):
-    def row(self):
+    def row(self, index=1):
         return {
-            "lead_id": "lead-1",
-            "email": "info@example.nl",
-            "subject": "Kleine website kans",
+            "lead_id": f"lead-{index}",
+            "email": f"info{index}@example.nl",
+            "subject": f"Kleine website kans {index}",
             "body": (
-                "Beste team, op jullie website zag ik een concrete kans in de contactroute. "
-                "Ik kan één kort voorbeeld maken dat beter aansluit op de huidige pagina. "
+                f"Beste team, op jullie website zag ik concrete kans {index} in de contactroute. "
+                "Ik kan een kort voorbeeld maken dat beter aansluit op de huidige pagina. "
                 "Zal ik het voorbeeld sturen? Geen interesse? Een kort nee is genoeg. "
                 "Met vriendelijke groet, Andrew Baeten, andrewbaeten.nl"
             ),
         }
 
-    def message(self, subject=None):
-        row = self.row()
+    def message(self, subject=None, index=1):
+        row = self.row(index=index)
         if subject:
             row["subject"] = subject
         with patch.dict(
@@ -60,6 +79,9 @@ class DraftTests(unittest.TestCase):
             clear=False,
         ):
             return build_message(row)
+
+    def batch(self, count=100):
+        return [(f"lead-{index}", self.message(index=index)) for index in range(1, count + 1)]
 
     def test_queue_body_is_final_body(self):
         row = self.row()
@@ -98,6 +120,42 @@ class DraftTests(unittest.TestCase):
         client.messages.extend([raw, raw])
         with self.assertRaises(RuntimeError):
             append_and_verify(client, "Drafts", msg, "lead-1")
+
+    def test_batch_100_exact_readback_reuses_mailbox_selection(self):
+        client = FakeIMAP()
+        batch = self.batch(100)
+        append_many_and_verify(client, "Drafts", batch)
+
+        self.assertEqual(len(client.messages), 100)
+        self.assertEqual(client.append_calls, 100)
+        self.assertEqual(client.select_calls, 101)
+
+        for index, (_, expected) in enumerate(batch):
+            actual = BytesParser(policy=SMTP).parsebytes(client.messages[index])
+            self.assertTrue(exact_message_matches(actual, expected))
+
+        append_many_and_verify(client, "Drafts", batch)
+        self.assertEqual(len(client.messages), 100)
+        self.assertEqual(client.append_calls, 100)
+        self.assertEqual(client.select_calls, 102)
+
+    def test_batch_partial_failure_can_resume_idempotently(self):
+        client = FailingIMAP(fail_on_append=51)
+        batch = self.batch(100)
+
+        with self.assertRaises(RuntimeError):
+            append_many_and_verify(client, "Drafts", batch)
+        self.assertEqual(len(client.messages), 50)
+
+        client.failure_enabled = False
+        append_many_and_verify(client, "Drafts", batch)
+        self.assertEqual(len(client.messages), 100)
+
+        lead_ids = [
+            str(BytesParser(policy=SMTP).parsebytes(raw).get("X-Webactueel-Lead-ID", ""))
+            for raw in client.messages
+        ]
+        self.assertEqual(len(lead_ids), len(set(lead_ids)))
 
 
 if __name__ == "__main__":
