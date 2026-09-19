@@ -4,7 +4,7 @@ De enige flow is:
 
 **Google Maps -> officiële website/webshop -> evidence -> één primaire aanbodfamilie -> contactbasis -> korte mail -> controle -> mijn.host-concept -> stop.**
 
-ChatGPT/Leads doet de inhoudelijke kwalificatie en de Nederlandse/EER-contactpoort. Deze repo doet alleen de technische DraftQueue-validatie en het mijn.host-concept. Er is geen SMTP-sendroute.
+ChatGPT/Leads doet de inhoudelijke kwalificatie en de Nederlandse/EER-contactpoort. Deze repo doet de technische DraftQueue-validatie en het mijn.host-concept. Op de experimentele Google Places-discoveryroute mag de repo daarnaast uitsluitend kandidaat-place-ID's ophalen en de door Places opgegeven website direct openen; Leads moet daarna bedrijf + domein zelf verifiëren. De discoveryroute autoriseert nooit kwalificatie, contactbasis, DraftQueue of verzending. Er is geen SMTP-sendroute.
 
 ## Canonieke uitvoerprompt
 
@@ -51,3 +51,20 @@ Daarvoor gelden harde grenzen:
 - er is nog steeds geen GitHub-issue/commentroute en geen SMTP-sendroute.
 
 De conceptbody wordt niet intern aangepast: `DraftQueue.body` is de definitieve body en wordt exact via IMAP teruggelezen.
+
+
+## Experimentele Google Places-discovery
+
+De optionele workflow **Google Places discovery probe** gebruikt de officiële Places API (New) en geen browser-scraper.
+
+Grenzen:
+
+- authenticatie via de bestaande `GOOGLE_SERVICE_ACCOUNT_JSON`-secret / Application Default Credentials;
+- Google Cloud-project moet billing + Places API (New) hebben ingeschakeld;
+- Text Search vraagt alleen `place_id` op; ruwe namen, adressen, ratings en reviews worden niet gevraagd of opgeslagen;
+- `websiteUri` wordt alleen transient gebruikt om de site rechtstreeks te openen; het handoffrecord bevat de rechtstreeks teruggelezen eind-URL en blijft `identity_status=needs_leads_verification`;
+- maximaal 60 resultaten per query;
+- geen contactonderzoek, offerkeuze, DraftQueue-write of mailactie;
+- outputartifact wordt slechts 1 dag bewaard.
+
+Deze capability blijft uitvoeringslaag. `leads` blijft eigenaar van officiële-siteverificatie, precheck, evidence, vier-offerkeuze en contactbasis.
