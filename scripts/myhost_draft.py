@@ -60,9 +60,14 @@ def find_drafts_folder(client) -> str:
     raise RuntimeError("No Drafts/Concepten IMAP folder found")
 
 
-def find_lead_message_ids(client, folder: str, lead_id: str) -> list[bytes]:
+def _select_drafts_folder(client, folder: str) -> None:
     if client.select(f'"{folder}"', readonly=True)[0] != "OK":
         raise RuntimeError("Could not open drafts folder")
+
+
+def find_lead_message_ids(client, folder: str, lead_id: str, *, ensure_selected: bool = True) -> list[bytes]:
+    if ensure_selected:
+        _select_drafts_folder(client, folder)
     status, data = client.search(None, "HEADER", "X-Webactueel-Lead-ID", f'"{lead_id}"')
     if status != "OK":
         raise RuntimeError(f"Could not search draft readback for {lead_id}")
@@ -98,8 +103,15 @@ def exact_message_matches(actual: EmailMessage, expected: EmailMessage) -> bool:
     )
 
 
-def verify_exact_readback(client, folder: str, expected: EmailMessage, lead_id: str) -> None:
-    ids = find_lead_message_ids(client, folder, lead_id)
+def verify_exact_readback(
+    client,
+    folder: str,
+    expected: EmailMessage,
+    lead_id: str,
+    *,
+    ensure_selected: bool = True,
+) -> None:
+    ids = find_lead_message_ids(client, folder, lead_id, ensure_selected=ensure_selected)
     if len(ids) != 1:
         raise RuntimeError(f"Expected exactly one draft for {lead_id}, found {len(ids)}")
     actual = fetch_message(client, ids[0])
@@ -107,8 +119,15 @@ def verify_exact_readback(client, folder: str, expected: EmailMessage, lead_id: 
         raise RuntimeError(f"Draft readback mismatch for {lead_id}")
 
 
-def append_and_verify(client, folder: str, msg: EmailMessage, lead_id: str) -> None:
-    existing = find_lead_message_ids(client, folder, lead_id)
+def append_and_verify(
+    client,
+    folder: str,
+    msg: EmailMessage,
+    lead_id: str,
+    *,
+    already_selected: bool = False,
+) -> None:
+    existing = find_lead_message_ids(client, folder, lead_id, ensure_selected=not already_selected)
     if existing:
         if len(existing) != 1:
             raise RuntimeError(f"Duplicate drafts already exist for {lead_id}")
@@ -122,3 +141,14 @@ def append_and_verify(client, folder: str, msg: EmailMessage, lead_id: str) -> N
     if status != "OK":
         raise RuntimeError(f"IMAP APPEND failed for {lead_id}")
     verify_exact_readback(client, folder, msg, lead_id)
+
+
+def append_many_and_verify(client, folder: str, messages: list[tuple[str, EmailMessage]]) -> None:
+    """Create/read back a selected batch while reusing the current mailbox selection.
+
+    The exact per-lead To/Subject/body readback is unchanged. The optimization only
+    avoids reopening the same Drafts mailbox before each pre-append duplicate check.
+    """
+    _select_drafts_folder(client, folder)
+    for lead_id, msg in messages:
+        append_and_verify(client, folder, msg, lead_id, already_selected=True)
