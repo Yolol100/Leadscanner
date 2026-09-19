@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 import requests
 from google.maps import places_v1
 
-MAX_RESULTS_PER_QUERY = 60
+MAX_RESULTS_PER_QUERY = 20
 DEFAULT_TIMEOUT_SECONDS = 12
 
 
@@ -40,34 +40,23 @@ def search_place_ids(
     if not 1 <= max_results <= MAX_RESULTS_PER_QUERY:
         raise ValueError(f"max_results must be 1-{MAX_RESULTS_PER_QUERY}")
 
+    request = places_v1.SearchTextRequest(
+        text_query=query,
+        region_code=region_code,
+    )
+    response = client.search_text(
+        request=request,
+        metadata=[("x-goog-fieldmask", "places.id")],
+        timeout=30,
+    )
+
     found: list[str] = []
-    page_token = ""
-
-    while len(found) < max_results:
-        page_size = min(20, max_results - len(found))
-        request = places_v1.SearchTextRequest(
-            text_query=query,
-            region_code=region_code,
-            page_size=page_size,
-            page_token=page_token,
-        )
-        response = client.search_text(
-            request=request,
-            metadata=[("x-goog-fieldmask", "places.id,nextPageToken")],
-            timeout=30,
-        )
-
-        for place in response.places:
-            place_id = str(place.id or "").strip()
-            if place_id and place_id not in found:
-                found.append(place_id)
-                if len(found) >= max_results:
-                    break
-
-        page_token = str(getattr(response, "next_page_token", "") or "").strip()
-        if not page_token:
-            break
-
+    for place in response.places:
+        place_id = str(place.id or "").strip()
+        if place_id and place_id not in found:
+            found.append(place_id)
+            if len(found) >= max_results:
+                break
     return found
 
 
