@@ -26,7 +26,7 @@ class FakePlacesClient:
             places = [SimpleNamespace(id="p2"), SimpleNamespace(id="p3")]
         else:
             places = []
-        return SimpleNamespace(places=places, next_page_token="")
+        return SimpleNamespace(places=places)
 
     def get_place(self, name, metadata, timeout):
         self.detail_calls.append((name, metadata, timeout))
@@ -45,12 +45,12 @@ class DiscoveryTests(unittest.TestCase):
         ids = search_place_ids(client, "bakker Rotterdam", max_results=20, region_code="NL")
         self.assertEqual(ids, ["p1", "p2"])
         _, metadata, _ = client.search_calls[0]
-        self.assertIn(("x-goog-fieldmask", "places.id,nextPageToken"), metadata)
+        self.assertIn(("x-goog-fieldmask", "places.id"), metadata)
 
-    def test_rejects_more_than_60_results_per_query(self):
+    def test_rejects_more_than_20_results_per_query(self):
         client = FakePlacesClient()
         with self.assertRaises(ValueError):
-            search_place_ids(client, "bakker Rotterdam", max_results=61)
+            search_place_ids(client, "bakker Rotterdam", max_results=21)
 
     @patch("google_places_discovery.verify_official_site")
     def test_discover_persists_only_place_id_from_maps(self, verify):
