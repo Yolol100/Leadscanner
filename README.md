@@ -36,6 +36,18 @@ De normale route gebruikt `workflow_dispatch` op **Create selected mijn.host con
 - `lead_ids`: komma- of newlinegescheiden DraftQueue-ID's;
 - `expected_count`: exact verwacht aantal.
 
-Daarmee is geen GitHub-issue, comment of close-write nodig. De workflow heeft geen issue-trigger of issue-schrijfpermissie.
+Wanneer de verbonden ChatGPT/GitHub-surface geen `workflow_dispatch`-actie aanbiedt, mag dezelfde gecontroleerde runtime ook via een tijdelijke branch worden gestart:
 
-De conceptbody wordt niet meer intern aangepast: `DraftQueue.body` is de definitieve body en wordt exact via IMAP teruggelezen. Er is geen SMTP-sendroute.
+`runtime/myhost-draft/<lead_id>`
+
+Daarvoor gelden harde grenzen:
+
+- precies één bestaande DraftQueue-`lead_id` per runtimebranch;
+- alleen letters, cijfers, punt, underscore en koppelteken; maximaal 80 tekens;
+- de eerste `create`-listener heeft geen mailboxsecrets;
+- de IMAP-runtime start pas daarna via `workflow_run` en checkt expliciet de default branch uit;
+- dezelfde `validate_row`, DraftQueue-readback en exacte IMAP-readback blijven gelden;
+- de tijdelijke runtimebranch wordt na afloop door een apart cleanup-job verwijderd;
+- er is nog steeds geen GitHub-issue/commentroute en geen SMTP-sendroute.
+
+De conceptbody wordt niet intern aangepast: `DraftQueue.body` is de definitieve body en wordt exact via IMAP teruggelezen.
