@@ -63,7 +63,7 @@ Grenzen:
 - Google Cloud-project moet billing + Places API (New) hebben ingeschakeld;
 - Text Search vraagt alleen `place_id` op; ruwe namen, adressen, ratings en reviews worden niet gevraagd of opgeslagen;
 - `websiteUri` wordt alleen transient gebruikt om de site rechtstreeks te openen; het handoffrecord bevat de rechtstreeks teruggelezen eind-URL en blijft `identity_status=needs_leads_verification`;
-- maximaal 60 resultaten per query;
+- maximaal 20 resultaten per query; gebruik meerdere branche/regioqueries voor grotere batches;
 - geen contactonderzoek, offerkeuze, DraftQueue-write of mailactie;
 - outputartifact wordt slechts 1 dag bewaard.
 
