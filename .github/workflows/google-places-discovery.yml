@@ -1,0 +1,73 @@
+name: Google Places discovery probe
+
+on:
+  workflow_dispatch:
+    inputs:
+      queries:
+        description: "One discovery query per line, e.g. bakker Rotterdam"
+        required: true
+        type: string
+      max_results_per_query:
+        description: "Maximum Places results per query (1-60)"
+        required: true
+        default: "20"
+        type: string
+      region_code:
+        description: "CLDR region code"
+        required: true
+        default: "NL"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: google-places-discovery
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python3 -m pip install --disable-pip-version-check -r requirements.txt
+      - name: Validate discovery inputs
+        shell: bash
+        env:
+          DISCOVERY_QUERIES: ${{ inputs.queries }}
+          MAX_RESULTS_PER_QUERY: ${{ inputs.max_results_per_query }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$DISCOVERY_QUERIES" | sed '/^[[:space:]]*$/d; s/^[[:space:]]*//; s/[[:space:]]*$//' > discovery-queries.txt
+          [ -s discovery-queries.txt ] || { echo 'At least one non-empty query is required' >&2; exit 2; }
+          if ! [[ "$MAX_RESULTS_PER_QUERY" =~ ^[0-9]{1,2}$ ]] || [ "$MAX_RESULTS_PER_QUERY" -lt 1 ] || [ "$MAX_RESULTS_PER_QUERY" -gt 60 ]; then
+            echo 'max_results_per_query must be 1-60' >&2
+            exit 2
+          fi
+      - name: Run official Google Places discovery
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          MAX_RESULTS_PER_QUERY: ${{ inputs.max_results_per_query }}
+          REGION_CODE: ${{ inputs.region_code }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "$GOOGLE_SERVICE_ACCOUNT_JSON" ] || {
+            echo 'GOOGLE_SERVICE_ACCOUNT_JSON is required. The Google Cloud project must have billing and Places API (New) enabled.' >&2
+            exit 2
+          }
+          PYTHONPATH=scripts python3 scripts/google_places_discovery.py             --queries-file discovery-queries.txt             --max-results-per-query "$MAX_RESULTS_PER_QUERY"             --region-code "$REGION_CODE"             --output results/google-places-discovery.json
+      - name: Upload bounded discovery handoff
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: google-places-discovery-${{ github.run_number }}
+          path: results/google-places-discovery.json
+          if-no-files-found: error
+          retention-days: 1
