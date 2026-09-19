@@ -2,15 +2,15 @@
 
 De enige flow is:
 
-**Google Maps -> officiële website/webshop -> evidence -> één primaire aanbodfamilie -> contactbasis -> korte mail -> controle -> mijn.host-concept -> stop.**
+**candidate discovery -> officiële website/webshop -> evidence -> één primaire aanbodfamilie -> contactbasis -> korte mail -> controle -> mijn.host-concept -> stop.**
 
-ChatGPT/Leads doet de inhoudelijke kwalificatie en de Nederlandse/EER-contactpoort. Deze repo doet alleen de technische DraftQueue-validatie en het mijn.host-concept. Er is geen SMTP-sendroute.
+ChatGPT/Leads doet de inhoudelijke kwalificatie en de Nederlandse/EER-contactpoort. Deze repo doet de technische DraftQueue-validatie en het mijn.host-concept. De keyless discovery-capability gebruikt Overture Maps Places plus PDOK voor Nederlandse regiolocatie; discovery-hints zijn nooit prospectbewijs en Leads moet bedrijf + domein rechtstreeks op de officiële site verifiëren. Er is geen SMTP-sendroute.
 
 ## Canonieke uitvoerprompt
 
 Gebruik deze prompt voor een leadrun:
 
-> Zoek [AANTAL] nieuwe bedrijven via Google Maps binnen [BRANCHE/REGIO]. Gebruik Maps alleen om kandidaten te vinden. Open voor iedere kandidaat de echte officiële website of webshop en ga alleen verder als bedrijf en website aantoonbaar bij elkaar horen. Beoordeel exact vier commerciële aanbodfamilies (`ai_agents`, `social_media`, `search_visibility`, `website_webshop`) en kies precies één primaire familie op basis van concrete actuele evidence. Bewaar de observatie en bron-URL. Zoek het beste publieke zakelijke e-mailadres, raad nooit een adres en bewaar de exacte officiële bronpagina. Ga vóór DraftQueue alleen door wanneer Leads een aantoonbare contactbasis heeft vastgesteld; publiek zichtbaar e-mailadres alleen is onvoldoende. Schrijf één korte natuurlijke mail met één observatie, één primair resultaat, hoogstens één prijsloze value-first actie, één kleine permission-CTA, Andrew Baeten + andrewbaeten.nl en een simpele afmelding. Controleer alles. Zet alleen volledig gecontroleerde leads in DraftQueue. Maak daarna uitsluitend mijn.host IMAP-concepten. Lees ieder concept terug en vergelijk ontvanger, onderwerp en body exact. Verzend niets.
+> Zoek [AANTAL] nieuwe bedrijven via de door Leads geautoriseerde discovery-capability binnen [BRANCHE/REGIO]. Gebruik discovery alleen om kandidaten te vinden. Open voor iedere kandidaat de echte officiële website of webshop en ga alleen verder als bedrijf en website aantoonbaar bij elkaar horen. Beoordeel exact vier commerciële aanbodfamilies (`ai_agents`, `social_media`, `search_visibility`, `website_webshop`) en kies precies één primaire familie op basis van concrete actuele evidence. Bewaar de observatie en bron-URL. Zoek het beste publieke zakelijke e-mailadres, raad nooit een adres en bewaar de exacte officiële bronpagina. Ga vóór DraftQueue alleen door wanneer Leads een aantoonbare contactbasis heeft vastgesteld; publiek zichtbaar e-mailadres alleen is onvoldoende. Schrijf één korte natuurlijke mail met één observatie, één primair resultaat, hoogstens één prijsloze value-first actie, één kleine permission-CTA, Andrew Baeten + andrewbaeten.nl en een simpele afmelding. Controleer alles. Zet alleen volledig gecontroleerde leads in DraftQueue. Maak daarna uitsluitend mijn.host IMAP-concepten. Lees ieder concept terug en vergelijk ontvanger, onderwerp en body exact. Verzend niets.
 
 ## Actieve DraftQueue
 
@@ -51,3 +51,23 @@ Daarvoor gelden harde grenzen:
 - er is nog steeds geen GitHub-issue/commentroute en geen SMTP-sendroute.
 
 De conceptbody wordt niet intern aangepast: `DraftQueue.body` is de definitieve body en wordt exact via IMAP teruggelezen.
+
+
+## Keyless discovery
+
+`Overture keyless discovery` is de repository-capability voor discovery zonder API-key, account of secret.
+
+Route:
+
+`PDOK regio -> Overture Places bbox -> branchefilter -> website-hint -> optionele directe HTTP-readback -> Leads identity verification`
+
+Grenzen:
+
+- PDOK Locatieserver is open/gratis en wordt alleen gebruikt om een Nederlandse plaats/gemeente naar een centrumcoördinaat te vertalen;
+- de officiële `overturemaps==1.0.2` client leest de meest recente Overture Places-release rechtstreeks uit publieke cloudopslag;
+- Overture `emails`, `phones` en `socials` worden nooit in het discovery-handoffrecord opgenomen;
+- Overture naam/categorie/website zijn alleen candidate hints; ze autoriseren geen prospectclaim;
+- `identity_status` blijft `needs_leads_verification` totdat Leads de officiële website rechtstreeks heeft gecontroleerd;
+- geen contactbasis, offerkeuze, DraftQueue-write of mailactie in discovery;
+- artifacts worden 1 dag bewaard en prospecttargets worden niet naar de default branch geschreven;
+- voor grotere aantallen gebruikt de controller meerdere compacte branche/regioqueries in plaats van één onbegrensde download.
