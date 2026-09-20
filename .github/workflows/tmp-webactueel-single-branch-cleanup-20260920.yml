@@ -1,0 +1,22 @@
+name: Temporary Webactueel single branch cleanup
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  cleanup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Delete exact obsolete branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_BRANCH: "cleanup/repository-hygiene-20260818-1217"
+          EXPECTED_SHA: "e409c522b19ff9d285bfa0953a336eca1d33c92c"
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$TARGET_BRANCH" --jq '.object.sha')"
+          test "$actual" = "$EXPECTED_SHA"
+          gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$TARGET_BRANCH"
