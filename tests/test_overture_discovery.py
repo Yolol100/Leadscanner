@@ -176,6 +176,28 @@ class OvertureDiscoveryTests(unittest.TestCase):
             path.unlink(missing_ok=True)
         self.assertEqual([row["overture_id"] for row in rows], ["open"])
 
+    def test_broad_taxonomy_does_not_create_false_positive(self):
+        item = self.feature(
+            fid="supermarket",
+            name="Generic Supermarket",
+            category="food_and_beverage_store",
+            website="https://market.example/",
+            confidence=0.99,
+        )
+        item["properties"]["categories"] = {"alternate": ["bakery", "pastry"]}
+        item["properties"]["taxonomy"] = {"theme": ["bakery"]}
+        path = self.write_geojsonseq([item])
+        try:
+            rows = read_candidates(
+                path,
+                keywords=["bakery"],
+                max_results=10,
+                require_website=True,
+            )
+        finally:
+            path.unlink(missing_ok=True)
+        self.assertEqual(rows, [])
+
     @patch("overture_discovery.requests.get")
     def test_website_probe_is_non_authorizing_direct_readback(self, get):
         response = Mock()
