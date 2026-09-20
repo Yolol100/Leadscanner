@@ -72,4 +72,18 @@ jobs:
             runtime/myhost-draft/*) ;;
             *) echo 'Unexpected runtime branch' >&2; exit 2 ;;
           esac
-          gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$RUNTIME_BRANCH"
+          set +e
+          delete_output="$(gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$RUNTIME_BRANCH" 2>&1)"
+          delete_status=$?
+          set -e
+          if [ "$delete_status" -ne 0 ]; then
+            case "$delete_output" in
+              *"Reference does not exist"*)
+                echo 'Runtime branch already absent; cleanup is idempotent'
+                ;;
+              *)
+                printf '%s\n' "$delete_output" >&2
+                exit "$delete_status"
+                ;;
+            esac
+          fi
