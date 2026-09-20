@@ -199,7 +199,8 @@ class DraftTests(unittest.TestCase):
 
         self.assertEqual(len(client.messages), 100)
         self.assertEqual(client.append_calls, 100)
-        self.assertEqual(client.select_calls, 101)
+        self.assertEqual(client.select_calls, 1)
+        self.assertEqual(client.search_calls, 200)
 
         for index, (_, expected) in enumerate(batch):
             actual = BytesParser(policy=SMTP).parsebytes(client.messages[index])
@@ -208,7 +209,8 @@ class DraftTests(unittest.TestCase):
         append_many_and_verify(client, "Drafts", batch)
         self.assertEqual(len(client.messages), 100)
         self.assertEqual(client.append_calls, 100)
-        self.assertEqual(client.select_calls, 102)
+        self.assertEqual(client.select_calls, 2)
+        self.assertEqual(client.search_calls, 300)
 
     def test_batch_load_sizes_1_10_25_50_100(self):
         for count in (1, 10, 25, 50, 100):
@@ -221,7 +223,8 @@ class DraftTests(unittest.TestCase):
 
                 self.assertEqual(len(client.messages), count)
                 self.assertEqual(client.append_calls, count)
-                self.assertEqual(client.select_calls, count + 1)
+                self.assertEqual(client.select_calls, 1)
+                self.assertEqual(client.search_calls, count * 2)
                 self.assertEqual(
                     len(
                         {
