@@ -214,14 +214,19 @@ def download_overture_places(
 
 
 def _matches_keywords(properties: dict, keywords: list[str]) -> bool:
+    """High-precision discovery filter.
+
+    Match only the primary place name and Overture basic category. Broader taxonomy,
+    alternate-category and brand fields are intentionally excluded because they can
+    turn a narrow query (for example bakery) into unrelated chains that merely offer
+    that product class. Discovery may return fewer candidates; the controller should
+    refill with explicit adjacent keywords/regions instead of silently broadening.
+    """
     if not keywords:
         return True
     selected = {
-        "names": properties.get("names"),
+        "primary_name": _primary_name(properties),
         "basic_category": properties.get("basic_category"),
-        "taxonomy": properties.get("taxonomy"),
-        "categories": properties.get("categories"),
-        "brand": properties.get("brand"),
     }
     haystack = _normalize(" ".join(_flatten_text(selected)))
     return any(_normalize(keyword) in haystack for keyword in keywords if _normalize(keyword))
