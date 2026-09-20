@@ -198,6 +198,70 @@ class OvertureDiscoveryTests(unittest.TestCase):
             path.unlink(missing_ok=True)
         self.assertEqual(rows, [])
 
+    def test_duplicate_overture_records_are_deduplicated(self):
+        duplicate = self.feature(
+            fid="dup-1",
+            name="Duplicate Bakery",
+            category="bakery",
+            website="https://duplicate.example/",
+            confidence=0.9,
+        )
+        path = self.write_geojsonseq([duplicate, duplicate])
+        try:
+            rows = read_candidates(
+                path,
+                keywords=["bakery"],
+                max_results=10,
+                require_website=True,
+            )
+        finally:
+            path.unlink(missing_ok=True)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["overture_id"], "dup-1")
+
+    def test_direct_discovery_max_results_is_bounded_to_100(self):
+        path = self.write_geojsonseq([])
+        try:
+            with self.assertRaises(ValueError):
+                read_candidates(
+                    path,
+                    keywords=[],
+                    max_results=101,
+                    require_website=False,
+                )
+        finally:
+            path.unlink(missing_ok=True)
+
+    def test_closed_status_variants_are_excluded(self):
+        path = self.write_geojsonseq(
+            [
+                self.feature(
+                    fid="closed",
+                    name="Closed Bakery",
+                    category="bakery",
+                    website="https://closed.example/",
+                    status="closed",
+                ),
+                self.feature(
+                    fid="open",
+                    name="Open Bakery",
+                    category="bakery",
+                    website="https://open.example/",
+                    status="open",
+                ),
+            ]
+        )
+        try:
+            rows = read_candidates(
+                path,
+                keywords=["bakery"],
+                max_results=10,
+                require_website=True,
+            )
+        finally:
+            path.unlink(missing_ok=True)
+        self.assertEqual([row["overture_id"] for row in rows], ["open"])
+
     @patch("overture_discovery.requests.get")
     def test_website_probe_is_non_authorizing_direct_readback(self, get):
         response = Mock()
