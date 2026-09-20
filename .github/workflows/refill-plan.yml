@@ -1,0 +1,64 @@
+name: Phase 8 refill plan
+
+on:
+  push:
+    branches:
+      - 'runtime/refill-plan/**'
+    paths:
+      - 'requests/refill-plan.json'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: refill-plan-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  plan-refill:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Build owner-safe refill plan
+        env:
+          PYTHONPATH: scripts
+        run: |
+          set -euo pipefail
+          python3 scripts/refill_planner.py \
+            --state requests/refill-plan.json \
+            --output results/refill-plan.json | tee results/refill-plan.txt
+          grep -q '^REFILL_PLAN=green ' results/refill-plan.txt
+          grep -q 'draftqueue_write=false email_send=false' results/refill-plan.txt
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: refill-plan-${{ github.run_number }}
+          path: results/
+          if-no-files-found: warn
+          retention-days: 1
+
+  cleanup-runtime-branch:
+    if: always() && github.event_name == 'push' && startsWith(github.ref_name, 'runtime/refill-plan/')
+    needs: plan-refill
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions:
+      contents: write
+    steps:
+      - name: Delete temporary runtime branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUNTIME_BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          case "$RUNTIME_BRANCH" in
+            runtime/refill-plan/*) ;;
+            *) echo 'Unexpected runtime branch' >&2; exit 2 ;;
+          esac
+          gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$RUNTIME_BRANCH"
