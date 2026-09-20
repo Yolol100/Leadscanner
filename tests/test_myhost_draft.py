@@ -122,6 +122,22 @@ class DraftTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             append_and_verify(client, "Drafts", msg, "lead-1")
 
+    def test_existing_to_mismatch_blocks(self):
+        client = FakeIMAP()
+        actual = self.message()
+        actual.replace_header("To", "other@example.nl")
+        client.messages.append(actual.as_bytes(policy=SMTP))
+        with self.assertRaises(RuntimeError):
+            append_and_verify(client, "Drafts", self.message(), "lead-1")
+
+    def test_existing_body_mismatch_blocks(self):
+        client = FakeIMAP()
+        actual = self.message()
+        actual.set_content(actual.get_content().strip() + " Extra unintended text.")
+        client.messages.append(actual.as_bytes(policy=SMTP))
+        with self.assertRaises(RuntimeError):
+            append_and_verify(client, "Drafts", self.message(), "lead-1")
+
     def test_batch_100_exact_readback_reuses_mailbox_selection(self):
         client = FakeIMAP()
         batch = self.batch(100)

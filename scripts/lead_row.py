@@ -15,6 +15,11 @@ REQUIRED = (
     "email_source_url",
     "subject",
     "body",
+    "contact_basis_status",
+    "contact_basis_type",
+    "contact_basis_evidence_ref",
+    "outreach_status",
+    "draft_queue_eligible",
 )
 ALLOWED_OFFERS = {
     "ai_agents",
@@ -22,6 +27,24 @@ ALLOWED_OFFERS = {
     "search_visibility",
     "website_webshop",
 }
+ALLOWED_CONTACT_BASIS_TYPES = {
+    "prior_valid_consent",
+    "purpose_specific_published_contact",
+    "existing_customer_similar_services_exception",
+}
+PRICE_PATTERNS = [
+    re.compile(r"€\s*\d", re.I),
+    re.compile(r"\b(?:eur|euro)\s*\d", re.I),
+    re.compile(r"\b\d+(?:[,.]\d+)?\s*%", re.I),
+    re.compile(r"\bkorting\b", re.I),
+    re.compile(r"\bvan\s+€?\s*\d+\s+(?:voor|naar)\b", re.I),
+]
+MEETING_PATTERNS = [
+    re.compile(r"\bcalendly\b", re.I),
+    re.compile(r"\b(?:meeting|afspraak)\s+(?:inplannen|plannen|boeken)\b", re.I),
+    re.compile(r"\b(?:zullen|kunnen)\s+we\s+(?:bellen|sparren|afspreken)\b", re.I),
+    re.compile(r"\bboek\s+(?:een\s+)?(?:call|afspraak)\b", re.I),
+]
 PLACEHOLDER_RE = re.compile(r"\{\{|\}\}|\[NAME\]|\[BEDRIJF\]", re.I)
 
 
@@ -58,6 +81,32 @@ def validate_row(row: dict[str, str]) -> dict[str, str]:
     if clean["offer"] not in ALLOWED_OFFERS:
         raise ValueError("offer must be one of: " + ", ".join(sorted(ALLOWED_OFFERS)))
 
+    if clean["contact_basis_status"].casefold() != "pass":
+        raise ValueError("contact_basis_status must be pass before DraftQueue runtime")
+
+    if clean["contact_basis_type"] not in ALLOWED_CONTACT_BASIS_TYPES:
+        raise ValueError(
+            "contact_basis_type must be one of: "
+            + ", ".join(sorted(ALLOWED_CONTACT_BASIS_TYPES))
+        )
+
+    evidence_ref = clean["contact_basis_evidence_ref"]
+    if clean["contact_basis_type"] == "purpose_specific_published_contact":
+        if not _same_site(evidence_ref, clean["website"]):
+            raise ValueError(
+                "purpose-specific contact basis evidence must belong to the official website/webshop"
+            )
+    elif not evidence_ref.casefold().startswith("first_party:"):
+        raise ValueError(
+            "consent/customer contact basis requires a first_party: evidence reference"
+        )
+
+    if clean["outreach_status"].casefold() != "ready_for_draftqueue":
+        raise ValueError("outreach_status must be ready_for_draftqueue")
+
+    if clean["draft_queue_eligible"].casefold() != "true":
+        raise ValueError("draft_queue_eligible must be true")
+
     if len(clean["observation"]) < 12:
         raise ValueError("observation is too short to be useful evidence")
 
@@ -76,6 +125,12 @@ def validate_row(row: dict[str, str]) -> dict[str, str]:
     body_words = _words(clean["body"])
     if not 35 <= len(body_words) <= 180:
         raise ValueError("body must contain 35-180 words")
+
+    mail_text = clean["subject"] + "\n" + clean["body"]
+    if any(rx.search(mail_text) for rx in PRICE_PATTERNS):
+        raise ValueError("first touch must not contain price or discount")
+    if any(rx.search(clean["body"]) for rx in MEETING_PATTERNS):
+        raise ValueError("first touch must not contain a default meeting ask")
 
     if PLACEHOLDER_RE.search(
         "\n".join(
