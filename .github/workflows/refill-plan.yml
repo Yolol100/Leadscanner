@@ -30,6 +30,7 @@ jobs:
           PYTHONPATH: scripts
         run: |
           set -euo pipefail
+          mkdir -p results
           python3 scripts/refill_planner.py \
             --state requests/refill-plan.json \
             --output results/refill-plan.json | tee results/refill-plan.txt
