@@ -122,7 +122,7 @@ def verify_exact_readback(
 def _append_uid(data) -> str | None:
     for item in data or []:
         text = item.decode("utf-8", errors="replace") if isinstance(item, bytes) else str(item)
-        match = re.search(r"APPENDUID\\s+\\d+\\s+(\\d+)", text, flags=re.IGNORECASE)
+        match = re.search(r"APPENDUID\s+\d+\s+(\d+)", text, flags=re.IGNORECASE)
         if match:
             return match.group(1)
     return None
@@ -132,7 +132,7 @@ def _append_message(client, folder: str, msg: EmailMessage, lead_id: str) -> str
     raw = msg.as_bytes(policy=SMTP)
     status, data = client.append(
         folder,
-        "(\\\\Draft)",
+        "(\\Draft)",
         imaplib.Time2Internaldate(__import__("time").time()),
         raw,
     )
