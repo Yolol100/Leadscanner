@@ -32,7 +32,7 @@ on:
         default: ""
         type: string
       max_results:
-        description: "Maximum candidate hints (1-500)"
+        description: "Maximum candidate hints (1-100)"
         required: true
         default: "20"
         type: string
