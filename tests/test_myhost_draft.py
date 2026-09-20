@@ -13,12 +13,14 @@ class FakeIMAP:
         self.messages = []
         self.select_calls = 0
         self.append_calls = 0
+        self.search_calls = 0
 
     def select(self, folder, readonly=True):
         self.select_calls += 1
         return "OK", [str(len(self.messages)).encode()]
 
     def search(self, charset, *criteria):
+        self.search_calls += 1
         lead_id = str(criteria[-1]).strip('"')
         found = []
         for index, raw in enumerate(self.messages, start=1):
@@ -36,6 +38,37 @@ class FakeIMAP:
         self.append_calls += 1
         self.messages.append(raw)
         return "OK", [b"APPEND completed"]
+
+
+
+class UIDPlusFakeIMAP(FakeIMAP):
+    def __init__(self):
+        super().__init__()
+        self.uid_fetch_calls = 0
+
+    def append(self, folder, flags, date_time, raw):
+        self.append_calls += 1
+        self.messages.append(raw)
+        uid = len(self.messages)
+        return "OK", [f"[APPENDUID 777 {uid}] APPEND completed".encode()]
+
+    def uid(self, command, message_set, query):
+        self.assertable_command = command
+        if str(command).casefold() != "fetch":
+            return "BAD", [b"unsupported"]
+        self.uid_fetch_calls += 1
+        tokens = [token for token in str(message_set).split(",") if token]
+        data = []
+        for token in tokens:
+            index = int(token) - 1
+            raw = self.messages[index]
+            data.append(
+                (
+                    f"{index + 1} (UID {token} RFC822 {{{len(raw)}}}".encode(),
+                    raw,
+                )
+            )
+        return "OK", data
 
 
 class FailingIMAP(FakeIMAP):
@@ -137,6 +170,27 @@ class DraftTests(unittest.TestCase):
         client.messages.append(actual.as_bytes(policy=SMTP))
         with self.assertRaises(RuntimeError):
             append_and_verify(client, "Drafts", self.message(), "lead-1")
+
+
+    def test_batch_appenduid_uses_one_bulk_uid_readback(self):
+        client = UIDPlusFakeIMAP()
+        batch = self.batch(100)
+        append_many_and_verify(client, "Drafts", batch)
+
+        self.assertEqual(len(client.messages), 100)
+        self.assertEqual(client.append_calls, 100)
+        self.assertEqual(client.search_calls, 100)
+        self.assertEqual(client.uid_fetch_calls, 1)
+
+        for index, (_, expected) in enumerate(batch):
+            actual = BytesParser(policy=SMTP).parsebytes(client.messages[index])
+            self.assertTrue(exact_message_matches(actual, expected))
+
+        append_many_and_verify(client, "Drafts", batch)
+        self.assertEqual(len(client.messages), 100)
+        self.assertEqual(client.append_calls, 100)
+        self.assertEqual(client.uid_fetch_calls, 1)
+        self.assertEqual(client.search_calls, 200)
 
     def test_batch_100_exact_readback_reuses_mailbox_selection(self):
         client = FakeIMAP()
