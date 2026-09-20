@@ -21,6 +21,11 @@ class LeadRowTests(unittest.TestCase):
                 "beter aansluit op deze pagina. Zal ik het voorbeeld sturen? Geen interesse? Een kort nee is genoeg. "
                 "Met vriendelijke groet, Andrew Baeten, andrewbaeten.nl"
             ),
+            "contact_basis_status": "pass",
+            "contact_basis_type": "purpose_specific_published_contact",
+            "contact_basis_evidence_ref": "https://example.nl/contact/",
+            "outreach_status": "ready_for_draftqueue",
+            "draft_queue_eligible": "TRUE",
         }
 
     def test_valid_row(self):
@@ -83,6 +88,70 @@ class LeadRowTests(unittest.TestCase):
         row["body"] = row["body"].replace("Geen interesse? Een kort nee is genoeg. ", "")
         with self.assertRaises(ValueError):
             validate_row(row)
+
+
+    def test_missing_final_eligibility_gate_blocks(self):
+        row = self.base()
+        row["contact_basis_status"] = ""
+        with self.assertRaises(ValueError):
+            validate_row(row)
+
+    def test_contact_basis_must_pass(self):
+        row = self.base()
+        row["contact_basis_status"] = "blocked"
+        with self.assertRaises(ValueError):
+            validate_row(row)
+
+    def test_contact_basis_type_must_be_allowed(self):
+        row = self.base()
+        row["contact_basis_type"] = "none"
+        with self.assertRaises(ValueError):
+            validate_row(row)
+
+    def test_purpose_specific_basis_evidence_must_be_official_site(self):
+        row = self.base()
+        row["contact_basis_evidence_ref"] = "https://directory.example/company/"
+        with self.assertRaises(ValueError):
+            validate_row(row)
+
+    def test_first_party_basis_requires_first_party_reference(self):
+        for basis in ("prior_valid_consent", "existing_customer_similar_services_exception"):
+            with self.subTest(basis=basis):
+                row = self.base()
+                row["contact_basis_type"] = basis
+                row["contact_basis_evidence_ref"] = "https://example.nl/contact/"
+                with self.assertRaises(ValueError):
+                    validate_row(row)
+
+                row["contact_basis_evidence_ref"] = "first_party:crm-fixture-001"
+                self.assertEqual(validate_row(row)["contact_basis_type"], basis)
+
+    def test_outreach_must_be_ready_for_draftqueue(self):
+        row = self.base()
+        row["outreach_status"] = "blocked"
+        with self.assertRaises(ValueError):
+            validate_row(row)
+
+    def test_draft_queue_eligible_must_be_true(self):
+        row = self.base()
+        row["draft_queue_eligible"] = "FALSE"
+        with self.assertRaises(ValueError):
+            validate_row(row)
+
+    def test_price_or_discount_in_first_touch_blocks(self):
+        for fragment in (" voor €500", " met 20% korting"):
+            with self.subTest(fragment=fragment):
+                row = self.base()
+                row["body"] = row["body"].replace("Geen interesse?", fragment + ". Geen interesse?")
+                with self.assertRaises(ValueError):
+                    validate_row(row)
+
+    def test_default_meeting_ask_blocks(self):
+        row = self.base()
+        row["body"] = row["body"].replace("Zal ik het voorbeeld sturen?", "Zullen we bellen?")
+        with self.assertRaises(ValueError):
+            validate_row(row)
+
 
 
 if __name__ == "__main__":
