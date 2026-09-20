@@ -135,5 +135,28 @@ class RefillPlannerTests(unittest.TestCase):
             plan_refill(state)
 
 
+    def test_only_verified_company_name_has_name_dedupe_authority(self):
+        seen = [{"verified_company_name": "Verified BV"}]
+        unverified_hint = {
+            "overture_id": "fresh-unverified-id",
+            "website_hint": "https://fresh-unverified.example/",
+            "company_name": "Verified BV",
+            "official_company_name": "Verified BV",
+            "name_hint": "Verified BV",
+        }
+        result = dedupe_candidate_hints([unverified_hint], seen)
+        self.assertEqual(result["unique_count"], 1)
+        self.assertEqual(result["dropped_duplicate_count"], 0)
+
+        verified_hint = {
+            "overture_id": "fresh-verified-id",
+            "website_hint": "https://fresh-verified.example/",
+            "verified_company_name": "Verified BV",
+        }
+        result = dedupe_candidate_hints([verified_hint], seen)
+        self.assertEqual(result["unique_count"], 0)
+        self.assertEqual(result["dropped_duplicate_count"], 1)
+
+
 if __name__ == "__main__":
     unittest.main()
