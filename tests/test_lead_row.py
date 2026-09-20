@@ -167,5 +167,15 @@ class LeadRowTests(unittest.TestCase):
             validate_row(row)
 
 
+    def test_first_party_basis_requires_nonempty_reference(self):
+        for basis in ("prior_valid_consent", "existing_customer_similar_services_exception"):
+            with self.subTest(basis=basis):
+                row = self.base()
+                row["contact_basis_type"] = basis
+                row["contact_basis_evidence_ref"] = "first_party:"
+                with self.assertRaises(ValueError):
+                    validate_row(row)
+
+
 if __name__ == "__main__":
     unittest.main()

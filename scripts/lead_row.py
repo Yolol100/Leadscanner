@@ -100,10 +100,12 @@ def validate_row(row: dict[str, str]) -> dict[str, str]:
             raise ValueError(
                 "purpose-specific contact basis evidence must belong to the official website/webshop"
             )
-    elif not evidence_ref.casefold().startswith("first_party:"):
-        raise ValueError(
-            "consent/customer contact basis requires a first_party: evidence reference"
-        )
+    else:
+        prefix = "first_party:"
+        if not evidence_ref.casefold().startswith(prefix) or not evidence_ref[len(prefix):].strip():
+            raise ValueError(
+                "consent/customer contact basis requires a substantive first_party: evidence reference"
+            )
 
     if clean["outreach_status"].casefold() != "ready_for_draftqueue":
         raise ValueError("outreach_status must be ready_for_draftqueue")
