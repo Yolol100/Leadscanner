@@ -9,6 +9,7 @@ from overture_discovery import (
     bbox_from_center,
     download_overture_places,
     parse_bbox,
+    probe_candidates,
     probe_website,
     read_candidates,
     resolve_region_center,
@@ -273,6 +274,33 @@ class OvertureDiscoveryTests(unittest.TestCase):
         self.assertEqual(result["status"], "reachable_needs_leads_identity_verification")
         self.assertEqual(result["final_url"], "https://final.example/")
         response.close.assert_called_once()
+
+    def test_probe_candidates_is_bounded_and_preserves_order(self):
+        candidates = [
+            {"website_hint": "https://one.example/"},
+            {"website_hint": "https://two.example/"},
+            {"website_hint": None},
+        ]
+
+        def fake_probe(url):
+            if "two" in url:
+                raise RuntimeError("synthetic probe failure")
+            return {
+                "status": "reachable_needs_leads_identity_verification",
+                "final_url": url,
+                "http_status": 200,
+                "detail": None,
+            }
+
+        results = probe_candidates(candidates, probe=fake_probe, max_workers=2)
+        self.assertEqual(results[0]["final_url"], "https://one.example/")
+        self.assertEqual(results[1]["status"], "unreachable")
+        self.assertEqual(results[1]["detail"], "probe_error:RuntimeError")
+        self.assertEqual(results[2]["status"], "not_available")
+
+        with self.assertRaises(ValueError):
+            probe_candidates(candidates, probe=fake_probe, max_workers=9)
+
 
 
 if __name__ == "__main__":

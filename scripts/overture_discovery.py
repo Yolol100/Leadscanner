@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from concurrent.futures import ThreadPoolExecutor
 import math
 import re
 import shutil
@@ -18,6 +19,7 @@ PDOK_FREE_URL = "https://api.pdok.nl/bzk/locatieserver/search/v3_1/free"
 DEFAULT_RADIUS_KM = 8.0
 DEFAULT_TIMEOUT_SECONDS = 15
 MAX_RESULTS = 100
+MAX_PROBE_WORKERS = 8
 
 
 def _normalize(value: str) -> str:
@@ -359,6 +361,41 @@ def probe_website(
     }
 
 
+def probe_candidates(
+    candidates: list[dict],
+    *,
+    probe=probe_website,
+    max_workers: int = MAX_PROBE_WORKERS,
+) -> list[dict]:
+    if not candidates:
+        return []
+    if not 1 <= max_workers <= MAX_PROBE_WORKERS:
+        raise ValueError(f"max_workers must be 1-{MAX_PROBE_WORKERS}")
+
+    def run(candidate: dict) -> dict:
+        website = candidate.get("website_hint")
+        if not website:
+            return {
+                "status": "not_available",
+                "final_url": None,
+                "http_status": None,
+                "detail": None,
+            }
+        try:
+            return probe(website)
+        except Exception as exc:
+            return {
+                "status": "unreachable",
+                "final_url": None,
+                "http_status": None,
+                "detail": f"probe_error:{type(exc).__name__}",
+            }
+
+    workers = min(max_workers, len(candidates))
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        return list(executor.map(run, candidates))
+
+
 def discover(
     *,
     region: str | None,
@@ -395,18 +432,9 @@ def discover(
         )
 
     if probe_websites:
-        for candidate in candidates:
-            website = candidate.get("website_hint")
-            candidate["website_probe"] = (
-                probe_website(website)
-                if website
-                else {
-                    "status": "not_available",
-                    "final_url": None,
-                    "http_status": None,
-                    "detail": None,
-                }
-            )
+        probes = probe_candidates(candidates)
+        for candidate, probe_result in zip(candidates, probes):
+            candidate["website_probe"] = probe_result
 
     return {
         "schema_version": "webactueel-overture-discovery/1.0",
