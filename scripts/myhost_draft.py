@@ -119,6 +119,55 @@ def verify_exact_readback(
         raise RuntimeError(f"Draft readback mismatch for {lead_id}")
 
 
+def _append_uid(data) -> str | None:
+    for item in data or []:
+        text = item.decode("utf-8", errors="replace") if isinstance(item, bytes) else str(item)
+        match = re.search(r"APPENDUID\s+\d+\s+(\d+)", text, flags=re.IGNORECASE)
+        if match:
+            return match.group(1)
+    return None
+
+
+def _append_message(client, folder: str, msg: EmailMessage, lead_id: str) -> str | None:
+    raw = msg.as_bytes(policy=SMTP)
+    status, data = client.append(
+        folder,
+        "(\\Draft)",
+        imaplib.Time2Internaldate(__import__("time").time()),
+        raw,
+    )
+    if status != "OK":
+        raise RuntimeError(f"IMAP APPEND failed for {lead_id}")
+    return _append_uid(data)
+
+
+def fetch_messages_by_uid(client, uids: list[str]) -> dict[str, EmailMessage]:
+    if not uids:
+        return {}
+    message_set = ",".join(uids)
+    status, data = client.uid("fetch", message_set, "(RFC822)")
+    if status != "OK":
+        raise RuntimeError("Could not fetch appended drafts by UID for exact readback")
+
+    messages: dict[str, EmailMessage] = {}
+    for item in data or []:
+        if not (isinstance(item, tuple) and len(item) >= 2 and isinstance(item[1], (bytes, bytearray))):
+            continue
+        msg = BytesParser(policy=SMTP).parsebytes(bytes(item[1]))
+        lead_id = _normalize_text(msg.get("X-Webactueel-Lead-ID", ""))
+        if not lead_id:
+            raise RuntimeError("UID readback returned a draft without X-Webactueel-Lead-ID")
+        if lead_id in messages:
+            raise RuntimeError(f"UID readback returned duplicate draft for {lead_id}")
+        messages[lead_id] = msg
+
+    if len(messages) != len(uids):
+        raise RuntimeError(
+            f"UID readback returned {len(messages)} messages for {len(uids)} appended drafts"
+        )
+    return messages
+
+
 def append_and_verify(
     client,
     folder: str,
@@ -136,19 +185,61 @@ def append_and_verify(
             raise RuntimeError(f"Existing draft does not match selected lead {lead_id}")
         return
 
-    raw = msg.as_bytes(policy=SMTP)
-    status, _ = client.append(folder, "(\\Draft)", imaplib.Time2Internaldate(__import__("time").time()), raw)
-    if status != "OK":
-        raise RuntimeError(f"IMAP APPEND failed for {lead_id}")
+    uid = _append_message(client, folder, msg, lead_id)
+    if uid:
+        actual = fetch_messages_by_uid(client, [uid]).get(lead_id)
+        if actual is None or not exact_message_matches(actual, msg):
+            raise RuntimeError(f"Draft readback mismatch for {lead_id}")
+        return
     verify_exact_readback(client, folder, msg, lead_id)
 
 
 def append_many_and_verify(client, folder: str, messages: list[tuple[str, EmailMessage]]) -> None:
-    """Create/read back a selected batch while reusing the current mailbox selection.
+    """Create/read back a selected batch while reusing mailbox state and APPENDUID.
 
-    The exact per-lead To/Subject/body readback is unchanged. The optimization only
-    avoids reopening the same Drafts mailbox before each pre-append duplicate check.
+    Existing drafts keep the same per-lead duplicate/idempotency check. New appends
+    use server-returned APPENDUID values when available, then perform one bulk UID
+    fetch for exact To/Subject/body readback. Servers without APPENDUID retain the
+    previous search-based readback path.
     """
     _select_drafts_folder(client, folder)
+    appended: list[tuple[str, EmailMessage, str]] = []
+
     for lead_id, msg in messages:
-        append_and_verify(client, folder, msg, lead_id, already_selected=True)
+        existing = find_lead_message_ids(
+            client,
+            folder,
+            lead_id,
+            ensure_selected=False,
+        )
+        if existing:
+            if len(existing) != 1:
+                raise RuntimeError(f"Duplicate drafts already exist for {lead_id}")
+            actual = fetch_message(client, existing[0])
+            if not exact_message_matches(actual, msg):
+                raise RuntimeError(f"Existing draft does not match selected lead {lead_id}")
+            continue
+
+        uid = _append_message(client, folder, msg, lead_id)
+        if uid:
+            appended.append((lead_id, msg, uid))
+        else:
+            verify_exact_readback(
+                client,
+                folder,
+                msg,
+                lead_id,
+                ensure_selected=False,
+            )
+
+    if appended:
+        actual_by_lead = fetch_messages_by_uid(
+            client,
+            [uid for _, _, uid in appended],
+        )
+        for lead_id, expected, _ in appended:
+            actual = actual_by_lead.get(lead_id)
+            if actual is None:
+                raise RuntimeError(f"UID readback missing draft for {lead_id}")
+            if not exact_message_matches(actual, expected):
+                raise RuntimeError(f"Draft readback mismatch for {lead_id}")
