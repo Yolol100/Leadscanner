@@ -17,7 +17,7 @@ import requests
 PDOK_FREE_URL = "https://api.pdok.nl/bzk/locatieserver/search/v3_1/free"
 DEFAULT_RADIUS_KM = 8.0
 DEFAULT_TIMEOUT_SECONDS = 15
-MAX_RESULTS = 500
+MAX_RESULTS = 100
 
 
 def _normalize(value: str) -> str:
@@ -254,7 +254,7 @@ def read_candidates(
                 continue
 
             status = _normalize(properties.get("operating_status"))
-            if "permanently" in status and "closed" in status:
+            if "closed" in status:
                 continue
 
             website = _website_hint(properties)
@@ -292,7 +292,29 @@ def read_candidates(
             item["overture_id"],
         )
     )
-    return candidates[:max_results]
+
+    deduplicated: list[dict] = []
+    seen: set[tuple] = set()
+    for item in candidates:
+        overture_id = str(item.get("overture_id") or "").strip()
+        key = (
+            ("overture_id", overture_id)
+            if overture_id
+            else (
+                "fallback",
+                _normalize(item.get("name_hint")),
+                _normalize(item.get("website_hint")),
+                item.get("longitude"),
+                item.get("latitude"),
+            )
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduplicated.append(item)
+        if len(deduplicated) >= max_results:
+            break
+    return deduplicated
 
 
 def probe_website(
