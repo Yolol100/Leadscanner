@@ -76,6 +76,10 @@ def validate_row(row: dict[str, str]) -> dict[str, str]:
     if missing:
         raise ValueError("Missing required fields: " + ", ".join(missing))
 
+    for field in ("lead_id", "subject"):
+        if "\r" in clean[field] or "\n" in clean[field]:
+            raise ValueError(f"{field} must not contain CR or LF")
+
     _host(clean["website"])
 
     if clean["offer"] not in ALLOWED_OFFERS:

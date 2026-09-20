@@ -154,5 +154,18 @@ class LeadRowTests(unittest.TestCase):
 
 
 
+    def test_subject_header_injection_blocks(self):
+        row = self.base()
+        row["subject"] = "Kleine kans\nBcc: attacker@example.com"
+        with self.assertRaises(ValueError):
+            validate_row(row)
+
+    def test_lead_id_header_injection_blocks(self):
+        row = self.base()
+        row["lead_id"] = "lead-1\r\nBcc: attacker@example.com"
+        with self.assertRaises(ValueError):
+            validate_row(row)
+
+
 if __name__ == "__main__":
     unittest.main()
