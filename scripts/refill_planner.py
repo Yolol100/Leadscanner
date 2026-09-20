@@ -43,11 +43,7 @@ def _candidate_keys(candidate: dict) -> set[str]:
         if domain:
             keys.add(f"domain:{domain}")
 
-    verified_name = (
-        candidate.get("verified_company_name")
-        or candidate.get("company_name")
-        or candidate.get("official_company_name")
-    )
+    verified_name = candidate.get("verified_company_name")
     normalized_name = _normalize_text(verified_name)
     if normalized_name:
         keys.add(f"company:{normalized_name}")
