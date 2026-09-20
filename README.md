@@ -71,3 +71,10 @@ Grenzen:
 - geen contactbasis, offerkeuze, DraftQueue-write of mailactie in discovery;
 - artifacts worden 1 dag bewaard en prospecttargets worden niet naar de default branch geschreven;
 - voor grotere aantallen gebruikt de controller meerdere compacte branche/regioqueries in plaats van één onbegrensde download.
+
+
+Wanneer de verbonden ChatGPT/GitHub-surface geen `workflow_dispatch` aanbiedt, mag keyless discovery via een tijdelijke branch worden gestart:
+
+`runtime/overture-discovery/<request_id>`
+
+Plaats alleen `requests/overture-discovery.json` op die branch. De request is begrensd tot één regio of bbox, maximaal 12 keywords en maximaal 100 candidate hints. De workflow schrijft alleen een 1-dags artifact en verwijdert de tijdelijke branch na completion. Dit transport verandert niets aan de Leads-ownergrenzen.
