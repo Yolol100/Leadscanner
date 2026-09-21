@@ -33,11 +33,13 @@ ALLOWED_CONTACT_BASIS_TYPES = {
     "existing_customer_similar_services_exception",
 }
 PRICE_PATTERNS = [
-    re.compile(r"€\s*\d", re.I),
-    re.compile(r"\b(?:eur|euro)\s*\d", re.I),
-    re.compile(r"\b\d+(?:[,.]\d+)?\s*%", re.I),
-    re.compile(r"\bkorting\b", re.I),
-    re.compile(r"\bvan\s+€?\s*\d+\s+(?:voor|naar)\b", re.I),
+    re.compile(r"(?:€|\\$|£)\\s*\\d", re.I),
+    re.compile(r"\\b(?:eur|euro|usd|dollar|gbp|pond|pound)\\s*\\d", re.I),
+    re.compile(r"\\b\\d+(?:[,.]\\d+)?\\s*(?:eur|euro|usd|dollar|gbp|pond|pound)\\b", re.I),
+    re.compile(r"\\b\\d+(?:[,.]\\d+)?\\s*(?:€|\\$|£)", re.I),
+    re.compile(r"\\b\\d+(?:[,.]\\d+)?\\s*%", re.I),
+    re.compile(r"\\bkorting\\b", re.I),
+    re.compile(r"\\bvan\\s+(?:(?:€|\\$|£)\\s*)?\\d+(?:[,.]\\d+)?\\s+(?:voor|naar)\\s+(?:(?:€|\\$|£)\\s*)?\\d", re.I),
 ]
 MEETING_PATTERNS = [
     re.compile(r"\bcalendly\b", re.I),
