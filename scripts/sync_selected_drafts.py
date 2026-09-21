@@ -7,6 +7,7 @@ from pathlib import Path
 
 from lead_row import validate_row
 from myhost_draft import append_many_and_verify, build_message, connect_imap, find_drafts_folder
+from private_config import load_private_postal_address
 from sheets import build_service, get_values, rows_from_values, selected_rows
 
 QUEUE_SHEET = "DraftQueue"
@@ -30,7 +31,8 @@ def run(lead_id_file: str, expected_count: int, report: str | None = None) -> di
     values = get_values(build_service(), spreadsheet_id, QUEUE_SHEET)
     rows = selected_rows(rows_from_values(values), lead_ids)
     clean_rows = [validate_row(row) for row in rows]
-    messages = [(row, build_message(row)) for row in clean_rows]
+    postal_address = load_private_postal_address()
+    messages = [(row, build_message(row, postal_address)) for row in clean_rows]
 
     client = connect_imap()
     try:
