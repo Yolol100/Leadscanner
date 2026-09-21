@@ -14,8 +14,13 @@ def _normalize_text(value: str) -> str:
     return str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
 
 
-def build_message(row: dict[str, str]) -> EmailMessage:
+def build_message(row: dict[str, str], postal_address: str) -> EmailMessage:
     body = row["body"].strip()
+    address = " ".join(str(postal_address or "").split()).strip()
+    if not address:
+        raise RuntimeError("OUTREACH_POSTAL_ADDRESS is required for commercial draft")
+    if address.casefold() not in body.casefold():
+        body = body + "\n\nPostadres: " + address
 
     msg = EmailMessage(policy=SMTP)
     msg["From"] = f'{os.getenv("OUTREACH_SENDER_NAME", "Andrew Baeten")} <{os.getenv("OUTREACH_SENDER_EMAIL", "info@andrewbaeten.nl")}>'

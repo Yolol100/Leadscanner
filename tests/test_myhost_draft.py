@@ -7,6 +7,8 @@ from unittest.mock import patch
 
 from myhost_draft import append_and_verify, append_many_and_verify, build_message, exact_message_matches
 
+POSTAL_ADDRESS = "123 Main Street, Example City"
+
 
 class FakeIMAP:
     def __init__(self):
@@ -112,15 +114,23 @@ class DraftTests(unittest.TestCase):
             },
             clear=False,
         ):
-            return build_message(row)
+            return build_message(row, POSTAL_ADDRESS)
 
     def batch(self, count=100):
         return [(f"lead-{index}", self.message(index=index)) for index in range(1, count + 1)]
 
-    def test_queue_body_is_final_body(self):
+    def test_private_postal_footer_is_added_without_mutating_queue_body(self):
         row = self.row()
-        msg = self.message()
-        self.assertEqual(msg.get_content().strip(), row["body"].strip())
+        stored_body = row["body"]
+        msg = build_message(row, POSTAL_ADDRESS)
+        content = msg.get_content().strip()
+        self.assertEqual(row["body"], stored_body)
+        self.assertIn(stored_body, content)
+        self.assertIn("Postadres: " + POSTAL_ADDRESS, content)
+
+    def test_missing_private_postal_address_blocks(self):
+        with self.assertRaisesRegex(RuntimeError, "OUTREACH_POSTAL_ADDRESS"):
+            build_message(self.row(), "")
 
     def test_exact_message_match(self):
         expected = self.message()

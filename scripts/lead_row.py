@@ -33,20 +33,29 @@ ALLOWED_CONTACT_BASIS_TYPES = {
     "existing_customer_similar_services_exception",
 }
 PRICE_PATTERNS = [
-    re.compile(r"€\s*\d", re.I),
-    re.compile(r"\b(?:eur|euro)\s*\d", re.I),
+    re.compile(r"(?:€|\$|£)\s*\d", re.I),
+    re.compile(r"\b(?:eur|euro|usd|dollar|gbp|pond|pound)\s*\d", re.I),
+    re.compile(r"\b\d+(?:[,.]\d+)?\s*(?:eur|euro|usd|dollar|gbp|pond|pound)\b", re.I),
+    re.compile(r"\b\d+(?:[,.]\d+)?\s*(?:€|\$|£)", re.I),
     re.compile(r"\b\d+(?:[,.]\d+)?\s*%", re.I),
     re.compile(r"\bkorting\b", re.I),
-    re.compile(r"\bvan\s+€?\s*\d+\s+(?:voor|naar)\b", re.I),
+    re.compile(r"\bvan\s+(?:(?:€|\$|£)\s*)?\d+(?:[,.]\d+)?\s+(?:voor|naar)\s+(?:(?:€|\$|£)\s*)?\d", re.I),
 ]
 MEETING_PATTERNS = [
     re.compile(r"\bcalendly\b", re.I),
-    re.compile(r"\b(?:meeting|afspraak)\s+(?:inplannen|plannen|boeken)\b", re.I),
+    re.compile(r"\b(?:meeting|afspraak|call|gesprek|kennismaking)\s+(?:inplannen|plannen|boeken)\b", re.I),
     re.compile(r"\b(?:zullen|kunnen)\s+we\s+(?:bellen|sparren|afspreken)\b", re.I),
+    re.compile(r"\b(?:kan|kun|wil|wilt|zou)\s+(?:je|u)\b.{0,40}\b(?:bellen|sparren|afspreken)\b", re.I),
+    re.compile(r"\b(?:heb|heeft)\s+(?:je|u)\b.{0,30}\b(?:tijd|ruimte)\b.{0,30}\b(?:bellen|gesprek|call|afspraak)\b", re.I),
+    re.compile(r"\b\d{1,2}\s*(?:min|minuten)\b.{0,30}\b(?:bellen|call|gesprek|sparren)\b", re.I),
     re.compile(r"\bboek\s+(?:een\s+)?(?:call|afspraak)\b", re.I),
 ]
-PLACEHOLDER_RE = re.compile(r"\{\{|\}\}|\[NAME\]|\[BEDRIJF\]", re.I)
-
+PLACEHOLDER_RE = re.compile(
+    r"\{\{|\}\}|\$\{[^{}]+\}|\{(?:name|naam|company|bedrijf|first_name|voornaam)\}"
+    r"|\[(?:name|naam|company|bedrijf|first_name|voornaam)\]"
+    r"|<(?:name|naam|company|bedrijf|first_name|voornaam)>",
+    re.I,
+)
 
 def _words(text: str) -> list[str]:
     return [w for w in re.split(r"\s+", text.strip()) if w]

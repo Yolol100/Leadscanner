@@ -78,10 +78,12 @@ class LeadRowTests(unittest.TestCase):
             validate_row(row)
 
     def test_placeholder_blocks(self):
-        row = self.base()
-        row["body"] += " {{NAME}}"
-        with self.assertRaises(ValueError):
-            validate_row(row)
+        for placeholder in ("[NAME]", "[COMPANY]", "{name}", "<BEDRIJF>", "${first_name}", "{{company}}"):
+            with self.subTest(placeholder=placeholder):
+                row = self.base()
+                row["body"] = row["body"].replace("Beste team", f"Beste {placeholder}")
+                with self.assertRaises(ValueError):
+                    validate_row(row)
 
     def test_missing_optout_blocks(self):
         row = self.base()
@@ -139,7 +141,16 @@ class LeadRowTests(unittest.TestCase):
             validate_row(row)
 
     def test_price_or_discount_in_first_touch_blocks(self):
-        for fragment in (" voor €500", " met 20% korting"):
+        for fragment in (
+            " voor €500",
+            " voor $500",
+            " voor £500",
+            " voor EUR 500",
+            " voor 500 euro",
+            " voor 500 USD",
+            " van 500 voor 400",
+            " met 20% korting",
+        ):
             with self.subTest(fragment=fragment):
                 row = self.base()
                 row["body"] = row["body"].replace("Geen interesse?", fragment + ". Geen interesse?")
@@ -147,12 +158,18 @@ class LeadRowTests(unittest.TestCase):
                     validate_row(row)
 
     def test_default_meeting_ask_blocks(self):
-        row = self.base()
-        row["body"] = row["body"].replace("Zal ik het voorbeeld sturen?", "Zullen we bellen?")
-        with self.assertRaises(ValueError):
-            validate_row(row)
-
-
+        for phrase in (
+            "Zullen we bellen?",
+            "Kun je morgen bellen?",
+            "Wilt u 15 minuten bellen?",
+            "Heb je morgen tijd voor een call?",
+            "Laten we een afspraak plannen.",
+        ):
+            with self.subTest(phrase=phrase):
+                row = self.base()
+                row["body"] = row["body"].replace("Zal ik het voorbeeld sturen?", phrase)
+                with self.assertRaises(ValueError):
+                    validate_row(row)
 
     def test_subject_header_injection_blocks(self):
         row = self.base()
