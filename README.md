@@ -16,7 +16,7 @@ Gebruik deze prompt voor een leadrun:
 
 Alleen deze velden zijn actief:
 
-`lead_id`, `company`, `website`, `offer`, `observation`, `observation_source_url`, `email`, `email_source_url`, `subject`, `body`
+`lead_id`, `company`, `website`, `offer`, `observation`, `observation_source_url`, `email`, `email_source_url`, `subject`, `body`, `contact_basis_status`, `contact_basis_type`, `contact_basis_evidence_ref`, `outreach_status`, `draft_queue_eligible`
 
 Toegestane `offer`-waarden:
 
@@ -27,7 +27,7 @@ Toegestane `offer`-waarden:
 
 Legacy labels zoals `conversion_contact`, `wordpress_elementor` en `seo` worden afgewezen. WordPress/Elementor/contactflow/technische SEO zijn onderliggende oplossingsvormen en geen extra commerciële hoofdaanbiedingen.
 
-De twee source-URL's moeten op de officiële website/webshop staan. De juridische/contactbasis wordt vóór DraftQueue door Leads gecontroleerd en behoort niet tot deze technische repo-validatie.
+De twee source-URL's moeten op de officiële website/webshop staan. De repo valideert daarnaast de finale contactbasisvelden fail-closed: `contact_basis_status=pass`, een toegestane `contact_basis_type`, `outreach_status=ready_for_draftqueue` en `draft_queue_eligible=true`.
 
 ## Mijn.host command
 
@@ -50,7 +50,7 @@ Daarvoor gelden harde grenzen:
 - de tijdelijke runtimebranch wordt na afloop door een apart cleanup-job verwijderd;
 - er is nog steeds geen GitHub-issue/commentroute en geen SMTP-sendroute.
 
-De conceptbody wordt niet intern aangepast: `DraftQueue.body` is de definitieve body en wordt exact via IMAP teruggelezen.
+`DraftQueue.body` blijft de gevalideerde kerntekst. Vlak vóór IMAP voegt de runtime uitsluitend het privé geconfigureerde zakelijke postadres toe als compliance-footer. Ontbreekt dat adres, dan blokkeert de run. Daarna worden `To`, `Subject` en de volledige uiteindelijke conceptbody exact uit mijn.host teruggelezen. Het privé postadres komt niet in de publieke repo of logs.
 
 
 ## Keyless discovery
