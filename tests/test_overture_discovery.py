@@ -199,6 +199,36 @@ class OvertureDiscoveryTests(unittest.TestCase):
             path.unlink(missing_ok=True)
         self.assertEqual(rows, [])
 
+    def test_schema_v2_place_without_legacy_categories_is_supported(self):
+        item = self.feature(
+            fid="schema-v2",
+            name="V2 Bakery",
+            category="bakery",
+            website="https://v2-bakery.example/",
+            confidence=0.95,
+        )
+        item["properties"]["taxonomy"] = {
+            "primary": "artisan_bakery",
+            "hierarchy": ["food_and_drink", "bakery", "artisan_bakery"],
+            "alternates": [],
+        }
+        item["properties"].pop("categories", None)
+        path = self.write_geojsonseq([item])
+        try:
+            rows = read_candidates(
+                path,
+                keywords=["bakery"],
+                max_results=10,
+                require_website=True,
+            )
+        finally:
+            path.unlink(missing_ok=True)
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["overture_id"], "schema-v2")
+        self.assertEqual(rows[0]["category_hint"], "bakery")
+        self.assertEqual(rows[0]["identity_status"], "needs_leads_verification")
+
     def test_duplicate_overture_records_are_deduplicated(self):
         duplicate = self.feature(
             fid="dup-1",
