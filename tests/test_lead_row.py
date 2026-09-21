@@ -139,7 +139,16 @@ class LeadRowTests(unittest.TestCase):
             validate_row(row)
 
     def test_price_or_discount_in_first_touch_blocks(self):
-        for fragment in (" voor €500", " met 20% korting"):
+        for fragment in (
+            " voor €500",
+            " voor $500",
+            " voor £500",
+            " voor EUR 500",
+            " voor 500 euro",
+            " voor 500 USD",
+            " van 500 voor 400",
+            " met 20% korting",
+        ):
             with self.subTest(fragment=fragment):
                 row = self.base()
                 row["body"] = row["body"].replace("Geen interesse?", fragment + ". Geen interesse?")
