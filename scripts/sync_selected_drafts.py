@@ -53,7 +53,7 @@ def run(lead_id_file: str, expected_count: int, report: str | None = None) -> di
         "count": len(messages),
         "lead_ids": lead_ids,
         "transport": "IMAP_DRAFT_ONLY",
-        "readback": "TO_SUBJECT_BODY_EXACT",
+        "readback": "TO_SUBJECT_FINAL_RENDERED_BODY_EXACT",
         "smtp_send": "not_available",
     }
     if report:
@@ -74,7 +74,7 @@ def main() -> int:
         return 2
     print(
         f"MYHOST_DRAFT_SYNC=green count={result['count']} "
-        "transport=IMAP_DRAFT_ONLY readback=TO_SUBJECT_BODY_EXACT smtp_send=not_available"
+        "transport=IMAP_DRAFT_ONLY readback=TO_SUBJECT_FINAL_RENDERED_BODY_EXACT smtp_send=not_available"
     )
     return 0
 
