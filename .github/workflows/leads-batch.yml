@@ -12,9 +12,14 @@ on:
         required: true
         type: string
       target_candidates:
-        description: 'Doel aantal unieke kandidaten (1-5000)'
+        description: 'Doel aantal unieke kandidaten voor discovery (1-5000)'
         required: true
-        default: '500'
+        default: '100'
+        type: string
+      contact_check_limit:
+        description: 'Aantal kandidaten voor website/e-mail/taal/conceptcontrole (1-100)'
+        required: true
+        default: '100'
         type: string
       radius_km:
         description: 'Overture zoekstraal in km (0.5-50)'
@@ -26,16 +31,6 @@ on:
         required: true
         default: '3'
         type: string
-      primary_angle:
-        description: 'website_webshop | search_visibility | social_content | automation | hosting | fixed_contact'
-        required: true
-        default: 'website_webshop'
-        type: string
-      show_price:
-        description: 'Toon €200-€500 p/m in campagnepreview'
-        required: true
-        default: true
-        type: boolean
 
 permissions:
   contents: read
@@ -65,9 +60,9 @@ jobs:
           REGION: ${{ inputs.region }}
           KEYWORDS: ${{ inputs.keywords }}
           TARGET: ${{ inputs.target_candidates }}
+          CONTACT_LIMIT: ${{ inputs.contact_check_limit }}
           RADIUS_KM: ${{ inputs.radius_km }}
           MAPS_DEPTH: ${{ inputs.maps_depth }}
-          PRIMARY_ANGLE: ${{ inputs.primary_angle }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -84,6 +79,10 @@ jobs:
           if not 1 <= target <= 5000:
               raise SystemExit("target_candidates must be 1-5000")
 
+          contact_limit = int(os.environ["CONTACT_LIMIT"])
+          if not 1 <= contact_limit <= 100:
+              raise SystemExit("contact_check_limit must be 1-100")
+
           radius = float(os.environ["RADIUS_KM"])
           if not 0.5 <= radius <= 50:
               raise SystemExit("radius_km must be 0.5-50")
@@ -91,17 +90,6 @@ jobs:
           depth = int(os.environ["MAPS_DEPTH"])
           if not 1 <= depth <= 10:
               raise SystemExit("maps_depth must be 1-10")
-
-          valid_angles = {
-              "website_webshop",
-              "search_visibility",
-              "social_content",
-              "automation",
-              "hosting",
-              "fixed_contact",
-          }
-          if os.environ["PRIMARY_ANGLE"] not in valid_angles:
-              raise SystemExit("invalid primary_angle")
 
           keywords = [
               item.strip()
@@ -172,25 +160,43 @@ jobs:
             --max-results "$TARGET" \
             --require-website
 
-      - name: Prepare campaign previews
+      - name: Select reviewed contact batch
         env:
-          PRIMARY_ANGLE: ${{ inputs.primary_angle }}
-          SHOW_PRICE: ${{ inputs.show_price }}
+          CONTACT_LIMIT: ${{ inputs.contact_check_limit }}
         run: |
           set -euo pipefail
-          args=(
-            --contacts results/hybrid-discovery.json
-            --config config/growth-subscription.json
-            --angle "$PRIMARY_ANGLE"
-            --output-json results/growth-batch.json
-            --output-csv results/growth-batch.csv
-          )
-          if [ "$SHOW_PRICE" = "true" ]; then
-            args+=(--show-price)
-          fi
-          python3 scripts/prepare_growth_batch.py "${args[@]}"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
 
-      - name: Verify no contact or send permission was inferred
+          payload = json.loads(Path("results/hybrid-discovery.json").read_text(encoding="utf-8"))
+          limit = int(os.environ["CONTACT_LIMIT"])
+          candidates = (payload.get("candidates") or [])[:limit]
+          Path("results/contact-input.json").write_text(
+              json.dumps({"candidates": candidates}, indent=2, ensure_ascii=False) + "\n",
+              encoding="utf-8",
+          )
+          print(f"CONTACT_BATCH_SELECTED={len(candidates)}")
+          PY
+
+      - name: Exclude overlapping agencies, check official email and detect NL/EN
+        run: |
+          set -euo pipefail
+          python3 scripts/extract_public_contacts.py \
+            --input results/contact-input.json \
+            --output results/public-contacts.json
+
+      - name: Make short Growth Subscription concepts
+        run: |
+          set -euo pipefail
+          python3 scripts/prepare_growth_batch.py \
+            --contacts results/public-contacts.json \
+            --config config/growth-subscription.json \
+            --output-json results/growth-batch.json \
+            --output-csv results/growth-batch.csv
+
+      - name: Verify compact flow boundaries
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -198,19 +204,22 @@ jobs:
           from pathlib import Path
 
           batch = json.loads(Path("results/growth-batch.json").read_text(encoding="utf-8"))
-          if batch["draft_ready_count"] != 0:
-              raise SystemExit("discovery-only batch may not create addressed drafts")
           for row in batch["rows"]:
-              if row["email"] is not None or row["body"] is not None:
-                  raise SystemExit("discovery batch must remain contact-free")
+              if row["status"] == "excluded_competitor":
+                  if row["email"] is not None or row["concept_preview"] is not None:
+                      raise SystemExit("excluded competitor received contact/copy output")
+              if row["email"] and row["language"] not in {"nl", "en"}:
+                  raise SystemExit("email candidate missing NL/EN language")
+              if row["contact_basis_status"] != "pass" and row["body"] is not None:
+                  raise SystemExit("addressed body generated without contact-basis pass")
           if batch["safety"]["automatic_send"] is not False:
               raise SystemExit("automatic send must remain disabled")
-          print("COMPACT_GROWTH_DISCOVERY=green")
+          print("SIMPLE_GROWTH_FLOW=green")
           PY
 
       - name: Remove raw Google Maps export
         if: always()
-        run: rm -rf results/google-maps results/google-maps-queries.txt
+        run: rm -rf results/google-maps results/google-maps-queries.txt results/contact-input.json
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
@@ -218,6 +227,7 @@ jobs:
           name: growth-leads-batch-${{ github.run_number }}
           path: |
             results/hybrid-discovery.json
+            results/public-contacts.json
             results/growth-batch.json
             results/growth-batch.csv
           if-no-files-found: warn
