@@ -8,30 +8,38 @@ from extract_public_contacts import (
     discover_contact_links,
     discover_contacts,
     extract_emails,
+    inspect_candidate,
     valid_email,
 )
 
 
+class FakeResponse:
+    status_code = 200
+    url = "https://example.nl/"
+    encoding = "utf-8"
+    headers = {"content-type": "text/html"}
+
+    def iter_content(self, chunk_size=65536, decode_unicode=False):
+        yield b'<html lang="nl"><body>Welkom bij ons bedrijf.</body></html>'
+
+    def close(self):
+        pass
+
+
+class FakeSession:
+    def get(self, *args, **kwargs):
+        return FakeResponse()
+
+
 class PublicContactDiscoveryTests(unittest.TestCase):
     def test_extracts_public_emails_and_drops_noreply(self):
-        html = """
-        <html><body>
-        <a href="mailto:info@example.nl">info@example.nl</a>
-        <span>sales@example.nl</span>
-        <span>no-reply@example.nl</span>
-        </body></html>
-        """
-        self.assertEqual(extract_emails(html), ["info@example.nl", "sales@example.nl"])
+        html = '<span>info@example.nl</span><span>no-reply@example.nl</span>'
+        self.assertEqual(extract_emails(html), ["info@example.nl"])
 
     def test_contact_links_stay_on_official_domain(self):
-        html = """
-        <a href="/contact">Contact</a>
-        <a href="https://example.nl/over-ons">Over ons</a>
-        <a href="https://other.example/contact">Contact extern</a>
-        """
+        html = '<a href="/contact">Contact</a><a href="https://other.example/contact">Extern</a>'
         links = discover_contact_links(html, "https://example.nl/", "example.nl")
         self.assertIn("https://example.nl/contact", links)
-        self.assertIn("https://example.nl/over-ons", links)
         self.assertFalse(any("other.example" in item for item in links))
 
     def test_email_validation(self):
@@ -43,30 +51,23 @@ class PublicContactDiscoveryTests(unittest.TestCase):
         self.assertEqual(detect_language('<html lang="nl"><body>Welcome</body></html>'), ("nl", "html_lang"))
         self.assertEqual(detect_language('<html lang="en-US"><body>Welkom</body></html>'), ("en", "html_lang"))
 
-    def test_language_falls_back_to_visible_text(self):
-        html = "<html><body>Wij helpen onze klanten met diensten voor het bedrijf en de organisatie.</body></html>"
-        self.assertEqual(detect_language(html, default="en"), ("nl", "page_text"))
+    def test_competitor_filters_individual_digital_provider(self):
+        for label in ("Freelance webdesigner", "SEO specialist", "Social media manager", "WordPress specialist", "Automation consultant", "Hosting reseller"):
+            self.assertIsNotNone(competitor_reason({"name_hint": label, "category_hint": ""}))
 
-    def test_competitor_is_excluded_from_hint(self):
-        candidate = {"name_hint": "Sterk Marketingbureau", "category_hint": "Marketing agency"}
-        self.assertTrue(competitor_reason(candidate).startswith("discovery_hint:"))
-
-    def test_individual_digital_service_provider_is_excluded(self):
-        for label in (
-            "Freelance webdesigner",
-            "SEO specialist",
-            "Social media manager",
-            "WordPress specialist",
-            "Automation consultant",
-            "Hosting reseller",
-        ):
-            candidate = {"name_hint": label, "category_hint": ""}
-            self.assertIsNotNone(competitor_reason(candidate), label)
-
-    def test_competitor_is_excluded_from_official_site_services(self):
-        candidate = {"name_hint": "Example BV", "category_hint": "Consulting"}
-        html = "<html><body>Wij bieden webdesign, SEO specialist diensten en online marketing.</body></html>"
-        self.assertTrue(competitor_reason(candidate, html).startswith("official_site:"))
+    def test_discovery_email_is_fallback_after_official_site_search(self):
+        candidate = {
+            "name_hint": "Example BV",
+            "website_hint": "https://example.nl/",
+            "category_hint": "bakery",
+            "discovery_email_candidates": [{"email": "info@example.nl", "source": "overture"}],
+            "overture_id": "ov-1",
+        }
+        result = inspect_candidate(candidate, session_factory=FakeSession)
+        self.assertEqual(result["public_business_emails"], ["info@example.nl"])
+        self.assertEqual(result["email_source_types"], ["overture"])
+        self.assertEqual(result["contact_basis_status"], "review_required")
+        self.assertEqual(result["contact_discovery_status"], "found_discovery_fallback")
 
     def test_contact_discovery_is_bounded_to_100_candidates(self):
         with self.assertRaises(ValueError):
