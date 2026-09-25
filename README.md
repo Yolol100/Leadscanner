@@ -26,6 +26,8 @@ E-mailprioriteit:
 2. Overture-emailcandidate;
 3. Google Maps-e-mailfallback.
 
+Formulierplaceholders, voorbeeldadressen en duidelijk corrupte scraper-adressen worden geweigerd. Zichtbare paginatekst mag een fout of verouderd `html lang` attribuut overrulen.
+
 Een publiek of gescrapet e-mailadres geeft nooit automatisch toestemming. Zonder bewezen contactbasis wordt het concept als `review_draft` opgeslagen zodat Andrew dit pas aan het eind beoordeelt.
 
 ## 3. Mail maken
@@ -42,7 +44,7 @@ Het onderwerp is kort en relevant. De body gebruikt twee korte openingsalinea's,
 
 ## 4. mijn.host-concept
 
-De geselecteerde mail gaat direct via IMAP naar mijn.host Concepten/Drafts. De workflow leest ontvanger, onderwerp, body en eventuele review-header exact terug. Dezelfde `growth-...` lead-ID wordt niet dubbel aangemaakt.
+De geselecteerde mail gaat direct via IMAP naar mijn.host Concepten/Drafts. De workflow leest ontvanger, onderwerp, body en eventuele review-header exact terug. Een run is pas groen wanneer exact het gevraagde aantal concepten aantoonbaar in mijn.host staat en de readback klopt. Dezelfde `growth-...` lead-ID wordt niet dubbel aangemaakt.
 
 **SMTP/sendcode bestaat niet. Andrew verzendt alleen handmatig na beoordeling.**
 

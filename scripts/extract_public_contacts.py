@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from html import unescape
 from html.parser import HTMLParser
 from pathlib import Path
-from urllib.parse import urljoin, urlparse
+from urllib.parse import unquote, urljoin, urlparse
 
 import requests
 
@@ -25,6 +25,9 @@ CONTACT_HINT_RE = re.compile(
 )
 HTML_LANG_RE = re.compile(r"<html[^>]*\blang\s*=\s*['\"]?([a-zA-Z-]{2,12})", re.I)
 BLOCKED_LOCAL_PARTS = {"noreply", "no-reply", "donotreply", "do-not-reply", "example", "test"}
+PLACEHOLDER_LOCAL_PARTS = {"naam", "name", "yourname", "your.name", "email", "e-mail", "mail", "voorbeeld"}
+PLACEHOLDER_DOMAINS = {"voorbeeld.nl", "voorbeeld.com", "example.com", "example.org", "example.net", "jouwdomein.nl", "yourdomain.com"}
+PUBLIC_MAIL_DOMAINS = {"gmail.com", "hotmail.com", "outlook.com", "live.nl", "live.com", "icloud.com", "yahoo.com", "proton.me", "protonmail.com"}
 
 HARD_COMPETITOR_PHRASES = (
     "marketingbureau",
@@ -152,6 +155,16 @@ def default_language_for_domain(domain: str | None) -> str:
 
 
 def detect_language(html: str, *, default: str = "nl") -> tuple[str, str]:
+    text = _visible_text(html)
+    nl_score = sum(text.count(marker) for marker in NL_MARKERS)
+    en_score = sum(text.count(marker) for marker in EN_MARKERS)
+
+    # Visible copy wins when the document language attribute is clearly stale or wrong.
+    if nl_score >= en_score + 3:
+        return "nl", "page_text"
+    if en_score >= nl_score + 3:
+        return "en", "page_text"
+
     match = HTML_LANG_RE.search(html or "")
     if match:
         lang = match.group(1).casefold()
@@ -159,14 +172,6 @@ def detect_language(html: str, *, default: str = "nl") -> tuple[str, str]:
             return "nl", "html_lang"
         if lang.startswith("en"):
             return "en", "html_lang"
-
-    text = _visible_text(html)
-    nl_score = sum(text.count(marker) for marker in NL_MARKERS)
-    en_score = sum(text.count(marker) for marker in EN_MARKERS)
-    if nl_score >= en_score + 2:
-        return "nl", "page_text"
-    if en_score >= nl_score + 2:
-        return "en", "page_text"
     return default, "market_fallback"
 
 
@@ -197,11 +202,25 @@ def valid_email(value: str) -> bool:
     if not EMAIL_RE.fullmatch(email):
         return False
     local, domain = email.rsplit("@", 1)
-    if local in BLOCKED_LOCAL_PARTS or local.startswith("no-reply") or local.startswith("noreply"):
+    if local in BLOCKED_LOCAL_PARTS or local in PLACEHOLDER_LOCAL_PARTS:
         return False
-    if domain.endswith((".example", ".test", ".invalid", ".localhost")):
+    if local.startswith("no-reply") or local.startswith("noreply"):
+        return False
+    if domain in PLACEHOLDER_DOMAINS or domain.endswith((".example", ".test", ".invalid", ".localhost")):
         return False
     return True
+
+
+def email_fits_business_context(email: str, official_domain: str | None, source_type: str) -> bool:
+    if not valid_email(email):
+        return False
+    email_domain = email.rsplit("@", 1)[1].casefold().rstrip(".")
+    official = str(official_domain or "").casefold().rstrip(".")
+    if source_type == "official_site":
+        return True
+    if official and (email_domain == official or email_domain.endswith("." + official)):
+        return True
+    return email_domain in PUBLIC_MAIL_DOMAINS
 
 
 class LinkParser(HTMLParser):
@@ -233,7 +252,21 @@ class LinkParser(HTMLParser):
 def extract_emails(html: str) -> list[str]:
     cleaned = unescape(html or "")
     found: list[str] = []
-    for match in EMAIL_RE.findall(cleaned):
+
+    # Attribute values such as form placeholders are not contact evidence.
+    parser = LinkParser()
+    try:
+        parser.feed(cleaned)
+    except Exception:
+        pass
+    for href, _ in parser.links:
+        if not href.casefold().startswith("mailto:"):
+            continue
+        candidate = unquote(href.split(":", 1)[1].split("?", 1)[0]).strip()
+        if valid_email(candidate) and candidate not in found:
+            found.append(candidate.lower())
+
+    for match in EMAIL_RE.findall(_visible_text(cleaned)):
         email = match.lower().strip(".,;:()[]<>")
         if valid_email(email) and email not in found:
             found.append(email)
@@ -384,6 +417,8 @@ def inspect_candidate(candidate: dict, *, session_factory=requests.Session) -> d
         if page_emails:
             hints.append(purpose_hint(page_url, page_html))
         for email in page_emails:
+            if not email_fits_business_context(email, domain, "official_site"):
+                continue
             if email not in emails:
                 emails.append(email)
                 sources.append(page_url)
@@ -399,9 +434,9 @@ def inspect_candidate(candidate: dict, *, session_factory=requests.Session) -> d
             if not isinstance(item, dict):
                 continue
             email = str(item.get("email") or "").strip().lower().strip(".,;:()[]<>")
-            if not valid_email(email) or email in emails:
-                continue
             source = str(item.get("source") or "discovery").strip() or "discovery"
+            if not email_fits_business_context(email, domain, source) or email in emails:
+                continue
             emails.append(email)
             source_types.append(source)
             source_refs.append(
@@ -458,6 +493,8 @@ def discover_contacts(payload: dict, *, max_workers: int = MAX_WORKERS) -> dict:
             "discovery_email_fallback_allowed": True,
             "max_pages_per_site": MAX_PAGES_PER_SITE,
             "email_addresses_guessed": False,
+            "placeholder_emails_rejected": True,
+            "fallback_domain_context_checked": True,
             "contact_basis_auto_pass": False,
             "draftqueue_write": False,
             "email_send": False,

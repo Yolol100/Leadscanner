@@ -30,7 +30,7 @@ class GrowthBatchTests(unittest.TestCase):
         self.assertEqual(row["status"], "review_draft")
         self.assertTrue(row["lead_id"].startswith("growth-"))
         self.assertEqual(row["subject"], "Idee voor Voorbeeld BV")
-        self.assertIn("Groeiabonnement — €250–€500 p/m", row["body"])
+        self.assertIn("Groeiabonnement — €250–€500 p/m, afhankelijk van scope", row["body"])
         for value in (
             "Website/webshop verbeteren",
             "Zoekbaarheid verbeteren",
@@ -51,7 +51,7 @@ class GrowthBatchTests(unittest.TestCase):
         )["rows"][0]
         self.assertEqual(row["status"], "draft_ready")
         self.assertEqual(row["subject"], "An idea for Example Ltd")
-        self.assertIn("Growth Subscription — €250–€500/month", row["body"])
+        self.assertIn("Growth Subscription — €250–€500/month, depending on scope", row["body"])
         self.assertIn("Regards,", row["body"])
 
     def test_draft_limit_keeps_flow_small(self):
@@ -79,7 +79,7 @@ class GrowthBatchTests(unittest.TestCase):
     def test_long_company_uses_short_fallback_subject(self):
         self.assertEqual(
             subject_for_company("Een Bedrijfsnaam Die Veel Te Lang Is Voor Een Onderwerpregel", "nl"),
-            "Idee voor online groei",
+            "Idee voor jullie online aanpak",
         )
 
 

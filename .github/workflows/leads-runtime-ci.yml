@@ -41,11 +41,14 @@ jobs:
           grep -q "github.event.issue.user.login == github.repository_owner" .github/workflows/leads-batch.yml
           grep -q -- '-email' .github/workflows/leads-batch.yml
           grep -q 'Create and exactly read back mijn.host concept' .github/workflows/leads-batch.yml
+          grep -q 'MYHOST_REQUIRED_DRAFTS=green' .github/workflows/leads-batch.yml
           grep -q '"min": 250' config/growth-subscription.json
           grep -q '"max": 500' config/growth-subscription.json
           grep -q 'discovery_email_candidates' scripts/overture_discovery.py
           grep -q 'discovery_email_candidates' scripts/hybrid_discovery.py
           grep -q 'review_required' scripts/extract_public_contacts.py
+          grep -q 'PLACEHOLDER_LOCAL_PARTS' scripts/extract_public_contacts.py
+          grep -q 'email_fits_business_context' scripts/extract_public_contacts.py
           grep -q 'Idee voor' scripts/prepare_growth_batch.py
           grep -q 'An idea for' scripts/prepare_growth_batch.py
           grep -q 'review_draft' scripts/prepare_growth_batch.py

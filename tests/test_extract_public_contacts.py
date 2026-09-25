@@ -8,6 +8,7 @@ from extract_public_contacts import (
     discover_contact_links,
     discover_contacts,
     extract_emails,
+    email_fits_business_context,
     inspect_candidate,
     valid_email,
 )
@@ -32,9 +33,14 @@ class FakeSession:
 
 
 class PublicContactDiscoveryTests(unittest.TestCase):
-    def test_extracts_public_emails_and_drops_noreply(self):
-        html = '<span>info@example.nl</span><span>no-reply@example.nl</span>'
-        self.assertEqual(extract_emails(html), ["info@example.nl"])
+    def test_extracts_visible_or_mailto_emails_and_drops_placeholders(self):
+        html = (
+            '<input value="naam@voorbeeld.nl">'
+            '<span>info@example.nl</span>'
+            '<span>no-reply@example.nl</span>'
+            '<a href="mailto:sales@example.nl">Mail</a>'
+        )
+        self.assertEqual(extract_emails(html), ["sales@example.nl", "info@example.nl"])
 
     def test_contact_links_stay_on_official_domain(self):
         html = '<a href="/contact">Contact</a><a href="https://other.example/contact">Extern</a>'
@@ -45,11 +51,29 @@ class PublicContactDiscoveryTests(unittest.TestCase):
     def test_email_validation(self):
         self.assertTrue(valid_email("info@example.nl"))
         self.assertFalse(valid_email("no-reply@example.nl"))
+        self.assertFalse(valid_email("naam@voorbeeld.nl"))
         self.assertFalse(valid_email("bad-address"))
 
-    def test_language_uses_html_lang_first(self):
-        self.assertEqual(detect_language('<html lang="nl"><body>Welcome</body></html>'), ("nl", "html_lang"))
-        self.assertEqual(detect_language('<html lang="en-US"><body>Welkom</body></html>'), ("en", "html_lang"))
+    def test_fallback_email_must_fit_business_context(self):
+        self.assertTrue(email_fits_business_context("info@example.nl", "example.nl", "overture"))
+        self.assertTrue(email_fits_business_context("bedrijf@gmail.com", "example.nl", "google_maps"))
+        self.assertFalse(
+            email_fits_business_context(
+                "contact@aannemerrotterdam.commaandag",
+                "aannemerrotterdam.com",
+                "google_maps",
+            )
+        )
+
+    def test_language_uses_visible_copy_to_override_stale_html_lang(self):
+        self.assertEqual(detect_language('<html lang="nl"><body>Welkom</body></html>'), ("nl", "html_lang"))
+        dutch = (
+            '<html lang="en"><body>'
+            'Wij helpen onze klanten met de website en het bedrijf. '
+            'Onze diensten zijn voor klanten in Nederland en wij nemen graag contact op.'
+            '</body></html>'
+        )
+        self.assertEqual(detect_language(dutch, default="en"), ("nl", "page_text"))
 
     def test_competitor_filters_individual_digital_provider(self):
         for label in ("Freelance webdesigner", "SEO specialist", "Social media manager", "WordPress specialist", "Automation consultant", "Hosting reseller"):

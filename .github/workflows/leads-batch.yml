@@ -210,14 +210,19 @@ jobs:
           python3 scripts/prepare_growth_batch.py             --contacts results/public-contacts.json             --config config/growth-subscription.json             --output-json results/growth-batch.json             --output-csv results/growth-batch.csv             --draft-limit "$DRAFT_LIMIT"
 
       - name: Verify draft boundaries
+        env:
+          DRAFT_LIMIT: ${{ steps.request.outputs.draft_limit }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
           import json
           from pathlib import Path
           batch = json.loads(Path("results/growth-batch.json").read_text(encoding="utf-8"))
-          if batch["draft_candidate_count"] < 1:
-              raise SystemExit("No usable public business email found; no real prospect draft can be created")
+          expected = int(__import__("os").environ["DRAFT_LIMIT"])
+          if batch["draft_candidate_count"] < expected:
+              raise SystemExit(
+                  f"Need {expected} real prospect draft(s), found {batch['draft_candidate_count']}"
+              )
           for row in batch["rows"]:
               if row["status"] == "excluded_competitor" and (row["email"] is not None or row["concept_preview"] is not None):
                   raise SystemExit("excluded competitor received contact/copy output")
@@ -245,6 +250,18 @@ jobs:
           PYTHONPATH=scripts python3 scripts/myhost_draft.py             --batch results/growth-batch.json             --report results/myhost-drafts.json | tee results/myhost-drafts.txt
           grep -q '^MYHOST_DRAFT_SYNC=green ' results/myhost-drafts.txt
           grep -q 'smtp_send=not_available' results/myhost-drafts.txt
+          EXPECTED_DRAFTS="${{ steps.request.outputs.draft_limit }}" python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          report = json.loads(Path("results/myhost-drafts.json").read_text(encoding="utf-8"))
+          expected = int(os.environ["EXPECTED_DRAFTS"])
+          actual = int(report["created_count"]) + int(report["existing_count"])
+          if report["eligible_count"] != expected or actual != expected:
+              raise SystemExit(
+                  f"Expected exactly {expected} mijn.host draft(s), eligible={report['eligible_count']} readback={actual}"
+              )
+          print(f"MYHOST_REQUIRED_DRAFTS=green count={actual}")
+          PY
 
       - name: Remove raw discovery residue
         if: always()

@@ -27,24 +27,24 @@ def subject_for_company(company: str, language: str) -> str:
     words = candidate.split()
     if len(candidate) <= 50 and 3 <= len(words) <= 6:
         return candidate
-    return "Online growth idea" if language == "en" else "Idee voor online groei"
+    return "Idea for your online setup" if language == "en" else "Idee voor jullie online aanpak"
 
 
 def build_template(company: str, language: str, *, price_min: int, price_max: int) -> str:
     if language == "en":
         return (
             "Hello,\n\n"
-            f"I came across {company} online and wanted to share one short idea.\n\n"
-            "With one Growth Subscription, I can handle several ongoing online improvements "
-            "without you needing a separate supplier for each area.\n\n"
-            f"Growth Subscription — €{price_min}–€{price_max}/month\n"
+            f"I came across {company} online. One practical approach may be useful.\n\n"
+            "With one Growth Subscription, I handle several ongoing online areas "
+            "without separate suppliers for each one.\n\n"
+            f"Growth Subscription — €{price_min}–€{price_max}/month, depending on scope\n"
             "• Improve website/webshop\n"
             "• Improve search visibility\n"
             "• Create social content\n"
-            "• Automate suitable repetitive work up to about 30% where feasible\n"
+            "• Automate suitable recurring work up to about 30% where feasible\n"
             "• Take over/manage hosting\n"
             "• Andrew as your fixed contact\n\n"
-            "The scope depends on what is useful for you.\n\n"
+            "The scope follows your priorities and agreed scope.\n\n"
             f"Would you like me to outline the 2–3 areas I would look at first for {company}?\n\n"
             "Not relevant? Let me know and I’ll leave it there.\n\n"
             "Regards,\nAndrew Baeten\nWebactueel B.V.\n"
@@ -52,17 +52,17 @@ def build_template(company: str, language: str, *, price_min: int, price_max: in
         )
     return (
         "Goedendag,\n\n"
-        f"Ik kwam {company} online tegen en wilde één kort idee voorleggen.\n\n"
-        "Met één Groeiabonnement kan ik meerdere online onderdelen doorlopend oppakken, "
-        "zonder voor ieder onderdeel een losse partij nodig te hebben.\n\n"
-        f"Groeiabonnement — €{price_min}–€{price_max} p/m\n"
+        f"Ik kwam {company} online tegen. Eén praktische aanpak kan interessant zijn.\n\n"
+        "Met één Groeiabonnement pak ik meerdere online onderdelen doorlopend op, "
+        "zonder losse partijen per onderdeel.\n\n"
+        f"Groeiabonnement — €{price_min}–€{price_max} p/m, afhankelijk van scope\n"
         "• Website/webshop verbeteren\n"
         "• Zoekbaarheid verbeteren\n"
         "• Social content verzorgen\n"
-        "• Geschikte terugkerende werkzaamheden tot circa 30% automatiseren\n"
+        "• Geschikt terugkerend werk tot circa 30% automatiseren waar haalbaar\n"
         "• Hosting overnemen/beheren\n"
         "• Andrew als vast contactpersoon\n\n"
-        "De invulling hangt af van wat voor jullie nuttig is.\n\n"
+        "De invulling volgt jullie prioriteiten en afgesproken scope.\n\n"
         f"Zal ik kort aangeven welke 2–3 onderdelen ik bij {company} als eerste zou bekijken?\n\n"
         "Geen interesse? Laat het gerust weten, dan houd ik het hierbij.\n\n"
         "Met vriendelijke groet,\nAndrew Baeten\nWebactueel B.V.\n"
