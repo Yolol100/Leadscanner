@@ -2,12 +2,18 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 from pathlib import Path
 
 
 def load_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def stable_lead_id(email: str, website: str) -> str:
+    seed = f"{str(email or '').strip().casefold()}|{str(website or '').strip().casefold()}"
+    return "growth-" + hashlib.sha256(seed.encode("utf-8")).hexdigest()[:20]
 
 
 def subject_for_language(language: str) -> str:
@@ -75,6 +81,7 @@ def prepare_batch(contacts_payload: dict, config: dict) -> dict:
         subject_preview = subject_for_language(language)
 
         base = {
+            "lead_id": None,
             "company": candidate.get("name_hint"),
             "website": candidate.get("website_hint"),
             "official_domain_hint": candidate.get("official_domain_hint"),
@@ -102,6 +109,7 @@ def prepare_batch(contacts_payload: dict, config: dict) -> dict:
 
         if emails:
             base["email"] = emails[0]
+            base["lead_id"] = stable_lead_id(base["email"], base["website"])
             base["status"] = (
                 "draft_ready"
                 if base["contact_basis_status"] == "pass"
@@ -133,6 +141,7 @@ def prepare_batch(contacts_payload: dict, config: dict) -> dict:
 
 def write_csv(payload: dict, path: Path) -> None:
     fields = [
+        "lead_id",
         "company",
         "website",
         "email",

@@ -32,6 +32,7 @@ class GrowthBatchTests(unittest.TestCase):
         row = result["rows"][0]
         self.assertEqual(row["status"], "needs_contact_basis")
         self.assertEqual(row["email"], "info@voorbeeld.nl")
+        self.assertTrue(row["lead_id"].startswith("growth-"))
         self.assertIsNone(row["body"])
         self.assertEqual(row["subject_preview"], "Korte vraag over online groei")
         self.assertIn("€250-€500", row["concept_preview"])
@@ -57,6 +58,7 @@ class GrowthBatchTests(unittest.TestCase):
         result = prepare_batch(contacts, self.config())
         row = result["rows"][0]
         self.assertEqual(row["status"], "draft_ready")
+        self.assertTrue(row["lead_id"].startswith("growth-"))
         self.assertEqual(row["subject"], "Quick question about online growth")
         self.assertIn("€250-€500", row["body"])
         self.assertIn("website/webshop improvements", row["body"])

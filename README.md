@@ -2,7 +2,7 @@
 
 De standaardflow is bewust simpel:
 
-**bedrijven verzamelen -> concurrenten/bureaus uitsluiten -> officiële e-mail controleren -> NL/EN bepalen -> kort concept maken**
+**bedrijven verzamelen -> concurrenten/bureaus uitsluiten -> officiële e-mail controleren -> NL/EN bepalen -> kort concept maken -> goedgekeurde concepten in mijn.host opslaan**
 
 ## Groeiabonnement
 
@@ -17,13 +17,17 @@ De zes onderdelen:
 5. hosting overnemen/beheren wanneer passend;
 6. Andrew als vast contactpersoon voor aanpassingen en ondersteuning.
 
-## Enige standaardworkflow
+## Standaardflow
 
-Open **Actions -> Leads Batch - Groeiabonnement -> Run workflow**.
+Eerst: **Actions -> Leads Batch - Groeiabonnement -> Run workflow**.
 
-De workflow doet:
+Die Action doet:
 
-`PDOK + Overture + Google Maps -> dedupe -> maximaal 100 websites/contacten controleren -> bureaus uitsluiten -> publiek zakelijk e-mailadres vinden -> taal NL/EN bepalen -> Groeiabonnement-concept maken`
+`PDOK + Overture + Google Maps -> dedupe -> maximaal 100 websites/contacten controleren -> bureaus uitsluiten -> publiek zakelijk e-mailadres vinden -> taal NL/EN bepalen -> Groeiabonnement-preview + anonieme lead_id`
+
+Na review van de contactbasis: **Actions -> Create mijn.host concepts -> Run workflow**.
+
+Geef alleen de groene bron-run-ID en de expliciet goedgekeurde `growth-...` lead-ID's door. Deze tweede Action haalt de eerdere artifact op, zet exact die rijen op `draft_ready` en schrijft ze naar mijn.host Concepten. E-mailadressen hoeven niet als Action-input te worden geplakt.
 
 Discovery kan tot 5.000 kandidaatbedrijven verzamelen. De officiële website/e-mail/conceptcontrole blijft per gecontroleerde run maximaal 100 kandidaten, zodat de output reviewbaar blijft.
 
@@ -61,6 +65,20 @@ De mail is kort, ongeveer 55-95 woorden, en legt één Groeiabonnement uit voor 
 De zes onderdelen staan compact in de mail. De tekst bevat één CTA, Andrew Baeten + `andrewbaeten.nl` en een eenvoudige afmeldzin.
 
 De repo maakt een `concept_preview` zodra een bruikbaar bedrijf/contact is gevonden. Een daadwerkelijk geadresseerde `body` blijft geblokkeerd totdat de actuele contactbasis op `pass` staat.
+
+## mijn.host Concepten
+
+`scripts/myhost_draft.py` schrijft uitsluitend rijen met `status=draft_ready` én `contact_basis_status=pass` via IMAP naar de Concepten/Drafts-map van mijn.host en leest daarna exact ontvanger, onderwerp en body terug.
+
+Standaardinstellingen:
+
+- IMAP-host: `mail.andrewbaeten.nl`;
+- IMAP-poort: `993` met SSL;
+- account: `info@andrewbaeten.nl`;
+- wachtwoord uitsluitend via GitHub secret `OUTREACH_MAIL_PASSWORD`;
+- geen SMTP-code en geen automatische verzending.
+
+De mijn.host Action accepteert alleen expliciet goedgekeurde lead-ID's. Onbekende IDs, uitgesloten concurrenten of onvolledige rijen blokkeren fail-closed. Dezelfde lead wordt idempotent niet dubbel aangemaakt.
 
 ## Na interesse
 
