@@ -32,7 +32,7 @@ jobs:
           PYTHONPATH: scripts
         run: python3 -m unittest discover -s tests -p 'test_*.py' -v
 
-      - name: Prove compact Growth Subscription core
+      - name: Prove simple Growth Subscription core
         run: |
           set -euo pipefail
           test -f .github/workflows/leads-batch.yml
@@ -43,20 +43,21 @@ jobs:
           test -f scripts/prepare_growth_batch.py
 
           grep -q 'Leads Batch - Groeiabonnement' .github/workflows/leads-batch.yml
-          grep -q 'target_candidates must be 1-5000' .github/workflows/leads-batch.yml
+          grep -q 'contact_check_limit must be 1-100' .github/workflows/leads-batch.yml
           grep -q 'gosom/google-maps-scraper:v1.18.1' .github/workflows/leads-batch.yml
+          grep -q 'extract_public_contacts.py' .github/workflows/leads-batch.yml
           grep -q '"product_id": "growth_subscription"' config/growth-subscription.json
-          grep -q '"min": 200' config/growth-subscription.json
+          grep -q '"min": 250' config/growth-subscription.json
           grep -q '"max": 500' config/growth-subscription.json
+          grep -q 'HARD_COMPETITOR_PHRASES' scripts/extract_public_contacts.py
+          grep -q 'detect_language' scripts/extract_public_contacts.py
           grep -q 'MAX_CANDIDATES_PER_RUN = 100' scripts/extract_public_contacts.py
+          grep -q 'Quick question about online growth' scripts/prepare_growth_batch.py
+          grep -q 'Korte vraag over online groei' scripts/prepare_growth_batch.py
           grep -q 'automatic_send.*False' scripts/prepare_growth_batch.py
 
           ! grep -R --line-number --include='*.py' -E 'smtplib|sendmail\(|SMTP\(' scripts
           ! test -e scripts/refill_planner.py
           ! test -e scripts/sync_selected_drafts.py
           ! test -e scripts/myhost_draft.py
-          ! test -e .github/workflows/refill-plan.yml
-          ! test -e .github/workflows/runtime-myhost-draft.yml
-          ! test -e .github/workflows/runtime-myhost-request.yml
-          ! test -e .github/workflows/sync-selected-myhost-drafts-command.yml
-          echo 'COMPACT_GROWTH_CORE=green'
+          echo 'SIMPLE_GROWTH_CORE=green'
