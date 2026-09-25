@@ -225,6 +225,10 @@ def discover_contacts(payload: dict, *, max_workers: int = MAX_WORKERS) -> dict:
     candidates = payload.get("candidates") or []
     if not isinstance(candidates, list):
         raise ValueError("candidates must be a list")
+    if len(candidates) > MAX_CANDIDATES_PER_RUN:
+        raise ValueError(
+            f"public contact discovery is bounded to {MAX_CANDIDATES_PER_RUN} candidates per reviewed run"
+        )
     if not 1 <= max_workers <= MAX_WORKERS:
         raise ValueError(f"max_workers must be 1-{MAX_WORKERS}")
 
