@@ -1,82 +1,75 @@
 # Leadscanner
 
-De standaardflow is:
+De standaardflow is bewust simpel:
 
-**campagne -> PDOK + Overture + Google Maps -> dedupe -> kandidaten -> minimale verificatie/contactbasis -> korte Groeiabonnement-copy -> export -> reactie**
+**bedrijven verzamelen -> concurrenten/bureaus uitsluiten -> officiële e-mail controleren -> NL/EN bepalen -> kort concept maken**
 
 ## Groeiabonnement
 
-Er is één product: **Groeiabonnement**, normaal **€200-€500 per maand afhankelijk van scope**.
+Er is één product: **Groeiabonnement**, normaal **€250-€500 per maand afhankelijk van scope**.
 
-De zes servicegebieden:
+De zes onderdelen:
 
 1. website/webshop verbeteren;
 2. zoekbaarheid verbeteren;
 3. social content verzorgen;
-4. geschikte repetitieve werkzaamheden automatiseren, met een doel tot circa 30% waar aantoonbaar haalbaar en meetbaar;
+4. geschikte repetitieve werkzaamheden tot circa 30% automatiseren waar aantoonbaar haalbaar is;
 5. hosting overnemen/beheren wanneer passend;
 6. Andrew als vast contactpersoon voor aanpassingen en ondersteuning.
-
-Een campagne kiest één primaire ingang: `website_webshop`, `search_visibility`, `social_content`, `automation`, `hosting` of `fixed_contact`.
 
 ## Enige standaardworkflow
 
 Open **Actions -> Leads Batch - Groeiabonnement -> Run workflow**.
 
-Input:
+De workflow doet:
 
-- regio;
-- branche/keywords;
-- maximaal 5.000 kandidaten;
-- Google Maps depth;
-- primaire ingang;
-- prijsrange tonen ja/nee.
+`PDOK + Overture + Google Maps -> dedupe -> maximaal 100 websites/contacten controleren -> bureaus uitsluiten -> publiek zakelijk e-mailadres vinden -> taal NL/EN bepalen -> Groeiabonnement-concept maken`
 
-Technische route:
+Discovery kan tot 5.000 kandidaatbedrijven verzamelen. De officiële website/e-mail/conceptcontrole blijft per gecontroleerde run maximaal 100 kandidaten, zodat de output reviewbaar blijft.
 
-`PDOK -> Overture Maps Places + gosom/google-maps-scraper:v1.18.1 -> cross-source dedupe -> growth-batch.csv/json`
+## Wat wordt uitgesloten
 
-Discovery maakt geen contacttoestemming en verzendt niets.
+De Leadscanner benadert geen bedrijven waarvan de kernactiviteit materieel overlapt met Webactueel. Minimaal uitgesloten:
 
-## Contactcontrole
+- marketing-, reclame- en communicatiebureaus;
+- webbureaus, webdesign- en webdevelopmentbureaus;
+- SEO-bureaus;
+- social-media- en contentmarketingbureaus;
+- AI/automation/no-code agencies;
+- WordPress/WooCommerce/Elementor-bureaus;
+- digitale bureaus;
+- hostingproviders en hostingresellers.
 
-`scripts/extract_public_contacts.py` is een aparte, begrensde capability:
+Naam/categorie wordt vroeg gebruikt om werk te besparen. De officiële website is de finale controle. Bij twijfel wordt een bedrijf overgeslagen.
 
-- alleen officiële bedrijfswebsite;
-- maximaal 3 pagina's per site;
-- maximaal 100 kandidaten per gecontroleerde run;
-- geen geraden e-mailadressen;
-- gevonden e-mail zet contactbasis nooit automatisch op groen.
+## E-mail en taal
 
-## Copy
+De Leadscanner gebruikt alleen een exact publiek zakelijk e-mailadres dat rechtstreeks op de officiële bedrijfswebsite staat. Er worden geen adressen geraden of geconstrueerd.
 
-`scripts/prepare_growth_batch.py` maakt korte Groeiabonnement-copy:
+De website bepaalt de mailtaal:
 
-- ongeveer 50-90 woorden;
-- alle zes onderdelen kort benoemd;
-- één primaire focus;
-- €200-€500 p/m standaard zichtbaar, afhankelijk van scope;
-- Andrew Baeten + andrewbaeten.nl;
-- eenvoudige afmeldzin;
-- geen onbewezen prospectproblemen of garanties.
+- Nederlandstalige site -> Nederlandse mail;
+- Engelstalige site -> Engelse mail;
+- HTML `lang` heeft voorrang;
+- zichtbare paginatekst is fallback;
+- onduidelijk + Nederlandse markt -> Nederlands, anders Engels.
 
-## Na positieve interesse
+## Conceptmail
 
-Pas daarna specialistische verdieping via Webactueel:
+De mail is kort, ongeveer 55-95 woorden, en legt één Groeiabonnement uit voor **€250-€500 per maand afhankelijk van scope**.
 
-- Design/UX;
-- SEO/search;
-- social evidence;
-- automation/WordPress/Elementor/programmeren;
-- hosting/migratie.
+De zes onderdelen staan compact in de mail. De tekst bevat één CTA, Andrew Baeten + `andrewbaeten.nl` en een eenvoudige afmeldzin.
 
-## Niet meer standaard
+De repo maakt een `concept_preview` zodra een bruikbaar bedrijf/contact is gevonden. Een daadwerkelijk geadresseerde `body` blijft geblokkeerd totdat de actuele contactbasis op `pass` staat.
 
-De oude refill-controller, DraftQueue/mijn.host-runtime, runtime-branch bridge en losse duplicate discovery-workflows zijn legacy en worden uit de compacte route verwijderd. De standaardrepo bereidt kandidaten en copy voor; live verzending is een afzonderlijke, expliciete stap buiten deze repo.
+## Na interesse
+
+Pas na een positieve reactie wordt specialistisch verdiept via Design, SEO, social, WordPress/Elementor/programmeren of hosting.
 
 ## Veiligheidsgrenzen
 
-- discovery-hints zijn geen prospectbewijs of toestemming;
-- prospecttargets en mailboxbewijs horen niet in de default branch;
+- een publiek e-mailadres is geen toestemming;
+- concurrenten krijgen geen concept;
 - geen automatische verzending;
-- actuele juridische/providerregels blijven leidend voor daadwerkelijke outreach.
+- geen verzonnen prospectproblemen, resultaten of garanties;
+- prospecttargets en mailboxbewijs horen niet in de default branch.
