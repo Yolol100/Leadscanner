@@ -101,6 +101,15 @@ class HybridDiscoveryTests(unittest.TestCase):
             self.assertNotIn("emails", candidates[0])
             self.assertEqual(candidates[0]["website_hint"], "https://example.nl")
 
+    def test_max_results_is_bounded_to_5000(self):
+        with self.assertRaises(ValueError):
+            combine_candidates(
+                {"candidates": []},
+                [],
+                max_results=5001,
+                require_website=False,
+            )
+
     def test_name_only_candidate_is_not_used_for_cross_source_dedupe(self):
         overture = {
             "candidates": [
