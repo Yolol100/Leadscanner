@@ -18,7 +18,7 @@ import requests
 PDOK_FREE_URL = "https://api.pdok.nl/bzk/locatieserver/search/v3_1/free"
 DEFAULT_RADIUS_KM = 8.0
 DEFAULT_TIMEOUT_SECONDS = 15
-MAX_RESULTS = 100
+MAX_RESULTS = 5000
 MAX_PROBE_WORKERS = 8
 
 
