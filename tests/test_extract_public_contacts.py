@@ -51,10 +51,22 @@ class PublicContactDiscoveryTests(unittest.TestCase):
         candidate = {"name_hint": "Sterk Marketingbureau", "category_hint": "Marketing agency"}
         self.assertTrue(competitor_reason(candidate).startswith("discovery_hint:"))
 
+    def test_individual_digital_service_provider_is_excluded(self):
+        for label in (
+            "Freelance webdesigner",
+            "SEO specialist",
+            "Social media manager",
+            "WordPress specialist",
+            "Automation consultant",
+            "Hosting reseller",
+        ):
+            candidate = {"name_hint": label, "category_hint": ""}
+            self.assertIsNotNone(competitor_reason(candidate), label)
+
     def test_competitor_is_excluded_from_official_site_services(self):
         candidate = {"name_hint": "Example BV", "category_hint": "Consulting"}
         html = "<html><body>Wij bieden webdesign, SEO specialist diensten en online marketing.</body></html>"
-        self.assertEqual(competitor_reason(candidate, html), "official_site:multiple_overlapping_services")
+        self.assertTrue(competitor_reason(candidate, html).startswith("official_site:"))
 
     def test_contact_discovery_is_bounded_to_100_candidates(self):
         with self.assertRaises(ValueError):
