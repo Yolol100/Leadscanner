@@ -44,4 +44,7 @@ jobs:
           grep -q 'Runtime branch already absent; cleanup is idempotent' .github/workflows/refill-plan.yml
           grep -q 'Runtime branch already absent; cleanup is idempotent' .github/workflows/overture-discovery.yml
           grep -q 'Runtime branch already absent; cleanup is idempotent' .github/workflows/runtime-myhost-draft.yml
+          grep -q 'gosom/google-maps-scraper:v1.18.1' .github/workflows/hybrid-maps-discovery.yml
+          ! grep -q -- '-email' .github/workflows/hybrid-maps-discovery.yml
+          grep -q 'HYBRID_DISCOVERY_SCOPE=green' .github/workflows/hybrid-maps-discovery.yml
           echo 'DRAFT_ONLY_CORE=green'
