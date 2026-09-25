@@ -50,7 +50,8 @@ Grenzen:
 - maximaal 100 kandidaten per gecontroleerde run;
 - geen geraden of geconstrueerde e-mailadressen;
 - een gevonden e-mailadres zet `contact_basis_status` nooit automatisch op `pass`;
-- zonder geldige contactbasis geen geadresseerde copy, DraftQueue of send.
+- zonder aantoonbaar geldige contactbasis geen geadresseerde copy, DraftQueue of send;
+- discovery of een publiek e-mailadres geldt nooit op zichzelf als toestemming voor commerciële e-mail.
 
 ## Copy
 
@@ -60,7 +61,10 @@ Grenzen:
 - één kleine CTA;
 - geen volledige website-audit vóór first touch;
 - geen verzonnen prospectproblemen of resultaten;
-- prijsrange €200-€500 p/m alleen wanneer de campagne bewust price-led is.
+- prijsrange €200-€500 p/m staat standaard aan in de campagnepreview en kan bewust worden uitgezet;
+- alle zes onderdelen van het Groeiabonnement staan expliciet in de tekst;
+- afzenderidentiteit bevat Andrew Baeten + andrewbaeten.nl;
+- iedere geadresseerde versie bevat een eenvoudige afmeldzin.
 
 ## Na positieve interesse
 
