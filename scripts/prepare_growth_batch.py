@@ -14,13 +14,13 @@ VALID_ANGLES = {
     "fixed_contact",
 }
 
-ANGLE_COPY = {
-    "website_webshop": "website of webshop maandelijks blijven verbeteren",
-    "search_visibility": "vindbaarheid stap voor stap verbeteren",
-    "social_content": "social content structureel laten verzorgen",
-    "automation": "repetitief werk waar mogelijk automatiseren",
-    "hosting": "hosting en technisch beheer uit handen geven",
-    "fixed_contact": "één vast aanspreekpunt houden voor digitale aanpassingen",
+ANGLE_FOCUS = {
+    "website_webshop": "website/webshop",
+    "search_visibility": "vindbaarheid",
+    "social_content": "social content",
+    "automation": "automatisering",
+    "hosting": "hosting en technisch beheer",
+    "fixed_contact": "doorlopende ondersteuning en aanpassingen",
 }
 
 
@@ -29,15 +29,19 @@ def load_json(path: Path) -> dict:
 
 
 def build_template(company: str, angle: str, *, show_price: bool, price_text: str) -> str:
-    price_sentence = f" {price_text}" if show_price else ""
+    intro = "Ik bied één Groeiabonnement."
+    if show_price:
+        intro = f"{intro} {price_text}"
+
     return (
         f"Hoi {company},\n\n"
-        f"Ik help bedrijven met één Groeiabonnement om hun {ANGLE_COPY[angle]}. "
-        "Daarin kan ik ook website/webshop, vindbaarheid, social content, automatisering, "
-        "hosting en doorlopende aanpassingen meenemen."
-        f"{price_sentence}\n\n"
-        "Zal ik kort sturen hoe dat voor jullie zou kunnen werken?\n\n"
-        "Groet,\nAndrew"
+        f"{intro} Daarmee verbeter ik website/webshop en vindbaarheid, verzorg ik social content, "
+        "automatiseer ik geschikte repetitieve werkzaamheden tot circa 30% waar dat haalbaar is, "
+        "kan ik hosting overnemen en blijf ik jullie vaste contactpersoon voor aanpassingen. "
+        f"De eerste focus kan liggen op {ANGLE_FOCUS[angle]}.\n\n"
+        "Zal ik kort laten zien hoe dit voor jullie kan werken?\n\n"
+        "Groet,\nAndrew Baeten\nandrewbaeten.nl\n\n"
+        "Geen interesse? Laat het gerust weten, dan mail ik niet meer."
     )
 
 
@@ -77,7 +81,7 @@ def prepare_batch(contacts_payload: dict, config: dict, *, angle: str, show_pric
                 else "needs_contact_basis"
             )
             if base["contact_basis_status"] == "pass":
-                base["subject"] = "Korte vraag over jullie online groei"
+                base["subject"] = f"Groeiabonnement voor {company}"
                 base["body"] = base["template_preview"]
         rows.append(base)
 

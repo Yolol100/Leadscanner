@@ -34,7 +34,7 @@ on:
       show_price:
         description: 'Toon €200-€500 p/m in campagnepreview'
         required: true
-        default: false
+        default: true
         type: boolean
 
 permissions:
