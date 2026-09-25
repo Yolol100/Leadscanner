@@ -16,39 +16,47 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
           cache: pip
-      - run: python3 -m pip install --disable-pip-version-check -r requirements.txt
+          cache-dependency-path: |
+            requirements.txt
+            requirements-discovery.txt
+
+      - run: python3 -m pip install --disable-pip-version-check -r requirements.txt -r requirements-discovery.txt
       - run: python3 -m compileall -q scripts
+
       - env:
           PYTHONPATH: scripts
         run: python3 -m unittest discover -s tests -p 'test_*.py' -v
-      - name: Prove draft-only core
+
+      - name: Prove compact Growth Subscription core
         run: |
           set -euo pipefail
-          ! grep -R --line-number --include='*.py' -E 'smtplib|sendmail\(|SMTP\(' scripts
-          grep -q 'IMAP_DRAFT_ONLY' scripts/sync_selected_drafts.py
-          grep -q 'load_private_postal_address' scripts/sync_selected_drafts.py
-          grep -q 'Postadres:' scripts/myhost_draft.py
-          grep -q 'workflow_dispatch:' .github/workflows/sync-selected-myhost-drafts-command.yml
-          ! grep -q '^  issues:' .github/workflows/sync-selected-myhost-drafts-command.yml
-          ! grep -q 'issues: write' .github/workflows/sync-selected-myhost-drafts-command.yml
-          grep -q '^  create:' .github/workflows/runtime-myhost-request.yml
-          ! grep -q 'OUTREACH_MAIL_PASSWORD' .github/workflows/runtime-myhost-request.yml
-          grep -q '^  workflow_run:' .github/workflows/runtime-myhost-draft.yml
-          grep -q 'ref: .*default_branch' .github/workflows/runtime-myhost-draft.yml
-          grep -q 'smtp_send=not_available' .github/workflows/runtime-myhost-draft.yml
-          grep -q 'runtime/myhost-draft/' scripts/runtime_branch.py
-          grep -q 'Runtime branch already absent; cleanup is idempotent' .github/workflows/refill-plan.yml
-          grep -q 'Runtime branch already absent; cleanup is idempotent' .github/workflows/overture-discovery.yml
-          grep -q 'Runtime branch already absent; cleanup is idempotent' .github/workflows/runtime-myhost-draft.yml
-          grep -q 'gosom/google-maps-scraper:v1.18.1' .github/workflows/hybrid-maps-discovery.yml
-          ! grep -q -- '-email' .github/workflows/hybrid-maps-discovery.yml
-          grep -q 'HYBRID_DISCOVERY_SCOPE=green' .github/workflows/hybrid-maps-discovery.yml
+          test -f .github/workflows/leads-batch.yml
+          test -f config/growth-subscription.json
+          test -f scripts/overture_discovery.py
+          test -f scripts/hybrid_discovery.py
+          test -f scripts/extract_public_contacts.py
+          test -f scripts/prepare_growth_batch.py
+
           grep -q 'Leads Batch - Groeiabonnement' .github/workflows/leads-batch.yml
-          grep -q '"product_id": "growth_subscription"' config/growth-subscription.json
-          grep -q 'MAX_CANDIDATES_PER_RUN = 100' scripts/extract_public_contacts.py
           grep -q 'target_candidates must be 1-5000' .github/workflows/leads-batch.yml
-          echo 'DRAFT_ONLY_CORE=green'
+          grep -q 'gosom/google-maps-scraper:v1.18.1' .github/workflows/leads-batch.yml
+          grep -q '"product_id": "growth_subscription"' config/growth-subscription.json
+          grep -q '"min": 200' config/growth-subscription.json
+          grep -q '"max": 500' config/growth-subscription.json
+          grep -q 'MAX_CANDIDATES_PER_RUN = 100' scripts/extract_public_contacts.py
+          grep -q 'automatic_send.*False' scripts/prepare_growth_batch.py
+
+          ! grep -R --line-number --include='*.py' -E 'smtplib|sendmail\(|SMTP\(' scripts
+          ! test -e scripts/refill_planner.py
+          ! test -e scripts/sync_selected_drafts.py
+          ! test -e scripts/myhost_draft.py
+          ! test -e .github/workflows/refill-plan.yml
+          ! test -e .github/workflows/runtime-myhost-draft.yml
+          ! test -e .github/workflows/runtime-myhost-request.yml
+          ! test -e .github/workflows/sync-selected-myhost-drafts-command.yml
+          echo 'COMPACT_GROWTH_CORE=green'
