@@ -1,5 +1,5 @@
 {
-  "schema_version": "webactueel-growth-subscription/2.0",
+  "schema_version": "webactueel-growth-subscription/3.0",
   "product_id": "growth_subscription",
   "name": "Groeiabonnement",
   "monthly_price_eur": {
@@ -41,12 +41,18 @@
     }
   ],
   "first_touch": {
-    "min_words": 55,
-    "max_words": 95,
+    "min_words": 80,
+    "max_words": 130,
     "one_product": true,
     "six_benefits": true,
     "default_show_price": true,
-    "languages": ["nl", "en"],
-    "easy_no": true
+    "languages": [
+      "nl",
+      "en"
+    ],
+    "easy_no": true,
+    "subject_target_words": "3-6",
+    "automatic_draft_creation": true,
+    "manual_send_only": true
   }
 }

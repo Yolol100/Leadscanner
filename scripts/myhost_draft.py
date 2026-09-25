@@ -29,10 +29,14 @@ def stable_lead_id(row: dict) -> str:
 
 
 def build_message(row: dict) -> tuple[str, EmailMessage]:
-    if row.get("status") != "draft_ready":
-        raise RuntimeError("Only draft_ready rows may enter mijn.host")
-    if row.get("contact_basis_status") != "pass":
-        raise RuntimeError("Contact basis must be pass before mijn.host draft creation")
+    status = str(row.get("status") or "")
+    basis = str(row.get("contact_basis_status") or "")
+    if status not in {"draft_ready", "review_draft"}:
+        raise RuntimeError("Only draft_ready or review_draft rows may enter mijn.host")
+    if status == "draft_ready" and basis != "pass":
+        raise RuntimeError("draft_ready requires contact_basis_status=pass")
+    if status == "review_draft" and basis == "pass":
+        raise RuntimeError("review_draft is reserved for contact-basis review")
 
     email = normalize_text(row.get("email"))
     subject = normalize_text(row.get("subject"))
@@ -51,6 +55,8 @@ def build_message(row: dict) -> tuple[str, EmailMessage]:
     msg["Date"] = formatdate(localtime=True)
     msg["Message-ID"] = make_msgid(domain=sender_email.split("@")[-1] if "@" in sender_email else None)
     msg["X-Webactueel-Lead-ID"] = lead_id
+    if status == "review_draft":
+        msg["X-Webactueel-Review-Required"] = "contact-basis"
     msg.set_content(body)
     return lead_id, msg
 
@@ -125,6 +131,8 @@ def exact_message_matches(actual: EmailMessage, expected: EmailMessage) -> bool:
     return (
         normalize_text(actual.get("To", "")) == normalize_text(expected.get("To", ""))
         and normalize_text(actual.get("Subject", "")) == normalize_text(expected.get("Subject", ""))
+        and normalize_text(actual.get("X-Webactueel-Review-Required", ""))
+        == normalize_text(expected.get("X-Webactueel-Review-Required", ""))
         and plain_body(actual) == plain_body(expected)
     )
 
@@ -162,8 +170,10 @@ def create_drafts(batch: dict) -> dict:
     rows = [
         row
         for row in (batch.get("rows") or [])
-        if row.get("status") == "draft_ready"
-        and row.get("contact_basis_status") == "pass"
+        if (
+            (row.get("status") == "draft_ready" and row.get("contact_basis_status") == "pass")
+            or (row.get("status") == "review_draft" and row.get("contact_basis_status") != "pass")
+        )
     ]
     if len(rows) > MAX_DRAFTS_PER_RUN:
         raise RuntimeError(f"At most {MAX_DRAFTS_PER_RUN} drafts may be created per run")
@@ -174,6 +184,7 @@ def create_drafts(batch: dict) -> dict:
             "created_count": 0,
             "existing_count": 0,
             "draft_folder": None,
+            "review_required_count": 0,
             "smtp_send": "not_available",
         }
 
@@ -194,6 +205,7 @@ def create_drafts(batch: dict) -> dict:
             "created_count": created,
             "existing_count": existing,
             "draft_folder": folder,
+            "review_required_count": sum(1 for row in rows if row.get("status") == "review_draft"),
             "smtp_send": "not_available",
         }
     finally:
@@ -219,6 +231,7 @@ def main() -> int:
         f"eligible={result['eligible_count']} "
         f"created={result['created_count']} "
         f"existing={result['existing_count']} "
+        f"review_required={result['review_required_count']} "
         "smtp_send=not_available"
     )
     return 0
