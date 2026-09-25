@@ -47,4 +47,8 @@ jobs:
           grep -q 'gosom/google-maps-scraper:v1.18.1' .github/workflows/hybrid-maps-discovery.yml
           ! grep -q -- '-email' .github/workflows/hybrid-maps-discovery.yml
           grep -q 'HYBRID_DISCOVERY_SCOPE=green' .github/workflows/hybrid-maps-discovery.yml
+          grep -q 'Leads Batch - Groeiabonnement' .github/workflows/leads-batch.yml
+          grep -q '"product_id": "growth_subscription"' config/growth-subscription.json
+          grep -q 'MAX_CANDIDATES_PER_RUN = 100' scripts/extract_public_contacts.py
+          grep -q 'target_candidates must be 1-5000' .github/workflows/leads-batch.yml
           echo 'DRAFT_ONLY_CORE=green'
