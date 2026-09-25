@@ -250,14 +250,14 @@ class OvertureDiscoveryTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["overture_id"], "dup-1")
 
-    def test_direct_discovery_max_results_is_bounded_to_100(self):
+    def test_direct_discovery_max_results_is_bounded_to_5000(self):
         path = self.write_geojsonseq([])
         try:
             with self.assertRaises(ValueError):
                 read_candidates(
                     path,
                     keywords=[],
-                    max_results=101,
+                    max_results=5001,
                     require_website=False,
                 )
         finally:
