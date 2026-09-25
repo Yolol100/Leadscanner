@@ -217,6 +217,23 @@ jobs:
           print("SIMPLE_GROWTH_FLOW=green")
           PY
 
+      - name: Create mijn.host drafts for approved rows only
+        env:
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME || 'Andrew Baeten' }}
+          OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
+          OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH=scripts python3 scripts/myhost_draft.py \
+            --batch results/growth-batch.json \
+            --report results/myhost-drafts.json | tee results/myhost-drafts.txt
+          grep -q '^MYHOST_DRAFT_SYNC=green ' results/myhost-drafts.txt
+          grep -q 'smtp_send=not_available' results/myhost-drafts.txt
+
       - name: Remove raw Google Maps export
         if: always()
         run: rm -rf results/google-maps results/google-maps-queries.txt results/contact-input.json
@@ -230,5 +247,6 @@ jobs:
             results/public-contacts.json
             results/growth-batch.json
             results/growth-batch.csv
+            results/myhost-drafts.json
           if-no-files-found: warn
           retention-days: 1
