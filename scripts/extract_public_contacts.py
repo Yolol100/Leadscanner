@@ -12,6 +12,7 @@ from urllib.parse import urljoin, urlparse
 import requests
 
 MAX_WORKERS = 12
+MAX_CANDIDATES_PER_RUN = 100
 MAX_PAGES_PER_SITE = 3
 MAX_BYTES_PER_PAGE = 1_000_000
 DEFAULT_TIMEOUT = 12
