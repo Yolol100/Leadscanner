@@ -10,7 +10,7 @@ class GrowthBatchTests(unittest.TestCase):
         return {
             "monthly_price_eur": {"min": 200, "max": 500},
             "first_touch": {
-                "price_text": "Meestal €200-€500 per maand, afhankelijk van scope."
+                "price_text": "Het kost doorgaans €200-€500 per maand, afhankelijk van de afgesproken scope."
             },
         }
 
@@ -63,7 +63,46 @@ class GrowthBatchTests(unittest.TestCase):
         self.assertEqual(row["status"], "draft_ready")
         self.assertEqual(row["email"], "sales@voorbeeld.nl")
         self.assertIn("€200-€500", row["body"])
-        self.assertIn("automatiseren", row["body"])
+        self.assertIn("website/webshop", row["body"])
+        self.assertIn("vindbaarheid", row["body"])
+        self.assertIn("social content", row["body"])
+        self.assertIn("30%", row["body"])
+        self.assertIn("hosting", row["body"])
+        self.assertIn("vaste contactpersoon", row["body"])
+        self.assertIn("Andrew Baeten", row["body"])
+        self.assertIn("andrewbaeten.nl", row["body"])
+        self.assertIn("Geen interesse?", row["body"])
+        self.assertEqual(row["subject"], "Groeiabonnement voor Voorbeeld BV")
+
+
+    def test_all_angles_render_without_old_broken_grammar(self):
+        contacts = {
+            "candidates": [
+                {
+                    "name_hint": "Voorbeeld BV",
+                    "public_business_emails": [],
+                    "contact_basis_status": "unverified",
+                }
+            ]
+        }
+        for angle in (
+            "website_webshop",
+            "search_visibility",
+            "social_content",
+            "automation",
+            "hosting",
+            "fixed_contact",
+        ):
+            result = prepare_batch(
+                contacts,
+                self.config(),
+                angle=angle,
+                show_price=True,
+            )
+            preview = result["rows"][0]["template_preview"]
+            self.assertNotIn("om hun", preview)
+            self.assertGreaterEqual(len(preview.split()), 50)
+            self.assertLessEqual(len(preview.split()), 90)
 
 
 if __name__ == "__main__":
