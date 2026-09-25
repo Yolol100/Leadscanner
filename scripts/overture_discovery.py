@@ -212,11 +212,7 @@ def download_overture_places(
         detail = (result.stderr or result.stdout or "unknown overturemaps failure").strip()
         raise RuntimeError(f"overturemaps download failed: {detail[-1000:]}")
     if not output_path.exists():
-        stdout = result.stdout or ""
-        if stdout.strip():
-            output_path.write_text(stdout, encoding="utf-8")
-        else:
-            output_path.touch()
+        output_path.touch()
 
 
 def _matches_keywords(properties: dict, keywords: list[str]) -> bool:
