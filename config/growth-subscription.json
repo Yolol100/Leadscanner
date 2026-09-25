@@ -1,9 +1,9 @@
 {
-  "schema_version": "webactueel-growth-subscription/1.0",
+  "schema_version": "webactueel-growth-subscription/2.0",
   "product_id": "growth_subscription",
   "name": "Groeiabonnement",
   "monthly_price_eur": {
-    "min": 200,
+    "min": 250,
     "max": 500,
     "determined_by": "agreed_scope",
     "guaranteed_fixed_price_per_prospect": false
@@ -27,12 +27,12 @@
     {
       "id": "automation",
       "label": "Bedrijfsprocessen automatiseren",
-      "promise": "Geschikte repetitieve processen automatiseren; doel tot circa 30% waar vooraf meetbaar en haalbaar, nooit als gegarandeerde besparing."
+      "promise": "Geschikte repetitieve werkzaamheden tot circa 30% automatiseren waar meetbaar en haalbaar; nooit als gegarandeerde besparing."
     },
     {
       "id": "hosting",
       "label": "Hosting overnemen/beheren",
-      "promise": "Hosting, migratie en beheer waar technisch en contractueel passend; externe kosten/scope apart bevestigen."
+      "promise": "Hosting, migratie en beheer overnemen wanneer technisch en contractueel passend."
     },
     {
       "id": "fixed_contact",
@@ -41,12 +41,12 @@
     }
   ],
   "first_touch": {
-    "min_words": 50,
-    "max_words": 90,
+    "min_words": 55,
+    "max_words": 95,
     "one_product": true,
-    "one_primary_angle": true,
+    "six_benefits": true,
     "default_show_price": true,
-    "easy_no": true,
-    "price_text": "Het kost doorgaans €200-€500 per maand, afhankelijk van de afgesproken scope."
+    "languages": ["nl", "en"],
+    "easy_no": true
   }
 }

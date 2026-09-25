@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from html import unescape
 from html.parser import HTMLParser
@@ -22,7 +23,87 @@ CONTACT_HINT_RE = re.compile(
     r"(contact|contacten|contact-us|contact_us|over-ons|over_ons|about|business|sales|partnership|partners|offerte|aanvraag)",
     re.I,
 )
+HTML_LANG_RE = re.compile(r"<html[^>]*\blang\s*=\s*['\"]?([a-zA-Z-]{2,12})", re.I)
 BLOCKED_LOCAL_PARTS = {"noreply", "no-reply", "donotreply", "do-not-reply", "example", "test"}
+
+HARD_COMPETITOR_PHRASES = (
+    "marketingbureau",
+    "marketing agency",
+    "online marketing bureau",
+    "online marketing agency",
+    "reclamebureau",
+    "communicatiebureau",
+    "digital agency",
+    "digitaal bureau",
+    "webbureau",
+    "web agency",
+    "webdesign bureau",
+    "webdesign agency",
+    "web development agency",
+    "webdevelopment bureau",
+    "seo bureau",
+    "seo agency",
+    "social media bureau",
+    "social media agency",
+    "content marketing agency",
+    "contentmarketingbureau",
+    "ai agency",
+    "ai bureau",
+    "automation agency",
+    "automatiseringsbureau",
+    "no-code agency",
+    "nocode agency",
+    "wordpress bureau",
+    "wordpress agency",
+    "elementor specialist",
+    "elementor agency",
+    "hosting provider",
+    "hostingprovider",
+    "webhosting bedrijf",
+    "webhosting provider",
+)
+
+SOFT_COMPETITOR_TERMS = (
+    "webdesign",
+    "web development",
+    "webdevelopment",
+    "website bouwen",
+    "webshop bouwen",
+    "zoekmachine optimalisatie",
+    "seo specialist",
+    "online marketing",
+    "social media marketing",
+    "social media beheer",
+    "content marketing",
+    "wordpress ontwikkeling",
+    "woocommerce ontwikkeling",
+    "elementor",
+    "ai automatisering",
+    "bedrijfsautomatisering",
+    "workflow automation",
+    "webhosting",
+)
+
+NL_MARKERS = (
+    " de ", " het ", " een ", " voor ", " van ", " met ", " onze ", " wij ",
+    " contact ", " diensten ", " over ons ", " bedrijf ", " klanten ",
+)
+EN_MARKERS = (
+    " the ", " and ", " for ", " with ", " our ", " we ", " contact ",
+    " services ", " about us ", " company ", " customers ",
+)
+
+
+def _normalize_text(value: object) -> str:
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    return re.sub(r"\s+", " ", text).strip().casefold()
+
+
+def _visible_text(html: str) -> str:
+    text = re.sub(r"(?is)<script.*?</script>|<style.*?</style>", " ", html or "")
+    text = re.sub(r"(?s)<[^>]+>", " ", text)
+    return f" {_normalize_text(unescape(text))} "
 
 
 def normalize_domain(value: object) -> str | None:
@@ -38,6 +119,51 @@ def normalize_domain(value: object) -> str | None:
     if host.startswith("www."):
         host = host[4:]
     return host or None
+
+
+def default_language_for_domain(domain: str | None) -> str:
+    return "nl" if str(domain or "").casefold().endswith(".nl") else "en"
+
+
+def detect_language(html: str, *, default: str = "nl") -> tuple[str, str]:
+    match = HTML_LANG_RE.search(html or "")
+    if match:
+        lang = match.group(1).casefold()
+        if lang.startswith("nl"):
+            return "nl", "html_lang"
+        if lang.startswith("en"):
+            return "en", "html_lang"
+
+    text = _visible_text(html)
+    nl_score = sum(text.count(marker) for marker in NL_MARKERS)
+    en_score = sum(text.count(marker) for marker in EN_MARKERS)
+    if nl_score >= en_score + 2:
+        return "nl", "page_text"
+    if en_score >= nl_score + 2:
+        return "en", "page_text"
+    return default, "market_fallback"
+
+
+def competitor_reason(candidate: dict, html: str | None = None) -> str | None:
+    hint_text = _normalize_text(
+        f"{candidate.get('name_hint') or ''} {candidate.get('category_hint') or ''}"
+    )
+    for phrase in HARD_COMPETITOR_PHRASES:
+        if _normalize_text(phrase) in hint_text:
+            return f"discovery_hint:{phrase}"
+
+    if not html:
+        return None
+
+    page_text = _visible_text(html)[:180000]
+    for phrase in HARD_COMPETITOR_PHRASES:
+        if f" {_normalize_text(phrase)} " in page_text:
+            return f"official_site:{phrase}"
+
+    soft_hits = [term for term in SOFT_COMPETITOR_TERMS if _normalize_text(term) in page_text]
+    if len(set(soft_hits)) >= 2:
+        return "official_site:multiple_overlapping_services"
+    return None
 
 
 def valid_email(value: str) -> bool:
@@ -147,7 +273,7 @@ def fetch_html(session, url: str, *, timeout: int = DEFAULT_TIMEOUT) -> tuple[st
 
 
 def purpose_hint(url: str, html: str) -> str:
-    text = f"{url} {re.sub(r'<[^>]+>', ' ', html or '')[:120000]}".casefold()
+    text = f"{url} {_visible_text(html)[:120000]}".casefold()
     strong = (
         "sales enquiries",
         "sales inquiry",
@@ -166,15 +292,28 @@ def purpose_hint(url: str, html: str) -> str:
 def inspect_candidate(candidate: dict, *, session_factory=requests.Session) -> dict:
     website = str(candidate.get("website_hint") or "").strip()
     domain = normalize_domain(website)
+    language_default = default_language_for_domain(domain)
     result = {
         **candidate,
         "official_domain_hint": domain,
         "public_business_emails": [],
         "email_source_urls": [],
+        "language": language_default,
+        "language_source": "market_fallback",
+        "excluded_competitor": False,
+        "exclusion_reason": None,
         "contact_basis_status": "unverified",
         "contact_basis_hint": "not_evaluated",
         "contact_discovery_status": "no_website",
     }
+
+    hint_reason = competitor_reason(candidate)
+    if hint_reason:
+        result["excluded_competitor"] = True
+        result["exclusion_reason"] = hint_reason
+        result["contact_discovery_status"] = "excluded_competitor"
+        return result
+
     if not website or not domain:
         return result
 
@@ -184,6 +323,17 @@ def inspect_candidate(candidate: dict, *, session_factory=requests.Session) -> d
     if not html or not final_url or normalize_domain(final_url) != domain:
         result["contact_discovery_status"] = "unreachable_or_cross_domain"
         result["website_http_status"] = status
+        return result
+
+    language, language_source = detect_language(html, default=language_default)
+    result["language"] = language
+    result["language_source"] = language_source
+
+    site_reason = competitor_reason(candidate, html)
+    if site_reason:
+        result["excluded_competitor"] = True
+        result["exclusion_reason"] = site_reason
+        result["contact_discovery_status"] = "excluded_competitor"
         return result
 
     pages.append((final_url, html))
@@ -238,10 +388,12 @@ def discover_contacts(payload: dict, *, max_workers: int = MAX_WORKERS) -> dict:
         results = list(executor.map(inspect_candidate, candidates))
 
     found = sum(1 for item in results if item.get("public_business_emails"))
+    excluded = sum(1 for item in results if item.get("excluded_competitor"))
     return {
-        "schema_version": "webactueel-public-contact-discovery/1.0",
+        "schema_version": "webactueel-public-contact-discovery/2.0",
         "candidate_count": len(results),
         "contact_found_count": found,
+        "excluded_competitor_count": excluded,
         "candidates": results,
         "safety": {
             "official_site_only": True,
@@ -269,6 +421,7 @@ def main() -> int:
     print(
         "PUBLIC_CONTACT_DISCOVERY=green "
         f"candidates={result['candidate_count']} contacts={result['contact_found_count']} "
+        f"excluded_competitors={result['excluded_competitor_count']} "
         "contact_basis_auto_pass=false email_send=false"
     )
     return 0
