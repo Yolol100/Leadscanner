@@ -9,7 +9,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 MAX_RESULTS = 5000
-EMAIL_RE = re.compile(r"(?<![A-Z0-9._%+-])([A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,63})(?![A-Z0-9._%+-])", re.I)
+EMAIL_RE = re.compile(r"(?<![A-Z0-9._%+-])([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,63})(?![A-Z0-9._%+-])", re.I)
 
 FORBIDDEN_CONTACT_FIELDS = {
     "email",
