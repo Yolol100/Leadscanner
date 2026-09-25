@@ -8,13 +8,10 @@ from prepare_growth_batch import prepare_batch
 class GrowthBatchTests(unittest.TestCase):
     def config(self):
         return {
-            "monthly_price_eur": {"min": 200, "max": 500},
-            "first_touch": {
-                "price_text": "Het kost doorgaans €200-€500 per maand, afhankelijk van de afgesproken scope."
-            },
+            "monthly_price_eur": {"min": 250, "max": 500},
         }
 
-    def test_unverified_contact_gets_template_only(self):
+    def test_dutch_contact_gets_dutch_concept_preview(self):
         contacts = {
             "candidates": [
                 {
@@ -23,86 +20,87 @@ class GrowthBatchTests(unittest.TestCase):
                     "official_domain_hint": "voorbeeld.nl",
                     "public_business_emails": ["info@voorbeeld.nl"],
                     "email_source_urls": ["https://voorbeeld.nl/contact"],
+                    "language": "nl",
+                    "language_source": "html_lang",
+                    "excluded_competitor": False,
                     "contact_basis_status": "unverified",
                     "contact_basis_hint": "generic_contact_only",
                 }
             ]
         }
-        result = prepare_batch(
-            contacts,
-            self.config(),
-            angle="website_webshop",
-            show_price=False,
-        )
+        result = prepare_batch(contacts, self.config())
         row = result["rows"][0]
         self.assertEqual(row["status"], "needs_contact_basis")
+        self.assertEqual(row["email"], "info@voorbeeld.nl")
         self.assertIsNone(row["body"])
-        self.assertIn("Groeiabonnement", row["template_preview"])
-        self.assertNotIn("€200", row["template_preview"])
+        self.assertEqual(row["subject_preview"], "Korte vraag over online groei")
+        self.assertIn("€250-€500", row["concept_preview"])
+        self.assertIn("vaste contactpersoon", row["concept_preview"])
+        self.assertIn("Geen interesse?", row["concept_preview"])
 
-    def test_passed_contact_can_get_addressed_copy(self):
+    def test_english_passed_contact_gets_english_addressed_copy(self):
         contacts = {
             "candidates": [
                 {
-                    "name_hint": "Voorbeeld BV",
-                    "website_hint": "https://voorbeeld.nl",
-                    "public_business_emails": ["sales@voorbeeld.nl"],
-                    "email_source_urls": ["https://voorbeeld.nl/business"],
+                    "name_hint": "Example Ltd",
+                    "website_hint": "https://example.com",
+                    "public_business_emails": ["sales@example.com"],
+                    "email_source_urls": ["https://example.com/contact"],
+                    "language": "en",
+                    "language_source": "html_lang",
+                    "excluded_competitor": False,
                     "contact_basis_status": "pass",
-                    "contact_basis_hint": "possible_purpose_specific",
+                    "contact_basis_hint": "reviewed_pass",
                 }
             ]
         }
-        result = prepare_batch(
-            contacts,
-            self.config(),
-            angle="automation",
-            show_price=True,
-        )
+        result = prepare_batch(contacts, self.config())
         row = result["rows"][0]
         self.assertEqual(row["status"], "draft_ready")
-        self.assertEqual(row["email"], "sales@voorbeeld.nl")
-        self.assertIn("€200-€500", row["body"])
-        self.assertIn("website/webshop", row["body"])
-        self.assertIn("vindbaarheid", row["body"])
+        self.assertEqual(row["subject"], "Quick question about online growth")
+        self.assertIn("€250-€500", row["body"])
+        self.assertIn("website/webshop improvements", row["body"])
+        self.assertIn("search visibility", row["body"])
         self.assertIn("social content", row["body"])
         self.assertIn("30%", row["body"])
-        self.assertIn("hosting", row["body"])
-        self.assertIn("vaste contactpersoon", row["body"])
-        self.assertIn("Andrew Baeten", row["body"])
-        self.assertIn("andrewbaeten.nl", row["body"])
-        self.assertIn("Geen interesse?", row["body"])
-        self.assertEqual(row["subject"], "Groeiabonnement voor Voorbeeld BV")
+        self.assertIn("hosting management", row["body"])
+        self.assertIn("one fixed contact", row["body"])
+        self.assertIn("Not interested?", row["body"])
 
-
-    def test_all_angles_render_without_old_broken_grammar(self):
+    def test_competitor_gets_no_concept(self):
         contacts = {
             "candidates": [
                 {
-                    "name_hint": "Voorbeeld BV",
-                    "public_business_emails": [],
-                    "contact_basis_status": "unverified",
+                    "name_hint": "Agency BV",
+                    "language": "nl",
+                    "excluded_competitor": True,
+                    "exclusion_reason": "official_site:digital agency",
+                    "public_business_emails": ["info@agency.nl"],
                 }
             ]
         }
-        for angle in (
-            "website_webshop",
-            "search_visibility",
-            "social_content",
-            "automation",
-            "hosting",
-            "fixed_contact",
-        ):
-            result = prepare_batch(
-                contacts,
-                self.config(),
-                angle=angle,
-                show_price=True,
-            )
-            preview = result["rows"][0]["template_preview"]
-            self.assertNotIn("om hun", preview)
-            self.assertGreaterEqual(len(preview.split()), 50)
-            self.assertLessEqual(len(preview.split()), 90)
+        result = prepare_batch(contacts, self.config())
+        row = result["rows"][0]
+        self.assertEqual(row["status"], "excluded_competitor")
+        self.assertIsNone(row["email"])
+        self.assertIsNone(row["concept_preview"])
+
+    def test_nl_and_en_copy_stay_short(self):
+        for language in ("nl", "en"):
+            contacts = {
+                "candidates": [
+                    {
+                        "name_hint": "Example",
+                        "language": language,
+                        "excluded_competitor": False,
+                        "public_business_emails": [],
+                    }
+                ]
+            }
+            result = prepare_batch(contacts, self.config())
+            words = len(result["rows"][0]["concept_preview"].split())
+            self.assertGreaterEqual(words, 55)
+            self.assertLessEqual(words, 95)
 
 
 if __name__ == "__main__":
