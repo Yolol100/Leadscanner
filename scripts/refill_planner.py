@@ -38,6 +38,14 @@ def _candidate_keys(candidate: dict) -> set[str]:
     if overture_id:
         keys.add(f"overture:{overture_id}")
 
+    google_maps_place_id = str(candidate.get("google_maps_place_id") or "").strip()
+    if google_maps_place_id:
+        keys.add(f"google_maps_place:{google_maps_place_id}")
+
+    google_maps_cid = str(candidate.get("google_maps_cid") or "").strip()
+    if google_maps_cid:
+        keys.add(f"google_maps_cid:{google_maps_cid}")
+
     for field in ("official_domain", "final_url", "website_hint"):
         domain = _normalize_domain(candidate.get(field))
         if domain:
@@ -53,6 +61,10 @@ def _candidate_keys(candidate: dict) -> set[str]:
 def _safe_candidate(candidate: dict) -> dict:
     allowed = {
         "overture_id",
+        "google_maps_place_id",
+        "google_maps_cid",
+        "maps_link_hint",
+        "discovery_sources",
         "name_hint",
         "category_hint",
         "website_hint",
@@ -174,6 +186,8 @@ def plan_refill(state: dict) -> dict:
             "gates_relaxed_to_hit_target": False,
             "dedupe_basis": [
                 "overture_id",
+                "google_maps_place_id",
+                "google_maps_cid",
                 "normalized_domain",
                 "verified_company_name_only",
             ],

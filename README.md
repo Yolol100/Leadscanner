@@ -78,3 +78,28 @@ Wanneer de verbonden ChatGPT/GitHub-surface geen `workflow_dispatch` aanbiedt, m
 `runtime/overture-discovery/<request_id>`
 
 Plaats alleen `requests/overture-discovery.json` op die branch. De request is begrensd tot één regio of bbox, maximaal 12 keywords en maximaal 100 candidate hints. De workflow schrijft alleen een 1-dags artifact en verwijdert de tijdelijke branch na completion. Dit transport verandert niets aan de Leads-ownergrenzen.
+
+
+## Hybrid discovery: Overture + Google Maps
+
+Naast de bestaande keyless Overture + PDOK-route bevat de repo nu een optionele handmatige workflow **Hybrid Maps Discovery**.
+
+Route:
+
+`PDOK regio -> Overture Places + gosom/google-maps-scraper -> bronveilige normalisatie -> cross-source dedupe -> Leads identity verification`
+
+Gebruik:
+
+1. Open **Actions -> Hybrid Maps Discovery -> Run workflow**.
+2. Vul `region`, `keywords`, `max_results` en eventueel `radius_km` in.
+3. De workflow draait Overture en de gepinde Docker-image `gosom/google-maps-scraper:v1.18.1`.
+4. De workflow bewaart alleen `hybrid-discovery.json` en `overture-discovery.json` als 1-dags artifact.
+5. Iedere kandidaat blijft `identity_status=needs_leads_verification` en moet daarna door de bestaande Leads-flow.
+
+Veiligheidsgrenzen:
+
+- Google Maps e-mail-, telefoon-, social- en reviewvelden worden niet naar de discovery-handoff doorgegeven;
+- cross-source dedupe gebruikt officieel domein zodra beschikbaar en bron-ID's (`overture_id`, `google_maps_place_id`, `google_maps_cid`);
+- een ongeverifieerde bedrijfsnaam alleen wordt niet gebruikt om kandidaten samen te voegen;
+- discovery evalueert geen contactbasis, schrijft niet naar DraftQueue en verzendt niets;
+- de bestaande Overture-route blijft zelfstandig beschikbaar als fallback.
