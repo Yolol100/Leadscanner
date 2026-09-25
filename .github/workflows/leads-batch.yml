@@ -1,0 +1,224 @@
+name: Leads Batch - Groeiabonnement
+
+on:
+  workflow_dispatch:
+    inputs:
+      region:
+        description: 'Plaats/regio, bijvoorbeeld Rotterdam'
+        required: true
+        type: string
+      keywords:
+        description: 'Komma- of newlinegescheiden branches/zoektermen'
+        required: true
+        type: string
+      target_candidates:
+        description: 'Doel aantal unieke kandidaten (1-5000)'
+        required: true
+        default: '500'
+        type: string
+      radius_km:
+        description: 'Overture zoekstraal in km (0.5-50)'
+        required: true
+        default: '8'
+        type: string
+      maps_depth:
+        description: 'Google Maps diepte (1-10)'
+        required: true
+        default: '3'
+        type: string
+      primary_angle:
+        description: 'website_webshop | search_visibility | social_content | automation | hosting | fixed_contact'
+        required: true
+        default: 'website_webshop'
+        type: string
+      show_price:
+        description: 'Toon €200-€500 p/m in campagnepreview'
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-discovery.txt
+
+      - name: Install dependencies
+        run: python3 -m pip install --disable-pip-version-check -r requirements.txt -r requirements-discovery.txt
+
+      - name: Validate campaign and build queries
+        env:
+          REGION: ${{ inputs.region }}
+          KEYWORDS: ${{ inputs.keywords }}
+          TARGET: ${{ inputs.target_candidates }}
+          RADIUS_KM: ${{ inputs.radius_km }}
+          MAPS_DEPTH: ${{ inputs.maps_depth }}
+          PRIMARY_ANGLE: ${{ inputs.primary_angle }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          region = os.environ["REGION"].strip()
+          if not region or len(region) > 120:
+              raise SystemExit("region must be 1-120 characters")
+
+          target = int(os.environ["TARGET"])
+          if not 1 <= target <= 5000:
+              raise SystemExit("target_candidates must be 1-5000")
+
+          radius = float(os.environ["RADIUS_KM"])
+          if not 0.5 <= radius <= 50:
+              raise SystemExit("radius_km must be 0.5-50")
+
+          depth = int(os.environ["MAPS_DEPTH"])
+          if not 1 <= depth <= 10:
+              raise SystemExit("maps_depth must be 1-10")
+
+          valid_angles = {
+              "website_webshop",
+              "search_visibility",
+              "social_content",
+              "automation",
+              "hosting",
+              "fixed_contact",
+          }
+          if os.environ["PRIMARY_ANGLE"] not in valid_angles:
+              raise SystemExit("invalid primary_angle")
+
+          keywords = [
+              item.strip()
+              for item in re.split(r"[,\n]+", os.environ["KEYWORDS"])
+              if item.strip()
+          ]
+          if not 1 <= len(keywords) <= 100:
+              raise SystemExit("provide 1-100 keywords")
+          if any(len(item) > 80 for item in keywords):
+              raise SystemExit("each keyword must be <=80 characters")
+
+          Path("results").mkdir(exist_ok=True)
+          Path("results/keywords.json").write_text(
+              json.dumps(keywords, ensure_ascii=False),
+              encoding="utf-8",
+          )
+          Path("results/google-maps-queries.txt").write_text(
+              "".join(f"{item} {region}\n" for item in keywords),
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Overture + PDOK discovery
+        env:
+          PYTHONPATH: scripts
+          REGION: ${{ inputs.region }}
+          TARGET: ${{ inputs.target_candidates }}
+          RADIUS_KM: ${{ inputs.radius_km }}
+        run: |
+          set -euo pipefail
+          args=(
+            --region "$REGION"
+            --radius-km "$RADIUS_KM"
+            --max-results "$TARGET"
+            --require-website
+            --output results/overture-discovery.json
+          )
+          while IFS= read -r keyword; do
+            args+=(--keyword "$keyword")
+          done < <(python3 -c 'import json; print("\n".join(json.load(open("results/keywords.json"))))')
+          python3 scripts/overture_discovery.py "${args[@]}"
+
+      - name: Google Maps discovery
+        env:
+          MAPS_DEPTH: ${{ inputs.maps_depth }}
+        run: |
+          set -euo pipefail
+          mkdir -p results/google-maps
+          docker pull gosom/google-maps-scraper:v1.18.1
+          docker run --rm \
+            -v "$PWD/results/google-maps-queries.txt:/queries.txt:ro" \
+            -v "$PWD/results/google-maps:/out" \
+            gosom/google-maps-scraper:v1.18.1 \
+            -input /queries.txt \
+            -results /out/results.csv \
+            -depth "$MAPS_DEPTH" \
+            -exit-on-inactivity 3m
+
+      - name: Merge and deduplicate
+        env:
+          TARGET: ${{ inputs.target_candidates }}
+        run: |
+          set -euo pipefail
+          python3 scripts/hybrid_discovery.py \
+            --overture results/overture-discovery.json \
+            --google-maps-csv results/google-maps/results.csv \
+            --output results/hybrid-discovery.json \
+            --max-results "$TARGET" \
+            --require-website
+
+      - name: Prepare campaign previews
+        env:
+          PRIMARY_ANGLE: ${{ inputs.primary_angle }}
+          SHOW_PRICE: ${{ inputs.show_price }}
+        run: |
+          set -euo pipefail
+          args=(
+            --contacts results/hybrid-discovery.json
+            --config config/growth-subscription.json
+            --angle "$PRIMARY_ANGLE"
+            --output-json results/growth-batch.json
+            --output-csv results/growth-batch.csv
+          )
+          if [ "$SHOW_PRICE" = "true" ]; then
+            args+=(--show-price)
+          fi
+          python3 scripts/prepare_growth_batch.py "${args[@]}"
+
+      - name: Verify no contact or send permission was inferred
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          batch = json.loads(Path("results/growth-batch.json").read_text(encoding="utf-8"))
+          if batch["draft_ready_count"] != 0:
+              raise SystemExit("discovery-only batch may not create addressed drafts")
+          for row in batch["rows"]:
+              if row["email"] is not None or row["body"] is not None:
+                  raise SystemExit("discovery batch must remain contact-free")
+          if batch["safety"]["automatic_send"] is not False:
+              raise SystemExit("automatic send must remain disabled")
+          print("COMPACT_GROWTH_DISCOVERY=green")
+          PY
+
+      - name: Remove raw Google Maps export
+        if: always()
+        run: rm -rf results/google-maps results/google-maps-queries.txt
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: growth-leads-batch-${{ github.run_number }}
+          path: |
+            results/hybrid-discovery.json
+            results/growth-batch.json
+            results/growth-batch.csv
+          if-no-files-found: warn
+          retention-days: 1
