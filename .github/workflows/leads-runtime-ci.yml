@@ -41,7 +41,7 @@ jobs:
           test -f scripts/hybrid_discovery.py
           test -f scripts/extract_public_contacts.py
           test -f scripts/prepare_growth_batch.py
-          test -f scripts/apply_contact_approvals.py
+          test -f scripts/approve_growth_batch.py
           test -f scripts/myhost_draft.py
 
           grep -q 'Leads Batch - Groeiabonnement' .github/workflows/leads-batch.yml
@@ -59,9 +59,14 @@ jobs:
           grep -q 'automatic_send.*False' scripts/prepare_growth_batch.py
           grep -q 'Only draft_ready rows may enter mijn.host' scripts/myhost_draft.py
           grep -q 'smtp_send.*not_available' scripts/myhost_draft.py
-          grep -q 'myhost_draft.py' .github/workflows/leads-batch.yml
+          test -f .github/workflows/myhost-drafts.yml
+          grep -q 'Create mijn.host concepts' .github/workflows/myhost-drafts.yml
+          grep -q 'approve_growth_batch.py' .github/workflows/myhost-drafts.yml
+          grep -q 'myhost_draft.py' .github/workflows/myhost-drafts.yml
+          grep -q 'OUTREACH_MAIL_PASSWORD' .github/workflows/myhost-drafts.yml
 
           ! grep -R --line-number --include='*.py' -E 'smtplib|sendmail\(|SMTP\(' scripts
           ! test -e scripts/refill_planner.py
           ! test -e scripts/sync_selected_drafts.py
+          ! grep -R --line-number --include='*.yml' -E 'smtp|SMTP' .github/workflows
           echo 'SIMPLE_GROWTH_CORE=green'
