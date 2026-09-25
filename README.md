@@ -2,7 +2,7 @@
 
 De standaardflow is bewust simpel:
 
-**bedrijven verzamelen -> concurrenten/bureaus uitsluiten -> officiële e-mail controleren -> NL/EN bepalen -> kort concept maken**
+**bedrijven verzamelen -> concurrenten/bureaus uitsluiten -> officiële e-mail controleren -> NL/EN bepalen -> kort concept maken -> goedgekeurde concepten in mijn.host opslaan**
 
 ## Groeiabonnement
 
@@ -23,7 +23,7 @@ Open **Actions -> Leads Batch - Groeiabonnement -> Run workflow**.
 
 De workflow doet:
 
-`PDOK + Overture + Google Maps -> dedupe -> maximaal 100 websites/contacten controleren -> bureaus uitsluiten -> publiek zakelijk e-mailadres vinden -> taal NL/EN bepalen -> Groeiabonnement-concept maken`
+`PDOK + Overture + Google Maps -> dedupe -> maximaal 100 websites/contacten controleren -> bureaus uitsluiten -> publiek zakelijk e-mailadres vinden -> taal NL/EN bepalen -> Groeiabonnement-concept maken -> draft_ready naar mijn.host Concepten`
 
 Discovery kan tot 5.000 kandidaatbedrijven verzamelen. De officiële website/e-mail/conceptcontrole blijft per gecontroleerde run maximaal 100 kandidaten, zodat de output reviewbaar blijft.
 
@@ -61,6 +61,20 @@ De mail is kort, ongeveer 55-95 woorden, en legt één Groeiabonnement uit voor 
 De zes onderdelen staan compact in de mail. De tekst bevat één CTA, Andrew Baeten + `andrewbaeten.nl` en een eenvoudige afmeldzin.
 
 De repo maakt een `concept_preview` zodra een bruikbaar bedrijf/contact is gevonden. Een daadwerkelijk geadresseerde `body` blijft geblokkeerd totdat de actuele contactbasis op `pass` staat.
+
+## mijn.host Concepten
+
+`scripts/myhost_draft.py` schrijft uitsluitend rijen met `status=draft_ready` én `contact_basis_status=pass` via IMAP naar de Concepten/Drafts-map van mijn.host en leest daarna exact ontvanger, onderwerp en body terug.
+
+Standaardinstellingen:
+
+- IMAP-host: `mail.andrewbaeten.nl`;
+- IMAP-poort: `993` met SSL;
+- account: `info@andrewbaeten.nl`;
+- wachtwoord uitsluitend via GitHub secret `OUTREACH_MAIL_PASSWORD`;
+- geen SMTP-code en geen automatische verzending.
+
+Als een run geen goedgekeurde rijen bevat, wordt geen mailboxverbinding gemaakt en worden nul drafts aangemaakt.
 
 ## Na interesse
 
