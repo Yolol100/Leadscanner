@@ -4,6 +4,7 @@ import unittest
 
 from extract_public_contacts import (
     discover_contact_links,
+    discover_contacts,
     extract_emails,
     valid_email,
 )
@@ -42,6 +43,10 @@ class PublicContactDiscoveryTests(unittest.TestCase):
         self.assertTrue(valid_email("info@example.nl"))
         self.assertFalse(valid_email("no-reply@example.nl"))
         self.assertFalse(valid_email("bad-address"))
+
+    def test_contact_discovery_is_bounded_to_100_candidates(self):
+        with self.assertRaises(ValueError):
+            discover_contacts({"candidates": [{} for _ in range(101)]})
 
 
 if __name__ == "__main__":
