@@ -17,13 +17,17 @@ De zes onderdelen:
 5. hosting overnemen/beheren wanneer passend;
 6. Andrew als vast contactpersoon voor aanpassingen en ondersteuning.
 
-## Enige standaardworkflow
+## Standaardflow
 
-Open **Actions -> Leads Batch - Groeiabonnement -> Run workflow**.
+Eerst: **Actions -> Leads Batch - Groeiabonnement -> Run workflow**.
 
-De workflow doet:
+Die Action doet:
 
-`PDOK + Overture + Google Maps -> dedupe -> maximaal 100 websites/contacten controleren -> bureaus uitsluiten -> publiek zakelijk e-mailadres vinden -> taal NL/EN bepalen -> Groeiabonnement-concept maken -> draft_ready naar mijn.host Concepten`
+`PDOK + Overture + Google Maps -> dedupe -> maximaal 100 websites/contacten controleren -> bureaus uitsluiten -> publiek zakelijk e-mailadres vinden -> taal NL/EN bepalen -> Groeiabonnement-preview + anonieme lead_id`
+
+Na review van de contactbasis: **Actions -> Create mijn.host concepts -> Run workflow**.
+
+Geef alleen de groene bron-run-ID en de expliciet goedgekeurde `growth-...` lead-ID's door. Deze tweede Action haalt de eerdere artifact op, zet exact die rijen op `draft_ready` en schrijft ze naar mijn.host Concepten. E-mailadressen hoeven niet als Action-input te worden geplakt.
 
 Discovery kan tot 5.000 kandidaatbedrijven verzamelen. De officiële website/e-mail/conceptcontrole blijft per gecontroleerde run maximaal 100 kandidaten, zodat de output reviewbaar blijft.
 
@@ -74,7 +78,7 @@ Standaardinstellingen:
 - wachtwoord uitsluitend via GitHub secret `OUTREACH_MAIL_PASSWORD`;
 - geen SMTP-code en geen automatische verzending.
 
-Als een run geen goedgekeurde rijen bevat, wordt geen mailboxverbinding gemaakt en worden nul drafts aangemaakt.
+De mijn.host Action accepteert alleen expliciet goedgekeurde lead-ID's. Onbekende IDs, uitgesloten concurrenten of onvolledige rijen blokkeren fail-closed. Dezelfde lead wordt idempotent niet dubbel aangemaakt.
 
 ## Na interesse
 
