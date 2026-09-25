@@ -1,93 +1,55 @@
 # Leadscanner
 
-De standaardflow is bewust simpel:
+De standaardflow is één run:
 
-**bedrijven verzamelen -> concurrenten/bureaus uitsluiten -> officiële e-mail controleren -> NL/EN bepalen -> kort concept maken -> goedgekeurde concepten in mijn.host opslaan**
+**vinden -> verifiëren/selecteren -> korte Groeiabonnement-mail maken -> mijn.host-concept + exacte readback**
 
-## Groeiabonnement
+Er wordt nergens automatisch verzonden.
 
-Er is één product: **Groeiabonnement**, normaal **€250-€500 per maand afhankelijk van scope**.
+## 1. Vinden
 
-De zes onderdelen:
+- PDOK + Overture Maps Places + Google Maps;
+- deduplicatie;
+- vroege uitsluiting van marketing/web/SEO/social/AI/automation/WordPress/Elementor/hosting-aanbieders;
+- Overture- en Google Maps-e-mailvelden zijn alleen kandidaat-contactgegevens.
 
-1. website/webshop verbeteren;
-2. zoekbaarheid verbeteren;
-3. social content verzorgen;
-4. geschikte repetitieve werkzaamheden tot circa 30% automatiseren waar aantoonbaar haalbaar is;
-5. hosting overnemen/beheren wanneer passend;
-6. Andrew als vast contactpersoon voor aanpassingen en ondersteuning.
+## 2. Verifiëren/selecteren
 
-## Standaardflow
+De officiële website controleert in één pass:
+- bedrijf/domein;
+- finale concurrentstatus;
+- NL/EN;
+- publiek zakelijk e-mailadres.
 
-Eerst: **Actions -> Leads Batch - Groeiabonnement -> Run workflow**.
+E-mailprioriteit:
+1. officiële website;
+2. Overture-emailcandidate;
+3. Google Maps-e-mailfallback.
 
-Die Action doet:
+Een publiek of gescrapet e-mailadres geeft nooit automatisch toestemming. Zonder bewezen contactbasis wordt het concept als `review_draft` opgeslagen zodat Andrew dit pas aan het eind beoordeelt.
 
-`PDOK + Overture + Google Maps -> dedupe -> maximaal 100 websites/contacten controleren -> bureaus uitsluiten -> publiek zakelijk e-mailadres vinden -> taal NL/EN bepalen -> Groeiabonnement-preview + anonieme lead_id`
+## 3. Mail maken
 
-Na review van de contactbasis: **Actions -> Create mijn.host concepts -> Run workflow**.
+Eén Groeiabonnement van **€250-€500 per maand afhankelijk van scope** met:
+- website/webshop verbeteren;
+- zoekbaarheid verbeteren;
+- social content verzorgen;
+- geschikte repetitieve werkzaamheden tot circa 30% automatiseren waar haalbaar;
+- hosting overnemen/beheren;
+- Andrew als vast contactpersoon.
 
-Geef alleen de groene bron-run-ID en de expliciet goedgekeurde `growth-...` lead-ID's door. Deze tweede Action haalt de eerdere artifact op, zet exact die rijen op `draft_ready` en schrijft ze naar mijn.host Concepten. E-mailadressen hoeven niet als Action-input te worden geplakt.
+Het onderwerp is kort en relevant. De body gebruikt twee korte openingsalinea's, een pakketregel met prijs, zes bullets, één lage-frictie CTA, een makkelijke afmelding en een duidelijke afzender/signatuur.
 
-Discovery kan tot 5.000 kandidaatbedrijven verzamelen. De officiële website/e-mail/conceptcontrole blijft per gecontroleerde run maximaal 100 kandidaten, zodat de output reviewbaar blijft.
+## 4. mijn.host-concept
 
-## Wat wordt uitgesloten
+De geselecteerde mail gaat direct via IMAP naar mijn.host Concepten/Drafts. De workflow leest ontvanger, onderwerp, body en eventuele review-header exact terug. Dezelfde `growth-...` lead-ID wordt niet dubbel aangemaakt.
 
-De Leadscanner benadert geen bedrijven waarvan de kernactiviteit materieel overlapt met Webactueel. Minimaal uitgesloten:
+**SMTP/sendcode bestaat niet. Andrew verzendt alleen handmatig na beoordeling.**
 
-- marketing-, reclame- en communicatiebureaus;
-- webbureaus, webdesign- en webdevelopmentbureaus;
-- SEO-bureaus;
-- social-media- en contentmarketingbureaus;
-- AI/automation/no-code agencies;
-- WordPress/WooCommerce/Elementor-bureaus;
-- digitale bureaus;
-- hostingproviders en hostingresellers.
+## Starten
 
-Naam/categorie wordt vroeg gebruikt om werk te besparen. De officiële website is de finale controle. Bij twijfel wordt een bedrijf overgeslagen.
+Dezelfde workflow ondersteunt:
+- normale `workflow_dispatch`;
+- een owner-only GitHub issue met titel `[growth-draft] ...` en JSON-body. Dit maakt ChatGPT-triggering mogelijk zonder een aparte runtime-controller.
 
-## E-mail en taal
-
-De Leadscanner gebruikt alleen een exact publiek zakelijk e-mailadres dat rechtstreeks op de officiële bedrijfswebsite staat. Er worden geen adressen geraden of geconstrueerd.
-
-De website bepaalt de mailtaal:
-
-- Nederlandstalige site -> Nederlandse mail;
-- Engelstalige site -> Engelse mail;
-- HTML `lang` heeft voorrang;
-- zichtbare paginatekst is fallback;
-- onduidelijk + Nederlandse markt -> Nederlands, anders Engels.
-
-## Conceptmail
-
-De mail is kort, ongeveer 55-95 woorden, en legt één Groeiabonnement uit voor **€250-€500 per maand afhankelijk van scope**.
-
-De zes onderdelen staan compact in de mail. De tekst bevat één CTA, Andrew Baeten + `andrewbaeten.nl` en een eenvoudige afmeldzin.
-
-De repo maakt een `concept_preview` zodra een bruikbaar bedrijf/contact is gevonden. Een daadwerkelijk geadresseerde `body` blijft geblokkeerd totdat de actuele contactbasis op `pass` staat.
-
-## mijn.host Concepten
-
-`scripts/myhost_draft.py` schrijft uitsluitend rijen met `status=draft_ready` én `contact_basis_status=pass` via IMAP naar de Concepten/Drafts-map van mijn.host en leest daarna exact ontvanger, onderwerp en body terug.
-
-Standaardinstellingen:
-
-- IMAP-host: `mail.andrewbaeten.nl`;
-- IMAP-poort: `993` met SSL;
-- account: `info@andrewbaeten.nl`;
-- wachtwoord uitsluitend via GitHub secret `OUTREACH_MAIL_PASSWORD`;
-- geen SMTP-code en geen automatische verzending.
-
-De mijn.host Action accepteert alleen expliciet goedgekeurde lead-ID's. Onbekende IDs, uitgesloten concurrenten of onvolledige rijen blokkeren fail-closed. Dezelfde lead wordt idempotent niet dubbel aangemaakt.
-
-## Na interesse
-
-Pas na een positieve reactie wordt specialistisch verdiept via Design, SEO, social, WordPress/Elementor/programmeren of hosting.
-
-## Veiligheidsgrenzen
-
-- een publiek e-mailadres is geen toestemming;
-- concurrenten krijgen geen concept;
-- geen automatische verzending;
-- geen verzonnen prospectproblemen, resultaten of garanties;
-- prospecttargets en mailboxbewijs horen niet in de default branch.
+Andere issue-auteurs kunnen de secret-using job niet uitvoeren.

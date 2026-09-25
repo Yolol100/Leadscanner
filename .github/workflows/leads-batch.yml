@@ -17,9 +17,14 @@ on:
         default: '100'
         type: string
       contact_check_limit:
-        description: 'Aantal kandidaten voor website/e-mail/taal/conceptcontrole (1-100)'
+        description: 'Aantal kandidaten voor verify/enrich (1-100)'
         required: true
         default: '100'
+        type: string
+      draft_limit:
+        description: 'Aantal mijn.host-concepten om automatisch te maken (1-100)'
+        required: true
+        default: '1'
         type: string
       radius_km:
         description: 'Overture zoekstraal in km (0.5-50)'
@@ -31,14 +36,26 @@ on:
         required: true
         default: '3'
         type: string
+  issues:
+    types: [opened]
 
 permissions:
   contents: read
+  issues: write
+
+concurrency:
+  group: leads-growth-draft
+  cancel-in-progress: false
 
 jobs:
   prepare:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issues' &&
+       github.event.issue.user.login == github.repository_owner &&
+       startsWith(github.event.issue.title, '[growth-draft]'))
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -55,180 +72,203 @@ jobs:
       - name: Install dependencies
         run: python3 -m pip install --disable-pip-version-check -r requirements.txt -r requirements-discovery.txt
 
-      - name: Validate campaign and build queries
+      - name: Resolve and validate request
+        id: request
         env:
-          REGION: ${{ inputs.region }}
-          KEYWORDS: ${{ inputs.keywords }}
-          TARGET: ${{ inputs.target_candidates }}
-          CONTACT_LIMIT: ${{ inputs.contact_check_limit }}
-          RADIUS_KM: ${{ inputs.radius_km }}
-          MAPS_DEPTH: ${{ inputs.maps_depth }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_PATH: ${{ github.event_path }}
+          INPUT_REGION: ${{ inputs.region }}
+          INPUT_KEYWORDS: ${{ inputs.keywords }}
+          INPUT_TARGET: ${{ inputs.target_candidates }}
+          INPUT_CONTACT_LIMIT: ${{ inputs.contact_check_limit }}
+          INPUT_DRAFT_LIMIT: ${{ inputs.draft_limit }}
+          INPUT_RADIUS_KM: ${{ inputs.radius_km }}
+          INPUT_MAPS_DEPTH: ${{ inputs.maps_depth }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import json
-          import os
-          import re
+          import json, os, re
           from pathlib import Path
 
-          region = os.environ["REGION"].strip()
+          if os.environ["EVENT_NAME"] == "issues":
+              event = json.loads(Path(os.environ["EVENT_PATH"]).read_text(encoding="utf-8"))
+              try:
+                  request = json.loads(event["issue"].get("body") or "{}")
+              except json.JSONDecodeError as exc:
+                  raise SystemExit(f"issue body must be JSON: {exc}")
+          else:
+              request = {
+                  "region": os.environ["INPUT_REGION"],
+                  "keywords": os.environ["INPUT_KEYWORDS"],
+                  "target_candidates": os.environ["INPUT_TARGET"],
+                  "contact_check_limit": os.environ["INPUT_CONTACT_LIMIT"],
+                  "draft_limit": os.environ["INPUT_DRAFT_LIMIT"],
+                  "radius_km": os.environ["INPUT_RADIUS_KM"],
+                  "maps_depth": os.environ["INPUT_MAPS_DEPTH"],
+              }
+
+          region = str(request.get("region") or "").strip()
           if not region or len(region) > 120:
               raise SystemExit("region must be 1-120 characters")
 
-          target = int(os.environ["TARGET"])
+          raw_keywords = request.get("keywords") or []
+          if isinstance(raw_keywords, str):
+              keywords = [x.strip() for x in re.split(r"[,\n]+", raw_keywords) if x.strip()]
+          elif isinstance(raw_keywords, list):
+              keywords = [str(x).strip() for x in raw_keywords if str(x).strip()]
+          else:
+              raise SystemExit("keywords must be a string or list")
+          if not 1 <= len(keywords) <= 100 or any(len(x) > 80 for x in keywords):
+              raise SystemExit("provide 1-100 keywords of <=80 characters")
+
+          target = int(request.get("target_candidates") or 100)
+          contact_limit = int(request.get("contact_check_limit") or 100)
+          draft_limit = int(request.get("draft_limit") or 1)
+          radius = float(request.get("radius_km") or 8)
+          maps_depth = int(request.get("maps_depth") or 3)
+
           if not 1 <= target <= 5000:
               raise SystemExit("target_candidates must be 1-5000")
-
-          contact_limit = int(os.environ["CONTACT_LIMIT"])
           if not 1 <= contact_limit <= 100:
               raise SystemExit("contact_check_limit must be 1-100")
-
-          radius = float(os.environ["RADIUS_KM"])
+          if not 1 <= draft_limit <= 100:
+              raise SystemExit("draft_limit must be 1-100")
           if not 0.5 <= radius <= 50:
               raise SystemExit("radius_km must be 0.5-50")
-
-          depth = int(os.environ["MAPS_DEPTH"])
-          if not 1 <= depth <= 10:
+          if not 1 <= maps_depth <= 10:
               raise SystemExit("maps_depth must be 1-10")
 
-          keywords = [
-              item.strip()
-              for item in re.split(r"[,\n]+", os.environ["KEYWORDS"])
-              if item.strip()
-          ]
-          if not 1 <= len(keywords) <= 100:
-              raise SystemExit("provide 1-100 keywords")
-          if any(len(item) > 80 for item in keywords):
-              raise SystemExit("each keyword must be <=80 characters")
-
           Path("results").mkdir(exist_ok=True)
-          Path("results/keywords.json").write_text(
-              json.dumps(keywords, ensure_ascii=False),
-              encoding="utf-8",
-          )
+          Path("results/keywords.json").write_text(json.dumps(keywords, ensure_ascii=False), encoding="utf-8")
           Path("results/google-maps-queries.txt").write_text(
-              "".join(f"{item} {region}\n" for item in keywords),
-              encoding="utf-8",
+              "".join(f"{item} {region}\n" for item in keywords), encoding="utf-8"
           )
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as out:
+              out.write(f"region={region}\n")
+              out.write(f"target={target}\n")
+              out.write(f"contact_limit={contact_limit}\n")
+              out.write(f"draft_limit={draft_limit}\n")
+              out.write(f"radius={radius}\n")
+              out.write(f"maps_depth={maps_depth}\n")
           PY
 
       - name: Overture + PDOK discovery
         env:
           PYTHONPATH: scripts
-          REGION: ${{ inputs.region }}
-          TARGET: ${{ inputs.target_candidates }}
-          RADIUS_KM: ${{ inputs.radius_km }}
+          REGION: ${{ steps.request.outputs.region }}
+          TARGET: ${{ steps.request.outputs.target }}
+          RADIUS_KM: ${{ steps.request.outputs.radius }}
         run: |
           set -euo pipefail
-          args=(
-            --region "$REGION"
-            --radius-km "$RADIUS_KM"
-            --max-results "$TARGET"
-            --require-website
-            --output results/overture-discovery.json
-          )
-          while IFS= read -r keyword; do
-            args+=(--keyword "$keyword")
-          done < <(python3 -c 'import json; print("\n".join(json.load(open("results/keywords.json"))))')
+          args=(--region "$REGION" --radius-km "$RADIUS_KM" --max-results "$TARGET" --require-website --output results/overture-discovery.json)
+          while IFS= read -r keyword; do args+=(--keyword "$keyword"); done < <(python3 -c 'import json; print("\n".join(json.load(open("results/keywords.json"))))')
           python3 scripts/overture_discovery.py "${args[@]}"
 
-      - name: Google Maps discovery
+      - name: Google Maps discovery + public email candidates
         env:
-          MAPS_DEPTH: ${{ inputs.maps_depth }}
+          MAPS_DEPTH: ${{ steps.request.outputs.maps_depth }}
         run: |
           set -euo pipefail
           mkdir -p results/google-maps
           docker pull gosom/google-maps-scraper:v1.18.1
-          docker run --rm \
-            -v "$PWD/results/google-maps-queries.txt:/queries.txt:ro" \
-            -v "$PWD/results/google-maps:/out" \
-            gosom/google-maps-scraper:v1.18.1 \
-            -input /queries.txt \
-            -results /out/results.csv \
-            -depth "$MAPS_DEPTH" \
-            -exit-on-inactivity 3m
+          docker run --rm             -v "$PWD/results/google-maps-queries.txt:/queries.txt:ro"             -v "$PWD/results/google-maps:/out"             gosom/google-maps-scraper:v1.18.1             -input /queries.txt             -results /out/results.csv             -depth "$MAPS_DEPTH"             -email             -exit-on-inactivity 3m
 
       - name: Merge and deduplicate
         env:
-          TARGET: ${{ inputs.target_candidates }}
+          TARGET: ${{ steps.request.outputs.target }}
         run: |
           set -euo pipefail
-          python3 scripts/hybrid_discovery.py \
-            --overture results/overture-discovery.json \
-            --google-maps-csv results/google-maps/results.csv \
-            --output results/hybrid-discovery.json \
-            --max-results "$TARGET" \
-            --require-website
+          python3 scripts/hybrid_discovery.py             --overture results/overture-discovery.json             --google-maps-csv results/google-maps/results.csv             --output results/hybrid-discovery.json             --max-results "$TARGET" --require-website
 
-      - name: Select reviewed contact batch
+      - name: Select verify/enrich batch
         env:
-          CONTACT_LIMIT: ${{ inputs.contact_check_limit }}
+          CONTACT_LIMIT: ${{ steps.request.outputs.contact_limit }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import json
-          import os
+          import json, os
           from pathlib import Path
-
           payload = json.loads(Path("results/hybrid-discovery.json").read_text(encoding="utf-8"))
-          limit = int(os.environ["CONTACT_LIMIT"])
-          candidates = (payload.get("candidates") or [])[:limit]
+          candidates = (payload.get("candidates") or [])[:int(os.environ["CONTACT_LIMIT"])]
           Path("results/contact-input.json").write_text(
               json.dumps({"candidates": candidates}, indent=2, ensure_ascii=False) + "\n",
               encoding="utf-8",
           )
-          print(f"CONTACT_BATCH_SELECTED={len(candidates)}")
+          print(f"VERIFY_ENRICH_SELECTED={len(candidates)}")
           PY
 
-      - name: Exclude overlapping agencies, check official email and detect NL/EN
+      - name: Verify company, exclude competitors, detect language and resolve email
         run: |
           set -euo pipefail
-          python3 scripts/extract_public_contacts.py \
-            --input results/contact-input.json \
-            --output results/public-contacts.json
+          python3 scripts/extract_public_contacts.py             --input results/contact-input.json             --output results/public-contacts.json
 
-      - name: Make short Growth Subscription concepts
+      - name: Build concise Growth Subscription mail
+        env:
+          DRAFT_LIMIT: ${{ steps.request.outputs.draft_limit }}
         run: |
           set -euo pipefail
-          python3 scripts/prepare_growth_batch.py \
-            --contacts results/public-contacts.json \
-            --config config/growth-subscription.json \
-            --output-json results/growth-batch.json \
-            --output-csv results/growth-batch.csv
+          python3 scripts/prepare_growth_batch.py             --contacts results/public-contacts.json             --config config/growth-subscription.json             --output-json results/growth-batch.json             --output-csv results/growth-batch.csv             --draft-limit "$DRAFT_LIMIT"
 
-      - name: Verify compact flow boundaries
+      - name: Verify draft boundaries
         run: |
           set -euo pipefail
           python3 - <<'PY'
           import json
           from pathlib import Path
-
           batch = json.loads(Path("results/growth-batch.json").read_text(encoding="utf-8"))
+          if batch["draft_candidate_count"] < 1:
+              raise SystemExit("No usable public business email found; no real prospect draft can be created")
           for row in batch["rows"]:
-              if row["status"] == "excluded_competitor":
-                  if row["email"] is not None or row["concept_preview"] is not None:
-                      raise SystemExit("excluded competitor received contact/copy output")
-              if row["email"] and row["language"] not in {"nl", "en"}:
-                  raise SystemExit("email candidate missing NL/EN language")
-              if row["contact_basis_status"] != "pass" and row["body"] is not None:
-                  raise SystemExit("addressed body generated without contact-basis pass")
+              if row["status"] == "excluded_competitor" and (row["email"] is not None or row["concept_preview"] is not None):
+                  raise SystemExit("excluded competitor received contact/copy output")
+              if row["status"] in {"draft_ready", "review_draft"}:
+                  if not row["email"] or not row["subject"] or not row["body"]:
+                      raise SystemExit("draft row is incomplete")
+                  if row["language"] not in {"nl", "en"}:
+                      raise SystemExit("draft row missing NL/EN language")
           if batch["safety"]["automatic_send"] is not False:
               raise SystemExit("automatic send must remain disabled")
-          print("SIMPLE_GROWTH_FLOW=green")
+          print("AUTO_DRAFT_FLOW=green")
           PY
 
-      - name: Remove raw Google Maps export
+      - name: Create and exactly read back mijn.host concept
+        env:
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME || 'Andrew Baeten' }}
+          OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
+          OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH=scripts python3 scripts/myhost_draft.py             --batch results/growth-batch.json             --report results/myhost-drafts.json | tee results/myhost-drafts.txt
+          grep -q '^MYHOST_DRAFT_SYNC=green ' results/myhost-drafts.txt
+          grep -q 'smtp_send=not_available' results/myhost-drafts.txt
+
+      - name: Remove raw discovery residue
         if: always()
         run: rm -rf results/google-maps results/google-maps-queries.txt results/contact-input.json
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
-          name: growth-leads-batch-${{ github.run_number }}
+          name: growth-draft-${{ github.run_number }}
           path: |
             results/hybrid-discovery.json
             results/public-contacts.json
             results/growth-batch.json
             results/growth-batch.csv
+            results/myhost-drafts.json
+            results/myhost-drafts.txt
           if-no-files-found: warn
           retention-days: 1
+
+      - name: Close owner request issue
+        if: success() && github.event_name == 'issues'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --body "Growth draft created in mijn.host and exact readback passed. Nothing was sent."
+          gh issue close "$ISSUE_NUMBER"
