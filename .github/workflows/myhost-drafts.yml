@@ -1,0 +1,98 @@
+name: Create mijn.host concepts
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: 'Run ID van een groene Leads Batch - Groeiabonnement'
+        required: true
+        type: string
+      approved_lead_ids:
+        description: 'Alleen expliciet goedgekeurde growth-... lead IDs, komma/spatie/newline gescheiden'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: myhost-drafts
+  cancel-in-progress: false
+
+jobs:
+  create-drafts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Validate source run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          set -euo pipefail
+          meta="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID")"
+          name="$(printf '%s' "$meta" | python3 -c 'import json,sys; print(json.load(sys.stdin)["name"])')"
+          conclusion="$(printf '%s' "$meta" | python3 -c 'import json,sys; print(json.load(sys.stdin)["conclusion"])')"
+          if [ "$name" != "Leads Batch - Groeiabonnement" ] || [ "$conclusion" != "success" ]; then
+            echo "Source run must be a successful Leads Batch - Groeiabonnement run" >&2
+            exit 2
+          fi
+
+      - name: Download reviewed batch artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          set -euo pipefail
+          rm -rf downloaded
+          mkdir -p downloaded
+          gh run download "$SOURCE_RUN_ID" --repo "$GITHUB_REPOSITORY" --dir downloaded
+          mapfile -t matches < <(find downloaded -type f -name growth-batch.json -print)
+          if [ "${#matches[@]}" -ne 1 ]; then
+            echo "Expected exactly one growth-batch.json, found ${#matches[@]}" >&2
+            exit 2
+          fi
+          cp "${matches[0]}" source-growth-batch.json
+
+      - name: Approve exact reviewed lead IDs
+        env:
+          APPROVED_LEAD_IDS: ${{ inputs.approved_lead_ids }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH=scripts python3 scripts/approve_growth_batch.py             --input source-growth-batch.json             --output approved-growth-batch.json             --approved-lead-ids "$APPROVED_LEAD_IDS" | tee approval-result.txt
+          grep -q '^LEAD_APPROVAL=green ' approval-result.txt
+
+      - name: Create and read back mijn.host drafts
+        env:
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME || 'Andrew Baeten' }}
+          OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
+          OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH=scripts python3 scripts/myhost_draft.py             --batch approved-growth-batch.json             --report myhost-drafts.json | tee myhost-drafts.txt
+          grep -q '^MYHOST_DRAFT_SYNC=green ' myhost-drafts.txt
+          grep -q 'smtp_send=not_available' myhost-drafts.txt
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: myhost-draft-report-${{ github.run_number }}
+          path: |
+            approval-result.txt
+            myhost-drafts.json
+            myhost-drafts.txt
+          if-no-files-found: warn
+          retention-days: 1
