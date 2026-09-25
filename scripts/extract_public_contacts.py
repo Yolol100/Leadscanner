@@ -324,6 +324,8 @@ def inspect_candidate(candidate: dict, *, session_factory=requests.Session) -> d
         "official_domain_hint": domain,
         "public_business_emails": [],
         "email_source_urls": [],
+        "email_source_types": [],
+        "email_source_refs": [],
         "language": language_default,
         "language_source": "market_fallback",
         "excluded_competitor": False,
@@ -374,6 +376,8 @@ def inspect_candidate(candidate: dict, *, session_factory=requests.Session) -> d
 
     emails: list[str] = []
     sources: list[str] = []
+    source_types: list[str] = []
+    source_refs: list[str] = []
     hints: list[str] = []
     for page_url, page_html in pages:
         page_emails = extract_emails(page_html)
@@ -383,18 +387,46 @@ def inspect_candidate(candidate: dict, *, session_factory=requests.Session) -> d
             if email not in emails:
                 emails.append(email)
                 sources.append(page_url)
+                source_types.append("official_site")
+                source_refs.append(page_url)
             if len(emails) >= 3:
                 break
         if len(emails) >= 3:
             break
 
+    if not emails:
+        for item in candidate.get("discovery_email_candidates") or []:
+            if not isinstance(item, dict):
+                continue
+            email = str(item.get("email") or "").strip().lower().strip(".,;:()[]<>")
+            if not valid_email(email) or email in emails:
+                continue
+            source = str(item.get("source") or "discovery").strip() or "discovery"
+            emails.append(email)
+            source_types.append(source)
+            source_refs.append(
+                str(candidate.get("maps_link_hint") if source == "google_maps" else candidate.get("overture_id") or source)
+            )
+            if len(emails) >= 3:
+                break
+
     result["public_business_emails"] = emails
     result["email_source_urls"] = sources
-    result["contact_discovery_status"] = "found" if emails else "no_public_email_found"
+    result["email_source_types"] = source_types
+    result["email_source_refs"] = source_refs
+    if emails:
+        result["contact_discovery_status"] = (
+            "found_official_site" if source_types and source_types[0] == "official_site"
+            else "found_discovery_fallback"
+        )
+        result["contact_basis_status"] = "review_required"
+    else:
+        result["contact_discovery_status"] = "no_public_email_found"
+        result["contact_basis_status"] = "unverified"
     result["contact_basis_hint"] = (
-        "possible_purpose_specific" if "possible_purpose_specific" in hints else "generic_contact_only"
+        "possible_purpose_specific" if "possible_purpose_specific" in hints
+        else ("public_email_review_required" if emails else "no_email")
     )
-    result["contact_basis_status"] = "unverified"
     return result
 
 
@@ -416,13 +448,14 @@ def discover_contacts(payload: dict, *, max_workers: int = MAX_WORKERS) -> dict:
     found = sum(1 for item in results if item.get("public_business_emails"))
     excluded = sum(1 for item in results if item.get("excluded_competitor"))
     return {
-        "schema_version": "webactueel-public-contact-discovery/2.0",
+        "schema_version": "webactueel-public-contact-discovery/2.1",
         "candidate_count": len(results),
         "contact_found_count": found,
         "excluded_competitor_count": excluded,
         "candidates": results,
         "safety": {
-            "official_site_only": True,
+            "official_site_preferred": True,
+            "discovery_email_fallback_allowed": True,
             "max_pages_per_site": MAX_PAGES_PER_SITE,
             "email_addresses_guessed": False,
             "contact_basis_auto_pass": False,

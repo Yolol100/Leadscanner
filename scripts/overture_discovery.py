@@ -64,6 +64,21 @@ def _first_text(value) -> str | None:
     return None
 
 
+EMAIL_RE = re.compile(r"(?<![A-Z0-9._%+-])([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,63})(?![A-Z0-9._%+-])", re.I)
+
+
+def _email_candidates(properties: dict) -> list[dict]:
+    found: list[dict] = []
+    seen: set[str] = set()
+    for item in _flatten_text(properties.get("emails")):
+        for match in EMAIL_RE.findall(str(item or "")):
+            email = match.strip().lower().strip(".,;:()[]<>")
+            if email and email not in seen:
+                seen.add(email)
+                found.append({"email": email, "source": "overture"})
+    return found
+
+
 def _website_hint(properties: dict) -> str | None:
     websites = properties.get("websites")
     if isinstance(websites, str):
@@ -282,6 +297,7 @@ def read_candidates(
                     "longitude": lon,
                     "latitude": lat,
                     "confidence": confidence_value,
+                    "discovery_email_candidates": _email_candidates(properties),
                     "identity_status": "needs_leads_verification",
                 }
             )
@@ -437,7 +453,7 @@ def discover(
             candidate["website_probe"] = probe_result
 
     return {
-        "schema_version": "webactueel-overture-discovery/1.0",
+        "schema_version": "webactueel-overture-discovery/1.1",
         "source": "Overture Maps Places",
         "source_access": "public cloud GeoParquet via official overturemaps client",
         "authentication": "none",
@@ -448,7 +464,9 @@ def discover(
         "candidate_count": len(candidates),
         "candidates": candidates,
         "privacy_and_scope": {
-            "emails_emitted": False,
+            "email_candidates_emitted": any(
+                item.get("discovery_email_candidates") for item in candidates
+            ),
             "phones_emitted": False,
             "socials_emitted": False,
             "contact_basis_evaluated": False,
@@ -491,7 +509,7 @@ def main() -> int:
     print(
         "OVERTURE_DISCOVERY=green "
         f"candidates={result['candidate_count']} authentication=none "
-        "identity=needs_leads_verification draftqueue_write=false email_send=false"
+        "identity=needs_leads_verification email_candidates=bounded draftqueue_write=false email_send=false"
     )
     return 0
 

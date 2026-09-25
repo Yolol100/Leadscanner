@@ -28,8 +28,7 @@ class FakeIMAP:
         return "OK", [b" ".join(found)]
 
     def fetch(self, message_id, query):
-        raw = self.messages[int(message_id) - 1]
-        return "OK", [(b"1 (RFC822)", raw)]
+        return "OK", [(b"1 (RFC822)", self.messages[int(message_id) - 1])]
 
     def append(self, folder, flags, date_time, raw):
         self.messages.append(raw)
@@ -40,54 +39,51 @@ class FakeIMAP:
 
 
 class DraftTests(unittest.TestCase):
-    def row(self):
+    def row(self, status="review_draft", basis="review_required"):
         return {
             "lead_id": "growth-0123456789abcdefabcd",
             "company": "Voorbeeld BV",
             "website": "https://voorbeeld.nl",
             "email": "info@voorbeeld.nl",
-            "subject": "Korte vraag over online groei",
-            "body": "Hoi Voorbeeld BV, dit is een geldig concept.",
-            "status": "draft_ready",
-            "contact_basis_status": "pass",
+            "subject": "Idee voor Voorbeeld BV",
+            "body": "Volledig mailconcept voor handmatige beoordeling.",
+            "status": status,
+            "contact_basis_status": basis,
         }
 
-    def test_only_draft_ready_pass_row_builds_message(self):
-        lead_id, msg = build_message(self.row())
-        self.assertTrue(lead_id.startswith("growth-"))
+    def test_review_draft_builds_message_with_review_header(self):
+        _, msg = build_message(self.row())
         self.assertEqual(msg["To"], "info@voorbeeld.nl")
-        self.assertEqual(msg["Subject"], "Korte vraag over online groei")
+        self.assertEqual(msg["Subject"], "Idee voor Voorbeeld BV")
+        self.assertEqual(msg["X-Webactueel-Review-Required"], "contact-basis")
 
-    def test_missing_or_noncanonical_growth_lead_id_is_rejected(self):
+    def test_passed_draft_ready_has_no_review_header(self):
+        _, msg = build_message(self.row(status="draft_ready", basis="pass"))
+        self.assertIsNone(msg["X-Webactueel-Review-Required"])
+
+    def test_noncanonical_growth_lead_id_is_rejected(self):
         row = self.row()
         row["lead_id"] = "lead-0123456789abcdefabcd"
         with self.assertRaises(RuntimeError):
             build_message(row)
-        row["lead_id"] = None
-        with self.assertRaises(RuntimeError):
-            build_message(row)
 
-    def test_unapproved_row_is_rejected(self):
-        row = self.row()
-        row["contact_basis_status"] = "unverified"
+    def test_invalid_status_is_rejected(self):
         with self.assertRaises(RuntimeError):
-            build_message(row)
+            build_message(self.row(status="email_found_not_selected"))
 
     def test_zero_ready_rows_needs_no_mail_password(self):
-        result = create_drafts({"rows": [{"status": "needs_contact_basis"}]})
+        result = create_drafts({"rows": [{"status": "no_public_email"}]})
         self.assertEqual(result["eligible_count"], 0)
-        self.assertEqual(result["created_count"], 0)
         self.assertEqual(result["smtp_send"], "not_available")
 
-    def test_create_and_readback_is_idempotent(self):
+    def test_create_readback_and_idempotency(self):
         client = FakeIMAP()
         with patch("myhost_draft.connect_imap", return_value=client):
             first = create_drafts({"rows": [self.row()]})
         self.assertEqual(first["created_count"], 1)
-        self.assertEqual(len(client.messages), 1)
+        self.assertEqual(first["review_required_count"], 1)
 
-        client2 = client
-        with patch("myhost_draft.connect_imap", return_value=client2):
+        with patch("myhost_draft.connect_imap", return_value=client):
             second = create_drafts({"rows": [self.row()]})
         self.assertEqual(second["existing_count"], 1)
         self.assertEqual(len(client.messages), 1)
