@@ -9,6 +9,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 MAX_RESULTS = 5000
+EMAIL_RE = re.compile(r"(?<![A-Z0-9._%+-])([A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,63})(?![A-Z0-9._%+-])", re.I)
 
 FORBIDDEN_CONTACT_FIELDS = {
     "email",
@@ -54,6 +55,18 @@ def _normalize_domain(value: object) -> str | None:
     return host or None
 
 
+def _parse_email_candidates(value: object, source: str) -> list[dict]:
+    text = str(value or "")
+    found: list[dict] = []
+    seen: set[str] = set()
+    for match in EMAIL_RE.findall(text):
+        email = match.strip().lower().strip(".,;:()[]<>")
+        if email and email not in seen:
+            seen.add(email)
+            found.append({"email": email, "source": source})
+    return found
+
+
 def _float_or_none(value: object) -> float | None:
     text = str(value or "").strip()
     if not text:
@@ -94,6 +107,7 @@ def normalize_overture_candidates(payload: dict, *, require_website: bool) -> li
             "longitude": _float_or_none(raw.get("longitude")),
             "latitude": _float_or_none(raw.get("latitude")),
             "confidence": _float_or_none(raw.get("confidence")),
+            "discovery_email_candidates": list(raw.get("discovery_email_candidates") or []),
             "discovery_sources": ["overture"],
             "identity_status": "needs_leads_verification",
         }
@@ -130,6 +144,7 @@ def read_google_maps_candidates(path: Path, *, require_website: bool) -> tuple[l
                 "website_hint": website,
                 "longitude": _float_or_none(row.get("longitude")),
                 "latitude": _float_or_none(row.get("latitude")),
+                "discovery_email_candidates": _parse_email_candidates(row.get("emails"), "google_maps"),
                 "discovery_sources": ["google_maps"],
                 "identity_status": "needs_leads_verification",
             }
@@ -164,6 +179,18 @@ def _merge_candidate(base: dict, incoming: dict) -> dict:
     merged["discovery_sources"] = sorted(
         set(base.get("discovery_sources") or []) | set(incoming.get("discovery_sources") or [])
     )
+
+    combined_emails: list[dict] = []
+    seen_emails: set[str] = set()
+    for item in list(base.get("discovery_email_candidates") or []) + list(incoming.get("discovery_email_candidates") or []):
+        if not isinstance(item, dict):
+            continue
+        email = str(item.get("email") or "").strip().lower()
+        if not email or email in seen_emails:
+            continue
+        seen_emails.add(email)
+        combined_emails.append({"email": email, "source": str(item.get("source") or "discovery")})
+    merged["discovery_email_candidates"] = combined_emails
 
     for field in (
         "overture_id",
@@ -247,7 +274,7 @@ def combine_candidates(
         candidate["identity_status"] = "needs_leads_verification"
 
     return {
-        "schema_version": "webactueel-hybrid-discovery/1.0",
+        "schema_version": "webactueel-hybrid-discovery/1.1",
         "sources": [
             {
                 "id": "overture",
@@ -268,7 +295,7 @@ def combine_candidates(
         "dropped_undedupeable_count": dropped_undedupeable,
         "candidates": merged,
         "privacy_and_scope": {
-            "emails_emitted": False,
+            "email_candidates_emitted": any(item.get("discovery_email_candidates") for item in merged),
             "phones_emitted": False,
             "socials_emitted": False,
             "google_reviews_emitted": False,
@@ -326,7 +353,7 @@ def main() -> int:
         f"candidates={result['candidate_count']} "
         f"overture={result['source_counts']['overture_candidates']} "
         f"google_maps={result['source_counts']['google_maps_candidates']} "
-        "contact_fields=false identity=needs_leads_verification"
+        "contact_fields=bounded_email_candidates identity=needs_leads_verification"
     )
     return 0
 
