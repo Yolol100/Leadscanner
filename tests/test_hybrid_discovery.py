@@ -10,7 +10,7 @@ from hybrid_discovery import combine_candidates, read_google_maps_candidates
 
 
 class HybridDiscoveryTests(unittest.TestCase):
-    def test_cross_source_domain_deduplication_and_contact_stripping(self):
+    def test_cross_source_domain_deduplication_and_bounded_email_candidates(self):
         overture = {
             "candidates": [
                 {
@@ -20,6 +20,7 @@ class HybridDiscoveryTests(unittest.TestCase):
                     "website_hint": "https://www.example.nl/",
                     "longitude": 4.48,
                     "latitude": 51.92,
+                    "discovery_email_candidates": [{"email": "overture@example.nl", "source": "overture"}],
                     "identity_status": "needs_leads_verification",
                 }
             ]
@@ -52,12 +53,16 @@ class HybridDiscoveryTests(unittest.TestCase):
         self.assertEqual(candidate["overture_id"], "ov-1")
         self.assertEqual(candidate["google_maps_place_id"], "place-1")
         self.assertEqual(candidate["identity_status"], "needs_leads_verification")
-        self.assertFalse(result["privacy_and_scope"]["emails_emitted"])
+        self.assertTrue(result["privacy_and_scope"]["email_candidates_emitted"])
+        self.assertIn(
+            {"email": "overture@example.nl", "source": "overture"},
+            candidate["discovery_email_candidates"],
+        )
         self.assertFalse(result["privacy_and_scope"]["phones_emitted"])
         self.assertFalse(result["privacy_and_scope"]["draftqueue_write"])
         self.assertFalse(result["privacy_and_scope"]["email_send"])
 
-    def test_google_maps_reader_drops_contact_fields(self):
+    def test_google_maps_reader_keeps_email_candidates_but_drops_raw_contact_fields(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "results.csv"
             with path.open("w", encoding="utf-8", newline="") as handle:
@@ -99,6 +104,10 @@ class HybridDiscoveryTests(unittest.TestCase):
             self.assertEqual(len(candidates), 1)
             self.assertNotIn("phone", candidates[0])
             self.assertNotIn("emails", candidates[0])
+            self.assertEqual(
+                candidates[0]["discovery_email_candidates"],
+                [{"email": "sales@example.nl", "source": "google_maps"}],
+            )
             self.assertEqual(candidates[0]["website_hint"], "https://example.nl")
 
     def test_max_results_is_bounded_to_5000(self):

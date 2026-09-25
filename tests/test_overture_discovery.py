@@ -116,7 +116,7 @@ class OvertureDiscoveryTests(unittest.TestCase):
             self.assertTrue(output.exists())
             self.assertEqual(output.read_text(encoding="utf-8"), "")
 
-    def test_candidate_filter_emits_no_contact_fields(self):
+    def test_candidate_filter_emits_bounded_email_candidates_only(self):
         path = self.write_geojsonseq(
             [
                 self.feature(
@@ -149,7 +149,8 @@ class OvertureDiscoveryTests(unittest.TestCase):
         self.assertEqual(rows[0]["overture_id"], "overture-1")
         self.assertEqual(rows[0]["website_hint"], "https://bakker.example/")
         serialized = json.dumps(rows)
-        self.assertNotIn("must-not-leak@example.test", serialized)
+        self.assertIn("must-not-leak@example.test", serialized)
+        self.assertIn("discovery_email_candidates", rows[0])
         self.assertNotIn("+31000000000", serialized)
         self.assertNotIn("social.example", serialized)
         self.assertEqual(rows[0]["identity_status"], "needs_leads_verification")
