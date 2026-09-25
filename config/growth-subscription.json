@@ -1,0 +1,52 @@
+{
+  "schema_version": "webactueel-growth-subscription/1.0",
+  "product_id": "growth_subscription",
+  "name": "Groeiabonnement",
+  "monthly_price_eur": {
+    "min": 200,
+    "max": 500,
+    "determined_by": "agreed_scope",
+    "guaranteed_fixed_price_per_prospect": false
+  },
+  "service_areas": [
+    {
+      "id": "website_webshop",
+      "label": "Website/webshop verbeteren",
+      "promise": "Doorlopende kleine verbeteringen aan website of webshop binnen afgesproken scope."
+    },
+    {
+      "id": "search_visibility",
+      "label": "Zoekbaarheid verbeteren",
+      "promise": "SEO, content en technische verbeteringen zonder rankinggarantie."
+    },
+    {
+      "id": "social_content",
+      "label": "Social content verzorgen",
+      "promise": "Social-contentvoorbereiding en productie volgens afgesproken frequentie, zonder bereikgarantie."
+    },
+    {
+      "id": "automation",
+      "label": "Bedrijfsprocessen automatiseren",
+      "promise": "Geschikte repetitieve processen automatiseren; doel tot circa 30% waar vooraf meetbaar en haalbaar, nooit als gegarandeerde besparing."
+    },
+    {
+      "id": "hosting",
+      "label": "Hosting overnemen/beheren",
+      "promise": "Hosting, migratie en beheer waar technisch en contractueel passend; externe kosten/scope apart bevestigen."
+    },
+    {
+      "id": "fixed_contact",
+      "label": "Vast contactpersoon",
+      "promise": "Andrew blijft vast contactpersoon voor afgesproken aanpassingen en ondersteuning."
+    }
+  ],
+  "first_touch": {
+    "min_words": 50,
+    "max_words": 90,
+    "one_product": true,
+    "one_primary_angle": true,
+    "default_show_price": false,
+    "easy_no": true,
+    "price_text": "Meestal €200-€500 per maand, afhankelijk van scope."
+  }
+}
