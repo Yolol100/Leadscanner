@@ -104,6 +104,18 @@ class OvertureDiscoveryTests(unittest.TestCase):
             download_overture_places((4.3, 51.8, 4.7, 52.1), output, runner=fake_runner)
             self.assertTrue(output.exists())
 
+    @patch("overture_discovery.shutil.which", return_value="/usr/local/bin/overturemaps")
+    def test_successful_empty_download_creates_empty_output(self, which):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = Path(tmpdir) / "places.geojsonseq"
+
+            def fake_runner(args, check, capture_output, text, timeout):
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+            download_overture_places((4.3, 51.8, 4.7, 52.1), output, runner=fake_runner)
+            self.assertTrue(output.exists())
+            self.assertEqual(output.read_text(encoding="utf-8"), "")
+
     def test_candidate_filter_emits_no_contact_fields(self):
         path = self.write_geojsonseq(
             [
