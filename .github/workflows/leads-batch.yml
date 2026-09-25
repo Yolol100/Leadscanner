@@ -164,14 +164,14 @@ jobs:
           while IFS= read -r keyword; do args+=(--keyword "$keyword"); done < <(python3 -c 'import json; print("\n".join(json.load(open("results/keywords.json"))))')
           python3 scripts/overture_discovery.py "${args[@]}"
 
-      - name: Google Maps discovery + public email candidates
+      - name: Google Maps discovery
         env:
           MAPS_DEPTH: ${{ steps.request.outputs.maps_depth }}
         run: |
           set -euo pipefail
           mkdir -p results/google-maps
           docker pull gosom/google-maps-scraper:v1.18.1
-          docker run --rm             -v "$PWD/results/google-maps-queries.txt:/queries.txt:ro"             -v "$PWD/results/google-maps:/out"             gosom/google-maps-scraper:v1.18.1             -input /queries.txt             -results /out/results.csv             -depth "$MAPS_DEPTH"             -email             -exit-on-inactivity 3m
+          docker run --rm             -v "$PWD/results/google-maps-queries.txt:/queries.txt:ro"             -v "$PWD/results/google-maps:/out"             gosom/google-maps-scraper:v1.18.1             -input /queries.txt             -results /out/results.csv             -depth "$MAPS_DEPTH"             -exit-on-inactivity 3m
 
       - name: Merge and deduplicate
         env:
@@ -201,6 +201,38 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/extract_public_contacts.py             --input results/contact-input.json             --output results/public-contacts.json
+
+      - name: Targeted Google Maps email fallback if needed
+        env:
+          DRAFT_LIMIT: ${{ steps.request.outputs.draft_limit }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          payload = json.loads(Path("results/public-contacts.json").read_text(encoding="utf-8"))
+          needed = int(os.environ["DRAFT_LIMIT"])
+          found = int(payload.get("contact_found_count") or 0)
+          lines = []
+          if found < needed:
+              for item in payload.get("candidates") or []:
+                  if item.get("excluded_competitor") or item.get("public_business_emails"):
+                      continue
+                  link = str(item.get("maps_link_hint") or "").strip()
+                  if link and link not in lines:
+                      lines.append(link)
+          Path("results/google-maps-email-fallback-input.txt").write_text(
+              "".join(x + "\n" for x in lines), encoding="utf-8"
+          )
+          print(f"TARGETED_MAPS_EMAIL_CANDIDATES={len(lines)} need={max(needed-found,0)}")
+          PY
+          if [ -s results/google-maps-email-fallback-input.txt ]; then
+            docker run --rm               -v "$PWD/results/google-maps-email-fallback-input.txt:/queries.txt:ro"               -v "$PWD/results/google-maps:/out"               gosom/google-maps-scraper:v1.18.1               -input /queries.txt               -results /out/email-fallback.csv               -depth 1               -email               -exit-on-inactivity 3m
+            PYTHONPATH=scripts python3 scripts/apply_google_maps_email_fallback.py               --contacts results/public-contacts.json               --google-maps-csv results/google-maps/email-fallback.csv               --output results/public-contacts.json
+          else
+            echo "TARGETED_MAPS_EMAIL_FALLBACK=not_needed"
+          fi
 
       - name: Build concise Growth Subscription mail
         env:
@@ -265,7 +297,7 @@ jobs:
 
       - name: Remove raw discovery residue
         if: always()
-        run: rm -rf results/google-maps results/google-maps-queries.txt results/contact-input.json
+        run: rm -rf results/google-maps results/google-maps-queries.txt results/google-maps-email-fallback-input.txt results/contact-input.json
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()

@@ -11,7 +11,7 @@ Er wordt nergens automatisch verzonden.
 - PDOK + Overture Maps Places + Google Maps;
 - deduplicatie;
 - vroege uitsluiting van marketing/web/SEO/social/AI/automation/WordPress/Elementor/hosting-aanbieders;
-- Overture- en Google Maps-e-mailvelden zijn alleen kandidaat-contactgegevens.
+- Overture-e-mailvelden zijn alleen kandidaat-contactgegevens; Google Maps e-mailcrawling gebeurt alleen gericht als fallback.
 
 ## 2. Verifiëren/selecteren
 
@@ -24,9 +24,9 @@ De officiële website controleert in één pass:
 E-mailprioriteit:
 1. officiële website;
 2. Overture-emailcandidate;
-3. Google Maps-e-mailfallback.
+3. alleen wanneer nog onvoldoende drafts mogelijk zijn: gerichte Google Maps-e-mailfallback voor de resterende kandidaten.
 
-Formulierplaceholders, voorbeeldadressen en duidelijk corrupte scraper-adressen worden geweigerd. Zichtbare paginatekst mag een fout of verouderd `html lang` attribuut overrulen.
+De brede Google Maps-discovery crawlt niet standaard alle websites voor e-mail. Dat voorkomt dubbel werk; alleen ontbrekende e-mailgevallen krijgen zo nodig een gerichte fallback. Formulierplaceholders, voorbeeldadressen en duidelijk corrupte scraper-adressen worden geweigerd. Zichtbare paginatekst mag een fout of verouderd `html lang` attribuut overrulen.
 
 Een publiek of gescrapet e-mailadres geeft nooit automatisch toestemming. Zonder bewezen contactbasis wordt het concept als `review_draft` opgeslagen zodat Andrew dit pas aan het eind beoordeelt.
 

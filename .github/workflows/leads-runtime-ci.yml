@@ -36,9 +36,12 @@ jobs:
           test -f scripts/hybrid_discovery.py
           test -f scripts/extract_public_contacts.py
           test -f scripts/prepare_growth_batch.py
+          test -f scripts/apply_google_maps_email_fallback.py
           test -f scripts/myhost_draft.py
           grep -q 'issues:' .github/workflows/leads-batch.yml
           grep -q "github.event.issue.user.login == github.repository_owner" .github/workflows/leads-batch.yml
+          grep -q 'Targeted Google Maps email fallback if needed' .github/workflows/leads-batch.yml
+          grep -q 'google-maps-email-fallback-input' .github/workflows/leads-batch.yml
           grep -q -- '-email' .github/workflows/leads-batch.yml
           grep -q 'Create and exactly read back mijn.host concept' .github/workflows/leads-batch.yml
           grep -q 'MYHOST_REQUIRED_DRAFTS=green' .github/workflows/leads-batch.yml
@@ -49,6 +52,7 @@ jobs:
           grep -q 'review_required' scripts/extract_public_contacts.py
           grep -q 'PLACEHOLDER_LOCAL_PARTS' scripts/extract_public_contacts.py
           grep -q 'email_fits_business_context' scripts/extract_public_contacts.py
+          grep -q 'google_maps_targeted_fallback' scripts/apply_google_maps_email_fallback.py
           grep -q 'Idee voor' scripts/prepare_growth_batch.py
           grep -q 'An idea for' scripts/prepare_growth_batch.py
           grep -q 'review_draft' scripts/prepare_growth_batch.py
