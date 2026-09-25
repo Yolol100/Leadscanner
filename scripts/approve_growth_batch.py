@@ -6,6 +6,9 @@ import re
 from pathlib import Path
 
 
+LEAD_ID_RE = re.compile(r"^growth-[0-9a-f]{20}$")
+
+
 def parse_lead_ids(raw: str) -> set[str]:
     return {
         item.strip()
@@ -15,6 +18,13 @@ def parse_lead_ids(raw: str) -> set[str]:
 
 
 def approve_batch(batch: dict, approved_lead_ids: set[str]) -> dict:
+    invalid_ids = sorted(lead_id for lead_id in approved_lead_ids if not LEAD_ID_RE.fullmatch(lead_id))
+    if invalid_ids:
+        raise RuntimeError(
+            "Approved lead_ids must match growth-<20 lowercase hex>: "
+            + ", ".join(invalid_ids)
+        )
+
     approved_count = 0
     rows = batch.get("rows") or []
 

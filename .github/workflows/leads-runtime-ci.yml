@@ -64,6 +64,8 @@ jobs:
           grep -q 'approve_growth_batch.py' .github/workflows/myhost-drafts.yml
           grep -q 'myhost_draft.py' .github/workflows/myhost-drafts.yml
           grep -q 'OUTREACH_MAIL_PASSWORD' .github/workflows/myhost-drafts.yml
+          grep -q 'LEAD_ID_RE' scripts/approve_growth_batch.py
+          grep -q 'canonical reviewed growth-' scripts/myhost_draft.py
 
           ! grep -R --line-number --include='*.py' -E 'smtplib|sendmail\(|SMTP\(' scripts
           ! test -e scripts/refill_planner.py

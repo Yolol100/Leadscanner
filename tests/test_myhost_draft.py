@@ -42,6 +42,7 @@ class FakeIMAP:
 class DraftTests(unittest.TestCase):
     def row(self):
         return {
+            "lead_id": "growth-0123456789abcdefabcd",
             "company": "Voorbeeld BV",
             "website": "https://voorbeeld.nl",
             "email": "info@voorbeeld.nl",
@@ -56,6 +57,15 @@ class DraftTests(unittest.TestCase):
         self.assertTrue(lead_id.startswith("growth-"))
         self.assertEqual(msg["To"], "info@voorbeeld.nl")
         self.assertEqual(msg["Subject"], "Korte vraag over online groei")
+
+    def test_missing_or_noncanonical_growth_lead_id_is_rejected(self):
+        row = self.row()
+        row["lead_id"] = "lead-0123456789abcdefabcd"
+        with self.assertRaises(RuntimeError):
+            build_message(row)
+        row["lead_id"] = None
+        with self.assertRaises(RuntimeError):
+            build_message(row)
 
     def test_unapproved_row_is_rejected(self):
         row = self.row()

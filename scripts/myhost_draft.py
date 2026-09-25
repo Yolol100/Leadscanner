@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import imaplib
 import json
 import os
@@ -15,6 +14,7 @@ from pathlib import Path
 
 
 MAX_DRAFTS_PER_RUN = 100
+LEAD_ID_RE = re.compile(r"^growth-[0-9a-f]{20}$")
 
 
 def normalize_text(value: object) -> str:
@@ -23,16 +23,9 @@ def normalize_text(value: object) -> str:
 
 def stable_lead_id(row: dict) -> str:
     existing = normalize_text(row.get("lead_id"))
-    if existing:
-        return existing
-    seed = "|".join(
-        [
-            normalize_text(row.get("email")).casefold(),
-            normalize_text(row.get("website")).casefold(),
-            normalize_text(row.get("subject")).casefold(),
-        ]
-    )
-    return "growth-" + hashlib.sha256(seed.encode("utf-8")).hexdigest()[:20]
+    if not LEAD_ID_RE.fullmatch(existing):
+        raise RuntimeError("mijn.host requires a canonical reviewed growth-<20 hex> lead_id")
+    return existing
 
 
 def build_message(row: dict) -> tuple[str, EmailMessage]:
