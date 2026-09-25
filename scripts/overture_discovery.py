@@ -18,7 +18,7 @@ import requests
 PDOK_FREE_URL = "https://api.pdok.nl/bzk/locatieserver/search/v3_1/free"
 DEFAULT_RADIUS_KM = 8.0
 DEFAULT_TIMEOUT_SECONDS = 15
-MAX_RESULTS = 100
+MAX_RESULTS = 5000
 MAX_PROBE_WORKERS = 8
 
 
@@ -212,7 +212,7 @@ def download_overture_places(
         detail = (result.stderr or result.stdout or "unknown overturemaps failure").strip()
         raise RuntimeError(f"overturemaps download failed: {detail[-1000:]}")
     if not output_path.exists():
-        raise RuntimeError("overturemaps download completed without an output file")
+        output_path.touch()
 
 
 def _matches_keywords(properties: dict, keywords: list[str]) -> bool:

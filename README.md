@@ -1,105 +1,89 @@
 # Leadscanner
 
-De enige flow is:
+De standaardflow is compact:
 
-**candidate discovery -> officiële website/webshop -> evidence -> één primaire aanbodfamilie -> contactbasis -> korte mail -> controle -> mijn.host-concept -> stop.**
+**campagne -> Overture + Google Maps -> dedupe -> kandidatenbestand -> lichte verificatie/contactbasis -> korte Groeiabonnement-copy -> draft/export -> reactie**
 
-ChatGPT/Leads doet de inhoudelijke kwalificatie en de Nederlandse/EER-contactpoort. Deze repo doet de technische DraftQueue-validatie en het mijn.host-concept. De keyless discovery-capability gebruikt Overture Maps Places plus PDOK voor Nederlandse regiolocatie; discovery-hints zijn nooit prospectbewijs en Leads moet bedrijf + domein rechtstreeks op de officiële site verifiëren. Er is geen SMTP-sendroute.
+## Groeiabonnement
 
-## Canonieke uitvoerprompt
+De Leadscanner ondersteunt één product: **Groeiabonnement**, normaal **€200-€500 per maand afhankelijk van scope**.
 
-Gebruik deze prompt voor een leadrun:
+De zes servicegebieden zijn:
 
-> Zoek [AANTAL] nieuwe bedrijven via de door Leads geautoriseerde discovery-capability binnen [BRANCHE/REGIO]. Gebruik discovery alleen om kandidaten te vinden. Open voor iedere kandidaat de echte officiële website of webshop en ga alleen verder als bedrijf en website aantoonbaar bij elkaar horen. Beoordeel exact vier commerciële aanbodfamilies (`ai_agents`, `social_media`, `search_visibility`, `website_webshop`) en kies precies één primaire familie op basis van concrete actuele evidence. Bewaar de observatie en bron-URL. Zoek het beste publieke zakelijke e-mailadres, raad nooit een adres en bewaar de exacte officiële bronpagina. Ga vóór DraftQueue alleen door wanneer Leads een aantoonbare contactbasis heeft vastgesteld; publiek zichtbaar e-mailadres alleen is onvoldoende. Schrijf één korte natuurlijke mail met één observatie, één primair resultaat, hoogstens één prijsloze value-first actie, één kleine permission-CTA, Andrew Baeten + andrewbaeten.nl en een simpele afmelding. Controleer alles. Zet alleen volledig gecontroleerde leads in DraftQueue. Maak daarna uitsluitend mijn.host IMAP-concepten. Lees ieder concept terug en vergelijk ontvanger, onderwerp en body exact. Verzend niets.
+1. website/webshop verbeteren;
+2. zoekbaarheid verbeteren;
+3. social content verzorgen;
+4. geschikte repetitieve bedrijfsprocessen automatiseren, met een doel tot circa 30% waar aantoonbaar haalbaar en meetbaar, nooit als garantie;
+5. hosting overnemen/beheren wanneer passend;
+6. Andrew als vast contactpersoon voor aanpassingen en ondersteuning binnen afgesproken scope.
 
-## Actieve DraftQueue
+Een campagne gebruikt altijd één product en één primaire ingang:
+`website_webshop`, `search_visibility`, `social_content`, `automation`, `hosting` of `fixed_contact`.
 
-Alleen deze velden zijn actief:
+## Standaard: Leads Batch - Groeiabonnement
 
-`lead_id`, `company`, `website`, `offer`, `observation`, `observation_source_url`, `email`, `email_source_url`, `subject`, `body`, `contact_basis_status`, `contact_basis_type`, `contact_basis_evidence_ref`, `outreach_status`, `draft_queue_eligible`
+Open **Actions -> Leads Batch - Groeiabonnement -> Run workflow**.
 
-Toegestane `offer`-waarden:
+Geef op:
 
-- `ai_agents`
-- `social_media`
-- `search_visibility`
-- `website_webshop`
+- regio;
+- branche/keywords;
+- doel aantal kandidaten, maximaal 5.000 per run;
+- Google Maps depth;
+- primaire ingang;
+- of de prijsrange al in de campagnepreview mag staan.
 
-Legacy labels zoals `conversion_contact`, `wordpress_elementor` en `seo` worden afgewezen. WordPress/Elementor/contactflow/technische SEO zijn onderliggende oplossingsvormen en geen extra commerciële hoofdaanbiedingen.
+De workflow doet:
 
-De twee source-URL's moeten op de officiële website/webshop staan. De repo valideert daarnaast de finale contactbasisvelden fail-closed: `contact_basis_status=pass`, een toegestane `contact_basis_type`, `outreach_status=ready_for_draftqueue` en `draft_queue_eligible=true`.
+`PDOK -> Overture + gosom/google-maps-scraper:v1.18.1 -> cross-source dedupe -> growth-batch.csv/json`
 
-## Mijn.host command
+De output is bewust alleen een **kandidaten- en campagnepreview**. Discovery levert geen contacttoestemming op, maakt geen geadresseerde mail en verzendt niets.
 
-De normale route gebruikt `workflow_dispatch` op **Create selected mijn.host concepts** met:
+## Contactcontrole
 
-- `lead_ids`: komma- of newlinegescheiden DraftQueue-ID's;
-- `expected_count`: exact verwacht aantal.
-
-Wanneer de verbonden ChatGPT/GitHub-surface geen `workflow_dispatch`-actie aanbiedt, mag dezelfde gecontroleerde runtime ook via een tijdelijke branch worden gestart:
-
-`runtime/myhost-draft/<lead_id>`
-
-Daarvoor gelden harde grenzen:
-
-- precies één bestaande DraftQueue-`lead_id` per runtimebranch;
-- alleen letters, cijfers, punt, underscore en koppelteken; maximaal 80 tekens;
-- de eerste `create`-listener heeft geen mailboxsecrets;
-- de IMAP-runtime start pas daarna via `workflow_run` en checkt expliciet de default branch uit;
-- dezelfde `validate_row`, DraftQueue-readback en exacte IMAP-readback blijven gelden;
-- de tijdelijke runtimebranch wordt na afloop door een apart cleanup-job verwijderd;
-- er is nog steeds geen GitHub-issue/commentroute en geen SMTP-sendroute.
-
-`DraftQueue.body` blijft de gevalideerde kerntekst. Vlak vóór IMAP voegt de runtime uitsluitend het privé geconfigureerde zakelijke postadres toe als compliance-footer. Ontbreekt dat adres, dan blokkeert de run. Daarna worden `To`, `Subject` en de volledige uiteindelijke conceptbody exact uit mijn.host teruggelezen. Het privé postadres komt niet in de publieke repo of logs.
-
-
-## Keyless discovery
-
-`Overture keyless discovery` is de repository-capability voor discovery zonder API-key, account of secret.
-
-Route:
-
-`PDOK regio -> Overture Places bbox -> branchefilter -> website-hint -> optionele directe HTTP-readback -> Leads identity verification`
+Publieke zakelijke e-mailcontrole blijft een aparte begrensde stap via `scripts/extract_public_contacts.py`.
 
 Grenzen:
 
-- PDOK Locatieserver is open/gratis en wordt alleen gebruikt om een Nederlandse plaats/gemeente naar een centrumcoördinaat te vertalen;
-- de officiële `overturemaps==1.0.2` client leest de meest recente Overture Places-release rechtstreeks uit publieke cloudopslag;
-- Overture `emails`, `phones` en `socials` worden nooit in het discovery-handoffrecord opgenomen;
-- Overture naam/categorie/website zijn alleen candidate hints; ze autoriseren geen prospectclaim;
-- `identity_status` blijft `needs_leads_verification` totdat Leads de officiële website rechtstreeks heeft gecontroleerd;
-- geen contactbasis, offerkeuze, DraftQueue-write of mailactie in discovery;
-- artifacts worden 1 dag bewaard en prospecttargets worden niet naar de default branch geschreven;
-- voor grotere aantallen gebruikt de controller meerdere compacte branche/regioqueries in plaats van één onbegrensde download.
+- alleen de officiële bedrijfswebsite;
+- maximaal 3 pagina's per site;
+- maximaal 100 kandidaten per gecontroleerde run;
+- geen geraden of geconstrueerde e-mailadressen;
+- een gevonden e-mailadres zet `contact_basis_status` nooit automatisch op `pass`;
+- zonder geldige contactbasis geen geadresseerde copy, DraftQueue of send.
 
+## Copy
 
-Wanneer de verbonden ChatGPT/GitHub-surface geen `workflow_dispatch` aanbiedt, mag keyless discovery via een tijdelijke branch worden gestart:
+`scripts/prepare_growth_batch.py` gebruikt één Groeiabonnement en één primaire campagnehoek.
 
-`runtime/overture-discovery/<request_id>`
+- ongeveer 50-90 woorden;
+- één kleine CTA;
+- geen volledige website-audit vóór first touch;
+- geen verzonnen prospectproblemen of resultaten;
+- prijsrange €200-€500 p/m alleen wanneer de campagne bewust price-led is.
 
-Plaats alleen `requests/overture-discovery.json` op die branch. De request is begrensd tot één regio of bbox, maximaal 12 keywords en maximaal 100 candidate hints. De workflow schrijft alleen een 1-dags artifact en verwijdert de tijdelijke branch na completion. Dit transport verandert niets aan de Leads-ownergrenzen.
+## Na positieve interesse
 
+Pas na een reactie of expliciete shortlist worden specialistische analyses gebruikt:
 
-## Hybrid discovery: Overture + Google Maps
+- Design/UX voor website of webshop;
+- SEO/search voor vindbaarheid;
+- social evidence voor social;
+- automation/WordPress/Elementor/programmeren voor uitvoering;
+- hostinganalyse wanneer overname relevant is.
 
-Naast de bestaande keyless Overture + PDOK-route bevat de repo nu een optionele handmatige workflow **Hybrid Maps Discovery**.
+De zware audits zijn dus niet verwijderd; ze zijn uit de standaard bulk-first-touchflow gehaald.
 
-Route:
+## Legacy/kleine routes
 
-`PDOK regio -> Overture Places + gosom/google-maps-scraper -> bronveilige normalisatie -> cross-source dedupe -> Leads identity verification`
+`Hybrid Maps Discovery` en `Overture keyless discovery` blijven beschikbaar voor kleine discoveryruns.
 
-Gebruik:
+De bestaande mijn.host IMAP-route blijft alleen voor kleine/manual conceptflows. De repo bevat geen standaard automatische bulk-sendroute.
 
-1. Open **Actions -> Hybrid Maps Discovery -> Run workflow**.
-2. Vul `region`, `keywords`, `max_results` en eventueel `radius_km` in.
-3. De workflow draait Overture en de gepinde Docker-image `gosom/google-maps-scraper:v1.18.1`.
-4. De workflow bewaart alleen `hybrid-discovery.json` en `overture-discovery.json` als 1-dags artifact.
-5. Iedere kandidaat blijft `identity_status=needs_leads_verification` en moet daarna door de bestaande Leads-flow.
+## Veiligheidsgrenzen
 
-Veiligheidsgrenzen:
-
-- Google Maps e-mail-, telefoon-, social- en reviewvelden worden niet naar de discovery-handoff doorgegeven;
-- cross-source dedupe gebruikt officieel domein zodra beschikbaar en bron-ID's (`overture_id`, `google_maps_place_id`, `google_maps_cid`);
-- een ongeverifieerde bedrijfsnaam alleen wordt niet gebruikt om kandidaten samen te voegen;
-- discovery evalueert geen contactbasis, schrijft niet naar DraftQueue en verzendt niets;
-- de bestaande Overture-route blijft zelfstandig beschikbaar als fallback.
+- discovery-hints zijn geen prospectbewijs of contacttoestemming;
+- Google Maps e-mail-, telefoon-, social- en reviewvelden worden niet naar discovery-output doorgegeven;
+- prospecttargets en mailboxbewijs horen niet in de default branch;
+- geen automatische verzending;
+- provider-, bounce-, suppression-, afmeld- en contactbasisregels mogen niet worden omzeild.

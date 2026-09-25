@@ -104,6 +104,18 @@ class OvertureDiscoveryTests(unittest.TestCase):
             download_overture_places((4.3, 51.8, 4.7, 52.1), output, runner=fake_runner)
             self.assertTrue(output.exists())
 
+    @patch("overture_discovery.shutil.which", return_value="/usr/local/bin/overturemaps")
+    def test_successful_empty_download_creates_empty_output(self, which):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = Path(tmpdir) / "places.geojsonseq"
+
+            def fake_runner(args, check, capture_output, text, timeout):
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+            download_overture_places((4.3, 51.8, 4.7, 52.1), output, runner=fake_runner)
+            self.assertTrue(output.exists())
+            self.assertEqual(output.read_text(encoding="utf-8"), "")
+
     def test_candidate_filter_emits_no_contact_fields(self):
         path = self.write_geojsonseq(
             [
@@ -250,14 +262,14 @@ class OvertureDiscoveryTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["overture_id"], "dup-1")
 
-    def test_direct_discovery_max_results_is_bounded_to_100(self):
+    def test_direct_discovery_max_results_is_bounded_to_5000(self):
         path = self.write_geojsonseq([])
         try:
             with self.assertRaises(ValueError):
                 read_candidates(
                     path,
                     keywords=[],
-                    max_results=101,
+                    max_results=5001,
                     require_website=False,
                 )
         finally:

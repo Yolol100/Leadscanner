@@ -8,7 +8,7 @@ import unicodedata
 from pathlib import Path
 from urllib.parse import urlparse
 
-MAX_RESULTS = 100
+MAX_RESULTS = 5000
 
 FORBIDDEN_CONTACT_FIELDS = {
     "email",
