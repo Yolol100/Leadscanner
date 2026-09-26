@@ -12,6 +12,8 @@ from urllib.parse import unquote, urljoin, urlparse
 
 import requests
 
+from url_safety import is_public_http_url
+
 MAX_WORKERS = 12
 MAX_CANDIDATES_PER_RUN = 100
 MAX_PAGES_PER_SITE = 3
@@ -187,11 +189,14 @@ def competitor_reason(candidate: dict, html: str | None = None) -> str | None:
         return None
 
     page_text = _visible_text(html)[:180000]
+    normalized_page = _normalize_text(page_text)
+    tokenized_page = " " + re.sub(r"[^a-z0-9]+", " ", normalized_page) + " "
     for phrase in HARD_COMPETITOR_PHRASES:
-        if f" {_normalize_text(phrase)} " in page_text:
+        normalized_phrase = re.sub(r"[^a-z0-9]+", " ", _normalize_text(phrase)).strip()
+        if normalized_phrase and f" {normalized_phrase} " in tokenized_page:
             return f"official_site:{phrase}"
 
-    soft_hits = [term for term in SOFT_COMPETITOR_TERMS if _normalize_text(term) in page_text]
+    soft_hits = [term for term in SOFT_COMPETITOR_TERMS if _normalize_text(term) in normalized_page]
     if len(set(soft_hits)) >= 2:
         return "official_site:multiple_overlapping_services"
     return None
@@ -299,6 +304,8 @@ def discover_contact_links(html: str, base_url: str, official_domain: str) -> li
 
 
 def fetch_html(session, url: str, *, timeout: int = DEFAULT_TIMEOUT) -> tuple[str | None, str | None, int | None]:
+    if not is_public_http_url(url):
+        return None, None, None
     try:
         response = session.get(
             url,
@@ -313,6 +320,8 @@ def fetch_html(session, url: str, *, timeout: int = DEFAULT_TIMEOUT) -> tuple[st
     try:
         status = int(response.status_code)
         final_url = str(response.url or "").strip()
+        if not is_public_http_url(final_url):
+            return None, final_url or None, status
         content_type = str(response.headers.get("content-type") or "").lower()
         if not (200 <= status < 400) or "text/html" not in content_type:
             return None, final_url or None, status

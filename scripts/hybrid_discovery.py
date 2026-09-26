@@ -248,8 +248,21 @@ def combine_candidates(
         matching_indices = {key_to_index[key] for key in keys if key in key_to_index}
         if matching_indices:
             target_index = min(matching_indices)
-            merged[target_index] = _merge_candidate(merged[target_index], candidate)
-            for key in _candidate_keys(merged[target_index]):
+            combined = merged[target_index]
+            for other_index in sorted(matching_indices):
+                if other_index == target_index or merged[other_index] is None:
+                    continue
+                combined = _merge_candidate(combined, merged[other_index])
+                merged[other_index] = None
+            combined = _merge_candidate(combined, candidate)
+            merged[target_index] = combined
+
+            # Repoint every known identity key to the surviving cluster. This matters
+            # when one incoming candidate bridges two previously separate clusters.
+            for known_key, known_index in list(key_to_index.items()):
+                if known_index in matching_indices:
+                    key_to_index[known_key] = target_index
+            for key in _candidate_keys(combined):
                 key_to_index[key] = target_index
             continue
 
@@ -257,6 +270,8 @@ def combine_candidates(
         merged.append(candidate)
         for key in keys:
             key_to_index[key] = index
+
+    merged = [item for item in merged if item is not None]
 
     merged.sort(
         key=lambda item: (

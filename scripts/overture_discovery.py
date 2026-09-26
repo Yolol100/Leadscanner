@@ -15,6 +15,8 @@ from urllib.parse import urlparse
 
 import requests
 
+from url_safety import is_public_http_url
+
 PDOK_FREE_URL = "https://api.pdok.nl/bzk/locatieserver/search/v3_1/free"
 DEFAULT_RADIUS_KM = 8.0
 DEFAULT_TIMEOUT_SECONDS = 15
@@ -341,6 +343,13 @@ def probe_website(
     session=requests,
     timeout: int = DEFAULT_TIMEOUT_SECONDS,
 ) -> dict:
+    if not is_public_http_url(url):
+        return {
+            "status": "blocked_non_public_url",
+            "final_url": None,
+            "http_status": None,
+            "detail": "non_public_url",
+        }
     try:
         response = session.get(
             url,
@@ -354,6 +363,13 @@ def probe_website(
             final_url = str(response.url or "").strip()
         finally:
             response.close()
+        if not is_public_http_url(final_url):
+            return {
+                "status": "blocked_non_public_url",
+                "final_url": None,
+                "http_status": status_code,
+                "detail": "redirected_to_non_public_url",
+            }
     except requests.RequestException as exc:
         return {
             "status": "unreachable",
