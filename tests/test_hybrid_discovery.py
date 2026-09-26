@@ -110,6 +110,44 @@ class HybridDiscoveryTests(unittest.TestCase):
             )
             self.assertEqual(candidates[0]["website_hint"], "https://example.nl")
 
+    def test_transitive_identity_bridge_merges_existing_clusters(self):
+        overture = {
+            "candidates": [
+                {
+                    "overture_id": "ov-1",
+                    "name_hint": "Example BV",
+                    "website_hint": "https://example.nl",
+                },
+                {
+                    "overture_id": "ov-2",
+                    "name_hint": "Second record",
+                    "website_hint": "https://second.nl",
+                },
+            ]
+        }
+        maps = [
+            {
+                "google_maps_place_id": "place-bridge",
+                "name_hint": "Bridge",
+                "website_hint": "https://second.nl",
+                "discovery_sources": ["google_maps"],
+                "identity_status": "needs_leads_verification",
+            },
+            {
+                "overture_id": "ov-1",
+                "google_maps_place_id": "place-bridge",
+                "name_hint": "Bridge two",
+                "website_hint": "https://example.nl",
+                "discovery_sources": ["google_maps"],
+                "identity_status": "needs_leads_verification",
+            },
+        ]
+        result = combine_candidates(overture, maps, max_results=10, require_website=True)
+        self.assertEqual(result["candidate_count"], 1)
+        candidate = result["candidates"][0]
+        self.assertEqual(candidate["overture_id"], "ov-1")
+        self.assertEqual(candidate["google_maps_place_id"], "place-bridge")
+
     def test_max_results_is_bounded_to_5000(self):
         with self.assertRaises(ValueError):
             combine_candidates(
