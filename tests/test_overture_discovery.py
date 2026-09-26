@@ -306,8 +306,9 @@ class OvertureDiscoveryTests(unittest.TestCase):
             path.unlink(missing_ok=True)
         self.assertEqual([row["overture_id"] for row in rows], ["open"])
 
+    @patch("overture_discovery.is_public_http_url", return_value=True)
     @patch("overture_discovery.requests.get")
-    def test_website_probe_is_non_authorizing_direct_readback(self, get):
+    def test_website_probe_is_non_authorizing_direct_readback(self, get, public_url):
         response = Mock()
         response.status_code = 200
         response.url = "https://final.example/"
@@ -317,6 +318,12 @@ class OvertureDiscoveryTests(unittest.TestCase):
         self.assertEqual(result["status"], "reachable_needs_leads_identity_verification")
         self.assertEqual(result["final_url"], "https://final.example/")
         response.close.assert_called_once()
+
+    @patch("overture_discovery.is_public_http_url", return_value=False)
+    def test_website_probe_blocks_non_public_url(self, public_url):
+        result = probe_website("http://127.0.0.1/")
+        self.assertEqual(result["status"], "blocked_non_public_url")
+        self.assertEqual(result["detail"], "non_public_url")
 
     def test_probe_candidates_is_bounded_and_preserves_order(self):
         candidates = [
