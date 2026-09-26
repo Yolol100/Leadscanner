@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from extract_public_contacts import (
     competitor_reason,
@@ -79,6 +80,13 @@ class PublicContactDiscoveryTests(unittest.TestCase):
         for label in ("Freelance webdesigner", "SEO specialist", "Social media manager", "WordPress specialist", "Automation consultant", "Hosting reseller"):
             self.assertIsNotNone(competitor_reason({"name_hint": label, "category_hint": ""}))
 
+    def test_competitor_site_phrase_with_punctuation_is_detected(self):
+        html = "<html><body>Wij zijn een digital agency, gespecialiseerd in websites.</body></html>"
+        self.assertEqual(
+            competitor_reason({"name_hint": "Voorbeeld", "category_hint": ""}, html),
+            "official_site:digital agency",
+        )
+
     def test_discovery_email_is_fallback_after_official_site_search(self):
         candidate = {
             "name_hint": "Example BV",
@@ -87,7 +95,8 @@ class PublicContactDiscoveryTests(unittest.TestCase):
             "discovery_email_candidates": [{"email": "info@example.nl", "source": "overture"}],
             "overture_id": "ov-1",
         }
-        result = inspect_candidate(candidate, session_factory=FakeSession)
+        with patch("extract_public_contacts.is_public_http_url", return_value=True):
+            result = inspect_candidate(candidate, session_factory=FakeSession)
         self.assertEqual(result["public_business_emails"], ["info@example.nl"])
         self.assertEqual(result["email_source_types"], ["overture"])
         self.assertEqual(result["contact_basis_status"], "review_required")
