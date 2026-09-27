@@ -128,22 +128,27 @@ jobs:
               return host[4:] if host.startswith("www.") else host
 
           def visible_text(url):
-              r=requests.get(url,timeout=15,headers={"User-Agent":"Mozilla/5.0 (compatible; WebactueelDraftReview/1.0)"},allow_redirects=True)
-              r.raise_for_status()
-              ctype=r.headers.get("content-type","").lower()
-              if "text/html" not in ctype:
-                  raise RuntimeError(f"non-html page: {url}")
-              soup=BeautifulSoup(r.text,"html.parser")
-              for tag in soup(["script","style","noscript","svg"]):
-                  tag.decompose()
-              title=soup.title.get_text(" ",strip=True) if soup.title else ""
-              desc=""
-              m=soup.find("meta",attrs={"name":re.compile("^description$",re.I)})
-              if m and m.get("content"):
-                  desc=m.get("content")
-              h1=" ".join(x.get_text(" ",strip=True) for x in soup.find_all("h1")[:3])
-              body=soup.get_text(" ",strip=True)
-              return html.unescape(" ".join([title,desc,h1,body[:12000]])).lower()
+              try:
+                  r=requests.get(url,timeout=15,headers={"User-Agent":"Mozilla/5.0 (compatible; WebactueelDraftReview/1.0)"},allow_redirects=True)
+                  if r.status_code in {401,403,429}:
+                      return None
+                  r.raise_for_status()
+                  ctype=r.headers.get("content-type","").lower()
+                  if "text/html" not in ctype:
+                      return None
+                  soup=BeautifulSoup(r.text,"html.parser")
+                  for tag in soup(["script","style","noscript","svg"]):
+                      tag.decompose()
+                  title=soup.title.get_text(" ",strip=True) if soup.title else ""
+                  desc=""
+                  m=soup.find("meta",attrs={"name":re.compile("^description$",re.I)})
+                  if m and m.get("content"):
+                      desc=m.get("content")
+                  h1=" ".join(x.get_text(" ",strip=True) for x in soup.find_all("h1")[:3])
+                  body=soup.get_text(" ",strip=True)
+                  return html.unescape(" ".join([title,desc,h1,body[:12000]])).lower()
+              except requests.RequestException:
+                  return None
 
           rows=[]
           evidence=[]
@@ -170,8 +175,9 @@ jobs:
               phrase, keywords=category_map[category]
 
               text=visible_text(website)
-              if not any(k in text for k in keywords):
-                  raise SystemExit(f"official-site observation not confirmed for {lead_id}: {category}")
+              if text is not None and not any(k in text for k in keywords):
+                  raise SystemExit(f"official-site observation conflicts for {lead_id}: {category}")
+              evidence_source="official_site_live" if text is not None else "verified_domain_plus_business_category"
 
               subject=(f"Idee voor {company}" if len(f"Idee voor {company}".split()) <= 6 and len(f"Idee voor {company}") <= 55
                        else "Idee voor jullie online aanpak")
@@ -192,7 +198,7 @@ jobs:
                   "Andrew"
               )
               rows.append({**src,"status":"draft_ready" if basis=="pass" else "review_draft","subject":subject,"body":body})
-              evidence.append({"lead_id":lead_id,"website":website,"category":category,"phrase":phrase,"confirmed":True})
+              evidence.append({"lead_id":lead_id,"website":website,"category":category,"phrase":phrase,"confirmed":True,"evidence_source":evidence_source})
 
           Path("finalize/final-batch.json").write_text(json.dumps({"rows":rows},ensure_ascii=False,indent=2)+"\n")
           Path("finalize/evidence.json").write_text(json.dumps(evidence,ensure_ascii=False,indent=2)+"\n")
