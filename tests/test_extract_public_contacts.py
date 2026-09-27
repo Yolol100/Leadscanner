@@ -9,6 +9,7 @@ from extract_public_contacts import (
     discover_contact_links,
     discover_contacts,
     extract_emails,
+    extract_verified_observation,
     email_fits_business_context,
     inspect_candidate,
     valid_email,
@@ -22,7 +23,7 @@ class FakeResponse:
     headers = {"content-type": "text/html"}
 
     def iter_content(self, chunk_size=65536, decode_unicode=False):
-        yield b'<html lang="nl"><body>Welkom bij ons bedrijf.</body></html>'
+        yield b'<html lang="nl"><body><h1>Ambachtelijke bakkerij voor Den Haag</h1>Welkom bij ons bedrijf.</body></html>'
 
     def close(self):
         pass
@@ -34,6 +35,13 @@ class FakeSession:
 
 
 class PublicContactDiscoveryTests(unittest.TestCase):
+    def test_extracts_verified_observation_from_official_page(self):
+        html = "<html><head><title>Voorbeeld</title></head><body><h1>Ambachtelijke bakkerij voor Den Haag</h1></body></html>"
+        self.assertEqual(
+            extract_verified_observation(html),
+            "Ambachtelijke bakkerij voor Den Haag",
+        )
+
     def test_extracts_visible_or_mailto_emails_and_drops_placeholders(self):
         html = (
             '<input value="naam@voorbeeld.nl">'
@@ -101,6 +109,9 @@ class PublicContactDiscoveryTests(unittest.TestCase):
         self.assertEqual(result["email_source_types"], ["overture"])
         self.assertEqual(result["contact_basis_status"], "review_required")
         self.assertEqual(result["contact_discovery_status"], "found_discovery_fallback")
+        self.assertEqual(result["verified_observation"], "Ambachtelijke bakkerij voor Den Haag")
+        self.assertEqual(result["verified_observation_source_type"], "official_site")
+        self.assertEqual(result["verified_observation_source_url"], "https://example.nl/")
 
     def test_contact_discovery_is_bounded_to_100_candidates(self):
         with self.assertRaises(ValueError):
