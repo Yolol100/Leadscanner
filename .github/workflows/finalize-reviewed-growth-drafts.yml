@@ -1,0 +1,288 @@
+name: Finalize reviewed Growth drafts
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+concurrency:
+  group: leads-myhost-finalize
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    if: >-
+      github.event.issue.user.login == github.repository_owner &&
+      startsWith(github.event.issue.title, '[growth-draft-finalize]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+
+      - name: Install dependency
+        run: python -m pip install --disable-pip-version-check requests beautifulsoup4
+
+      - name: Validate request
+        id: request
+        env:
+          EVENT_PATH: ${{ github.event_path }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          event=json.loads(Path(os.environ["EVENT_PATH"]).read_text())
+          req=json.loads(event["issue"].get("body") or "{}")
+          run_id=int(req.get("source_run_id") or 0)
+          artifact=str(req.get("artifact_name") or "").strip()
+          lead_ids=req.get("lead_ids") or []
+          if run_id <= 0 or not artifact:
+              raise SystemExit("invalid source")
+          if not isinstance(lead_ids,list) or not 1 <= len(lead_ids) <= 100:
+              raise SystemExit("lead_ids must contain 1-100 IDs")
+          if len(set(lead_ids)) != len(lead_ids):
+              raise SystemExit("duplicate lead_ids")
+          if any(not re.fullmatch(r"growth-[0-9a-f]{20}", str(x)) for x in lead_ids):
+              raise SystemExit("invalid lead id")
+          Path("finalize").mkdir(exist_ok=True)
+          Path("finalize/request.json").write_text(json.dumps(req), encoding="utf-8")
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a") as out:
+              out.write(f"source_run_id={run_id}\nartifact_name={artifact}\ncount={len(lead_ids)}\n")
+          PY
+
+      - name: Download verified source artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ steps.request.outputs.source_run_id }}
+          ARTIFACT_NAME: ${{ steps.request.outputs.artifact_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p finalize/source
+          gh run download "$SOURCE_RUN_ID" -n "$ARTIFACT_NAME" -D finalize/source
+          test -s finalize/source/growth-batch.json
+          test -s finalize/source/public-contacts.json
+
+      - name: Build final personalized drafts
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, re, html
+          from pathlib import Path
+          from urllib.parse import urlparse
+          import requests
+          from bs4 import BeautifulSoup
+
+          req=json.loads(Path("finalize/request.json").read_text())
+          source=json.loads(Path("finalize/source/growth-batch.json").read_text())
+          contacts=json.loads(Path("finalize/source/public-contacts.json").read_text())
+          by_id={r.get("lead_id"):r for r in source.get("rows") or [] if r.get("lead_id")}
+          by_domain={}
+          for c in contacts.get("candidates") or []:
+              d=str(c.get("official_domain_hint") or "").lower().strip()
+              if d:
+                  by_domain[d]=c
+
+          category_map={
+            "real estate agency":("makelaardij en woningbemiddeling",["makelaar","makelaardij","woning","huizen"]),
+            "installation service":("installatiewerk",["installatie","installatietechniek"]),
+            "roofing contractor":("dakwerk en dakonderhoud",["dak","dakwerk","dakonderhoud"]),
+            "contractor":("bouw- en aannemerswerk",["aannemer","bouw","verbouw"]),
+            "paving contractor":("bestrating en grondwerk",["bestrating","straatwerk","grondwerk"]),
+            "garden":("tuinaanleg en tuinonderhoud",["tuin","hovenier","tuinaanleg"]),
+            "landscaper":("tuinaanleg en tuinonderhoud",["tuin","hovenier","landschap"]),
+            "gardener":("tuinaanleg en tuinonderhoud",["tuin","hovenier","tuinaanleg"]),
+            "landscape designer":("tuinontwerp en tuinaanleg",["tuin","ontwerp","hovenier"]),
+            "electrician":("elektrotechniek",["elektra","elektricien","elektro"]),
+            "electrical installation service":("elektrotechnische installaties",["elektro","elektra","installatie"]),
+            "wood and laminate flooring supplier":("vloeren en vloerafwerking",["vloer","laminaat","parket"]),
+            "flooring store":("vloeren en vloerafwerking",["vloer","laminaat","parket"]),
+            "tile store":("tegels en vloerafwerking",["tegel","vloer"]),
+            "window supplier":("kozijnen, ramen en deuren",["kozijn","ramen","deuren"]),
+            "house cleaning service":("schoonmaakdiensten",["schoonmaak","cleaning"]),
+            "cleaners":("schoonmaakdiensten",["schoonmaak","cleaning"]),
+            "auto repair shop":("auto-onderhoud en reparatie",["auto","garage","onderhoud","reparatie"]),
+            "car dealer":("autoverkoop",["auto","occasions","dealer"]),
+            "used car dealer":("occasions en autoverkoop",["auto","occasion","dealer"]),
+            "painter":("schilderwerk en onderhoud",["schilder","schilderwerk"]),
+            "general contractor":("bouw- en verbouwwerk",["aannemer","bouw","verbouw"]),
+            "construction company":("bouw- en verbouwwerk",["bouw","verbouw","aannemer"]),
+            "custom home builder":("woningbouw en maatwerkbouw",["woning","bouw","maatwerk"]),
+            "kitchen furniture store":("keukens",["keuken"]),
+            "plumber":("loodgieters- en installatiewerk",["loodgieter","installatie","cv"]),
+            "furnace repair service":("cv-onderhoud en installatiewerk",["cv","ketel","verwarming"]),
+            "gutter service":("dak- en gootwerk",["dak","goot","dakreparatie"]),
+          }
+
+          def norm_domain(url):
+              host=urlparse(url).netloc.lower().split("@")[-1].split(":")[0]
+              return host[4:] if host.startswith("www.") else host
+
+          def visible_text(url):
+              r=requests.get(url,timeout=15,headers={"User-Agent":"Mozilla/5.0 (compatible; WebactueelDraftReview/1.0)"},allow_redirects=True)
+              r.raise_for_status()
+              ctype=r.headers.get("content-type","").lower()
+              if "text/html" not in ctype:
+                  raise RuntimeError(f"non-html page: {url}")
+              soup=BeautifulSoup(r.text,"html.parser")
+              for tag in soup(["script","style","noscript","svg"]):
+                  tag.decompose()
+              title=soup.title.get_text(" ",strip=True) if soup.title else ""
+              desc=""
+              m=soup.find("meta",attrs={"name":re.compile("^description$",re.I)})
+              if m and m.get("content"):
+                  desc=m.get("content")
+              h1=" ".join(x.get_text(" ",strip=True) for x in soup.find_all("h1")[:3])
+              body=soup.get_text(" ",strip=True)
+              return html.unescape(" ".join([title,desc,h1,body[:12000]])).lower()
+
+          rows=[]
+          evidence=[]
+          for lead_id in req["lead_ids"]:
+              src=by_id.get(lead_id)
+              if not src:
+                  raise SystemExit(f"missing lead {lead_id}")
+              company=str(src.get("company") or "").strip()
+              email_addr=str(src.get("email") or "").strip()
+              website=str(src.get("website") or "").strip()
+              basis=str(src.get("contact_basis_status") or "")
+              if not company or not email_addr or not website or basis not in {"review_required","pass"}:
+                  raise SystemExit(f"incomplete source {lead_id}")
+              if src.get("excluded_competitor"):
+                  raise SystemExit(f"excluded competitor {lead_id}")
+
+              domain=norm_domain(website)
+              candidate=by_domain.get(domain)
+              if not candidate:
+                  raise SystemExit(f"no verified candidate for {lead_id} {domain}")
+              category=str(candidate.get("category_hint") or "").strip().lower()
+              if category not in category_map:
+                  raise SystemExit(f"unsupported category for {lead_id}: {category}")
+              phrase, keywords=category_map[category]
+
+              text=visible_text(website)
+              if not any(k in text for k in keywords):
+                  raise SystemExit(f"official-site observation not confirmed for {lead_id}: {category}")
+
+              subject=(f"Idee voor {company}" if len(f"Idee voor {company}".split()) <= 6 and len(f"Idee voor {company}") <= 55
+                       else "Idee voor jullie online aanpak")
+              body=(
+                  "Goedendag,\n\n"
+                  f"Ik zag dat {company} zich richt op {phrase}. Ik denk dat dit online nog duidelijker gepresenteerd en beter vindbaar kan worden.\n\n"
+                  "Met mijn Groeiabonnement pak ik dit doorlopend op:\n\n"
+                  "• Website/webshop verbeteren of nieuw maken waar nodig\n"
+                  "• Zoekbaarheid verbeteren\n"
+                  "• Social content verzorgen\n"
+                  "• Geschikte bedrijfsprocessen waar haalbaar deels automatiseren\n"
+                  "• Hosting overnemen/beheren\n"
+                  "• Ik als vast contactpersoon\n\n"
+                  "€250–€500 per maand, afhankelijk van wat jullie nodig hebben.\n\n"
+                  f"Zal ik vrijblijvend een voorbeeld design maken voor {company}? Dan kunnen jullie zonder afspraak eerst bekijken of de richting interessant is.\n\n"
+                  "Geen interesse? Laat het gerust weten, dan houd ik het hierbij.\n\n"
+                  "Groet,\n"
+                  "Andrew"
+              )
+              rows.append({**src,"status":"draft_ready" if basis=="pass" else "review_draft","subject":subject,"body":body})
+              evidence.append({"lead_id":lead_id,"website":website,"category":category,"phrase":phrase,"confirmed":True})
+
+          Path("finalize/final-batch.json").write_text(json.dumps({"rows":rows},ensure_ascii=False,indent=2)+"\n")
+          Path("finalize/evidence.json").write_text(json.dumps(evidence,ensure_ascii=False,indent=2)+"\n")
+          print(f"FINAL_BATCH=green count={len(rows)}")
+          PY
+
+      - name: Replace and exactly read back drafts
+        env:
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME || 'Andrew Baeten' }}
+          OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
+          OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
+          EXPECTED: ${{ steps.request.outputs.count }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH=scripts python3 - <<'PY'
+          import imaplib, json, os, time
+          from pathlib import Path
+          from myhost_draft import build_message, connect_imap, find_drafts_folder, find_message_ids, fetch_message, exact_message_matches
+
+          batch=json.loads(Path("finalize/final-batch.json").read_text())
+          client=connect_imap()
+          folder=find_drafts_folder(client)
+          changed=0
+          try:
+              for row in batch["rows"]:
+                  lead_id, expected=build_message(row)
+                  if client.select(f'"{folder}"', readonly=False)[0] != "OK":
+                      raise RuntimeError("Could not open drafts folder read-write")
+                  before=find_message_ids(client, folder, lead_id, ensure_selected=False)
+                  if len(before) != 1:
+                      raise RuntimeError(f"Expected exactly one old draft for {lead_id}, got {len(before)}")
+
+                  raw=expected.as_bytes()
+                  status,_=client.append(folder,"(\\Draft)",imaplib.Time2Internaldate(time.time()),raw)
+                  if status != "OK":
+                      raise RuntimeError(f"append failed for {lead_id}")
+
+                  if client.select(f'"{folder}"', readonly=False)[0] != "OK":
+                      raise RuntimeError("Could not reopen drafts folder")
+                  ids=find_message_ids(client, folder, lead_id, ensure_selected=False)
+                  if len(ids) != 2:
+                      raise RuntimeError(f"Expected two drafts during replacement for {lead_id}, got {len(ids)}")
+
+                  matches=[mid for mid in ids if exact_message_matches(fetch_message(client,mid),expected)]
+                  if len(matches) != 1:
+                      raise RuntimeError(f"Expected one rewritten match for {lead_id}, got {len(matches)}")
+
+                  for old_id in [mid for mid in ids if mid != matches[0]]:
+                      if client.store(old_id, "+FLAGS", "(\\Deleted)")[0] != "OK":
+                          raise RuntimeError(f"delete flag failed for {lead_id}")
+                  if client.expunge()[0] != "OK":
+                      raise RuntimeError(f"expunge failed for {lead_id}")
+
+                  if client.select(f'"{folder}"', readonly=True)[0] != "OK":
+                      raise RuntimeError("Could not open drafts folder for final readback")
+                  final_ids=find_message_ids(client, folder, lead_id, ensure_selected=False)
+                  if len(final_ids) != 1 or not exact_message_matches(fetch_message(client,final_ids[0]),expected):
+                      raise RuntimeError(f"final readback mismatch for {lead_id}")
+                  changed += 1
+          finally:
+              try: client.logout()
+              except Exception: pass
+
+          expected_count=int(os.environ["EXPECTED"])
+          if changed != expected_count:
+              raise SystemExit(f"Expected {expected_count} rewrites, got {changed}")
+          Path("finalize/result.txt").write_text(f"MYHOST_FINALIZE=green rewritten={changed} smtp_send=not_available\n")
+          print(f"MYHOST_FINALIZE=green rewritten={changed} smtp_send=not_available")
+          PY
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: growth-draft-finalize-${{ github.run_number }}
+          path: |
+            finalize/result.txt
+            finalize/evidence.json
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Close request
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          EXPECTED: ${{ steps.request.outputs.count }}
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --body "Exactly $EXPECTED mijn.host drafts were finalized with official-site-confirmed opening evidence and exact readback. Nothing was sent."
+          gh issue close "$ISSUE_NUMBER"
