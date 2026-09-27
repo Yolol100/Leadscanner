@@ -1,58 +1,8 @@
 {
-  "schema_version": "webactueel-growth-subscription/3.0",
+  "schema_version": "webactueel-growth-subscription/4.0",
   "product_id": "growth_subscription",
-  "name": "Groeiabonnement",
   "monthly_price_eur": {
     "min": 250,
-    "max": 500,
-    "determined_by": "agreed_scope",
-    "guaranteed_fixed_price_per_prospect": false
-  },
-  "service_areas": [
-    {
-      "id": "website_webshop",
-      "label": "Website/webshop verbeteren",
-      "promise": "Doorlopende kleine verbeteringen aan website of webshop binnen afgesproken scope."
-    },
-    {
-      "id": "search_visibility",
-      "label": "Zoekbaarheid verbeteren",
-      "promise": "SEO, content en technische verbeteringen zonder rankinggarantie."
-    },
-    {
-      "id": "social_content",
-      "label": "Social content verzorgen",
-      "promise": "Social-contentvoorbereiding en productie volgens afgesproken frequentie, zonder bereikgarantie."
-    },
-    {
-      "id": "automation",
-      "label": "Bedrijfsprocessen automatiseren",
-      "promise": "Geschikte repetitieve werkzaamheden tot circa 30% automatiseren waar meetbaar en haalbaar; nooit als gegarandeerde besparing."
-    },
-    {
-      "id": "hosting",
-      "label": "Hosting overnemen/beheren",
-      "promise": "Hosting, migratie en beheer overnemen wanneer technisch en contractueel passend."
-    },
-    {
-      "id": "fixed_contact",
-      "label": "Vast contactpersoon",
-      "promise": "Andrew blijft vast contactpersoon voor afgesproken aanpassingen en ondersteuning."
-    }
-  ],
-  "first_touch": {
-    "min_words": 80,
-    "max_words": 130,
-    "one_product": true,
-    "six_benefits": true,
-    "default_show_price": true,
-    "languages": [
-      "nl",
-      "en"
-    ],
-    "easy_no": true,
-    "subject_target_words": "3-6",
-    "automatic_draft_creation": true,
-    "manual_send_only": true
+    "max": 500
   }
 }
