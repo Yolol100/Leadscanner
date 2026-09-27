@@ -64,3 +64,25 @@ jobs:
           ! grep -R --line-number --include='*.py' -E 'smtplib|sendmail\(|SMTP\(' scripts
           ! grep -R --line-number --include='*.yml' -E 'smtp|SMTP' .github/workflows
           echo 'ONE_RUN_GROWTH_DRAFT_CORE=green'
+
+      - name: Prove isolated discovery-only phase boundary
+        run: |
+          set -euo pipefail
+          test -f .github/workflows/leads-discovery.yml
+          test -f scripts/filter_discovery_candidates.py
+          test -f tests/test_filter_discovery_candidates.py
+          grep -q 'workflow_dispatch:' .github/workflows/leads-discovery.yml
+          grep -q 'issues:' .github/workflows/leads-discovery.yml
+          grep -q "github.event.issue.user.login == github.repository_owner" .github/workflows/leads-discovery.yml
+          grep -F -q "startsWith(github.event.issue.title, '[lead-discovery]')" .github/workflows/leads-discovery.yml
+          grep -q 'scripts/overture_discovery.py' .github/workflows/leads-discovery.yml
+          grep -q 'scripts/hybrid_discovery.py' .github/workflows/leads-discovery.yml
+          grep -q 'scripts/filter_discovery_candidates.py' .github/workflows/leads-discovery.yml
+          grep -q 'results/phase2-discovery.json' .github/workflows/leads-discovery.yml
+          grep -q 'DISCOVERY_ONLY_BOUNDARY=green' .github/workflows/leads-discovery.yml
+          grep -q 'permissions:' .github/workflows/leads-discovery.yml
+          grep -q 'contents: read' .github/workflows/leads-discovery.yml
+          ! grep -E -q 'extract_public_contacts\.py|prepare_growth_batch\.py|myhost_draft\.py|apply_google_maps_email_fallback\.py' .github/workflows/leads-discovery.yml
+          ! grep -E -q 'OUTREACH_|secrets\.|review_draft|draft_limit|contact_check_limit|IMAP|SMTP|smtp' .github/workflows/leads-discovery.yml
+          ! grep -q 'issues: write' .github/workflows/leads-discovery.yml
+          echo 'DISCOVERY_ONLY_WORKFLOW=green'
