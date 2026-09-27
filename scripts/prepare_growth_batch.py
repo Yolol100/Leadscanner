@@ -29,11 +29,11 @@ def subject_for_company(company: str, language: str) -> str:
     return "Idea for your online setup" if language == "en" else "Idee voor jullie online aanpak"
 
 
-def build_template(company: str, language: str, *, price_min: int, price_max: int) -> str:
+def build_template(company: str, language: str, observation: str, *, price_min: int, price_max: int) -> str:
     if language == "en":
         return (
             "Hello,\n\n"
-            f"I came across {company} online. I help businesses improve their online setup with one compact Growth Subscription.\n\n"
+            f"Your website highlights “{observation}”. I help businesses improve their online setup with one compact Growth Subscription.\n\n"
             "• Improve or rebuild the website/webshop where needed\n"
             "• Improve search visibility\n"
             "• Create social content\n"
@@ -47,7 +47,7 @@ def build_template(company: str, language: str, *, price_min: int, price_max: in
         )
     return (
         "Goedendag,\n\n"
-        f"Ik kwam {company} online tegen. Met één compact Groeiabonnement help ik bedrijven hun online aanpak doorlopend verbeteren.\n\n"
+        f"Op jullie website staat “{observation}”. Met één compact Groeiabonnement help ik bedrijven hun online aanpak doorlopend verbeteren.\n\n"
         "• Website/webshop verbeteren of nieuw maken waar nodig\n"
         "• Zoekbaarheid verbeteren\n"
         "• Social content verzorgen\n"
@@ -76,8 +76,20 @@ def prepare_batch(contacts_payload: dict, config: dict, *, draft_limit: int = 1)
         company = clean_company(candidate.get("name_hint"), language)
         emails = candidate.get("public_business_emails") or []
         excluded = bool(candidate.get("excluded_competitor"))
-        preview = build_template(company, language, price_min=price_min, price_max=price_max)
-        subject_preview = subject_for_company(company, language)
+        observation = str(candidate.get("verified_observation") or "").strip()
+        observation_source_url = str(candidate.get("verified_observation_source_url") or "").strip()
+        observation_source_type = str(candidate.get("verified_observation_source_type") or "").strip()
+        has_verified_observation = bool(
+            observation
+            and observation_source_url
+            and observation_source_type == "official_site"
+        )
+        preview = (
+            build_template(company, language, observation, price_min=price_min, price_max=price_max)
+            if has_verified_observation
+            else None
+        )
+        subject_preview = subject_for_company(company, language) if has_verified_observation else None
         basis = str(candidate.get("contact_basis_status") or "unverified")
         base = {
             "lead_id": None,
@@ -96,6 +108,9 @@ def prepare_batch(contacts_payload: dict, config: dict, *, draft_limit: int = 1)
             "email_source_urls": candidate.get("email_source_urls") or [],
             "email_source_types": candidate.get("email_source_types") or [],
             "email_source_refs": candidate.get("email_source_refs") or [],
+            "verified_observation": observation or None,
+            "verified_observation_source_url": observation_source_url or None,
+            "verified_observation_source_type": observation_source_type or None,
             "status": "excluded_competitor" if excluded else "no_public_email",
             "email": None,
             "subject": None,
@@ -109,7 +124,9 @@ def prepare_batch(contacts_payload: dict, config: dict, *, draft_limit: int = 1)
         if emails:
             base["email"] = emails[0]
             base["lead_id"] = stable_lead_id(base["email"], base["website"])
-            if selected < draft_limit:
+            if not has_verified_observation:
+                base["status"] = "blocked_missing_verified_observation"
+            elif selected < draft_limit:
                 selected += 1
                 base["status"] = "draft_ready" if basis == "pass" else "review_draft"
                 base["subject"] = subject_preview
@@ -119,7 +136,7 @@ def prepare_batch(contacts_payload: dict, config: dict, *, draft_limit: int = 1)
         rows.append(base)
 
     return {
-        "schema_version": "webactueel-growth-batch/4.0",
+        "schema_version": "webactueel-growth-batch/4.1",
         "product": config,
         "row_count": len(rows),
         "excluded_competitor_count": sum(1 for row in rows if row["status"] == "excluded_competitor"),
@@ -131,6 +148,7 @@ def prepare_batch(contacts_payload: dict, config: dict, *, draft_limit: int = 1)
             "one_product": True,
             "six_benefits": True,
             "language_matched_copy": True,
+            "verified_official_site_observation_required": True,
             "contact_basis_review_required_before_send": True,
             "review_draft_storage_allowed": True,
             "automatic_send": False,
@@ -143,6 +161,7 @@ def write_csv(payload: dict, path: Path) -> None:
         "lead_id", "company", "website", "email", "language", "status",
         "excluded_competitor", "exclusion_reason", "contact_basis_status",
         "contact_basis_hint", "email_source_types", "product_id",
+        "verified_observation", "verified_observation_source_url", "verified_observation_source_type",
         "monthly_price_min_eur", "monthly_price_max_eur",
         "subject_preview", "concept_preview",
     ]
