@@ -87,3 +87,25 @@ jobs:
           ! grep -E -q 'OUTREACH_|secrets\.|review_draft|draft_limit|contact_check_limit|IMAP|SMTP|smtp' .github/workflows/leads-discovery.yml
           ! grep -q 'issues: write' .github/workflows/leads-discovery.yml
           echo 'DISCOVERY_ONLY_WORKFLOW=green'
+
+
+      - name: Prove isolated verify-only phase boundary
+        run: |
+          set -euo pipefail
+          test -f .github/workflows/leads-verify.yml
+          test -f scripts/select_verification_batch.py
+          test -f scripts/build_verification_ready.py
+          test -f tests/test_verify_only_workflow.py
+          grep -q 'workflow_dispatch:' .github/workflows/leads-verify.yml
+          grep -q 'issues:' .github/workflows/leads-verify.yml
+          grep -q "github.event.issue.user.login == github.repository_owner" .github/workflows/leads-verify.yml
+          grep -F -q "startsWith(github.event.issue.title, '[lead-verify]')" .github/workflows/leads-verify.yml
+          grep -q 'scripts/select_verification_batch.py' .github/workflows/leads-verify.yml
+          grep -q 'scripts/extract_public_contacts.py' .github/workflows/leads-verify.yml
+          grep -q 'scripts/apply_google_maps_email_fallback.py' .github/workflows/leads-verify.yml
+          grep -q 'scripts/build_verification_ready.py' .github/workflows/leads-verify.yml
+          grep -q 'VERIFY_ONLY_BOUNDARY=green' .github/workflows/leads-verify.yml
+          grep -q 'actions: read' .github/workflows/leads-verify.yml
+          ! grep -E -q 'prepare_growth_batch\.py|myhost_draft\.py|review_draft|OUTREACH_|secrets\.|IMAP|SMTP|smtp' .github/workflows/leads-verify.yml
+          ! grep -q 'issues: write' .github/workflows/leads-verify.yml
+          echo 'VERIFY_ONLY_WORKFLOW=green'
