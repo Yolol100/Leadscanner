@@ -1,0 +1,253 @@
+name: Runtime Phase 2 Discovery
+
+on:
+  push:
+    branches:
+      - runtime/phase2-discovery-20260927
+    paths:
+      - .github/workflows/runtime-phase2-discovery.yml
+
+permissions:
+  contents: read
+
+jobs:
+  discovery:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-discovery.txt
+
+      - name: Install discovery dependencies
+        run: python3 -m pip install --disable-pip-version-check -r requirements.txt -r requirements-discovery.txt
+
+      - name: Prepare regions and keywords
+        run: |
+          set -euo pipefail
+          mkdir -p results/overture results/google-maps
+          cat > results/regions.txt <<'EOF'
+          Rotterdam
+          Den Haag
+          Utrecht
+          Amsterdam
+          Eindhoven
+          Breda
+          Nijmegen
+          Zwolle
+          Groningen
+          Arnhem
+          EOF
+          cat > results/keywords.txt <<'EOF'
+          bakkerij
+          bakery
+          restaurant
+          cafe
+          koffiebar
+          physiotherapist
+          fysiotherapie
+          dentist
+          tandarts
+          electrician
+          elektricien
+          plumber
+          loodgieter
+          landscaper
+          hoveniersbedrijf
+          florist
+          bloemist
+          hairdresser
+          kapper
+          beauty salon
+          fitness
+          accountant
+          car repair
+          garage
+          bicycle shop
+          fietsenwinkel
+          childcare
+          kinderopvang
+          hotel
+          cleaning service
+          schoonmaakbedrijf
+          real estate agent
+          makelaar
+          construction company
+          aannemer
+          EOF
+
+      - name: Overture and PDOK discovery
+        env:
+          PYTHONPATH: scripts
+        run: |
+          set -euo pipefail
+          i=0
+          while IFS= read -r region; do
+            i=$((i+1))
+            args=(--region "$region" --radius-km 12 --max-results 250 --require-website --output "results/overture/region-$i.json")
+            while IFS= read -r keyword; do args+=(--keyword "$keyword"); done < results/keywords.txt
+            python3 scripts/overture_discovery.py "${args[@]}"
+          done < results/regions.txt
+
+      - name: Aggregate Overture candidates
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          candidates = []
+          region_runs = []
+          for path in sorted(Path("results/overture").glob("region-*.json")):
+              payload = json.loads(path.read_text(encoding="utf-8"))
+              candidates.extend(payload.get("candidates") or [])
+              region_runs.append({
+                  "file": path.name,
+                  "candidate_count": int(payload.get("candidate_count") or 0),
+                  "region_resolution": payload.get("region_resolution"),
+              })
+          out = {
+              "schema_version": "webactueel-runtime-overture-aggregate/1.0",
+              "source": "Overture Maps Places + PDOK",
+              "candidate_count": len(candidates),
+              "region_runs": region_runs,
+              "candidates": candidates,
+          }
+          Path("results/overture-all.json").write_text(json.dumps(out, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          print(f"OVERTURE_AGGREGATE={len(candidates)}")
+          PY
+
+      - name: Prepare Google Maps queries
+        run: |
+          set -euo pipefail
+          : > results/google-maps-queries.txt
+          while IFS= read -r region; do
+            while IFS= read -r keyword; do
+              printf '%s %s\n' "$keyword" "$region" >> results/google-maps-queries.txt
+            done < results/keywords.txt
+          done < results/regions.txt
+          wc -l results/google-maps-queries.txt
+
+      - name: Google Maps discovery
+        run: |
+          set -euo pipefail
+          docker pull gosom/google-maps-scraper:v1.18.1
+          docker run --rm \
+            -v "$PWD/results/google-maps-queries.txt:/queries.txt:ro" \
+            -v "$PWD/results/google-maps:/out" \
+            gosom/google-maps-scraper:v1.18.1 \
+            -input /queries.txt \
+            -results /out/results.csv \
+            -depth 1 \
+            -exit-on-inactivity 3m
+
+      - name: Merge and deduplicate
+        run: |
+          set -euo pipefail
+          python3 scripts/hybrid_discovery.py \
+            --overture results/overture-all.json \
+            --google-maps-csv results/google-maps/results.csv \
+            --output results/hybrid-discovery.json \
+            --max-results 2000 \
+            --require-website
+
+      - name: Exclude obvious competitors and strip contact fields
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, re, unicodedata
+          from pathlib import Path
+          from urllib.parse import urlparse
+
+          def norm(value):
+              text = unicodedata.normalize("NFKD", str(value or ""))
+              text = "".join(ch for ch in text if not unicodedata.combining(ch))
+              return re.sub(r"\s+", " ", text).strip().casefold()
+
+          service_terms = [
+              "marketing", "reclame", "advertising", "webdesign", "web design",
+              "webbureau", "web bureau", "website bureau", "internetbureau",
+              "internet bureau", "seo", "search engine optimization",
+              "social media agency", "social media bureau", "content marketing",
+              "digital agency", "digital marketing", "online marketing",
+              "automation agency", "automatisering", "ai agency", "ai automation",
+              "no-code", "nocode", "wordpress", "woocommerce", "elementor",
+              "webhosting", "hosting provider", "hostingbedrijf"
+          ]
+
+          payload = json.loads(Path("results/hybrid-discovery.json").read_text(encoding="utf-8"))
+          kept, excluded = [], []
+          for item in payload.get("candidates") or []:
+              domain = ""
+              try:
+                  domain = (urlparse(str(item.get("website_hint") or "")).hostname or "").casefold()
+              except Exception:
+                  pass
+              hay = norm(" ".join([
+                  str(item.get("name_hint") or ""),
+                  str(item.get("category_hint") or ""),
+                  domain,
+              ]))
+              matched = next((term for term in service_terms if term in hay), None)
+              out = {
+                  "name_hint": item.get("name_hint"),
+                  "category_hint": item.get("category_hint"),
+                  "website_hint": item.get("website_hint"),
+                  "overture_id": item.get("overture_id"),
+                  "google_maps_cid": item.get("google_maps_cid"),
+                  "google_maps_place_id": item.get("google_maps_place_id"),
+                  "discovery_sources": item.get("discovery_sources") or [],
+                  "identity_status": "needs_leads_verification",
+              }
+              if matched:
+                  out["excluded_reason"] = f"competitor_term:{matched}"
+                  excluded.append(out)
+              else:
+                  kept.append(out)
+
+          src = payload.get("source_counts") or {}
+          pre = int(src.get("overture_candidates") or 0) + int(src.get("google_maps_candidates") or 0)
+          dropped = int(payload.get("dropped_undedupeable_count") or 0)
+          deduped = int(payload.get("candidate_count") or 0)
+          duplicate_count = max(pre - dropped - deduped, 0)
+
+          report = {
+              "schema_version": "webactueel-phase2-discovery/1.0",
+              "sources": ["PDOK", "Overture Maps Places", "gosom/google-maps-scraper"],
+              "source_candidate_count": pre,
+              "deduplicated_candidate_count": deduped,
+              "duplicate_count": duplicate_count,
+              "dropped_undedupeable_count": dropped,
+              "competitor_excluded_count": len(excluded),
+              "candidate_count": len(kept),
+              "candidates": kept,
+              "excluded_competitors": excluded,
+              "safety": {
+                  "verification_performed": False,
+                  "copy_created": False,
+                  "draft_created": False,
+                  "email_sent": False
+              }
+          }
+          Path("results/phase2-discovery.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          print(
+              "PHASE2_DISCOVERY=green "
+              f"source={pre} deduped={deduped} duplicates={duplicate_count} "
+              f"competitors={len(excluded)} candidates={len(kept)} "
+              "verification=false copy=false draft=false email_send=false"
+          )
+          PY
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: phase2-discovery
+          path: results/phase2-discovery.json
+          if-no-files-found: error
+          retention-days: 1
