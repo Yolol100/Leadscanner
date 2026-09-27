@@ -82,6 +82,7 @@ jobs:
           grep -q 'DISCOVERY_ONLY_BOUNDARY=green' .github/workflows/leads-discovery.yml
           grep -q 'permissions:' .github/workflows/leads-discovery.yml
           grep -q 'contents: read' .github/workflows/leads-discovery.yml
+          grep -q 'cancel-in-progress: true' .github/workflows/leads-discovery.yml
           ! grep -E -q 'extract_public_contacts\.py|prepare_growth_batch\.py|myhost_draft\.py|apply_google_maps_email_fallback\.py' .github/workflows/leads-discovery.yml
           ! grep -E -q 'OUTREACH_|secrets\.|review_draft|draft_limit|contact_check_limit|IMAP|SMTP|smtp' .github/workflows/leads-discovery.yml
           ! grep -q 'issues: write' .github/workflows/leads-discovery.yml
