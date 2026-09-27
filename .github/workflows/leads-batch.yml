@@ -287,7 +287,11 @@ jobs:
           from pathlib import Path
           report = json.loads(Path("results/myhost-drafts.json").read_text(encoding="utf-8"))
           expected = int(os.environ["EXPECTED_DRAFTS"])
-          actual = int(report["created_count"]) + int(report["existing_count"])
+          actual = (
+              int(report["created_count"])
+              + int(report["existing_count"])
+              + int(report.get("replaced_count", 0))
+          )
           if report["eligible_count"] != expected or actual != expected:
               raise SystemExit(
                   f"Expected exactly {expected} mijn.host draft(s), eligible={report['eligible_count']} readback={actual}"
