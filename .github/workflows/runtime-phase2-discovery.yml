@@ -1,11 +1,9 @@
 name: Runtime Phase 2 Discovery
 
 on:
-  push:
+  pull_request:
     branches:
-      - runtime/phase2-discovery-20260927
-    paths:
-      - .github/workflows/runtime-phase2-discovery.yml
+      - main
 
 permissions:
   contents: read
