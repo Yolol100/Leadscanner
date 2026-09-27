@@ -96,8 +96,8 @@ def find_drafts_folder(client) -> str:
     raise RuntimeError("No Drafts/Concepten IMAP folder found")
 
 
-def select_folder(client, folder: str) -> None:
-    if client.select(f'"{folder}"', readonly=True)[0] != "OK":
+def select_folder(client, folder: str, *, readonly: bool = True) -> None:
+    if client.select(f'"{folder}"', readonly=readonly)[0] != "OK":
         raise RuntimeError("Could not open drafts folder")
 
 
@@ -139,13 +139,12 @@ def exact_message_matches(actual: EmailMessage, expected: EmailMessage) -> bool:
 
 def append_and_verify(client, folder: str, lead_id: str, msg: EmailMessage) -> str:
     existing = find_message_ids(client, folder, lead_id)
+    if len(existing) > 1:
+        raise RuntimeError(f"Expected at most one existing draft for {lead_id}, found {len(existing)}")
     if existing:
-        if len(existing) != 1:
-            raise RuntimeError(f"Expected one existing draft for {lead_id}, found {len(existing)}")
         actual = fetch_message(client, existing[0])
-        if not exact_message_matches(actual, msg):
-            raise RuntimeError(f"Existing draft differs for {lead_id}")
-        return "existing"
+        if exact_message_matches(actual, msg):
+            return "existing"
 
     raw = msg.as_bytes(policy=default)
     status, _ = client.append(
@@ -157,12 +156,36 @@ def append_and_verify(client, folder: str, lead_id: str, msg: EmailMessage) -> s
     if status != "OK":
         raise RuntimeError(f"IMAP APPEND failed for {lead_id}")
 
-    ids = find_message_ids(client, folder, lead_id)
-    if len(ids) != 1:
-        raise RuntimeError(f"Expected one draft after append for {lead_id}, found {len(ids)}")
-    actual = fetch_message(client, ids[0])
-    if not exact_message_matches(actual, msg):
+    ids_after_append = find_message_ids(client, folder, lead_id)
+    new_ids = [message_id for message_id in ids_after_append if message_id not in existing]
+    if len(new_ids) != 1:
+        raise RuntimeError(
+            f"Expected one new draft after append for {lead_id}, found {len(new_ids)}"
+        )
+    new_actual = fetch_message(client, new_ids[0])
+    if not exact_message_matches(new_actual, msg):
         raise RuntimeError(f"Draft readback mismatch for {lead_id}")
+
+    if existing:
+        select_folder(client, folder, readonly=False)
+        status, _ = client.store(existing[0], "+FLAGS", "(\\Deleted)")
+        if status != "OK":
+            raise RuntimeError(f"Could not mark old draft deleted for {lead_id}")
+        if client.expunge()[0] != "OK":
+            raise RuntimeError(f"Could not expunge old draft for {lead_id}")
+
+        final_ids = find_message_ids(client, folder, lead_id)
+        if len(final_ids) != 1:
+            raise RuntimeError(
+                f"Expected one final draft after replacement for {lead_id}, found {len(final_ids)}"
+            )
+        final_actual = fetch_message(client, final_ids[0])
+        if not exact_message_matches(final_actual, msg):
+            raise RuntimeError(f"Final replacement readback mismatch for {lead_id}")
+        return "replaced"
+
+    if len(ids_after_append) != 1:
+        raise RuntimeError(f"Expected one draft after append for {lead_id}, found {len(ids_after_append)}")
     return "created"
 
 
@@ -183,6 +206,7 @@ def create_drafts(batch: dict) -> dict:
             "eligible_count": 0,
             "created_count": 0,
             "existing_count": 0,
+            "replaced_count": 0,
             "draft_folder": None,
             "review_required_count": 0,
             "smtp_send": "not_available",
@@ -193,17 +217,21 @@ def create_drafts(batch: dict) -> dict:
         folder = find_drafts_folder(client)
         created = 0
         existing = 0
+        replaced = 0
         for row in rows:
             lead_id, msg = build_message(row)
             outcome = append_and_verify(client, folder, lead_id, msg)
             if outcome == "created":
                 created += 1
+            elif outcome == "replaced":
+                replaced += 1
             else:
                 existing += 1
         return {
             "eligible_count": len(rows),
             "created_count": created,
             "existing_count": existing,
+            "replaced_count": replaced,
             "draft_folder": folder,
             "review_required_count": sum(1 for row in rows if row.get("status") == "review_draft"),
             "smtp_send": "not_available",
@@ -231,6 +259,7 @@ def main() -> int:
         f"eligible={result['eligible_count']} "
         f"created={result['created_count']} "
         f"existing={result['existing_count']} "
+        f"replaced={result['replaced_count']} "
         f"review_required={result['review_required_count']} "
         "smtp_send=not_available"
     )
