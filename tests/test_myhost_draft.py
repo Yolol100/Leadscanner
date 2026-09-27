@@ -11,6 +11,7 @@ from myhost_draft import build_message, create_drafts, exact_message_matches
 class FakeIMAP:
     def __init__(self):
         self.messages = []
+        self.deleted = set()
 
     def list(self):
         return "OK", [b'(\\HasNoChildren \\Drafts) "/" "Drafts"']
@@ -33,6 +34,17 @@ class FakeIMAP:
     def append(self, folder, flags, date_time, raw):
         self.messages.append(raw)
         return "OK", [b"APPEND completed"]
+
+    def store(self, message_id, command, flags):
+        self.deleted.add(int(message_id) - 1)
+        return "OK", [b"STORE completed"]
+
+    def expunge(self):
+        self.messages = [
+            raw for index, raw in enumerate(self.messages) if index not in self.deleted
+        ]
+        self.deleted.clear()
+        return "OK", [b"EXPUNGE completed"]
 
     def logout(self):
         return "BYE", [b"logout"]
@@ -89,6 +101,22 @@ class DraftTests(unittest.TestCase):
         self.assertEqual(len(client.messages), 1)
 
         _, expected = build_message(self.row())
+        actual = BytesParser(policy=default).parsebytes(client.messages[0])
+        self.assertTrue(exact_message_matches(actual, expected))
+
+    def test_changed_existing_draft_is_safely_replaced(self):
+        client = FakeIMAP()
+        with patch("myhost_draft.connect_imap", return_value=client):
+            create_drafts({"rows": [self.row()]})
+
+        updated = self.row()
+        updated["body"] = "Nieuwe gecontroleerde versie."
+        with patch("myhost_draft.connect_imap", return_value=client):
+            result = create_drafts({"rows": [updated]})
+
+        self.assertEqual(result["replaced_count"], 1)
+        self.assertEqual(len(client.messages), 1)
+        _, expected = build_message(updated)
         actual = BytesParser(policy=default).parsebytes(client.messages[0])
         self.assertTrue(exact_message_matches(actual, expected))
 
