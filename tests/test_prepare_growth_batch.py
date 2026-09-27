@@ -18,6 +18,9 @@ class GrowthBatchTests(unittest.TestCase):
             "email_source_urls": ["https://voorbeeld.nl/contact"],
             "email_source_types": ["official_site"],
             "email_source_refs": ["https://voorbeeld.nl/contact"],
+            "verified_observation": "Praktische dienstverlening voor bedrijven" if language == "nl" else "Practical services for businesses",
+            "verified_observation_source_url": "https://voorbeeld.nl" if language == "nl" else "https://example.com",
+            "verified_observation_source_type": "official_site",
             "language": language,
             "language_source": "html_lang",
             "excluded_competitor": False,
@@ -30,6 +33,8 @@ class GrowthBatchTests(unittest.TestCase):
         self.assertEqual(row["status"], "review_draft")
         self.assertTrue(row["lead_id"].startswith("growth-"))
         self.assertEqual(row["subject"], "Idee voor Voorbeeld BV")
+        self.assertIn("Op jullie website staat “Praktische dienstverlening voor bedrijven”", row["body"])
+        self.assertEqual(row["verified_observation_source_type"], "official_site")
         for value in (
             "Website/webshop verbeteren of nieuw maken waar nodig",
             "Zoekbaarheid verbeteren",
@@ -56,6 +61,17 @@ class GrowthBatchTests(unittest.TestCase):
         self.assertIn("€250–€500 per month", row["body"])
         self.assertIn("no-obligation example design", row["body"])
         self.assertNotIn("30%", row["body"])
+
+    def test_missing_verified_observation_blocks_draft(self):
+        contact = self.contact()
+        contact["verified_observation"] = None
+        contact["verified_observation_source_url"] = None
+        contact["verified_observation_source_type"] = None
+        row = prepare_batch({"candidates": [contact]}, self.config(), draft_limit=1)["rows"][0]
+        self.assertEqual(row["status"], "blocked_missing_verified_observation")
+        self.assertIsNone(row["subject"])
+        self.assertIsNone(row["body"])
+        self.assertIsNone(row["concept_preview"])
 
     def test_draft_limit_keeps_flow_small(self):
         second = {**self.contact(), "name_hint": "Tweede BV", "public_business_emails": ["info@tweede.nl"]}
