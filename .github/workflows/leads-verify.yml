@@ -1,0 +1,222 @@
+name: Leads Verify Only
+
+on:
+  workflow_dispatch:
+    inputs:
+      artifact_id:
+        description: 'Discovery artifact ID'
+        required: true
+        type: string
+      offset:
+        description: '0-based candidate offset'
+        required: true
+        default: '0'
+        type: string
+      limit:
+        description: 'Candidates to verify (1-100)'
+        required: true
+        default: '100'
+        type: string
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: leads-verify-only
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issues' &&
+       github.event.issue.user.login == github.repository_owner &&
+       startsWith(github.event.issue.title, '[lead-verify]'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-discovery.txt
+
+      - name: Install verification dependencies
+        run: python3 -m pip install --disable-pip-version-check -r requirements.txt -r requirements-discovery.txt
+
+      - name: Resolve and validate verification request
+        id: request
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_PATH: ${{ github.event_path }}
+          INPUT_ARTIFACT_ID: ${{ inputs.artifact_id }}
+          INPUT_OFFSET: ${{ inputs.offset }}
+          INPUT_LIMIT: ${{ inputs.limit }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          if os.environ["EVENT_NAME"] == "issues":
+              event = json.loads(Path(os.environ["EVENT_PATH"]).read_text(encoding="utf-8"))
+              try:
+                  request = json.loads(event["issue"].get("body") or "{}")
+              except json.JSONDecodeError as exc:
+                  raise SystemExit(f"issue body must be JSON: {exc}")
+          else:
+              request = {
+                  "artifact_id": os.environ["INPUT_ARTIFACT_ID"],
+                  "offset": os.environ["INPUT_OFFSET"],
+                  "limit": os.environ["INPUT_LIMIT"],
+              }
+
+          artifact_id = int(request.get("artifact_id") or 0)
+          offset = int(request.get("offset") or 0)
+          limit = int(request.get("limit") or 100)
+
+          if artifact_id <= 0:
+              raise SystemExit("artifact_id must be a positive integer")
+          if offset < 0:
+              raise SystemExit("offset must be >= 0")
+          if not 1 <= limit <= 100:
+              raise SystemExit("limit must be 1-100")
+
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as out:
+              out.write(f"artifact_id={artifact_id}\n")
+              out.write(f"offset={offset}\n")
+              out.write(f"limit={limit}\n")
+          print(f"VERIFY_REQUEST=green artifact_id={artifact_id} offset={offset} limit={limit}")
+          PY
+
+      - name: Download Phase 2 discovery artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.request.outputs.artifact_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p results/discovery
+          gh api \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" \
+            > results/discovery.zip
+          unzip -q results/discovery.zip -d results/discovery
+          test -s results/discovery/phase2-discovery.json
+          test -s results/discovery/hybrid-discovery.json
+          echo "DISCOVERY_ARTIFACT_READBACK=green"
+
+      - name: Select bounded verification batch
+        env:
+          OFFSET: ${{ steps.request.outputs.offset }}
+          LIMIT: ${{ steps.request.outputs.limit }}
+        run: |
+          set -euo pipefail
+          python3 scripts/select_verification_batch.py \
+            --phase2 results/discovery/phase2-discovery.json \
+            --hybrid results/discovery/hybrid-discovery.json \
+            --offset "$OFFSET" \
+            --limit "$LIMIT" \
+            --output results/verification-input.json
+
+      - name: Verify company domain language observation and public email
+        run: |
+          set -euo pipefail
+          python3 scripts/extract_public_contacts.py \
+            --input results/verification-input.json \
+            --output results/public-contacts.json
+
+      - name: Prepare targeted Google Maps email fallback
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          payload = json.loads(Path("results/public-contacts.json").read_text(encoding="utf-8"))
+          lines = []
+          for item in payload.get("candidates") or []:
+              if item.get("excluded_competitor") or item.get("public_business_emails"):
+                  continue
+              link = str(item.get("maps_link_hint") or "").strip()
+              if link and link not in lines:
+                  lines.append(link)
+          Path("results/maps-email-fallback-input.txt").write_text(
+              "".join(line + "\n" for line in lines),
+              encoding="utf-8",
+          )
+          print(f"TARGETED_MAPS_EMAIL_CANDIDATES={len(lines)}")
+          PY
+
+      - name: Targeted Google Maps email fallback
+        run: |
+          set -euo pipefail
+          if [ -s results/maps-email-fallback-input.txt ]; then
+            mkdir -p results/google-maps
+            docker pull gosom/google-maps-scraper:v1.18.1
+            docker run --rm \
+              -v "$PWD/results/maps-email-fallback-input.txt:/queries.txt:ro" \
+              -v "$PWD/results/google-maps:/out" \
+              gosom/google-maps-scraper:v1.18.1 \
+              -input /queries.txt \
+              -results /out/email-fallback.csv \
+              -depth 1 \
+              -email \
+              -exit-on-inactivity 3m
+            PYTHONPATH=scripts python3 scripts/apply_google_maps_email_fallback.py \
+              --contacts results/public-contacts.json \
+              --google-maps-csv results/google-maps/email-fallback.csv \
+              --output results/public-contacts.json
+          else
+            echo "TARGETED_MAPS_EMAIL_FALLBACK=not_needed"
+          fi
+
+      - name: Build verified ready-for-copy set
+        run: |
+          set -euo pipefail
+          python3 scripts/build_verification_ready.py \
+            --contacts results/public-contacts.json \
+            --output results/verification-ready.json
+
+      - name: Prove verify-only phase boundary
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          ready = json.loads(Path("results/verification-ready.json").read_text(encoding="utf-8"))
+          safety = ready.get("safety") or {}
+          for key in ("copy_created", "draft_created", "email_send"):
+              if safety.get(key) is not False:
+                  raise SystemExit(f"verify-only safety boundary failed: {key}")
+          raw = Path("results/verification-ready.json").read_text(encoding="utf-8").casefold()
+          for forbidden in ('"subject"', '"body"', '"concept_preview"'):
+              if forbidden in raw:
+                  raise SystemExit(f"verify-only output contains copy field: {forbidden}")
+          print("VERIFY_ONLY_BOUNDARY=green")
+          PY
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: phase3-verify-${{ github.run_number }}-offset-${{ steps.request.outputs.offset }}
+          path: |
+            results/verification-input.json
+            results/public-contacts.json
+            results/verification-ready.json
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Remove raw fallback residue
+        if: always()
+        run: rm -rf results/google-maps results/discovery.zip results/maps-email-fallback-input.txt
