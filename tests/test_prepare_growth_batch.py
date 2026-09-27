@@ -25,23 +25,25 @@ class GrowthBatchTests(unittest.TestCase):
             "contact_basis_hint": "public_email_review_required",
         }
 
-    def test_review_required_contact_becomes_real_review_draft(self):
+    def test_review_required_contact_becomes_review_draft(self):
         row = prepare_batch({"candidates": [self.contact()]}, self.config(), draft_limit=1)["rows"][0]
         self.assertEqual(row["status"], "review_draft")
         self.assertTrue(row["lead_id"].startswith("growth-"))
         self.assertEqual(row["subject"], "Idee voor Voorbeeld BV")
-        self.assertIn("Groeiabonnement — €250–€500 p/m, afhankelijk van scope", row["body"])
         for value in (
-            "Website/webshop verbeteren",
+            "Website/webshop verbeteren of nieuw maken waar nodig",
             "Zoekbaarheid verbeteren",
             "Social content verzorgen",
-            "30% automatiseren",
+            "deels automatiseren",
             "Hosting overnemen/beheren",
-            "Andrew als vast contactpersoon",
+            "Ik als vast contactpersoon",
+            "€250–€500 per maand",
+            "voorbeeld design",
+            "Groet,\nAndrew",
         ):
             self.assertIn(value, row["body"])
-        self.assertIn("Met vriendelijke groet", row["body"])
-        self.assertIn("Webactueel B.V.", row["body"])
+        self.assertNotIn("30%", row["body"])
+        self.assertNotIn("Webactueel B.V.", row["body"])
 
     def test_pass_contact_becomes_draft_ready(self):
         row = prepare_batch(
@@ -51,8 +53,9 @@ class GrowthBatchTests(unittest.TestCase):
         )["rows"][0]
         self.assertEqual(row["status"], "draft_ready")
         self.assertEqual(row["subject"], "An idea for Example Ltd")
-        self.assertIn("Growth Subscription — €250–€500/month, depending on scope", row["body"])
-        self.assertIn("Regards,", row["body"])
+        self.assertIn("€250–€500 per month", row["body"])
+        self.assertIn("no-obligation example design", row["body"])
+        self.assertNotIn("30%", row["body"])
 
     def test_draft_limit_keeps_flow_small(self):
         second = {**self.contact(), "name_hint": "Tweede BV", "public_business_emails": ["info@tweede.nl"]}
@@ -69,11 +72,10 @@ class GrowthBatchTests(unittest.TestCase):
         self.assertIsNone(row["email"])
         self.assertIsNone(row["concept_preview"])
 
-    def test_copy_and_subject_stay_bounded(self):
+    def test_copy_and_subject_stay_compact(self):
         for language in ("nl", "en"):
             row = prepare_batch({"candidates": [self.contact(language=language)]}, self.config())["rows"][0]
-            self.assertGreaterEqual(len(row["body"].split()), 80)
-            self.assertLessEqual(len(row["body"].split()), 130)
+            self.assertLessEqual(len(row["body"].split()), 120)
             self.assertLessEqual(len(row["subject"].split()), 6)
 
     def test_long_company_uses_short_fallback_subject(self):
