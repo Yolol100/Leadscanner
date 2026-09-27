@@ -1,0 +1,179 @@
+name: Replay reviewed Growth drafts
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+concurrency:
+  group: leads-myhost-replay
+  cancel-in-progress: false
+
+jobs:
+  replay:
+    if: >-
+      github.event.issue.user.login == github.repository_owner &&
+      startsWith(github.event.issue.title, '[growth-draft-replay]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Validate replay request
+        id: request
+        env:
+          EVENT_PATH: ${{ github.event_path }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, re
+          from pathlib import Path
+
+          event = json.loads(Path(os.environ["EVENT_PATH"]).read_text(encoding="utf-8"))
+          try:
+              req = json.loads(event["issue"].get("body") or "{}")
+          except json.JSONDecodeError as exc:
+              raise SystemExit(f"issue body must be JSON: {exc}")
+
+          run_id = int(req.get("source_run_id") or 0)
+          artifact = str(req.get("artifact_name") or "").strip()
+          lead_ids = req.get("lead_ids") or []
+          if run_id <= 0:
+              raise SystemExit("source_run_id must be positive")
+          if not artifact or len(artifact) > 100:
+              raise SystemExit("artifact_name is required")
+          if not isinstance(lead_ids, list) or not 1 <= len(lead_ids) <= 100:
+              raise SystemExit("lead_ids must contain 1-100 IDs")
+          if len(set(lead_ids)) != len(lead_ids):
+              raise SystemExit("lead_ids must be unique")
+          if any(not re.fullmatch(r"growth-[0-9a-f]{20}", str(x)) for x in lead_ids):
+              raise SystemExit("invalid growth lead_id")
+
+          Path("replay").mkdir(exist_ok=True)
+          Path("replay/request.json").write_text(
+              json.dumps({"source_run_id": run_id, "artifact_name": artifact, "lead_ids": lead_ids}),
+              encoding="utf-8",
+          )
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as out:
+              out.write(f"source_run_id={run_id}\n")
+              out.write(f"artifact_name={artifact}\n")
+              out.write(f"count={len(lead_ids)}\n")
+          PY
+
+      - name: Download verified source artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ steps.request.outputs.source_run_id }}
+          ARTIFACT_NAME: ${{ steps.request.outputs.artifact_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p replay/source
+          gh run download "$SOURCE_RUN_ID" -n "$ARTIFACT_NAME" -D replay/source
+          test -s replay/source/growth-batch.json
+
+      - name: Build exact replay batch
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          req = json.loads(Path("replay/request.json").read_text(encoding="utf-8"))
+          source = json.loads(Path("replay/source/growth-batch.json").read_text(encoding="utf-8"))
+          by_id = {row.get("lead_id"): row for row in source.get("rows") or [] if row.get("lead_id")}
+          selected = []
+
+          for lead_id in req["lead_ids"]:
+              row = by_id.get(lead_id)
+              if not row:
+                  raise SystemExit(f"lead_id not present in source artifact: {lead_id}")
+              if row.get("excluded_competitor"):
+                  raise SystemExit(f"excluded competitor requested: {lead_id}")
+              if not row.get("email") or not row.get("subject_preview") or not row.get("concept_preview"):
+                  raise SystemExit(f"incomplete verified row: {lead_id}")
+              basis = str(row.get("contact_basis_status") or "")
+              if basis not in {"review_required", "pass"}:
+                  raise SystemExit(f"unsupported contact basis for replay: {lead_id}: {basis}")
+
+              copy = dict(row)
+              copy["status"] = "draft_ready" if basis == "pass" else "review_draft"
+              copy["subject"] = row["subject_preview"]
+              copy["body"] = row["concept_preview"]
+              selected.append(copy)
+
+          if len(selected) != len(req["lead_ids"]):
+              raise SystemExit("replay selection count mismatch")
+
+          out = {
+              "schema_version": "webactueel-growth-replay/1.0",
+              "source_run_id": req["source_run_id"],
+              "row_count": len(selected),
+              "rows": selected,
+              "safety": {"automatic_send": False, "imap_draft_only": True},
+          }
+          Path("replay/replay-batch.json").write_text(
+              json.dumps(out, indent=2, ensure_ascii=False) + "\n",
+              encoding="utf-8",
+          )
+          print(f"REPLAY_BATCH=green count={len(selected)}")
+          PY
+
+      - name: Create and exactly read back mijn.host drafts
+        env:
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME || 'Andrew Baeten' }}
+          OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
+          OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
+          EXPECTED: ${{ steps.request.outputs.count }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH=scripts python3 scripts/myhost_draft.py             --batch replay/replay-batch.json             --report replay/replay-drafts.json | tee replay/replay-drafts.txt
+          grep -q '^MYHOST_DRAFT_SYNC=green ' replay/replay-drafts.txt
+          grep -q 'smtp_send=not_available' replay/replay-drafts.txt
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          report = json.loads(Path("replay/replay-drafts.json").read_text(encoding="utf-8"))
+          expected = int(os.environ["EXPECTED"])
+          actual = int(report["created_count"]) + int(report["existing_count"])
+          if report["eligible_count"] != expected or actual != expected:
+              raise SystemExit(
+                  f"Expected exactly {expected} drafts; eligible={report['eligible_count']} readback={actual}"
+              )
+          if report.get("smtp_send") != "not_available":
+              raise SystemExit("SMTP send must remain unavailable")
+          print(f"REPLAY_READBACK=green count={actual}")
+          PY
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: growth-draft-replay-${{ github.run_number }}
+          path: |
+            replay/replay-drafts.json
+            replay/replay-drafts.txt
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Close owner request issue
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          EXPECTED: ${{ steps.request.outputs.count }}
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --body "Exactly $EXPECTED mijn.host review drafts exist and exact readback passed. Nothing was sent."
+          gh issue close "$ISSUE_NUMBER"
