@@ -24,8 +24,7 @@ def clean_company(value: object, language: str) -> str:
 
 def subject_for_company(company: str, language: str) -> str:
     candidate = f"An idea for {company}" if language == "en" else f"Idee voor {company}"
-    words = candidate.split()
-    if len(candidate) <= 50 and 3 <= len(words) <= 6:
+    if len(candidate) <= 50 and 2 <= len(candidate.split()) <= 6:
         return candidate
     return "Idea for your online setup" if language == "en" else "Idee voor jullie online aanpak"
 
@@ -34,39 +33,31 @@ def build_template(company: str, language: str, *, price_min: int, price_max: in
     if language == "en":
         return (
             "Hello,\n\n"
-            f"I came across {company} online. One practical approach may be useful.\n\n"
-            "With one Growth Subscription, I handle several ongoing online areas "
-            "without separate suppliers for each one.\n\n"
-            f"Growth Subscription — €{price_min}–€{price_max}/month, depending on scope\n"
-            "• Improve website/webshop\n"
+            f"I came across {company} online. I help businesses improve their online setup with one compact Growth Subscription.\n\n"
+            "• Improve or rebuild the website/webshop where needed\n"
             "• Improve search visibility\n"
             "• Create social content\n"
-            "• Automate suitable recurring work up to about 30% where feasible\n"
+            "• Partly automate suitable recurring processes where feasible\n"
             "• Take over/manage hosting\n"
-            "• Andrew as your fixed contact\n\n"
-            "The scope follows your priorities and agreed scope.\n\n"
-            f"Would you like me to outline the 2–3 areas I would look at first for {company}?\n\n"
+            "• Me as your fixed contact\n\n"
+            f"€{price_min}–€{price_max} per month, depending on what you need.\n\n"
+            f"Would you like me to make a no-obligation example design for {company}, so you can first see whether the direction is relevant?\n\n"
             "Not relevant? Let me know and I’ll leave it there.\n\n"
-            "Regards,\nAndrew Baeten\nWebactueel B.V.\n"
-            "Laan van Zuid Hoorn 70\n2289 DE Rijswijk\nandrewbaeten.nl"
+            "Regards,\nAndrew"
         )
     return (
         "Goedendag,\n\n"
-        f"Ik kwam {company} online tegen. Eén praktische aanpak kan interessant zijn.\n\n"
-        "Met één Groeiabonnement pak ik meerdere online onderdelen doorlopend op, "
-        "zonder losse partijen per onderdeel.\n\n"
-        f"Groeiabonnement — €{price_min}–€{price_max} p/m, afhankelijk van scope\n"
-        "• Website/webshop verbeteren\n"
+        f"Ik kwam {company} online tegen. Met één compact Groeiabonnement help ik bedrijven hun online aanpak doorlopend verbeteren.\n\n"
+        "• Website/webshop verbeteren of nieuw maken waar nodig\n"
         "• Zoekbaarheid verbeteren\n"
         "• Social content verzorgen\n"
-        "• Geschikt terugkerend werk tot circa 30% automatiseren waar haalbaar\n"
+        "• Geschikte terugkerende processen waar haalbaar deels automatiseren\n"
         "• Hosting overnemen/beheren\n"
-        "• Andrew als vast contactpersoon\n\n"
-        "De invulling volgt jullie prioriteiten en afgesproken scope.\n\n"
-        f"Zal ik kort aangeven welke 2–3 onderdelen ik bij {company} als eerste zou bekijken?\n\n"
+        "• Ik als vast contactpersoon\n\n"
+        f"€{price_min}–€{price_max} per maand, afhankelijk van wat jullie nodig hebben.\n\n"
+        f"Zal ik vrijblijvend een voorbeeld design maken voor {company}? Dan kunnen jullie eerst bekijken of de richting interessant is.\n\n"
         "Geen interesse? Laat het gerust weten, dan houd ik het hierbij.\n\n"
-        "Met vriendelijke groet,\nAndrew Baeten\nWebactueel B.V.\n"
-        "Laan van Zuid Hoorn 70\n2289 DE Rijswijk\nandrewbaeten.nl"
+        "Groet,\nAndrew"
     )
 
 
@@ -128,7 +119,7 @@ def prepare_batch(contacts_payload: dict, config: dict, *, draft_limit: int = 1)
         rows.append(base)
 
     return {
-        "schema_version": "webactueel-growth-batch/3.0",
+        "schema_version": "webactueel-growth-batch/4.0",
         "product": config,
         "row_count": len(rows),
         "excluded_competitor_count": sum(1 for row in rows if row["status"] == "excluded_competitor"),
