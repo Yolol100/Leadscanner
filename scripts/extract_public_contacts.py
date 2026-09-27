@@ -137,6 +137,29 @@ def _visible_text(html: str) -> str:
     return f" {_normalize_text(unescape(text))} "
 
 
+def extract_verified_observation(html: str) -> str | None:
+    candidates: list[str] = []
+    for pattern in (
+        r"(?is)<h1\b[^>]*>(.*?)</h1>",
+        r"(?is)<title\b[^>]*>(.*?)</title>",
+    ):
+        match = re.search(pattern, html or "")
+        if match:
+            candidates.append(match.group(1))
+
+    for raw in candidates:
+        text = re.sub(r"(?s)<[^>]+>", " ", raw)
+        text = re.sub(r"\s+", " ", unescape(text)).strip(" \t\r\n-|")
+        lowered = text.casefold()
+        if (
+            3 <= len(text.split()) <= 24
+            and 8 <= len(text) <= 160
+            and not any(term in lowered for term in ("cookie", "privacy policy", "privacybeleid"))
+        ):
+            return text
+    return None
+
+
 def normalize_domain(value: object) -> str | None:
     text = str(value or "").strip()
     if not text:
@@ -368,6 +391,9 @@ def inspect_candidate(candidate: dict, *, session_factory=requests.Session) -> d
         "email_source_urls": [],
         "email_source_types": [],
         "email_source_refs": [],
+        "verified_observation": None,
+        "verified_observation_source_url": None,
+        "verified_observation_source_type": None,
         "language": language_default,
         "language_source": "market_fallback",
         "excluded_competitor": False,
@@ -405,6 +431,12 @@ def inspect_candidate(candidate: dict, *, session_factory=requests.Session) -> d
         result["exclusion_reason"] = site_reason
         result["contact_discovery_status"] = "excluded_competitor"
         return result
+
+    observation = extract_verified_observation(html)
+    if observation:
+        result["verified_observation"] = observation
+        result["verified_observation_source_url"] = final_url
+        result["verified_observation_source_type"] = "official_site"
 
     pages.append((final_url, html))
     for link in discover_contact_links(html, final_url, domain):
