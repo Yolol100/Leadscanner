@@ -120,6 +120,7 @@ jobs:
             "kitchen furniture store":("keukens",["keuken"]),
             "plumber":("loodgieters- en installatiewerk",["loodgieter","installatie","cv"]),
             "furnace repair service":("cv-onderhoud en installatiewerk",["cv","ketel","verwarming"]),
+            "resume service":("cv-onderhoud en installatiewerk",["cv","ketel","onderhoud"]),
             "gutter service":("dak- en gootwerk",["dak","goot","dakreparatie"]),
           }
 
