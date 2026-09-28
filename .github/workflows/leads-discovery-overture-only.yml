@@ -28,7 +28,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: leads-discovery-overture-only
+  group: >-
+    ${{ github.event_name == 'issues' && startsWith(github.event.issue.title, '[lead-discovery-overture]') && 'active' || github.run_id }}
   cancel-in-progress: true
 
 jobs:

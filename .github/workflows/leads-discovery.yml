@@ -33,7 +33,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: leads-discovery-only
+  group: >-
+    ${{ github.event_name == 'issues' && startsWith(github.event.issue.title, '[lead-discovery]') && 'active' || github.run_id }}
   cancel-in-progress: true
 
 jobs:
