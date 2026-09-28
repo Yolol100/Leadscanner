@@ -8,6 +8,19 @@ import re
 from pathlib import Path
 
 
+FOCUS_PATTERNS = (
+    ("fysiotherapie", "physical therapy", r"fysio|fysiotherapie|revalidatie|dry needling"),
+    ("fietsen en fietsservice", "bicycles and bike service", r"fiets|bike|tweewiel|giant store|rental & repair"),
+    ("bloemen en planten", "flowers and plants", r"bloem|flower|florist|boeket"),
+    ("auto-onderhoud en reparatie", "car maintenance and repair", r"garage|auto|automotive|apk|carservice|car center|car service|autoservice|werkplaats"),
+    ("tandzorg en mondzorg", "dental care", r"tand|dental|mondzorg|tandheel"),
+    ("optiek en oogzorg", "eyewear and eye care", r"optiek|opticien|bril|oog|eyewear|contactlen|optometr"),
+    ("sieraden en juwelierswerk", "jewellery and jewellery services", r"juwel|sieraad|goud|diamant|edelsteen|goldsmith|goudsmid|jewelry|jeweler"),
+    ("kinderopvang", "childcare", r"kinderopvang|kinderdag|bso|day care|kinderfort|kindergarden|kinder"),
+    ("restaurant en gastvrijheid", "restaurant and hospitality", r"restaurant|à la carte|horeca"),
+)
+
+
 def load_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -22,18 +35,96 @@ def clean_company(value: object, language: str) -> str:
     return text or ("your company" if language == "en" else "jullie bedrijf")
 
 
+def short_company_name(company: str) -> str:
+    text = re.sub(r"\s+", " ", str(company or "")).strip()
+    for separator in (" – ", " - ", " | ", " / "):
+        if separator in text:
+            text = text.split(separator, 1)[0].strip()
+            break
+    words = text.split()
+    if len(words) > 4:
+        text = " ".join(words[:4])
+    return text
+
+
 def subject_for_company(company: str, language: str) -> str:
-    candidate = f"An idea for {company}" if language == "en" else f"Idee voor {company}"
-    if len(candidate) <= 50 and 2 <= len(candidate.split()) <= 6:
+    label = short_company_name(company)
+    candidate = f"An idea for {label}" if language == "en" else f"Idee voor {label}"
+    if len(candidate) <= 56 and 2 <= len(candidate.split()) <= 7:
         return candidate
     return "Idea for your online setup" if language == "en" else "Idee voor jullie online aanpak"
 
 
+def infer_focus_from_observation(observation: str, language: str) -> str | None:
+    haystack = str(observation or "").casefold()
+    for nl, en, pattern in FOCUS_PATTERNS:
+        if re.search(pattern, haystack, flags=re.IGNORECASE):
+            return en if language == "en" else nl
+    return None
+
+
+def _word_set(value: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9]+", value.casefold()))
+
+
+def observation_is_low_signal(company: str, observation: str) -> bool:
+    text = re.sub(r"\s+", " ", str(observation or "")).strip()
+    low = text.casefold()
+    if not text:
+        return True
+    if re.match(r"^(home|homepage|welkom|welcome)\b", low):
+        return True
+    if low in {"gelieve te wachten", "mysite", "wij zijn verhuisd..", "wij zijn verhuisd"}:
+        return True
+    company_words = _word_set(company)
+    observation_words = _word_set(text)
+    if company_words and observation_words:
+        extra = observation_words - company_words
+        if len(extra) <= 1 and len(observation_words) <= len(company_words) + 1:
+            return True
+    return False
+
+
+def build_opening(company: str, language: str, observation: str) -> str:
+    company_label = short_company_name(company)
+    focus = infer_focus_from_observation(observation, language)
+    low_signal = observation_is_low_signal(company, observation)
+    if language == "en":
+        if low_signal and focus:
+            fact = f"Your site is clearly focused on {focus}."
+        elif low_signal:
+            fact = ""
+        elif focus:
+            fact = f"One detail that stood out was “{observation}”, with a clear focus on {focus}."
+        else:
+            fact = f"One detail that stood out was “{observation}”."
+        fact_part = f" {fact}" if fact else ""
+        return (
+            f"I came across {company_label} and looked through your website.{fact_part} "
+            f"My idea for {company_label}: make the website, search visibility and content work together as one coherent approach."
+        )
+    if low_signal and focus:
+        fact = f"Jullie site draait duidelijk om {focus}."
+    elif low_signal:
+        fact = ""
+    elif focus:
+        fact = f"Eén detail dat opviel was “{observation}”, met een duidelijke nadruk op {focus}."
+    else:
+        fact = f"Eén detail dat opviel was “{observation}”."
+    fact_part = f" {fact}" if fact else ""
+    return (
+        f"Ik kwam {company_label} tegen en heb jullie website bekeken.{fact_part} "
+        f"Mijn idee voor {company_label}: website, vindbaarheid en content meer als één geheel laten samenwerken."
+    )
+
+
 def build_template(company: str, language: str, observation: str, *, price_min: int, price_max: int) -> str:
+    company_label = short_company_name(company)
+    opening = build_opening(company, language, observation)
     if language == "en":
         return (
             "Hello,\n\n"
-            f"Your website highlights “{observation}”. I help businesses improve their online setup with one compact Growth Subscription.\n\n"
+            f"{opening}\n\n"
             "• Improve or rebuild the website/webshop where needed\n"
             "• Improve search visibility\n"
             "• Create social content\n"
@@ -41,13 +132,13 @@ def build_template(company: str, language: str, observation: str, *, price_min: 
             "• Take over/manage hosting\n"
             "• Me as your fixed contact\n\n"
             f"€{price_min}–€{price_max} per month, depending on what you need.\n\n"
-            f"Would you like me to make a no-obligation example design for {company}, so you can first see whether the direction is relevant?\n\n"
+            f"Would you like me to make a no-obligation example design for {company_label}, so you can first see whether the direction is relevant?\n\n"
             "Not relevant? Let me know and I’ll leave it there.\n\n"
             "Regards,\nAndrew"
         )
     return (
         "Goedendag,\n\n"
-        f"Op jullie website staat “{observation}”. Met één compact Groeiabonnement help ik bedrijven hun online aanpak doorlopend verbeteren.\n\n"
+        f"{opening}\n\n"
         "• Website/webshop verbeteren of nieuw maken waar nodig\n"
         "• Zoekbaarheid verbeteren\n"
         "• Social content verzorgen\n"
@@ -55,7 +146,7 @@ def build_template(company: str, language: str, observation: str, *, price_min: 
         "• Hosting overnemen/beheren\n"
         "• Ik als vast contactpersoon\n\n"
         f"€{price_min}–€{price_max} per maand, afhankelijk van wat jullie nodig hebben.\n\n"
-        f"Zal ik vrijblijvend een voorbeeld design maken voor {company}? Dan kunnen jullie eerst bekijken of de richting interessant is.\n\n"
+        f"Zal ik vrijblijvend een voorbeeld design maken voor {company_label}? Dan kunnen jullie eerst bekijken of de richting interessant is.\n\n"
         "Geen interesse? Laat het gerust weten, dan houd ik het hierbij.\n\n"
         "Groet,\nAndrew"
     )
@@ -94,6 +185,7 @@ def prepare_batch(contacts_payload: dict, config: dict, *, draft_limit: int = 1)
         base = {
             "lead_id": None,
             "company": candidate.get("name_hint"),
+            "copy_company_label": short_company_name(company),
             "website": candidate.get("website_hint"),
             "official_domain_hint": candidate.get("official_domain_hint"),
             "product_id": "growth_subscription",
@@ -136,7 +228,7 @@ def prepare_batch(contacts_payload: dict, config: dict, *, draft_limit: int = 1)
         rows.append(base)
 
     return {
-        "schema_version": "webactueel-growth-batch/4.1",
+        "schema_version": "webactueel-growth-batch/4.2",
         "product": config,
         "row_count": len(rows),
         "excluded_competitor_count": sum(1 for row in rows if row["status"] == "excluded_competitor"),
@@ -149,6 +241,7 @@ def prepare_batch(contacts_payload: dict, config: dict, *, draft_limit: int = 1)
             "six_benefits": True,
             "language_matched_copy": True,
             "verified_official_site_observation_required": True,
+            "personalized_company_opening": True,
             "contact_basis_review_required_before_send": True,
             "review_draft_storage_allowed": True,
             "automatic_send": False,

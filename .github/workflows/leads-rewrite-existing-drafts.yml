@@ -1,0 +1,239 @@
+name: Leads Rewrite Existing Drafts
+
+on:
+  workflow_dispatch:
+    inputs:
+      artifact_id:
+        description: 'Existing verified-draft artifact ID to rewrite'
+        required: true
+        type: string
+      expected_count:
+        description: 'Exact number of existing review drafts to replace (1-100)'
+        required: true
+        default: '75'
+        type: string
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+concurrency:
+  group: leads-rewrite-existing-drafts
+  cancel-in-progress: false
+
+jobs:
+  rewrite:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issues' &&
+       github.event.issue.user.login == github.repository_owner &&
+       startsWith(github.event.issue.title, '[growth-draft-rewrite]'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Resolve rewrite request
+        id: request
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_PATH: ${{ github.event_path }}
+          INPUT_ARTIFACT_ID: ${{ inputs.artifact_id }}
+          INPUT_EXPECTED: ${{ inputs.expected_count }}
+        run: |
+          set -euo pipefail
+          mkdir -p results
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          if os.environ["EVENT_NAME"] == "issues":
+              event = json.loads(Path(os.environ["EVENT_PATH"]).read_text(encoding="utf-8"))
+              try:
+                  request = json.loads(event["issue"].get("body") or "{}")
+              except json.JSONDecodeError as exc:
+                  raise SystemExit(f"issue body must be JSON: {exc}")
+              artifact_id = int(request.get("artifact_id") or 0)
+              expected = int(request.get("expected_count") or 75)
+          else:
+              artifact_id = int(os.environ["INPUT_ARTIFACT_ID"] or 0)
+              expected = int(os.environ["INPUT_EXPECTED"] or 75)
+
+          if artifact_id <= 0:
+              raise SystemExit("artifact_id must be positive")
+          if not 1 <= expected <= 100:
+              raise SystemExit("expected_count must be 1-100")
+
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as out:
+              out.write(f"artifact_id={artifact_id}\n")
+              out.write(f"expected={expected}\n")
+          print(f"REWRITE_REQUEST=green artifact_id={artifact_id} expected={expected}")
+          PY
+
+      - name: Download existing verified-draft artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.request.outputs.artifact_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p results/source
+          gh api -H "Accept: application/vnd.github+json" \
+            "/repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" > results/source.zip
+          unzip -q results/source.zip -d results/source
+          test -s results/source/verified-draft-input.json
+          test -s results/source/growth-batch.json
+          echo "REWRITE_SOURCE_READBACK=green"
+
+      - name: Rebuild personalized copy for same leads
+        env:
+          EXPECTED: ${{ steps.request.outputs.expected }}
+        run: |
+          set -euo pipefail
+          python3 scripts/prepare_growth_batch.py \
+            --contacts results/source/verified-draft-input.json \
+            --config config/growth-subscription.json \
+            --output-json results/growth-batch.json \
+            --output-csv results/growth-batch.csv \
+            --draft-limit "$EXPECTED"
+
+      - name: Prove rewrite scope and copy quality
+        env:
+          EXPECTED: ${{ steps.request.outputs.expected }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          expected = int(os.environ["EXPECTED"])
+          old_batch = json.loads(Path("results/source/growth-batch.json").read_text(encoding="utf-8"))
+          new_batch = json.loads(Path("results/growth-batch.json").read_text(encoding="utf-8"))
+          old_rows = {row["lead_id"]: row for row in old_batch.get("rows") or [] if row.get("status") == "review_draft"}
+          new_rows = {row["lead_id"]: row for row in new_batch.get("rows") or [] if row.get("status") == "review_draft"}
+
+          if len(old_rows) != expected or len(new_rows) != expected:
+              raise SystemExit(f"expected {expected} old/new review drafts, got {len(old_rows)}/{len(new_rows)}")
+          if set(old_rows) != set(new_rows):
+              raise SystemExit("rewrite lead-ID set changed")
+          if (new_batch.get("safety") or {}).get("automatic_send") is not False:
+              raise SystemExit("automatic send must remain disabled")
+          if (new_batch.get("safety") or {}).get("personalized_company_opening") is not True:
+              raise SystemExit("personalized opening safety marker missing")
+
+          changed = 0
+          for lead_id, row in new_rows.items():
+              old = old_rows[lead_id]
+              if row.get("email") != old.get("email") or row.get("website") != old.get("website"):
+                  raise SystemExit(f"{lead_id}: recipient or website changed")
+              if row.get("contact_basis_status") != "review_required":
+                  raise SystemExit(f"{lead_id}: review_required lost")
+              if row.get("verified_observation_source_type") != "official_site":
+                  raise SystemExit(f"{lead_id}: official-site provenance lost")
+              body = str(row.get("body") or "")
+              subject = str(row.get("subject") or "")
+              company_label = str(row.get("copy_company_label") or "").strip()
+              bullets = [line for line in body.splitlines() if line.startswith("• ")]
+              if len(bullets) != 6:
+                  raise SystemExit(f"{lead_id}: expected six bullets")
+              if body.count("€250–€500") != 1 or re.search(r"\b\d+\s*%", body):
+                  raise SystemExit(f"{lead_id}: price/percentage boundary failed")
+              if not company_label or company_label not in body or company_label not in subject:
+                  raise SystemExit(f"{lead_id}: company label missing from personalized copy")
+              if "Op jullie website staat" in body or "Your website highlights" in body:
+                  raise SystemExit(f"{lead_id}: old vague opening survived")
+              if not 2 <= len(subject.split()) <= 8:
+                  raise SystemExit(f"{lead_id}: subject length invalid")
+              if body != str(old.get("body") or "") or subject != str(old.get("subject") or ""):
+                  changed += 1
+
+          if changed != expected:
+              raise SystemExit(f"all {expected} drafts must change; changed={changed}")
+          print(f"PERSONALIZED_REWRITE_AUDIT=green count={expected} automatic_send=false")
+          PY
+
+      - name: Safely replace and exactly read back mijn.host drafts
+        env:
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME || 'Andrew Baeten' }}
+          OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
+          OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
+          EXPECTED: ${{ steps.request.outputs.expected }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH=scripts python3 scripts/myhost_draft.py \
+            --batch results/growth-batch.json \
+            --report results/myhost-drafts.json | tee results/myhost-drafts.txt
+          grep -q '^MYHOST_DRAFT_SYNC=green ' results/myhost-drafts.txt
+          grep -q 'smtp_send=not_available' results/myhost-drafts.txt
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          expected = int(os.environ["EXPECTED"])
+          batch = json.loads(Path("results/growth-batch.json").read_text(encoding="utf-8"))
+          report = json.loads(Path("results/myhost-drafts.json").read_text(encoding="utf-8"))
+          rows = {row["lead_id"]: row for row in batch.get("rows") or [] if row.get("status") == "review_draft"}
+          if report.get("eligible_count") != expected:
+              raise SystemExit("eligible_count mismatch")
+          if report.get("created_count") != 0 or report.get("existing_count") != 0:
+              raise SystemExit("rewrite must not create or keep unchanged drafts")
+          if report.get("replaced_count") != expected:
+              raise SystemExit(f"expected {expected} replacements, got {report.get('replaced_count')}")
+          if report.get("review_required_count") != expected:
+              raise SystemExit("review_required_count mismatch")
+          if report.get("smtp_send") != "not_available":
+              raise SystemExit("SMTP/send must remain unavailable")
+          if len(report.get("items") or []) != expected:
+              raise SystemExit("readback item count mismatch")
+          for item in report.get("items") or []:
+              lead_id = item.get("lead_id")
+              row = rows.get(lead_id)
+              if not row or item.get("outcome") != "replaced":
+                  raise SystemExit(f"{lead_id}: replacement outcome mismatch")
+              if item.get("to") != row.get("email") or item.get("subject") != row.get("subject") or item.get("body") != row.get("body"):
+                  raise SystemExit(f"{lead_id}: exact readback mismatch")
+              if item.get("review_status") != "contact-basis":
+                  raise SystemExit(f"{lead_id}: review status mismatch")
+          print(f"PERSONALIZED_REWRITE_READBACK=green count={expected} automatic_send=false")
+          PY
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: personalized-draft-rewrite-${{ github.run_number }}
+          path: |
+            results/growth-batch.json
+            results/growth-batch.csv
+            results/myhost-drafts.json
+            results/myhost-drafts.txt
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Remove source artifact residue
+        if: always()
+        run: rm -rf results/source results/source.zip
+
+      - name: Close owner request issue
+        if: success() && github.event_name == 'issues'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --body "Existing review drafts safely rewritten and exactly read back. Nothing was sent."
+          gh issue close "$ISSUE_NUMBER"

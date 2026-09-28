@@ -167,6 +167,8 @@ jobs:
               raise SystemExit("Every selected public-email contact must remain review_required")
           if (batch.get("safety") or {}).get("automatic_send") is not False:
               raise SystemExit("automatic send must remain disabled")
+          if (batch.get("safety") or {}).get("personalized_company_opening") is not True:
+              raise SystemExit("personalized company opening marker is required")
 
           emails = set()
           domains = set()
@@ -179,6 +181,7 @@ jobs:
               body = str(row.get("body") or "")
               subject = str(row.get("subject") or "")
               observation = str(row.get("verified_observation") or "")
+              company_label = str(row.get("copy_company_label") or "").strip()
               bullets = [line for line in body.splitlines() if line.startswith("• ")]
               if len(bullets) != 6:
                   raise SystemExit("copy must contain exactly six compact bullets")
@@ -186,8 +189,12 @@ jobs:
                   raise SystemExit("copy must contain the Growth Subscription price exactly once")
               if re.search(r"\b\d+\s*%", body):
                   raise SystemExit("first touch must not contain an automation percentage")
-              if not observation or observation not in body:
-                  raise SystemExit("verified site observation must appear in the opening")
+              if not observation:
+                  raise SystemExit("verified site observation is required")
+              if not company_label or company_label not in body or company_label not in subject:
+                  raise SystemExit("personalized company label must appear in subject and body")
+              if "Op jullie website staat" in body or "Your website highlights" in body:
+                  raise SystemExit("old vague opening must not survive")
               if not 2 <= len(subject.split()) <= 8:
                   raise SystemExit("subject must stay compact")
               language = row.get("language")

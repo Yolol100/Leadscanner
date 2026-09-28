@@ -16,7 +16,7 @@ from myhost_draft import (
     plain_body,
     select_folder,
 )
-from prepare_growth_batch import prepare_batch
+from prepare_growth_batch import prepare_batch, short_company_name
 
 
 def norm(value: object) -> str:
@@ -97,8 +97,11 @@ def audit_rows(batch_payloads: list[dict], reports: list[dict], config: dict) ->
             failures.append(f"{lead_id}: price text count mismatch")
         if re.search(r"\b\d+\s*%", body):
             failures.append(f"{lead_id}: automation percentage found")
-        if observation not in body:
-            failures.append(f"{lead_id}: verified observation not used in copy")
+        company_label = str(row.get("copy_company_label") or short_company_name(str(row.get("company") or ""))).strip()
+        if not company_label or company_label not in body or company_label not in subject:
+            failures.append(f"{lead_id}: personalized company label missing from copy")
+        if "Op jullie website staat" in body or "Your website highlights" in body:
+            failures.append(f"{lead_id}: old vague opening survived")
         if language == "nl":
             if body.count("Zal ik vrijblijvend een voorbeeld design maken") != 1:
                 failures.append(f"{lead_id}: NL CTA count mismatch")

@@ -11,14 +11,14 @@ class GrowthBatchTests(unittest.TestCase):
 
     def contact(self, language="nl", basis="review_required"):
         return {
-            "name_hint": "Voorbeeld BV" if language == "nl" else "Example Ltd",
+            "name_hint": "Voorbeeld Fysiotherapie" if language == "nl" else "Example Physiotherapy",
             "website_hint": "https://voorbeeld.nl" if language == "nl" else "https://example.com",
             "official_domain_hint": "voorbeeld.nl" if language == "nl" else "example.com",
             "public_business_emails": ["info@voorbeeld.nl" if language == "nl" else "sales@example.com"],
             "email_source_urls": ["https://voorbeeld.nl/contact"],
             "email_source_types": ["official_site"],
             "email_source_refs": ["https://voorbeeld.nl/contact"],
-            "verified_observation": "Praktische dienstverlening voor bedrijven" if language == "nl" else "Practical services for businesses",
+            "verified_observation": "Fysiotherapie in Utrecht" if language == "nl" else "Physical therapy in Utrecht",
             "verified_observation_source_url": "https://voorbeeld.nl" if language == "nl" else "https://example.com",
             "verified_observation_source_type": "official_site",
             "language": language,
@@ -28,12 +28,16 @@ class GrowthBatchTests(unittest.TestCase):
             "contact_basis_hint": "public_email_review_required",
         }
 
-    def test_review_required_contact_becomes_review_draft(self):
+    def test_review_required_contact_becomes_personal_review_draft(self):
         row = prepare_batch({"candidates": [self.contact()]}, self.config(), draft_limit=1)["rows"][0]
         self.assertEqual(row["status"], "review_draft")
         self.assertTrue(row["lead_id"].startswith("growth-"))
-        self.assertEqual(row["subject"], "Idee voor Voorbeeld BV")
-        self.assertIn("Op jullie website staat “Praktische dienstverlening voor bedrijven”", row["body"])
+        self.assertEqual(row["subject"], "Idee voor Voorbeeld Fysiotherapie")
+        self.assertEqual(row["copy_company_label"], "Voorbeeld Fysiotherapie")
+        self.assertIn("Ik kwam Voorbeeld Fysiotherapie tegen", row["body"])
+        self.assertIn("met een duidelijke nadruk op fysiotherapie", row["body"])
+        self.assertIn("Fysiotherapie in Utrecht", row["body"])
+        self.assertNotIn("Op jullie website staat", row["body"])
         self.assertEqual(row["verified_observation_source_type"], "official_site")
         for value in (
             "Website/webshop verbeteren of nieuw maken waar nodig",
@@ -50,6 +54,25 @@ class GrowthBatchTests(unittest.TestCase):
         self.assertNotIn("30%", row["body"])
         self.assertNotIn("Webactueel B.V.", row["body"])
 
+    def test_low_signal_observation_uses_service_focus_without_fake_quote(self):
+        contact = self.contact()
+        contact["name_hint"] = "030 Fietsen – Tweedehands Fietsen Utrecht"
+        contact["verified_observation"] = "Home - 030 Fietsen"
+        row = prepare_batch({"candidates": [contact]}, self.config(), draft_limit=1)["rows"][0]
+        self.assertIn("Jullie site draait duidelijk om fietsen en fietsservice", row["body"])
+        self.assertNotIn("op de site komt dat terug in", row["body"])
+        self.assertEqual(row["subject"], "Idee voor 030 Fietsen")
+        self.assertIn("Ik kwam 030 Fietsen tegen", row["body"])
+        self.assertNotIn("Tweedehands Fietsen Utrecht elektrische fietsen", row["body"])
+
+    def test_observation_overrides_misleading_company_name_for_focus(self):
+        contact = self.contact()
+        contact["name_hint"] = "De Juwelier"
+        contact["verified_observation"] = "À LA CARTE RESTAURANT"
+        row = prepare_batch({"candidates": [contact]}, self.config(), draft_limit=1)["rows"][0]
+        self.assertIn("met een duidelijke nadruk op restaurant en gastvrijheid", row["body"])
+        self.assertNotIn("sieraden en juwelierswerk", row["body"])
+
     def test_pass_contact_becomes_draft_ready(self):
         row = prepare_batch(
             {"candidates": [self.contact(language="en", basis="pass")]},
@@ -57,7 +80,8 @@ class GrowthBatchTests(unittest.TestCase):
             draft_limit=1,
         )["rows"][0]
         self.assertEqual(row["status"], "draft_ready")
-        self.assertEqual(row["subject"], "An idea for Example Ltd")
+        self.assertEqual(row["subject"], "An idea for Example Physiotherapy")
+        self.assertIn("I came across Example Physiotherapy", row["body"])
         self.assertIn("€250–€500 per month", row["body"])
         self.assertIn("no-obligation example design", row["body"])
         self.assertNotIn("30%", row["body"])
@@ -74,7 +98,7 @@ class GrowthBatchTests(unittest.TestCase):
         self.assertIsNone(row["concept_preview"])
 
     def test_draft_limit_keeps_flow_small(self):
-        second = {**self.contact(), "name_hint": "Tweede BV", "public_business_emails": ["info@tweede.nl"]}
+        second = {**self.contact(), "name_hint": "Tweede Fysio", "public_business_emails": ["info@tweede.nl"]}
         result = prepare_batch({"candidates": [self.contact(), second]}, self.config(), draft_limit=1)
         self.assertEqual(result["draft_candidate_count"], 1)
         self.assertEqual(result["rows"][1]["status"], "email_found_not_selected")
@@ -91,13 +115,13 @@ class GrowthBatchTests(unittest.TestCase):
     def test_copy_and_subject_stay_compact(self):
         for language in ("nl", "en"):
             row = prepare_batch({"candidates": [self.contact(language=language)]}, self.config())["rows"][0]
-            self.assertLessEqual(len(row["body"].split()), 120)
-            self.assertLessEqual(len(row["subject"].split()), 6)
+            self.assertLessEqual(len(row["body"].split()), 150)
+            self.assertLessEqual(len(row["subject"].split()), 7)
 
-    def test_long_company_uses_short_fallback_subject(self):
+    def test_long_company_uses_personal_short_label(self):
         self.assertEqual(
-            subject_for_company("Een Bedrijfsnaam Die Veel Te Lang Is Voor Een Onderwerpregel", "nl"),
-            "Idee voor jullie online aanpak",
+            subject_for_company("030 Fietsen – Tweedehands Fietsen Utrecht elektrische fietsen", "nl"),
+            "Idee voor 030 Fietsen",
         )
 
 
