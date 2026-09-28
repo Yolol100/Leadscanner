@@ -135,3 +135,23 @@ jobs:
           ! grep -E -q 'smtplib|sendmail\(|SMTP\(' .github/workflows/leads-verified-drafts.yml
           ! grep -q 'issues: write' .github/workflows/leads-verified-drafts.yml
           echo 'VERIFIED_DRAFT_ONLY_WORKFLOW=green'
+
+
+      - name: Prove isolated final-audit-only boundary
+        run: |
+          set -euo pipefail
+          test -f .github/workflows/leads-final-audit.yml
+          test -f scripts/myhost_final_audit.py
+          test -f tests/test_myhost_final_audit.py
+          grep -q 'workflow_dispatch:' .github/workflows/leads-final-audit.yml
+          grep -q 'issues:' .github/workflows/leads-final-audit.yml
+          grep -q "github.event.issue.user.login == github.repository_owner" .github/workflows/leads-final-audit.yml
+          grep -F -q "startsWith(github.event.issue.title, '[growth-final-audit]')" .github/workflows/leads-final-audit.yml
+          grep -q 'scripts/myhost_final_audit.py' .github/workflows/leads-final-audit.yml
+          grep -q 'FINAL_LEADS_AUDIT=green' .github/workflows/leads-final-audit.yml
+          grep -q 'FINAL_READ_ONLY_BOUNDARY=green' .github/workflows/leads-final-audit.yml
+          grep -q 'actions: read' .github/workflows/leads-final-audit.yml
+          ! grep -E -q 'prepare_growth_batch\.py|myhost_draft\.py|create_drafts\(' .github/workflows/leads-final-audit.yml
+          ! grep -E -q 'client\.append|client\.store|client\.expunge|smtplib|sendmail\(|SMTP\(' scripts/myhost_final_audit.py
+          ! grep -q 'issues: write' .github/workflows/leads-final-audit.yml
+          echo 'FINAL_AUDIT_ONLY_WORKFLOW=green'
