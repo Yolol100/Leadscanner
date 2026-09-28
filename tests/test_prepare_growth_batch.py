@@ -61,7 +61,7 @@ class GrowthBatchTests(unittest.TestCase):
         self.assertIn("Ik zag dat 030 Fietsen zich richt op fietsen en fietsservice", row["body"])
         self.assertNotIn("op de site komt dat terug in", row["body"])
         self.assertEqual(row["subject"], "Idee voor 030 Fietsen")
-        self.assertIn("Ik kwam 030 Fietsen tegen", row["body"])
+        self.assertIn("Ik zag dat 030 Fietsen zich richt op fietsen en fietsservice", row["body"])
         self.assertNotIn("Tweedehands Fietsen Utrecht elektrische fietsen", row["body"])
 
     def test_observation_overrides_misleading_company_name_for_focus(self):
@@ -80,7 +80,7 @@ class GrowthBatchTests(unittest.TestCase):
         )["rows"][0]
         self.assertEqual(row["status"], "draft_ready")
         self.assertEqual(row["subject"], "An idea for Example Physiotherapy")
-        self.assertIn("I saw that Example Physiotherapy focuses on physical therapy", row["body"])
+        self.assertIn("I looked through Example Physiotherapy's website", row["body"])
         self.assertIn("€250–€500/month", row["body"])
         self.assertIn("no-obligation example for your homepage", row["body"])
         self.assertNotIn("30%", row["body"])
