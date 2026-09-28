@@ -209,6 +209,7 @@ def create_drafts(batch: dict) -> dict:
             "replaced_count": 0,
             "draft_folder": None,
             "review_required_count": 0,
+            "items": [],
             "smtp_send": "not_available",
         }
 
@@ -218,6 +219,7 @@ def create_drafts(batch: dict) -> dict:
         created = 0
         existing = 0
         replaced = 0
+        items = []
         for row in rows:
             lead_id, msg = build_message(row)
             outcome = append_and_verify(client, folder, lead_id, msg)
@@ -227,6 +229,27 @@ def create_drafts(batch: dict) -> dict:
                 replaced += 1
             else:
                 existing += 1
+
+            final_ids = find_message_ids(client, folder, lead_id)
+            if len(final_ids) != 1:
+                raise RuntimeError(
+                    f"Expected exactly one final draft for readback {lead_id}, found {len(final_ids)}"
+                )
+            actual = fetch_message(client, final_ids[0])
+            if not exact_message_matches(actual, msg):
+                raise RuntimeError(f"Final exact readback mismatch for {lead_id}")
+            items.append(
+                {
+                    "lead_id": lead_id,
+                    "to": normalize_text(actual.get("To", "")),
+                    "subject": normalize_text(actual.get("Subject", "")),
+                    "body": plain_body(actual),
+                    "review_status": normalize_text(
+                        actual.get("X-Webactueel-Review-Required", "")
+                    ) or "not-required",
+                    "outcome": outcome,
+                }
+            )
         return {
             "eligible_count": len(rows),
             "created_count": created,
@@ -234,6 +257,7 @@ def create_drafts(batch: dict) -> dict:
             "replaced_count": replaced,
             "draft_folder": folder,
             "review_required_count": sum(1 for row in rows if row.get("status") == "review_draft"),
+            "items": items,
             "smtp_send": "not_available",
         }
     finally:

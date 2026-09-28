@@ -109,3 +109,29 @@ jobs:
           ! grep -E -q 'prepare_growth_batch\.py|myhost_draft\.py|review_draft|OUTREACH_|secrets\.|IMAP|SMTP|smtp' .github/workflows/leads-verify.yml
           ! grep -q 'issues: write' .github/workflows/leads-verify.yml
           echo 'VERIFY_ONLY_WORKFLOW=green'
+
+
+      - name: Prove isolated verified-draft-only phase boundary
+        run: |
+          set -euo pipefail
+          test -f .github/workflows/leads-verified-drafts.yml
+          test -f scripts/myhost_growth_inventory.py
+          test -f scripts/build_verified_draft_input.py
+          test -f tests/test_myhost_growth_inventory.py
+          test -f tests/test_build_verified_draft_input.py
+          grep -q 'workflow_dispatch:' .github/workflows/leads-verified-drafts.yml
+          grep -q 'issues:' .github/workflows/leads-verified-drafts.yml
+          grep -q "github.event.issue.user.login == github.repository_owner" .github/workflows/leads-verified-drafts.yml
+          grep -F -q "startsWith(github.event.issue.title, '[growth-draft-verified]')" .github/workflows/leads-verified-drafts.yml
+          grep -q 'scripts/myhost_growth_inventory.py' .github/workflows/leads-verified-drafts.yml
+          grep -q 'scripts/build_verified_draft_input.py' .github/workflows/leads-verified-drafts.yml
+          grep -q 'scripts/prepare_growth_batch.py' .github/workflows/leads-verified-drafts.yml
+          grep -q 'scripts/myhost_draft.py' .github/workflows/leads-verified-drafts.yml
+          grep -q 'PHASE4_EXACT_READBACK=green' .github/workflows/leads-verified-drafts.yml
+          grep -q 'created_count' .github/workflows/leads-verified-drafts.yml
+          grep -q 'review_status' .github/workflows/leads-verified-drafts.yml
+          grep -q 'actions: read' .github/workflows/leads-verified-drafts.yml
+          ! grep -E -q 'overture_discovery\.py|hybrid_discovery\.py|extract_public_contacts\.py|apply_google_maps_email_fallback\.py' .github/workflows/leads-verified-drafts.yml
+          ! grep -E -q 'smtplib|sendmail\(|SMTP\(' .github/workflows/leads-verified-drafts.yml
+          ! grep -q 'issues: write' .github/workflows/leads-verified-drafts.yml
+          echo 'VERIFIED_DRAFT_ONLY_WORKFLOW=green'

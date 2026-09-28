@@ -1,0 +1,310 @@
+name: Leads Verified Drafts Only
+
+on:
+  workflow_dispatch:
+    inputs:
+      artifact_ids:
+        description: 'Comma-separated Phase 3 verification artifact IDs'
+        required: true
+        type: string
+      requested_count:
+        description: 'Exact number of new review drafts (1-100)'
+        required: true
+        default: '75'
+        type: string
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: leads-verified-drafts-only
+  cancel-in-progress: false
+
+jobs:
+  draft:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issues' &&
+       github.event.issue.user.login == github.repository_owner &&
+       startsWith(github.event.issue.title, '[growth-draft-verified]'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Resolve and validate draft request
+        id: request
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_PATH: ${{ github.event_path }}
+          INPUT_ARTIFACT_IDS: ${{ inputs.artifact_ids }}
+          INPUT_REQUESTED_COUNT: ${{ inputs.requested_count }}
+        run: |
+          set -euo pipefail
+          mkdir -p results
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          if os.environ["EVENT_NAME"] == "issues":
+              event = json.loads(Path(os.environ["EVENT_PATH"]).read_text(encoding="utf-8"))
+              try:
+                  request = json.loads(event["issue"].get("body") or "{}")
+              except json.JSONDecodeError as exc:
+                  raise SystemExit(f"issue body must be JSON: {exc}")
+              raw_ids = request.get("artifact_ids") or []
+              requested = int(request.get("requested_count") or 75)
+          else:
+              raw_ids = os.environ["INPUT_ARTIFACT_IDS"]
+              requested = int(os.environ["INPUT_REQUESTED_COUNT"] or 75)
+
+          if isinstance(raw_ids, str):
+              artifact_ids = [int(x) for x in re.split(r"[,\s]+", raw_ids.strip()) if x]
+          elif isinstance(raw_ids, list):
+              artifact_ids = [int(x) for x in raw_ids]
+          else:
+              raise SystemExit("artifact_ids must be a list or comma-separated string")
+
+          if not 1 <= len(artifact_ids) <= 10 or any(x <= 0 for x in artifact_ids):
+              raise SystemExit("provide 1-10 positive artifact IDs")
+          if not 1 <= requested <= 100:
+              raise SystemExit("requested_count must be 1-100")
+
+          Path("results/artifact-ids.txt").write_text(
+              "".join(f"{x}\n" for x in artifact_ids), encoding="utf-8"
+          )
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as out:
+              out.write(f"requested={requested}\n")
+          print(f"VERIFIED_DRAFT_REQUEST=green artifacts={len(artifact_ids)} requested={requested}")
+          PY
+
+      - name: Download Phase 3 verification artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p results/source
+          n=0
+          while IFS= read -r artifact_id; do
+            n=$((n + 1))
+            mkdir -p "results/source/$n"
+            gh api \
+              -H "Accept: application/vnd.github+json" \
+              "/repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" \
+              > "results/source/$n.zip"
+            unzip -q "results/source/$n.zip" -d "results/source/$n"
+            test -s "results/source/$n/verification-ready.json"
+            test -s "results/source/$n/public-contacts.json"
+          done < results/artifact-ids.txt
+          echo "PHASE3_ARTIFACT_READBACK=green count=$n"
+
+      - name: Inventory existing mijn.host growth drafts
+        env:
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH=scripts python3 scripts/myhost_growth_inventory.py \
+            --output results/myhost-inventory.json
+
+      - name: Select exact new verified prospects
+        env:
+          REQUESTED: ${{ steps.request.outputs.requested }}
+        run: |
+          set -euo pipefail
+          args=()
+          for dir in results/source/*/; do args+=(--source-dir "$dir"); done
+          PYTHONPATH=scripts python3 scripts/build_verified_draft_input.py \
+            "${args[@]}" \
+            --inventory results/myhost-inventory.json \
+            --requested-count "$REQUESTED" \
+            --output results/verified-draft-input.json
+
+      - name: Build concise Growth Subscription copy
+        env:
+          REQUESTED: ${{ steps.request.outputs.requested }}
+        run: |
+          set -euo pipefail
+          python3 scripts/prepare_growth_batch.py \
+            --contacts results/verified-draft-input.json \
+            --config config/growth-subscription.json \
+            --output-json results/growth-batch.json \
+            --output-csv results/growth-batch.csv \
+            --draft-limit "$REQUESTED"
+
+      - name: Audit exact copy boundaries
+        env:
+          REQUESTED: ${{ steps.request.outputs.requested }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          requested = int(os.environ["REQUESTED"])
+          batch = json.loads(Path("results/growth-batch.json").read_text(encoding="utf-8"))
+          rows = [row for row in batch.get("rows") or [] if row.get("status") == "review_draft"]
+          if len(rows) != requested or batch.get("draft_candidate_count") != requested:
+              raise SystemExit(f"Need exactly {requested} review drafts, found {len(rows)}")
+          if batch.get("review_draft_count") != requested:
+              raise SystemExit("Every selected public-email contact must remain review_required")
+          if (batch.get("safety") or {}).get("automatic_send") is not False:
+              raise SystemExit("automatic send must remain disabled")
+
+          emails = set()
+          domains = set()
+          lead_ids = set()
+          for row in rows:
+              if row.get("contact_basis_status") != "review_required":
+                  raise SystemExit("contact_basis_status must be review_required")
+              if row.get("verified_observation_source_type") != "official_site":
+                  raise SystemExit("official-site observation provenance is required")
+              body = str(row.get("body") or "")
+              subject = str(row.get("subject") or "")
+              observation = str(row.get("verified_observation") or "")
+              bullets = [line for line in body.splitlines() if line.startswith("• ")]
+              if len(bullets) != 6:
+                  raise SystemExit("copy must contain exactly six compact bullets")
+              if body.count("€250–€500") != 1:
+                  raise SystemExit("copy must contain the Growth Subscription price exactly once")
+              if re.search(r"\b\d+\s*%", body):
+                  raise SystemExit("first touch must not contain an automation percentage")
+              if not observation or observation not in body:
+                  raise SystemExit("verified site observation must appear in the opening")
+              if not 2 <= len(subject.split()) <= 8:
+                  raise SystemExit("subject must stay compact")
+              language = row.get("language")
+              if language == "nl":
+                  if body.count("Zal ik vrijblijvend een voorbeeld design maken") != 1:
+                      raise SystemExit("NL copy must contain exactly one design CTA")
+                  if "Geen interesse? Laat het gerust weten" not in body:
+                      raise SystemExit("NL copy must include an easy no")
+                  if not body.endswith("Groet,\nAndrew"):
+                      raise SystemExit("NL signature mismatch")
+              elif language == "en":
+                  if body.count("Would you like me to make a no-obligation example design") != 1:
+                      raise SystemExit("EN copy must contain exactly one design CTA")
+                  if "Not relevant? Let me know" not in body:
+                      raise SystemExit("EN copy must include an easy no")
+                  if not body.endswith("Regards,\nAndrew"):
+                      raise SystemExit("EN signature mismatch")
+              else:
+                  raise SystemExit("language must be nl or en")
+
+              email = str(row.get("email") or "").casefold()
+              domain = str(row.get("official_domain_hint") or "").casefold()
+              lead_id = str(row.get("lead_id") or "")
+              if email in emails or domain in domains or lead_id in lead_ids:
+                  raise SystemExit("duplicate email, domain or lead_id in draft batch")
+              emails.add(email)
+              domains.add(domain)
+              lead_ids.add(lead_id)
+          print(f"GROWTH_COPY_AUDIT=green count={requested} automatic_send=false")
+          PY
+
+      - name: Create and exactly read back mijn.host review drafts
+        env:
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME || 'Andrew Baeten' }}
+          OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
+          OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH=scripts python3 scripts/myhost_draft.py \
+            --batch results/growth-batch.json \
+            --report results/myhost-drafts.json | tee results/myhost-drafts.txt
+          grep -q '^MYHOST_DRAFT_SYNC=green ' results/myhost-drafts.txt
+          grep -q 'smtp_send=not_available' results/myhost-drafts.txt
+
+      - name: Audit exact 75 readbacks
+        env:
+          REQUESTED: ${{ steps.request.outputs.requested }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          requested = int(os.environ["REQUESTED"])
+          batch = json.loads(Path("results/growth-batch.json").read_text(encoding="utf-8"))
+          report = json.loads(Path("results/myhost-drafts.json").read_text(encoding="utf-8"))
+
+          expected = {
+              row["lead_id"]: row
+              for row in batch.get("rows") or []
+              if row.get("status") == "review_draft"
+          }
+          items = report.get("items") or []
+          if report.get("eligible_count") != requested or len(items) != requested:
+              raise SystemExit("exact requested draft count/readback mismatch")
+          if report.get("created_count") != requested:
+              raise SystemExit(
+                  f"Phase 4 requires {requested} new drafts; created={report.get('created_count')}"
+              )
+          if report.get("existing_count") != 0 or report.get("replaced_count") != 0:
+              raise SystemExit("existing/replaced draft detected after preflight inventory")
+          if report.get("review_required_count") != requested:
+              raise SystemExit("all drafts must be review_required")
+          if report.get("smtp_send") != "not_available":
+              raise SystemExit("SMTP/send surface must remain unavailable")
+
+          seen = set()
+          for item in items:
+              lead_id = item.get("lead_id")
+              if lead_id in seen or lead_id not in expected:
+                  raise SystemExit("unknown or duplicate lead ID in readback")
+              seen.add(lead_id)
+              row = expected[lead_id]
+              if item.get("outcome") != "created":
+                  raise SystemExit("every Phase 4 draft must be newly created")
+              if item.get("review_status") != "contact-basis":
+                  raise SystemExit("review status mismatch")
+              if item.get("to") != row.get("email"):
+                  raise SystemExit("To readback mismatch")
+              if item.get("subject") != row.get("subject"):
+                  raise SystemExit("Subject readback mismatch")
+              if item.get("body") != row.get("body"):
+                  raise SystemExit("Body readback mismatch")
+
+          if len(seen) != requested:
+              raise SystemExit("lead-ID readback count mismatch")
+          print(f"PHASE4_EXACT_READBACK=green count={requested} automatic_send=false")
+          PY
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: phase4-verified-drafts-${{ github.run_number }}
+          path: |
+            results/myhost-inventory.json
+            results/verified-draft-input.json
+            results/growth-batch.json
+            results/growth-batch.csv
+            results/myhost-drafts.json
+            results/myhost-drafts.txt
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Remove source artifact residue
+        if: always()
+        run: rm -rf results/source results/*.zip results/artifact-ids.txt
