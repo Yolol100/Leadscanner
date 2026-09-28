@@ -31,7 +31,7 @@ DUTCH_OVERTURE_CATEGORY_ALIASES = {
     "bouwbedrijf": ("construction company", "general contractor", "builder"),
     "installatiebedrijf": ("plumber", "electrician", "hvac", "heating", "air conditioning"),
     "kapsalon": ("hair salon", "hairdresser", "barber shop"),
-    "fysiotherapie": ("physical therapy", "physical therapist", "physiotherapy"),
+    "fysiotherapie": ("physical therapy", "physical therapist", "physiotherapy", "physiotherapist"),
     "tandarts": ("dentist", "dental clinic", "dental practice"),
     "fietsenwinkel": ("bicycle store", "bike shop", "bicycle shop", "bicycle repair", "bike repair"),
     "bloemist": ("florist", "flower shop"),
@@ -257,12 +257,15 @@ def download_overture_places(
 
 def _taxonomy_core(properties: dict) -> list[str]:
     taxonomy = properties.get("taxonomy")
+    legacy_categories = properties.get("categories")
     values = [properties.get("basic_category")]
     if isinstance(taxonomy, dict):
         values.append(taxonomy.get("primary"))
         hierarchy = taxonomy.get("hierarchy")
         if isinstance(hierarchy, list):
             values.extend(hierarchy)
+    if isinstance(legacy_categories, dict):
+        values.append(legacy_categories.get("primary"))
     return [str(value) for value in values if value not in (None, "")]
 
 

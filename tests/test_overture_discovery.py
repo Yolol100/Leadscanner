@@ -213,6 +213,32 @@ class OvertureDiscoveryTests(unittest.TestCase):
         self.assertEqual(rows, [])
 
 
+    def test_dutch_keyword_matches_legacy_primary_category_without_alternates(self):
+        item = self.feature(
+            fid="legacy-physio",
+            name="Beweegcentrum",
+            category=None,
+            website="https://legacy-physio.example/",
+        )
+        item["properties"]["categories"] = {
+            "primary": "physiotherapist",
+            "alternate": ["sports_club"],
+        }
+        item["properties"].pop("basic_category", None)
+        item["properties"].pop("taxonomy", None)
+        path = self.write_geojsonseq([item])
+        try:
+            rows = read_candidates(
+                path,
+                keywords=["fysiotherapie"],
+                max_results=10,
+                require_website=True,
+            )
+        finally:
+            path.unlink(missing_ok=True)
+
+        self.assertEqual([row["overture_id"] for row in rows], ["legacy-physio"])
+
     def test_dutch_fysiotherapie_keyword_matches_schema_v2_taxonomy(self):
         item = self.feature(
             fid="physio-v2",
