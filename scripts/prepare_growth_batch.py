@@ -47,12 +47,17 @@ def short_company_name(company: str) -> str:
     return text
 
 
+def subject_label_for_company(company: str, language: str) -> str:
+    words = short_company_name(company).split()
+    prefix = "An idea for " if language == "en" else "Idee voor "
+    while len(words) > 1 and (len(prefix + " ".join(words)) > 56 or len((prefix + " ".join(words)).split()) > 7):
+        words.pop()
+    return " ".join(words) or ("your company" if language == "en" else "jullie bedrijf")
+
+
 def subject_for_company(company: str, language: str) -> str:
-    label = short_company_name(company)
-    candidate = f"An idea for {label}" if language == "en" else f"Idee voor {label}"
-    if len(candidate) <= 56 and 2 <= len(candidate.split()) <= 7:
-        return candidate
-    return "Idea for your online setup" if language == "en" else "Idee voor jullie online aanpak"
+    label = subject_label_for_company(company, language)
+    return f"An idea for {label}" if language == "en" else f"Idee voor {label}"
 
 
 def infer_focus_from_observation(observation: str, language: str) -> str | None:
@@ -186,6 +191,7 @@ def prepare_batch(contacts_payload: dict, config: dict, *, draft_limit: int = 1)
             "lead_id": None,
             "company": candidate.get("name_hint"),
             "copy_company_label": short_company_name(company),
+            "copy_subject_label": subject_label_for_company(company, language),
             "website": candidate.get("website_hint"),
             "official_domain_hint": candidate.get("official_domain_hint"),
             "product_id": "growth_subscription",

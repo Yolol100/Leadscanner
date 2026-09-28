@@ -124,6 +124,16 @@ class GrowthBatchTests(unittest.TestCase):
             "Idee voor 030 Fietsen",
         )
 
+    def test_long_company_without_separator_keeps_personal_subject(self):
+        row = prepare_batch(
+            {"candidates": [{**self.contact(), "name_hint": "Kindergarden Voormalige Stadstimmertuin Amsterdam"}]},
+            self.config(),
+            draft_limit=1,
+        )["rows"][0]
+        self.assertEqual(row["copy_subject_label"], "Kindergarden Voormalige Stadstimmertuin")
+        self.assertEqual(row["subject"], "Idee voor Kindergarden Voormalige Stadstimmertuin")
+        self.assertNotIn("jullie online aanpak", row["subject"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -145,13 +145,16 @@ jobs:
               body = str(row.get("body") or "")
               subject = str(row.get("subject") or "")
               company_label = str(row.get("copy_company_label") or "").strip()
+              subject_label = str(row.get("copy_subject_label") or "").strip()
               bullets = [line for line in body.splitlines() if line.startswith("• ")]
               if len(bullets) != 6:
                   raise SystemExit(f"{lead_id}: expected six bullets")
               if body.count("€250–€500") != 1 or re.search(r"\b\d+\s*%", body):
                   raise SystemExit(f"{lead_id}: price/percentage boundary failed")
-              if not company_label or company_label not in body or company_label not in subject:
-                  raise SystemExit(f"{lead_id}: company label missing from personalized copy")
+              if not company_label or company_label not in body:
+                  raise SystemExit(f"{lead_id}: company label missing from personalized body")
+              if not subject_label or subject_label not in subject:
+                  raise SystemExit(f"{lead_id}: company label missing from personalized subject")
               if "Op jullie website staat" in body or "Your website highlights" in body:
                   raise SystemExit(f"{lead_id}: old vague opening survived")
               if not 2 <= len(subject.split()) <= 8:

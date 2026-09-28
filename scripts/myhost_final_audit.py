@@ -98,8 +98,11 @@ def audit_rows(batch_payloads: list[dict], reports: list[dict], config: dict) ->
         if re.search(r"\b\d+\s*%", body):
             failures.append(f"{lead_id}: automation percentage found")
         company_label = str(row.get("copy_company_label") or short_company_name(str(row.get("company") or ""))).strip()
-        if not company_label or company_label not in body or company_label not in subject:
-            failures.append(f"{lead_id}: personalized company label missing from copy")
+        subject_label = str(row.get("copy_subject_label") or "").strip()
+        if not company_label or company_label not in body:
+            failures.append(f"{lead_id}: personalized company label missing from body")
+        if not subject_label or subject_label not in subject:
+            failures.append(f"{lead_id}: personalized company label missing from subject")
         if "Op jullie website staat" in body or "Your website highlights" in body:
             failures.append(f"{lead_id}: old vague opening survived")
         if language == "nl":

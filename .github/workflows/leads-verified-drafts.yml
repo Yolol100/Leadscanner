@@ -182,6 +182,7 @@ jobs:
               subject = str(row.get("subject") or "")
               observation = str(row.get("verified_observation") or "")
               company_label = str(row.get("copy_company_label") or "").strip()
+              subject_label = str(row.get("copy_subject_label") or "").strip()
               bullets = [line for line in body.splitlines() if line.startswith("• ")]
               if len(bullets) != 6:
                   raise SystemExit("copy must contain exactly six compact bullets")
@@ -191,8 +192,10 @@ jobs:
                   raise SystemExit("first touch must not contain an automation percentage")
               if not observation:
                   raise SystemExit("verified site observation is required")
-              if not company_label or company_label not in body or company_label not in subject:
-                  raise SystemExit("personalized company label must appear in subject and body")
+              if not company_label or company_label not in body:
+                  raise SystemExit("personalized company label must appear in body")
+              if not subject_label or subject_label not in subject:
+                  raise SystemExit("personalized company label must appear in subject")
               if "Op jullie website staat" in body or "Your website highlights" in body:
                   raise SystemExit("old vague opening must not survive")
               if not 2 <= len(subject.split()) <= 8:
