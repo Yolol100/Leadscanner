@@ -1,0 +1,87 @@
+from __future__ import annotations
+
+import unittest
+
+from myhost_final_audit import audit_rows
+
+
+class FinalAuditTests(unittest.TestCase):
+    def config(self):
+        return {"monthly_price_eur": {"min": 250, "max": 500}}
+
+    def row(self, company: str, email: str, domain: str, lead_id: str):
+        observation = f"{company} dienstverlening"
+        body = (
+            "Goedendag,\n\n"
+            f"Op jullie website staat “{observation}”. Met één compact Groeiabonnement help ik bedrijven hun online aanpak doorlopend verbeteren.\n\n"
+            "• Website/webshop verbeteren of nieuw maken waar nodig\n"
+            "• Zoekbaarheid verbeteren\n"
+            "• Social content verzorgen\n"
+            "• Geschikte terugkerende processen waar haalbaar deels automatiseren\n"
+            "• Hosting overnemen/beheren\n"
+            "• Ik als vast contactpersoon\n\n"
+            "€250–€500 per maand, afhankelijk van wat jullie nodig hebben.\n\n"
+            f"Zal ik vrijblijvend een voorbeeld design maken voor {company}? Dan kunnen jullie eerst bekijken of de richting interessant is.\n\n"
+            "Geen interesse? Laat het gerust weten, dan houd ik het hierbij.\n\n"
+            "Groet,\nAndrew"
+        )
+        return {
+            "lead_id": lead_id,
+            "company": company,
+            "website": f"https://{domain}/",
+            "official_domain_hint": domain,
+            "product_id": "growth_subscription",
+            "language": "nl",
+            "language_source": "html_lang",
+            "monthly_price_min_eur": 250,
+            "monthly_price_max_eur": 500,
+            "excluded_competitor": False,
+            "exclusion_reason": None,
+            "contact_basis_status": "review_required",
+            "contact_basis_hint": "public_email_review_required",
+            "email_source_urls": [f"https://{domain}/contact"],
+            "email_source_types": ["official_site"],
+            "email_source_refs": [f"https://{domain}/contact"],
+            "verified_observation": observation,
+            "verified_observation_source_url": f"https://{domain}/",
+            "verified_observation_source_type": "official_site",
+            "status": "review_draft",
+            "email": email,
+            "subject": f"Idee voor {company}",
+            "body": body,
+        }
+
+    def test_duplicate_company_is_a_failure(self):
+        base = self.row("Voorbeeld BV", "a@example.nl", "a.nl", "growth-0123456789abcdefabcd")
+        other = self.row("Voorbeeld BV", "b@example.nl", "b.nl", "growth-1123456789abcdefabcd")
+        batch1 = {"rows": [base] * 75, "safety": {"automatic_send": False}}
+        batch2 = {"rows": [other] * 75, "safety": {"automatic_send": False}}
+        report = {
+            "eligible_count": 75,
+            "created_count": 75,
+            "existing_count": 0,
+            "replaced_count": 0,
+            "review_required_count": 75,
+            "smtp_send": "not_available",
+            "items": [],
+        }
+        _, failures, _ = audit_rows([batch1, batch2], [report, report], self.config())
+        self.assertTrue(any("duplicate_company" in failure for failure in failures))
+
+    def test_no_automatic_send_is_required(self):
+        batch = {"rows": [], "safety": {"automatic_send": True}}
+        report = {
+            "eligible_count": 75,
+            "created_count": 75,
+            "existing_count": 0,
+            "replaced_count": 0,
+            "review_required_count": 75,
+            "smtp_send": "not_available",
+            "items": [],
+        }
+        _, failures, _ = audit_rows([batch, batch], [report, report], self.config())
+        self.assertTrue(any("automatic_send" in failure for failure in failures))
+
+
+if __name__ == "__main__":
+    unittest.main()
