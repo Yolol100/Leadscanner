@@ -1,0 +1,147 @@
+name: Leads Final Audit Only
+
+on:
+  workflow_dispatch:
+    inputs:
+      phase4_artifact_id:
+        description: 'Phase 4 artifact ID'
+        required: true
+        type: string
+      phase5_artifact_id:
+        description: 'Phase 5 artifact ID'
+        required: true
+        type: string
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: leads-final-audit-only
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issues' &&
+       github.event.issue.user.login == github.repository_owner &&
+       startsWith(github.event.issue.title, '[growth-final-audit]'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Resolve final audit request
+        id: request
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_PATH: ${{ github.event_path }}
+          INPUT_PHASE4: ${{ inputs.phase4_artifact_id }}
+          INPUT_PHASE5: ${{ inputs.phase5_artifact_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p results
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          if os.environ["EVENT_NAME"] == "issues":
+              event = json.loads(Path(os.environ["EVENT_PATH"]).read_text(encoding="utf-8"))
+              try:
+                  request = json.loads(event["issue"].get("body") or "{}")
+              except json.JSONDecodeError as exc:
+                  raise SystemExit(f"issue body must be JSON: {exc}")
+              p4 = int(request.get("phase4_artifact_id") or 0)
+              p5 = int(request.get("phase5_artifact_id") or 0)
+          else:
+              p4 = int(os.environ["INPUT_PHASE4"] or 0)
+              p5 = int(os.environ["INPUT_PHASE5"] or 0)
+
+          if p4 <= 0 or p5 <= 0 or p4 == p5:
+              raise SystemExit("Provide two distinct positive artifact IDs")
+
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as out:
+              out.write(f"phase4={p4}\n")
+              out.write(f"phase5={p5}\n")
+          print(f"FINAL_AUDIT_REQUEST=green phase4={p4} phase5={p5}")
+          PY
+
+      - name: Download Phase 4 and 5 artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PHASE4: ${{ steps.request.outputs.phase4 }}
+          PHASE5: ${{ steps.request.outputs.phase5 }}
+        run: |
+          set -euo pipefail
+          mkdir -p results/p4 results/p5
+          gh api -H "Accept: application/vnd.github+json"             "/repos/$GITHUB_REPOSITORY/actions/artifacts/$PHASE4/zip" > results/p4.zip
+          gh api -H "Accept: application/vnd.github+json"             "/repos/$GITHUB_REPOSITORY/actions/artifacts/$PHASE5/zip" > results/p5.zip
+          unzip -q results/p4.zip -d results/p4
+          unzip -q results/p5.zip -d results/p5
+          for dir in results/p4 results/p5; do
+            test -s "$dir/growth-batch.json"
+            test -s "$dir/myhost-drafts.json"
+          done
+          echo "FINAL_ARTIFACT_READBACK=green"
+
+      - name: Audit 150 artifacts and current mijn.host mailbox read-only
+        env:
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH=scripts python3 scripts/myhost_final_audit.py             --batch results/p4/growth-batch.json             --batch results/p5/growth-batch.json             --report results/p4/myhost-drafts.json             --report results/p5/myhost-drafts.json             --config config/growth-subscription.json             --output results/final-audit.json | tee results/final-audit.txt
+          grep -q '^FINAL_LEADS_AUDIT=green ' results/final-audit.txt
+          grep -q 'total=150' results/final-audit.txt
+          grep -q 'exact_mailbox=150/150' results/final-audit.txt
+          grep -q 'automatic_send=false' results/final-audit.txt
+          grep -q 'smtp_send=not_available' results/final-audit.txt
+
+      - name: Prove read-only boundary
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("results/final-audit.json").read_text(encoding="utf-8"))
+          if report.get("failure_count") != 0:
+              raise SystemExit("final audit contains failures")
+          if report.get("requested_total") != 150:
+              raise SystemExit("final total is not 150")
+          if report.get("final_set_current_exact_matches") != 150:
+              raise SystemExit("current mailbox exact match is not 150/150")
+          if report.get("automatic_send") is not False:
+              raise SystemExit("automatic_send must be false")
+          if report.get("smtp_send") != "not_available":
+              raise SystemExit("SMTP/send must be unavailable")
+          if report.get("read_only") is not True:
+              raise SystemExit("mailbox audit must be read-only")
+          print("FINAL_READ_ONLY_BOUNDARY=green")
+          PY
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: phase6-final-audit-${{ github.run_number }}
+          path: |
+            results/final-audit.json
+            results/final-audit.txt
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Remove source artifact residue
+        if: always()
+        run: rm -rf results/p4 results/p5 results/p4.zip results/p5.zip
