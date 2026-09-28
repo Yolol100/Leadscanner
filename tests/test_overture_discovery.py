@@ -212,6 +212,83 @@ class OvertureDiscoveryTests(unittest.TestCase):
             path.unlink(missing_ok=True)
         self.assertEqual(rows, [])
 
+
+    def test_dutch_fysiotherapie_keyword_matches_schema_v2_taxonomy(self):
+        item = self.feature(
+            fid="physio-v2",
+            name="Beweegzorg Centrum",
+            category="healthcare_provider",
+            website="https://beweegzorg.example/",
+            confidence=0.95,
+        )
+        item["properties"]["taxonomy"] = {
+            "primary": "physical_therapy_clinic",
+            "hierarchy": ["health_and_medical", "physical_therapy", "physical_therapy_clinic"],
+            "alternates": [],
+        }
+        path = self.write_geojsonseq([item])
+        try:
+            rows = read_candidates(
+                path,
+                keywords=["fysiotherapie"],
+                max_results=10,
+                require_website=True,
+            )
+        finally:
+            path.unlink(missing_ok=True)
+
+        self.assertEqual([row["overture_id"] for row in rows], ["physio-v2"])
+
+    def test_dutch_tandarts_keyword_matches_taxonomy_primary(self):
+        item = self.feature(
+            fid="dentist-v2",
+            name="Mondzorg Centrum",
+            category="healthcare_provider",
+            website="https://mondzorg.example/",
+        )
+        item["properties"]["taxonomy"] = {
+            "primary": "dentist",
+            "hierarchy": ["health_and_medical", "dentist"],
+            "alternates": [],
+        }
+        path = self.write_geojsonseq([item])
+        try:
+            rows = read_candidates(
+                path,
+                keywords=["tandarts"],
+                max_results=10,
+                require_website=True,
+            )
+        finally:
+            path.unlink(missing_ok=True)
+
+        self.assertEqual([row["overture_id"] for row in rows], ["dentist-v2"])
+
+    def test_garage_keyword_does_not_match_parking_garage_taxonomy(self):
+        item = self.feature(
+            fid="parking-v2",
+            name="Centrum Parking Garage",
+            category="parking",
+            website="https://parking.example/",
+        )
+        item["properties"]["taxonomy"] = {
+            "primary": "parking_garage",
+            "hierarchy": ["transportation", "parking", "parking_garage"],
+            "alternates": [],
+        }
+        path = self.write_geojsonseq([item])
+        try:
+            rows = read_candidates(
+                path,
+                keywords=["garage"],
+                max_results=10,
+                require_website=True,
+            )
+        finally:
+            path.unlink(missing_ok=True)
+
+        self.assertEqual(rows, [])
+
     def test_schema_v2_place_without_legacy_categories_is_supported(self):
         item = self.feature(
             fid="schema-v2",

@@ -23,6 +23,29 @@ DEFAULT_TIMEOUT_SECONDS = 15
 MAX_RESULTS = 5000
 MAX_PROBE_WORKERS = 8
 
+DUTCH_OVERTURE_CATEGORY_ALIASES = {
+    "winkel": ("store", "shop", "retail"),
+    "praktijk": ("clinic", "medical practice", "therapist", "physician", "psychologist"),
+    "restaurant": ("restaurant", "eatery"),
+    "garage": ("auto repair", "car repair", "vehicle repair", "auto mechanic", "mechanic"),
+    "bouwbedrijf": ("construction company", "general contractor", "builder"),
+    "installatiebedrijf": ("plumber", "electrician", "hvac", "heating", "air conditioning"),
+    "kapsalon": ("hair salon", "hairdresser", "barber shop"),
+    "fysiotherapie": ("physical therapy", "physical therapist", "physiotherapy"),
+    "tandarts": ("dentist", "dental clinic", "dental practice"),
+    "fietsenwinkel": ("bicycle store", "bike shop", "bicycle shop", "bicycle repair", "bike repair"),
+    "bloemist": ("florist", "flower shop"),
+    "opticien": ("optician", "optometrist", "eyewear store"),
+    "juwelier": ("jeweler", "jewellery store", "jewelry store"),
+    "kinderopvang": ("childcare", "daycare", "nursery", "kindergarten"),
+    "bakkerij": ("bakery",),
+    "slagerij": ("butcher", "butcher shop"),
+    "sportschool": ("gym", "fitness center", "fitness centre"),
+    "makelaar": ("real estate agent", "real estate agency"),
+    "dierenarts": ("veterinarian", "veterinary clinic", "animal hospital"),
+    "schoonheidssalon": ("beauty salon", "beautician", "nail salon"),
+}
+
 
 def _normalize(value: str) -> str:
     text = unicodedata.normalize("NFKD", str(value or ""))
@@ -232,23 +255,52 @@ def download_overture_places(
         output_path.touch()
 
 
-def _matches_keywords(properties: dict, keywords: list[str]) -> bool:
-    """High-precision discovery filter.
+def _taxonomy_core(properties: dict) -> list[str]:
+    taxonomy = properties.get("taxonomy")
+    values = [properties.get("basic_category")]
+    if isinstance(taxonomy, dict):
+        values.append(taxonomy.get("primary"))
+        hierarchy = taxonomy.get("hierarchy")
+        if isinstance(hierarchy, list):
+            values.extend(hierarchy)
+    return [str(value) for value in values if value not in (None, "")]
 
-    Match only the primary place name and Overture basic category. Broader taxonomy,
-    alternate-category and brand fields are intentionally excluded because they can
-    turn a narrow query (for example bakery) into unrelated chains that merely offer
-    that product class. Discovery may return fewer candidates; the controller should
-    refill with explicit adjacent keywords/regions instead of silently broadening.
+
+def _category_terms(keyword: str) -> tuple[str, ...]:
+    normalized = _normalize(keyword).replace("_", " ")
+    aliases = DUTCH_OVERTURE_CATEGORY_ALIASES.get(normalized)
+    if aliases:
+        return tuple(_normalize(value).replace("_", " ") for value in aliases)
+    return (normalized,) if normalized else ()
+
+
+def _matches_keywords(properties: dict, keywords: list[str]) -> bool:
+    """High-precision discovery filter for Overture Places schema v2.
+
+    Match the literal user keyword against the primary place name. For category
+    matching, use only basic_category plus taxonomy.primary/hierarchy, with a small
+    explicit Dutch-to-Overture alias map. Taxonomy alternates and brand fields stay
+    excluded so product side-lines do not silently broaden discovery.
     """
     if not keywords:
         return True
-    selected = {
-        "primary_name": _primary_name(properties),
-        "basic_category": properties.get("basic_category"),
-    }
-    haystack = _normalize(" ".join(_flatten_text(selected)))
-    return any(_normalize(keyword) in haystack for keyword in keywords if _normalize(keyword))
+
+    name_haystack = _normalize(_primary_name(properties) or "").replace("_", " ")
+    taxonomy_haystack = _normalize(" ".join(_taxonomy_core(properties))).replace("_", " ")
+
+    for keyword in keywords:
+        literal = _normalize(keyword).replace("_", " ")
+        if literal and literal in name_haystack:
+            if literal == "garage" and "parking" in taxonomy_haystack:
+                continue
+            return True
+
+        terms = _category_terms(keyword)
+        if literal == "garage" and "parking" in taxonomy_haystack:
+            continue
+        if any(term and term in taxonomy_haystack for term in terms):
+            return True
+    return False
 
 
 def read_candidates(
