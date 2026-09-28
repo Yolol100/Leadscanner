@@ -230,29 +230,45 @@ def download_overture_places(
         raise RuntimeError("overturemaps CLI is not installed; install requirements-discovery.txt")
 
     bbox_arg = ",".join(str(value) for value in bbox)
-    result = runner(
-        [
-            executable,
-            "download",
-            "--bbox",
-            bbox_arg,
-            "-f",
-            "geojsonseq",
-            "--type",
-            "place",
-            "-o",
-            str(output_path),
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=300,
-    )
+
+    def run_download(*, no_stac: bool):
+        args = [executable, "download"]
+        if no_stac:
+            args.append("--no-stac")
+        args.extend(
+            [
+                "--bbox",
+                bbox_arg,
+                "-f",
+                "geojsonseq",
+                "--type",
+                "place",
+                "-o",
+                str(output_path),
+            ]
+        )
+        return runner(
+            args,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+
+    result = run_download(no_stac=False)
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "unknown overturemaps failure").strip()
         raise RuntimeError(f"overturemaps download failed: {detail[-1000:]}")
     if not output_path.exists():
         output_path.touch()
+
+    if output_path.stat().st_size == 0:
+        fallback = run_download(no_stac=True)
+        if fallback.returncode != 0:
+            detail = (fallback.stderr or fallback.stdout or "unknown overturemaps no-stac failure").strip()
+            raise RuntimeError(f"overturemaps no-stac fallback failed: {detail[-1000:]}")
+        if not output_path.exists():
+            output_path.touch()
 
 
 def _taxonomy_core(properties: dict) -> list[str]:

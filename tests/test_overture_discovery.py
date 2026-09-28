@@ -95,11 +95,13 @@ class OvertureDiscoveryTests(unittest.TestCase):
 
             def fake_runner(args, check, capture_output, text, timeout):
                 self.assertEqual(args[0], "/usr/local/bin/overturemaps")
-                self.assertEqual(args[1:3], ["download", "--bbox"])
+                self.assertEqual(args[1], "download")
+                self.assertNotIn("--no-stac", args)
+                self.assertIn("--bbox", args)
                 self.assertIn("geojsonseq", args)
                 self.assertIn("place", args)
                 self.assertFalse(any("key" in str(arg).casefold() for arg in args))
-                output.write_text("", encoding="utf-8")
+                output.write_text("non-empty", encoding="utf-8")
                 return SimpleNamespace(returncode=0, stdout="", stderr="")
 
             download_overture_places((4.3, 51.8, 4.7, 52.1), output, runner=fake_runner)
@@ -110,12 +112,18 @@ class OvertureDiscoveryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             output = Path(tmpdir) / "places.geojsonseq"
 
+            calls = []
+
             def fake_runner(args, check, capture_output, text, timeout):
+                calls.append(list(args))
                 return SimpleNamespace(returncode=0, stdout="", stderr="")
 
             download_overture_places((4.3, 51.8, 4.7, 52.1), output, runner=fake_runner)
             self.assertTrue(output.exists())
             self.assertEqual(output.read_text(encoding="utf-8"), "")
+            self.assertEqual(len(calls), 2)
+            self.assertNotIn("--no-stac", calls[0])
+            self.assertIn("--no-stac", calls[1])
 
     def test_download_diagnostics_distinguish_raw_features_and_websites(self):
         path = self.write_geojsonseq(
