@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pathlib
 import unittest
 
 from build_verification_ready import build_ready
@@ -7,6 +8,14 @@ from select_verification_batch import select_candidates
 
 
 class VerifyOnlyTests(unittest.TestCase):
+    def test_unrelated_issues_do_not_share_verify_concurrency_group(self):
+        root = pathlib.Path(__file__).resolve().parents[1]
+        text = (root / ".github" / "workflows" / "leads-verify.yml").read_text(encoding="utf-8")
+        self.assertIn("startsWith(github.event.issue.title, '[lead-verify]')", text)
+        self.assertIn("leads-verify-only-active", text)
+        self.assertIn("github.run_id", text)
+        self.assertIn("cancel-in-progress: false", text)
+
     def test_selector_restores_hybrid_provenance_and_bounds_to_100(self):
         phase2 = {
             "candidates": [

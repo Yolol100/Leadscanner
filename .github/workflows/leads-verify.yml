@@ -25,7 +25,8 @@ permissions:
   actions: read
 
 concurrency:
-  group: leads-verify-only
+  group: >-
+    ${{ (github.event_name == 'workflow_dispatch' || (github.event_name == 'issues' && startsWith(github.event.issue.title, '[lead-verify]'))) && 'leads-verify-only-active' || github.run_id }}
   cancel-in-progress: false
 
 jobs:
