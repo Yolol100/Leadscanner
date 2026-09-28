@@ -26,7 +26,12 @@ permissions:
 
 concurrency:
   group: >-
-    ${{ (github.event_name == 'workflow_dispatch' || (github.event_name == 'issues' && startsWith(github.event.issue.title, '[lead-verify]'))) && 'leads-verify-only-active' || github.run_id }}
+    ${{ github.event_name == 'workflow_dispatch' && 'leads-verify-dispatch-active' ||
+        (github.event_name == 'issues' && startsWith(github.event.issue.title, '[lead-verify]') &&
+         contains(github.event.issue.title, 'overture-fixed') && 'leads-verify-overture-active') ||
+        (github.event_name == 'issues' && startsWith(github.event.issue.title, '[lead-verify]') &&
+         'leads-verify-maps-active') ||
+        github.run_id }}
   cancel-in-progress: false
 
 jobs:

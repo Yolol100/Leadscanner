@@ -12,7 +12,10 @@ class VerifyOnlyTests(unittest.TestCase):
         root = pathlib.Path(__file__).resolve().parents[1]
         text = (root / ".github" / "workflows" / "leads-verify.yml").read_text(encoding="utf-8")
         self.assertIn("startsWith(github.event.issue.title, '[lead-verify]')", text)
-        self.assertIn("leads-verify-only-active", text)
+        self.assertIn("contains(github.event.issue.title, 'overture-fixed')", text)
+        self.assertIn("leads-verify-overture-active", text)
+        self.assertIn("leads-verify-maps-active", text)
+        self.assertIn("leads-verify-dispatch-active", text)
         self.assertIn("github.run_id", text)
         self.assertIn("cancel-in-progress: false", text)
 
