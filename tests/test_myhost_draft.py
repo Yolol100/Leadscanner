@@ -20,6 +20,8 @@ class FakeIMAP:
         return "OK", [str(len(self.messages)).encode()]
 
     def search(self, charset, *criteria):
+        if criteria == ("ALL",):
+            return "OK", [b" ".join(str(i).encode() for i in range(1, len(self.messages) + 1))]
         lead_id = str(criteria[-1]).strip('"')
         found = []
         for index, raw in enumerate(self.messages, start=1):
@@ -94,10 +96,18 @@ class DraftTests(unittest.TestCase):
             first = create_drafts({"rows": [self.row()]})
         self.assertEqual(first["created_count"], 1)
         self.assertEqual(first["review_required_count"], 1)
+        self.assertEqual(len(first["items"]), 1)
+        self.assertEqual(first["items"][0]["lead_id"], self.row()["lead_id"])
+        self.assertEqual(first["items"][0]["to"], self.row()["email"])
+        self.assertEqual(first["items"][0]["subject"], self.row()["subject"])
+        self.assertEqual(first["items"][0]["body"], self.row()["body"])
+        self.assertEqual(first["items"][0]["review_status"], "contact-basis")
+        self.assertEqual(first["items"][0]["outcome"], "created")
 
         with patch("myhost_draft.connect_imap", return_value=client):
             second = create_drafts({"rows": [self.row()]})
         self.assertEqual(second["existing_count"], 1)
+        self.assertEqual(second["items"][0]["outcome"], "existing")
         self.assertEqual(len(client.messages), 1)
 
         _, expected = build_message(self.row())
@@ -115,6 +125,8 @@ class DraftTests(unittest.TestCase):
             result = create_drafts({"rows": [updated]})
 
         self.assertEqual(result["replaced_count"], 1)
+        self.assertEqual(result["items"][0]["outcome"], "replaced")
+        self.assertEqual(result["items"][0]["body"], updated["body"])
         self.assertEqual(len(client.messages), 1)
         _, expected = build_message(updated)
         actual = BytesParser(policy=default).parsebytes(client.messages[0])
