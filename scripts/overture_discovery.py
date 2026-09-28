@@ -306,6 +306,45 @@ def _matches_keywords(properties: dict, keywords: list[str]) -> bool:
     return False
 
 
+def inspect_download(path: Path) -> dict:
+    feature_count = 0
+    website_feature_count = 0
+    sample_property_keys: list[str] = []
+    sample_basic_category = None
+    sample_legacy_primary = None
+    sample_taxonomy_primary = None
+
+    with path.open("r", encoding="utf-8") as handle:
+        for raw_line in handle:
+            line = raw_line.lstrip("\x1e").strip()
+            if not line:
+                continue
+            feature_count += 1
+            feature = json.loads(line)
+            properties = feature.get("properties") or {}
+            if _website_hint(properties):
+                website_feature_count += 1
+            if not sample_property_keys:
+                sample_property_keys = sorted(str(key) for key in properties.keys())
+                sample_basic_category = properties.get("basic_category")
+                legacy = properties.get("categories")
+                if isinstance(legacy, dict):
+                    sample_legacy_primary = legacy.get("primary")
+                taxonomy = properties.get("taxonomy")
+                if isinstance(taxonomy, dict):
+                    sample_taxonomy_primary = taxonomy.get("primary")
+
+    return {
+        "feature_count": feature_count,
+        "website_feature_count": website_feature_count,
+        "file_size_bytes": path.stat().st_size if path.exists() else 0,
+        "sample_property_keys": sample_property_keys,
+        "sample_basic_category": sample_basic_category,
+        "sample_legacy_primary": sample_legacy_primary,
+        "sample_taxonomy_primary": sample_taxonomy_primary,
+    }
+
+
 def read_candidates(
     path: Path,
     *,
@@ -511,6 +550,16 @@ def discover(
     with tempfile.TemporaryDirectory(prefix="webactueel-overture-") as tmpdir:
         data_path = Path(tmpdir) / "places.geojsonseq"
         download_overture_places(resolved_bbox, data_path)
+        download_diagnostics = inspect_download(data_path)
+        print(
+            "OVERTURE_DOWNLOAD_DIAGNOSTICS "
+            f"features={download_diagnostics['feature_count']} "
+            f"with_website={download_diagnostics['website_feature_count']} "
+            f"bytes={download_diagnostics['file_size_bytes']} "
+            f"basic={download_diagnostics['sample_basic_category']!r} "
+            f"legacy={download_diagnostics['sample_legacy_primary']!r} "
+            f"taxonomy={download_diagnostics['sample_taxonomy_primary']!r}"
+        )
         candidates = read_candidates(
             data_path,
             keywords=clean_keywords,
@@ -532,6 +581,7 @@ def discover(
         "bbox": list(resolved_bbox),
         "radius_km": None if bbox else radius_km,
         "keywords": clean_keywords,
+        "download_diagnostics": download_diagnostics,
         "candidate_count": len(candidates),
         "candidates": candidates,
         "privacy_and_scope": {

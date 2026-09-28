@@ -9,6 +9,7 @@ from overture_discovery import (
     bbox_from_center,
     download_overture_places,
     parse_bbox,
+    inspect_download,
     probe_candidates,
     probe_website,
     read_candidates,
@@ -115,6 +116,28 @@ class OvertureDiscoveryTests(unittest.TestCase):
             download_overture_places((4.3, 51.8, 4.7, 52.1), output, runner=fake_runner)
             self.assertTrue(output.exists())
             self.assertEqual(output.read_text(encoding="utf-8"), "")
+
+    def test_download_diagnostics_distinguish_raw_features_and_websites(self):
+        path = self.write_geojsonseq(
+            [
+                self.feature(
+                    fid="diag-1",
+                    name="Diagnostiek",
+                    category="restaurant",
+                    website="https://diag.example/",
+                )
+            ]
+        )
+        try:
+            result = inspect_download(path)
+        finally:
+            path.unlink(missing_ok=True)
+
+        self.assertEqual(result["feature_count"], 1)
+        self.assertEqual(result["website_feature_count"], 1)
+        self.assertGreater(result["file_size_bytes"], 0)
+        self.assertEqual(result["sample_basic_category"], "restaurant")
+        self.assertIn("websites", result["sample_property_keys"])
 
     def test_candidate_filter_emits_bounded_email_candidates_only(self):
         path = self.write_geojsonseq(
