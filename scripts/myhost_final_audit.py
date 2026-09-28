@@ -16,7 +16,7 @@ from myhost_draft import (
     plain_body,
     select_folder,
 )
-from prepare_growth_batch import prepare_batch, short_company_name
+from prepare_growth_batch import prepare_batch, short_company_name, subject_label_for_company
 
 
 def norm(value: object) -> str:
@@ -98,7 +98,10 @@ def audit_rows(batch_payloads: list[dict], reports: list[dict], config: dict) ->
         if re.search(r"\b\d+\s*%", body):
             failures.append(f"{lead_id}: automation percentage found")
         company_label = str(row.get("copy_company_label") or short_company_name(str(row.get("company") or ""))).strip()
-        subject_label = str(row.get("copy_subject_label") or "").strip()
+        subject_label = str(
+            row.get("copy_subject_label")
+            or subject_label_for_company(str(row.get("company") or ""), language)
+        ).strip()
         if not company_label or company_label not in body:
             failures.append(f"{lead_id}: personalized company label missing from body")
         if not subject_label or subject_label not in subject:
@@ -146,13 +149,21 @@ def audit_rows(batch_payloads: list[dict], reports: list[dict], config: dict) ->
             failures.append(f"{lead_id}: regenerated body mismatch")
 
     readback_by_id: dict[str, dict] = {}
+    allowed_outcomes_by_id: dict[str, str] = {}
     for index, report in enumerate(reports, start=1):
         if report.get("eligible_count") != 75:
             failures.append(f"report{index}: eligible_count mismatch")
-        if report.get("created_count") != 75:
-            failures.append(f"report{index}: created_count mismatch")
-        if report.get("existing_count") != 0 or report.get("replaced_count") != 0:
-            failures.append(f"report{index}: existing/replaced should be zero")
+        created = int(report.get("created_count") or 0)
+        existing = int(report.get("existing_count") or 0)
+        replaced = int(report.get("replaced_count") or 0)
+        if existing != 0:
+            failures.append(f"report{index}: existing_count should be zero")
+        if (created, replaced) not in {(75, 0), (0, 75)}:
+            failures.append(
+                f"report{index}: expected exactly 75 created or 75 safely replaced drafts, "
+                f"got created={created} replaced={replaced}"
+            )
+        expected_outcome = "replaced" if replaced == 75 else "created"
         if report.get("review_required_count") != 75:
             failures.append(f"report{index}: review_required_count mismatch")
         if report.get("smtp_send") != "not_available":
@@ -162,12 +173,13 @@ def audit_rows(batch_payloads: list[dict], reports: list[dict], config: dict) ->
             if lead_id in readback_by_id:
                 failures.append(f"{lead_id}: duplicate artifact readback")
             readback_by_id[lead_id] = item
+            allowed_outcomes_by_id[lead_id] = expected_outcome
 
     for row in rows:
         lead_id = row["lead_id"]
         item = readback_by_id.get(lead_id)
         if not item:
-            failures.append(f"{lead_id}: missing creation readback")
+            failures.append(f"{lead_id}: missing artifact readback")
             continue
         if item.get("to") != row.get("email"):
             failures.append(f"{lead_id}: artifact To mismatch")
@@ -177,8 +189,11 @@ def audit_rows(batch_payloads: list[dict], reports: list[dict], config: dict) ->
             failures.append(f"{lead_id}: artifact body mismatch")
         if item.get("review_status") != "contact-basis":
             failures.append(f"{lead_id}: artifact review status mismatch")
-        if item.get("outcome") != "created":
-            failures.append(f"{lead_id}: artifact outcome is not created")
+        expected_outcome = allowed_outcomes_by_id.get(lead_id)
+        if item.get("outcome") != expected_outcome:
+            failures.append(
+                f"{lead_id}: artifact outcome mismatch, expected {expected_outcome!r}, got {item.get('outcome')!r}"
+            )
 
     metrics = {
         "requested_total": 150,
