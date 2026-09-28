@@ -109,14 +109,14 @@ def audit_rows(batch_payloads: list[dict], reports: list[dict], config: dict) ->
         if "Op jullie website staat" in body or "Your website highlights" in body:
             failures.append(f"{lead_id}: old vague opening survived")
         if language == "nl":
-            if body.count("Zal ik vrijblijvend een voorbeeld design maken") != 1:
+            if body.count("Zal ik vrijblijvend een voorbeeld voor jullie homepage maken?") != 1:
                 failures.append(f"{lead_id}: NL CTA count mismatch")
             if "Geen interesse? Laat het gerust weten" not in body:
                 failures.append(f"{lead_id}: NL easy-no missing")
             if not body.endswith("Groet,\nAndrew"):
                 failures.append(f"{lead_id}: NL signature mismatch")
         elif language == "en":
-            if body.count("Would you like me to make a no-obligation example design") != 1:
+            if body.count("Would you like me to make a no-obligation example for your homepage?") != 1:
                 failures.append(f"{lead_id}: EN CTA count mismatch")
             if "Not relevant? Let me know" not in body:
                 failures.append(f"{lead_id}: EN easy-no missing")

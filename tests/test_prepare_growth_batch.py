@@ -34,20 +34,19 @@ class GrowthBatchTests(unittest.TestCase):
         self.assertTrue(row["lead_id"].startswith("growth-"))
         self.assertEqual(row["subject"], "Idee voor Voorbeeld Fysiotherapie")
         self.assertEqual(row["copy_company_label"], "Voorbeeld Fysiotherapie")
-        self.assertIn("Ik kwam Voorbeeld Fysiotherapie tegen", row["body"])
-        self.assertIn("met een duidelijke nadruk op fysiotherapie", row["body"])
-        self.assertIn("Fysiotherapie in Utrecht", row["body"])
+        self.assertIn("Ik zag dat Voorbeeld Fysiotherapie zich richt op fysiotherapie", row["body"])
+        self.assertIn("jullie online aanpak sterker en duidelijker", row["body"])
         self.assertNotIn("Op jullie website staat", row["body"])
         self.assertEqual(row["verified_observation_source_type"], "official_site")
         for value in (
-            "Website/webshop verbeteren of nieuw maken waar nodig",
-            "Zoekbaarheid verbeteren",
-            "Social content verzorgen",
-            "deels automatiseren",
-            "Hosting overnemen/beheren",
-            "Ik als vast contactpersoon",
-            "€250–€500 per maand",
-            "voorbeeld design",
+            "Website/webshop — verbeteren of vernieuwen",
+            "Vindbaarheid — beter zichtbaar in Google",
+            "Social content — passende content verzorgen",
+            "Automatisering — terugkerend werk slimmer inrichten",
+            "Hosting — beheer en onderhoud",
+            "Vast contact — rechtstreeks contact met mij",
+            "€250–€500 p/m",
+            "voorbeeld voor jullie homepage",
             "Groet,\nAndrew",
         ):
             self.assertIn(value, row["body"])
@@ -59,7 +58,7 @@ class GrowthBatchTests(unittest.TestCase):
         contact["name_hint"] = "030 Fietsen – Tweedehands Fietsen Utrecht"
         contact["verified_observation"] = "Home - 030 Fietsen"
         row = prepare_batch({"candidates": [contact]}, self.config(), draft_limit=1)["rows"][0]
-        self.assertIn("Jullie site draait duidelijk om fietsen en fietsservice", row["body"])
+        self.assertIn("Ik zag dat 030 Fietsen zich richt op fietsen en fietsservice", row["body"])
         self.assertNotIn("op de site komt dat terug in", row["body"])
         self.assertEqual(row["subject"], "Idee voor 030 Fietsen")
         self.assertIn("Ik kwam 030 Fietsen tegen", row["body"])
@@ -70,7 +69,7 @@ class GrowthBatchTests(unittest.TestCase):
         contact["name_hint"] = "De Juwelier"
         contact["verified_observation"] = "À LA CARTE RESTAURANT"
         row = prepare_batch({"candidates": [contact]}, self.config(), draft_limit=1)["rows"][0]
-        self.assertIn("met een duidelijke nadruk op restaurant en gastvrijheid", row["body"])
+        self.assertIn("zich richt op restaurant en gastvrijheid", row["body"])
         self.assertNotIn("sieraden en juwelierswerk", row["body"])
 
     def test_pass_contact_becomes_draft_ready(self):
@@ -81,9 +80,9 @@ class GrowthBatchTests(unittest.TestCase):
         )["rows"][0]
         self.assertEqual(row["status"], "draft_ready")
         self.assertEqual(row["subject"], "An idea for Example Physiotherapy")
-        self.assertIn("I came across Example Physiotherapy", row["body"])
-        self.assertIn("€250–€500 per month", row["body"])
-        self.assertIn("no-obligation example design", row["body"])
+        self.assertIn("I saw that Example Physiotherapy focuses on physical therapy", row["body"])
+        self.assertIn("€250–€500/month", row["body"])
+        self.assertIn("no-obligation example for your homepage", row["body"])
         self.assertNotIn("30%", row["body"])
 
     def test_missing_verified_observation_blocks_draft(self):

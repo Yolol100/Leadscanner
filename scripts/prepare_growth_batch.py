@@ -95,64 +95,67 @@ def build_opening(company: str, language: str, observation: str) -> str:
     focus = infer_focus_from_observation(observation, language)
     low_signal = observation_is_low_signal(company, observation)
     if language == "en":
-        if low_signal and focus:
-            fact = f"Your site is clearly focused on {focus}."
-        elif low_signal:
-            fact = ""
-        elif focus:
-            fact = f"One detail that stood out was “{observation}”, with a clear focus on {focus}."
-        else:
-            fact = f"One detail that stood out was “{observation}”."
-        fact_part = f" {fact}" if fact else ""
+        if focus:
+            return (
+                f"I saw that {company_label} focuses on {focus}. "
+                "I have an idea to make your online presence clearer and stronger."
+            )
+        if not low_signal:
+            return (
+                f"I looked through {company_label}'s website and noticed “{observation}”. "
+                "I have an idea to make your online presence clearer and stronger."
+            )
         return (
-            f"I came across {company_label} and looked through your website.{fact_part} "
-            f"My idea for {company_label}: make the website, search visibility and content work together as one coherent approach."
+            f"I looked through {company_label}'s website. "
+            "I have an idea to make your online presence clearer and stronger."
         )
-    if low_signal and focus:
-        fact = f"Jullie site draait duidelijk om {focus}."
-    elif low_signal:
-        fact = ""
-    elif focus:
-        fact = f"Eén detail dat opviel was “{observation}”, met een duidelijke nadruk op {focus}."
-    else:
-        fact = f"Eén detail dat opviel was “{observation}”."
-    fact_part = f" {fact}" if fact else ""
+    if focus:
+        return (
+            f"Ik zag dat {company_label} zich richt op {focus}. "
+            "Ik heb een idee om jullie online aanpak sterker en duidelijker te maken."
+        )
+    if not low_signal:
+        return (
+            f"Ik heb de website van {company_label} bekeken en zag “{observation}”. "
+            "Ik heb een idee om jullie online aanpak sterker en duidelijker te maken."
+        )
     return (
-        f"Ik kwam {company_label} tegen en heb jullie website bekeken.{fact_part} "
-        f"Mijn idee voor {company_label}: website, vindbaarheid en content meer als één geheel laten samenwerken."
+        f"Ik heb de website van {company_label} bekeken. "
+        "Ik heb een idee om jullie online aanpak sterker en duidelijker te maken."
     )
 
 
 def build_template(company: str, language: str, observation: str, *, price_min: int, price_max: int) -> str:
-    company_label = short_company_name(company)
     opening = build_opening(company, language, observation)
     if language == "en":
         return (
             "Hello,\n\n"
             f"{opening}\n\n"
-            "• Improve or rebuild the website/webshop where needed\n"
-            "• Improve search visibility\n"
-            "• Create social content\n"
-            "• Partly automate suitable recurring processes where feasible\n"
-            "• Take over/manage hosting\n"
-            "• Me as your fixed contact\n\n"
-            f"€{price_min}–€{price_max} per month, depending on what you need.\n\n"
-            f"Would you like me to make a no-obligation example design for {company_label}, so you can first see whether the direction is relevant?\n\n"
-            "Not relevant? Let me know and I’ll leave it there.\n\n"
+            f"With my Growth Subscription (€{price_min}–€{price_max}/month), I help with:\n\n"
+            "• Website/webshop — improve or renew\n"
+            "• Search visibility — become more visible in Google\n"
+            "• Social content — create relevant content\n"
+            "• Automation — streamline recurring work\n"
+            "• Hosting — management and maintenance\n"
+            "• Fixed contact — direct contact with me\n\n"
+            "Would you like me to make a no-obligation example for your homepage? "
+            "Then you can first see whether the direction fits.\n\n"
+            "Not interested? Just let me know.\n\n"
             "Regards,\nAndrew"
         )
     return (
         "Goedendag,\n\n"
         f"{opening}\n\n"
-        "• Website/webshop verbeteren of nieuw maken waar nodig\n"
-        "• Zoekbaarheid verbeteren\n"
-        "• Social content verzorgen\n"
-        "• Geschikte terugkerende processen waar haalbaar deels automatiseren\n"
-        "• Hosting overnemen/beheren\n"
-        "• Ik als vast contactpersoon\n\n"
-        f"€{price_min}–€{price_max} per maand, afhankelijk van wat jullie nodig hebben.\n\n"
-        f"Zal ik vrijblijvend een voorbeeld design maken voor {company_label}? Dan kunnen jullie eerst bekijken of de richting interessant is.\n\n"
-        "Geen interesse? Laat het gerust weten, dan houd ik het hierbij.\n\n"
+        f"Met mijn Groeiabonnement (€{price_min}–€{price_max} p/m) help ik met:\n\n"
+        "• Website/webshop — verbeteren of vernieuwen\n"
+        "• Vindbaarheid — beter zichtbaar in Google\n"
+        "• Social content — passende content verzorgen\n"
+        "• Automatisering — terugkerend werk slimmer inrichten\n"
+        "• Hosting — beheer en onderhoud\n"
+        "• Vast contact — rechtstreeks contact met mij\n\n"
+        "Zal ik vrijblijvend een voorbeeld voor jullie homepage maken? "
+        "Dan kunnen jullie eerst zien of de richting past.\n\n"
+        "Geen interesse? Laat het gerust weten.\n\n"
         "Groet,\nAndrew"
     )
 
