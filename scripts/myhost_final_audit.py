@@ -118,7 +118,7 @@ def audit_rows(batch_payloads: list[dict], reports: list[dict], config: dict) ->
         elif language == "en":
             if body.count("Would you like me to make a no-obligation example for your homepage?") != 1:
                 failures.append(f"{lead_id}: EN CTA count mismatch")
-            if "Not relevant? Let me know" not in body:
+            if "Not interested? Just let me know." not in body:
                 failures.append(f"{lead_id}: EN easy-no missing")
             if not body.endswith("Regards,\nAndrew"):
                 failures.append(f"{lead_id}: EN signature mismatch")
