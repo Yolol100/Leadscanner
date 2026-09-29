@@ -1,0 +1,213 @@
+name: Leads Remove Invalid Draft
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+concurrency:
+  group: leads-remove-invalid-draft
+  cancel-in-progress: false
+
+jobs:
+  remove:
+    if: >-
+      github.event.issue.user.login == github.repository_owner &&
+      startsWith(github.event.issue.title, '[growth-draft-remove-invalid]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Resolve invalid-draft request
+        id: request
+        env:
+          EVENT_PATH: ${{ github.event_path }}
+        run: |
+          set -euo pipefail
+          mkdir -p results/source
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          event = json.loads(Path(os.environ["EVENT_PATH"]).read_text(encoding="utf-8"))
+          request = json.loads(event["issue"].get("body") or "{}")
+          artifact_id = int(request.get("artifact_id") or 0)
+          remove_id = str(request.get("remove_lead_id") or "").strip()
+          reason_code = str(request.get("reason_code") or "").strip()
+          if artifact_id <= 0:
+              raise SystemExit("artifact_id must be positive")
+          if not re.fullmatch(r"growth-[0-9a-f]{20}", remove_id):
+              raise SystemExit("remove_lead_id must be a canonical growth ID")
+          if reason_code != "invalid_official_site_observation":
+              raise SystemExit("unsupported reason_code")
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as out:
+              out.write(f"artifact_id={artifact_id}\n")
+              out.write(f"remove_id={remove_id}\n")
+          print("INVALID_DRAFT_REQUEST=green automatic_send=false")
+          PY
+
+      - name: Download source artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.request.outputs.artifact_id }}
+        run: |
+          set -euo pipefail
+          gh api -H "Accept: application/vnd.github+json"             "/repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" > results/source.zip
+          unzip -q results/source.zip -d results/source
+          test -s results/source/growth-batch.json
+
+      - name: Prove invalid official-site evidence
+        env:
+          REMOVE_ID: ${{ steps.request.outputs.remove_id }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          payload = json.loads(Path("results/source/growth-batch.json").read_text(encoding="utf-8"))
+          rows = [row for row in payload.get("rows") or [] if row.get("lead_id") == os.environ["REMOVE_ID"]]
+          if len(rows) != 1:
+              raise SystemExit(f"expected exactly one source row, got {len(rows)}")
+          row = rows[0]
+          if row.get("status") != "review_draft" or row.get("contact_basis_status") != "review_required":
+              raise SystemExit("source row is not a review_required review_draft")
+          if row.get("verified_observation_source_type") != "official_site":
+              raise SystemExit("source row lacks official-site provenance")
+          observation = str(row.get("verified_observation") or "")
+          invalid = re.compile(
+              r"under construction|coming soon|reserved domain|domainorder|"
+              r"geregistreerd en geparkeerd|crypto casinos?|bitcoin casinos?|"
+              r"tempat main|without code|window\s+\d+",
+              re.IGNORECASE,
+          )
+          if not invalid.search(observation):
+              raise SystemExit("source observation does not prove an invalid-site state")
+          Path("results/source-row.json").write_text(
+              json.dumps(row, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+          )
+          print("INVALID_OFFICIAL_SITE_EVIDENCE=green")
+          PY
+
+      - name: Preflight exact current draft before removal
+        env:
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
+          REMOVE_ID: ${{ steps.request.outputs.remove_id }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH=scripts python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from myhost_draft import connect_imap, fetch_message, find_drafts_folder, find_message_ids, message_body, normalize_text
+
+          expected = json.loads(Path("results/source-row.json").read_text(encoding="utf-8"))
+          client = connect_imap()
+          try:
+              folder = find_drafts_folder(client)
+              ids = find_message_ids(client, folder, os.environ["REMOVE_ID"])
+              if len(ids) != 1:
+                  raise SystemExit(f"expected exactly one current draft, got {len(ids)}")
+              actual = fetch_message(client, ids[0])
+              actual_to = normalize_text(actual.get("To", ""))
+              actual_subject = normalize_text(actual.get("Subject", ""))
+              actual_body = normalize_text(message_body(actual))
+              if actual_to != normalize_text(expected.get("email", "")):
+                  raise SystemExit("current To differs from source artifact")
+              if actual_subject != normalize_text(expected.get("subject", "")):
+                  raise SystemExit("current subject differs from source artifact")
+              if actual_body != normalize_text(expected.get("body", "")):
+                  raise SystemExit("current body differs from source artifact")
+              print("INVALID_DRAFT_PREFLIGHT=green exact_current_match=1 automatic_send=false")
+          finally:
+              try:
+                  client.logout()
+              except Exception:
+                  pass
+          PY
+
+      - name: Remove only the proven invalid draft
+        env:
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
+          REMOVE_ID: ${{ steps.request.outputs.remove_id }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH=scripts python3 scripts/myhost_remove_duplicate_draft.py             --lead-id "$REMOVE_ID"             --output results/removal.json | tee results/removal.txt
+          grep -q '^MYHOST_DUPLICATE_REMOVAL=green ' results/removal.txt
+          grep -q 'automatic_send=false' results/removal.txt
+          grep -q 'smtp_send=not_available' results/removal.txt
+
+      - name: Prove final absence
+        env:
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
+          REMOVE_ID: ${{ steps.request.outputs.remove_id }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH=scripts python3 - <<'PY'
+          import os
+          from myhost_draft import connect_imap, find_drafts_folder, find_message_ids
+
+          client = connect_imap()
+          try:
+              folder = find_drafts_folder(client)
+              ids = find_message_ids(client, folder, os.environ["REMOVE_ID"])
+              if ids:
+                  raise SystemExit(f"invalid draft still present: {len(ids)}")
+              print("INVALID_DRAFT_REMOVAL_READBACK=green final=0 automatic_send=false smtp_send=not_available")
+          finally:
+              try:
+                  client.logout()
+              except Exception:
+                  pass
+          PY
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: invalid-draft-removal-${{ github.run_number }}
+          path: |
+            results/source-row.json
+            results/removal.json
+            results/removal.txt
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Remove source artifact residue
+        if: always()
+        run: rm -rf results/source results/source.zip
+
+      - name: Close owner request issue
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --body "Invalid-source review draft removed after exact current readback. Nothing was sent."
+          gh issue close "$ISSUE_NUMBER"
