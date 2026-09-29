@@ -98,6 +98,8 @@ jobs:
 
           if not 1 <= len(artifact_ids) <= 10 or any(x <= 0 for x in artifact_ids):
               raise SystemExit("provide 1-10 positive artifact IDs")
+          if len(set(artifact_ids)) != len(artifact_ids):
+              raise SystemExit("artifact IDs must be distinct")
           if not 1 <= requested <= 100:
               raise SystemExit("requested_count must be 1-100")
 

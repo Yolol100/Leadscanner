@@ -26,6 +26,11 @@ class VerifiedDraftWorkflowTests(unittest.TestCase):
         self.assertIn("results/exclude-companies.txt", text)
         self.assertIn("results/exclude-domains.txt", text)
 
+    def test_phase3_artifact_ids_must_be_distinct(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("len(set(artifact_ids)) != len(artifact_ids)", text)
+        self.assertIn("artifact IDs must be distinct", text)
+
     def test_verified_draft_workflow_stays_review_only(self):
         text = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("scripts/myhost_growth_inventory.py", text)
