@@ -1,0 +1,32 @@
+from __future__ import annotations
+
+import pathlib
+import unittest
+
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+WORKFLOW = ROOT / ".github" / "workflows" / "leads-verified-drafts.yml"
+
+
+class VerifiedDraftWorkflowTests(unittest.TestCase):
+    def test_selector_dependencies_are_installed_before_selection(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        install = "python3 -m pip install --disable-pip-version-check -r requirements.txt"
+        selector = "scripts/build_verified_draft_input.py"
+        self.assertIn(install, text)
+        self.assertIn(selector, text)
+        self.assertLess(text.index(install), text.index(selector))
+
+    def test_verified_draft_workflow_stays_review_only(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("scripts/myhost_growth_inventory.py", text)
+        self.assertIn("scripts/myhost_draft.py", text)
+        self.assertIn("smtp_send=not_available", text)
+        self.assertIn("automatic_send=false", text)
+        self.assertNotIn("smtplib", text)
+        self.assertNotIn("sendmail(", text)
+        self.assertNotIn("SMTP(", text)
+
+
+if __name__ == "__main__":
+    unittest.main()
