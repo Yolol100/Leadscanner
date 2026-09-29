@@ -30,10 +30,10 @@ class FakeIMAP:
         return "BYE", [b"logout"]
 
 
-def raw_message(lead_id: str | None) -> bytes:
+def raw_message(lead_id: str | None, to: str = "info@example.nl") -> bytes:
     msg = EmailMessage()
     msg["From"] = "Andrew <info@andrewbaeten.nl>"
-    msg["To"] = "info@example.nl"
+    msg["To"] = to
     msg["Subject"] = "Test"
     if lead_id:
         msg["X-Webactueel-Lead-ID"] = lead_id
@@ -53,6 +53,7 @@ class InventoryTests(unittest.TestCase):
             result = inventory_growth_drafts()
         self.assertEqual(result["growth_draft_count"], 1)
         self.assertEqual(result["growth_lead_ids"], ["growth-0123456789abcdefabcd"])
+        self.assertEqual(result["growth_emails"], ["info@example.nl"])
         self.assertTrue(result["safety"]["read_only"])
         self.assertFalse(result["safety"]["draft_created"])
         self.assertFalse(result["safety"]["draft_deleted"])

@@ -80,6 +80,39 @@ class BuildVerifiedDraftInputTests(unittest.TestCase):
             self.assertEqual(result["candidates"][0]["name_hint"], "B BV")
             self.assertFalse(result["safety"]["automatic_send"])
 
+    def test_existing_growth_email_excludes_cross_batch_duplicate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "one"
+            rows = [
+                {
+                    "company": "VanHaren",
+                    "domain": "stores.vanharen.nl",
+                    "website": "https://stores.vanharen.nl/rotterdam",
+                    "email": "klantenservice@vanharen.nl",
+                    "observation": "Winkel Rotterdam",
+                },
+                {
+                    "company": "Andere Winkel",
+                    "domain": "anderewinkel.nl",
+                    "website": "https://anderewinkel.nl",
+                    "email": "info@anderewinkel.nl",
+                    "observation": "Schoenen en accessoires",
+                },
+            ]
+            self.make_source(root, rows)
+            result = build_contacts(
+                [root],
+                {
+                    "growth_lead_ids": [],
+                    "growth_emails": ["klantenservice@vanharen.nl"],
+                },
+                1,
+            )
+            self.assertEqual(result["selected_count"], 1)
+            self.assertEqual(result["inventory_excluded_count"], 1)
+            self.assertEqual(result["candidates"][0]["name_hint"], "Andere Winkel")
+            self.assertTrue(result["safety"]["existing_growth_emails_excluded"])
+
     def test_revalidates_old_verified_email_and_uses_next_currently_valid_contact(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "one"

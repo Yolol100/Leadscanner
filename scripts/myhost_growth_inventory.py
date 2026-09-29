@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from email.utils import getaddresses
 from pathlib import Path
 
 from myhost_draft import LEAD_ID_RE, connect_imap, fetch_message, find_drafts_folder, select_folder
@@ -16,15 +17,22 @@ def inventory_growth_drafts() -> dict:
         if status != "OK":
             raise RuntimeError("Could not inventory mijn.host drafts")
         ids: list[str] = []
+        emails: set[str] = set()
         for message_id in (data[0] if data else b"").split():
             msg = fetch_message(client, message_id)
             lead_id = str(msg.get("X-Webactueel-Lead-ID", "")).strip()
-            if LEAD_ID_RE.fullmatch(lead_id) and lead_id not in ids:
-                ids.append(lead_id)
+            if LEAD_ID_RE.fullmatch(lead_id):
+                if lead_id not in ids:
+                    ids.append(lead_id)
+                for _, address in getaddresses([str(msg.get("To", ""))]):
+                    normalized = address.strip().casefold()
+                    if normalized:
+                        emails.add(normalized)
         ids.sort()
         return {
             "growth_draft_count": len(ids),
             "growth_lead_ids": ids,
+            "growth_emails": sorted(emails),
             "draft_folder": folder,
             "safety": {
                 "read_only": True,

@@ -25,6 +25,11 @@ def build_contacts(source_dirs: list[Path], inventory: dict, requested_count: in
         for value in (inventory.get("growth_lead_ids") or [])
         if str(value).strip()
     }
+    existing_emails = {
+        _norm(value)
+        for value in (inventory.get("growth_emails") or [])
+        if _norm(value)
+    }
 
     selected: list[dict] = []
     seen_emails: set[str] = set()
@@ -87,7 +92,7 @@ def build_contacts(source_dirs: list[Path], inventory: dict, requested_count: in
                 continue
 
             lead_id = stable_lead_id(email, website)
-            if lead_id in existing_ids:
+            if lead_id in existing_ids or email in existing_emails:
                 inventory_excluded += 1
                 continue
             if email in seen_emails or domain in seen_domains or lead_id in seen_lead_ids:
@@ -119,6 +124,7 @@ def build_contacts(source_dirs: list[Path], inventory: dict, requested_count: in
         "safety": {
             "source_phase": "phase3_verified_ready",
             "existing_growth_ids_excluded": True,
+            "existing_growth_emails_excluded": True,
             "contact_basis_review_required": True,
             "automatic_send": False,
         },

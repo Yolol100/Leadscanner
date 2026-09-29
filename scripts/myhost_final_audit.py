@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import imaplib
 import json
 import re
-from collections import Counter, defaultdict
+from collections import Counter
 from pathlib import Path
 
 from myhost_draft import (
@@ -12,6 +13,7 @@ from myhost_draft import (
     exact_message_matches,
     fetch_message,
     find_drafts_folder,
+    find_message_ids,
     normalize_text,
     plain_body,
     select_folder,
@@ -27,9 +29,16 @@ def load(path: str | Path) -> dict:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
-def audit_rows(batch_payloads: list[dict], reports: list[dict], config: dict) -> tuple[list[dict], list[str], dict]:
+def audit_rows(
+    batch_payloads: list[dict],
+    reports: list[dict],
+    config: dict,
+    excluded_lead_ids: set[str] | None = None,
+) -> tuple[list[dict], list[str], dict]:
     rows: list[dict] = []
     failures: list[str] = []
+    excluded = {str(value).strip() for value in (excluded_lead_ids or set()) if str(value).strip()}
+    excluded_seen: set[str] = set()
 
     if len(batch_payloads) != len(reports):
         failures.append(
@@ -38,19 +47,38 @@ def audit_rows(batch_payloads: list[dict], reports: list[dict], config: dict) ->
 
     expected_counts: list[int] = []
     for index, batch in enumerate(batch_payloads, start=1):
-        phase_rows = [row for row in batch.get("rows") or [] if row.get("status") == "review_draft"]
+        all_phase_rows = [row for row in batch.get("rows") or [] if row.get("status") == "review_draft"]
         report = reports[index - 1] if index - 1 < len(reports) else {}
-        expected = int(report.get("eligible_count") or 0)
-        if expected <= 0:
+        original_expected = int(report.get("eligible_count") or 0)
+        if original_expected <= 0:
             failures.append(f"batch{index}: eligible_count must be positive")
+        if len(all_phase_rows) != original_expected:
+            failures.append(
+                f"batch{index}: artifact/report count mismatch {len(all_phase_rows)}/{original_expected}"
+            )
+        excluded_here = {
+            str(row.get("lead_id") or "")
+            for row in all_phase_rows
+            if str(row.get("lead_id") or "") in excluded
+        }
+        excluded_seen.update(excluded_here)
+        phase_rows = [
+            row for row in all_phase_rows
+            if str(row.get("lead_id") or "") not in excluded
+        ]
+        expected = max(0, original_expected - len(excluded_here))
         expected_counts.append(expected)
         if len(phase_rows) != expected:
             failures.append(
-                f"batch{index}: expected {expected} review_draft rows, found {len(phase_rows)}"
+                f"batch{index}: expected {expected} canonical review_draft rows, found {len(phase_rows)}"
             )
         if (batch.get("safety") or {}).get("automatic_send") is not False:
             failures.append(f"batch{index}: automatic_send is not false")
         rows.extend(phase_rows)
+
+    missing_exclusions = sorted(excluded - excluded_seen)
+    if missing_exclusions:
+        failures.append(f"excluded_lead_ids_missing_from_artifacts: {missing_exclusions[:10]}")
 
     requested_total = sum(expected_counts)
     if len(rows) != requested_total:
@@ -167,26 +195,28 @@ def audit_rows(batch_payloads: list[dict], reports: list[dict], config: dict) ->
     readback_by_id: dict[str, dict] = {}
     allowed_outcomes_by_id: dict[str, str] = {}
     for index, report in enumerate(reports, start=1):
-        expected = expected_counts[index - 1] if index - 1 < len(expected_counts) else 0
-        if report.get("eligible_count") != expected:
+        original_expected = int(report.get("eligible_count") or 0)
+        if original_expected <= 0:
             failures.append(f"report{index}: eligible_count mismatch")
         created = int(report.get("created_count") or 0)
         existing = int(report.get("existing_count") or 0)
         replaced = int(report.get("replaced_count") or 0)
         if existing != 0:
             failures.append(f"report{index}: existing_count should be zero")
-        if (created, replaced) not in {(expected, 0), (0, expected)}:
+        if (created, replaced) not in {(original_expected, 0), (0, original_expected)}:
             failures.append(
-                f"report{index}: expected exactly {expected} created or {expected} safely replaced drafts, "
+                f"report{index}: expected exactly {original_expected} created or {original_expected} safely replaced drafts, "
                 f"got created={created} replaced={replaced}"
             )
-        expected_outcome = "replaced" if replaced == expected and expected > 0 else "created"
-        if report.get("review_required_count") != expected:
+        expected_outcome = "replaced" if replaced == original_expected and original_expected > 0 else "created"
+        if report.get("review_required_count") != original_expected:
             failures.append(f"report{index}: review_required_count mismatch")
         if report.get("smtp_send") != "not_available":
             failures.append(f"report{index}: smtp_send must be not_available")
         for item in report.get("items") or []:
             lead_id = str(item.get("lead_id") or "")
+            if lead_id in excluded:
+                continue
             if lead_id in readback_by_id:
                 failures.append(f"{lead_id}: duplicate artifact readback")
             readback_by_id[lead_id] = item
@@ -222,47 +252,86 @@ def audit_rows(batch_payloads: list[dict], reports: list[dict], config: dict) ->
         "unique_companies": len({norm(row.get("company")) for row in rows}),
         "language_split": dict(language_split),
         "email_source_types": dict(email_source_types),
+        "excluded_lead_ids": sorted(excluded),
+        "excluded_artifact_count": len(excluded_seen),
     }
     return rows, failures, metrics
 
 
-def audit_mailbox(rows: list[dict]) -> tuple[list[str], dict]:
+def _reconnect_selected(client, folder: str):
+    try:
+        client.logout()
+    except Exception:
+        pass
+    client = connect_imap()
+    select_folder(client, folder, readonly=True)
+    return client
+
+
+def _read_expected_message(client, folder: str, lead_id: str):
+    for attempt in range(2):
+        try:
+            ids = find_message_ids(client, folder, lead_id, ensure_selected=False)
+            if len(ids) != 1:
+                return client, ids, None
+            return client, ids, fetch_message(client, ids[0])
+        except imaplib.IMAP4.abort:
+            if attempt:
+                raise
+            client = _reconnect_selected(client, folder)
+    raise RuntimeError("unreachable")
+
+
+def _find_ids_with_retry(client, folder: str, lead_id: str):
+    for attempt in range(2):
+        try:
+            return client, find_message_ids(client, folder, lead_id, ensure_selected=False)
+        except imaplib.IMAP4.abort:
+            if attempt:
+                raise
+            client = _reconnect_selected(client, folder)
+    raise RuntimeError("unreachable")
+
+
+def audit_mailbox(
+    rows: list[dict],
+    excluded_lead_ids: set[str] | None = None,
+) -> tuple[list[str], dict]:
     failures: list[str] = []
     expected = {row["lead_id"]: row for row in rows}
+    excluded = {str(value).strip() for value in (excluded_lead_ids or set()) if str(value).strip()}
     client = connect_imap()
     try:
         folder = find_drafts_folder(client)
         select_folder(client, folder, readonly=True)
-        status, data = client.search(None, "ALL")
-        if status != "OK":
-            raise RuntimeError("Could not list current mijn.host drafts")
-
-        growth_messages: dict[str, list] = defaultdict(list)
-        for message_id in (data[0] if data else b"").split():
-            msg = fetch_message(client, message_id)
-            lead_id = normalize_text(msg.get("X-Webactueel-Lead-ID", ""))
-            if lead_id.startswith("growth-"):
-                growth_messages[lead_id].append(msg)
 
         matched = 0
         for lead_id, row in expected.items():
-            messages = growth_messages.get(lead_id) or []
-            if len(messages) != 1:
-                failures.append(f"{lead_id}: current mailbox count={len(messages)}, expected 1")
+            client, ids, actual = _read_expected_message(client, folder, lead_id)
+            if len(ids) != 1:
+                failures.append(f"{lead_id}: current mailbox count={len(ids)}, expected 1")
                 continue
-            actual = messages[0]
             _, expected_message = build_message(row)
-            if not exact_message_matches(actual, expected_message):
+            if actual is None or not exact_message_matches(actual, expected_message):
                 failures.append(f"{lead_id}: current mailbox exact content mismatch")
                 continue
             matched += 1
 
+        excluded_absent = 0
+        for lead_id in sorted(excluded):
+            client, ids = _find_ids_with_retry(client, folder, lead_id)
+            if ids:
+                failures.append(f"{lead_id}: excluded draft still present count={len(ids)}")
+            else:
+                excluded_absent += 1
+
         metrics = {
             "draft_folder": folder,
-            "mailbox_growth_draft_count": sum(len(values) for values in growth_messages.values()),
-            "mailbox_unique_growth_lead_ids": len(growth_messages),
+            "mailbox_scan_mode": "targeted_expected_lead_ids",
             "final_set_current_exact_matches": matched,
             "final_set_current_expected": len(expected),
+            "excluded_mailbox_absent": excluded_absent,
+            "excluded_mailbox_expected_absent": len(excluded),
             "read_only": True,
         }
         return failures, metrics
@@ -279,17 +348,21 @@ def main() -> int:
     parser.add_argument("--report", action="append", required=True)
     parser.add_argument("--config", required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--exclude-lead-id", action="append", default=[])
     args = parser.parse_args()
 
-    if len(args.batch) != 2 or len(args.report) != 2:
-        raise SystemExit("Final audit requires exactly two draft artifacts")
+    if not 1 <= len(args.batch) <= 10 or len(args.batch) != len(args.report):
+        raise SystemExit("Final audit requires 1-10 paired draft artifacts")
 
     batch_payloads = [load(path) for path in args.batch]
     reports = [load(path) for path in args.report]
     config = load(args.config)
 
-    rows, artifact_failures, metrics = audit_rows(batch_payloads, reports, config)
-    mailbox_failures, mailbox_metrics = audit_mailbox(rows)
+    excluded_lead_ids = {str(value).strip() for value in args.exclude_lead_id if str(value).strip()}
+    rows, artifact_failures, metrics = audit_rows(
+        batch_payloads, reports, config, excluded_lead_ids
+    )
+    mailbox_failures, mailbox_metrics = audit_mailbox(rows, excluded_lead_ids)
     failures = artifact_failures + mailbox_failures
 
     sample = None
