@@ -68,6 +68,7 @@ def build_contacts(
     seen_lead_ids: set[str] = set()
     verified_ready_total = 0
     inventory_excluded = 0
+    request_excluded = 0
     invalid_or_unmatched = 0
 
     for source_dir in source_dirs:
@@ -176,12 +177,14 @@ def build_contacts(
         "selected_count": len(selected),
         "verified_ready_seen": verified_ready_total,
         "inventory_excluded_count": inventory_excluded,
+        "request_excluded_count": request_excluded,
         "invalid_or_unmatched_count": invalid_or_unmatched,
         "candidates": selected,
         "safety": {
             "source_phase": "phase3_verified_ready",
             "existing_growth_ids_excluded": True,
             "existing_growth_emails_excluded": True,
+            "request_company_domain_exclusions_applied": True,
             "contact_basis_review_required": True,
             "automatic_send": False,
         },
