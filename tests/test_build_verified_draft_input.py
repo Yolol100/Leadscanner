@@ -168,6 +168,176 @@ class BuildVerifiedDraftInputTests(unittest.TestCase):
             self.assertEqual(result["selected_count"], 1)
             self.assertEqual(result["candidates"][0]["public_business_emails"], ["info@a.nl"])
 
+    def test_reorders_old_verified_emails_by_current_business_priority(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "one"
+            root.mkdir(parents=True, exist_ok=True)
+            (root / "verification-ready.json").write_text(
+                json.dumps(
+                    {
+                        "ready_for_copy": [
+                            {
+                                "company": "Albert Heijn Bunnik",
+                                "official_domain": "hansgeveling.nl",
+                                "email": "mt.8507@ah.nl",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (root / "public-contacts.json").write_text(
+                json.dumps(
+                    {
+                        "candidates": [
+                            {
+                                "name_hint": "Albert Heijn Bunnik",
+                                "website_hint": "https://hansgeveling.nl/winkels/bunnik/",
+                                "official_domain_hint": "hansgeveling.nl",
+                                "public_business_emails": [
+                                    "mt.8507@ah.nl",
+                                    "info@hansgeveling.nl",
+                                ],
+                                "email_source_urls": [
+                                    "https://hansgeveling.nl/winkels/bunnik/",
+                                    "https://hansgeveling.nl/contact/",
+                                ],
+                                "email_source_types": ["official_site", "official_site"],
+                                "email_source_refs": [
+                                    "https://hansgeveling.nl/winkels/bunnik/",
+                                    "https://hansgeveling.nl/contact/",
+                                ],
+                                "verified_observation": "Albert Heijn Bunnik",
+                                "verified_observation_source_url": "https://hansgeveling.nl/winkels/bunnik/",
+                                "verified_observation_source_type": "official_site",
+                                "language": "nl",
+                                "language_source": "html_lang",
+                                "excluded_competitor": False,
+                                "contact_basis_status": "review_required",
+                                "contact_basis_hint": "public_email_review_required",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            result = build_contacts([root], {"growth_lead_ids": [], "growth_emails": []}, 1)
+            self.assertEqual(
+                result["candidates"][0]["public_business_emails"],
+                ["info@hansgeveling.nl"],
+            )
+
+    def test_primary_site_wins_over_secondary_company_surfaces(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "one"
+            root.mkdir(parents=True, exist_ok=True)
+            ready = [
+                {"company": "New York Pizza", "official_domain": "nypjobs.nl", "email": "info@nypjobs.nl"},
+                {"company": "New York Pizza", "official_domain": "newyorkpizza.nl", "email": "service@newyorkpizza.nl"},
+                {"company": "VanHaren", "official_domain": "stores.vanharen.nl", "email": "klantenservice@vanharen.nl"},
+                {"company": "VanHaren", "official_domain": "vanharen.nl", "email": "klantenservice@vanharen.nl"},
+            ]
+            contacts = [
+                {
+                    "name_hint": "New York Pizza",
+                    "website_hint": "https://nypjobs.nl/",
+                    "official_domain_hint": "nypjobs.nl",
+                    "public_business_emails": ["info@nypjobs.nl"],
+                    "email_source_urls": ["https://nypjobs.nl/"],
+                    "email_source_types": ["official_site"],
+                    "email_source_refs": ["https://nypjobs.nl/"],
+                    "verified_observation": "Werken bij New York Pizza",
+                    "verified_observation_source_url": "https://nypjobs.nl/",
+                    "verified_observation_source_type": "official_site",
+                    "language": "nl",
+                    "language_source": "html_lang",
+                    "excluded_competitor": False,
+                    "contact_basis_status": "review_required",
+                },
+                {
+                    "name_hint": "New York Pizza",
+                    "website_hint": "https://newyorkpizza.nl/",
+                    "official_domain_hint": "newyorkpizza.nl",
+                    "public_business_emails": ["service@newyorkpizza.nl"],
+                    "email_source_urls": ["https://newyorkpizza.nl/contact"],
+                    "email_source_types": ["official_site"],
+                    "email_source_refs": ["https://newyorkpizza.nl/contact"],
+                    "verified_observation": "Pizza bestellen",
+                    "verified_observation_source_url": "https://newyorkpizza.nl/",
+                    "verified_observation_source_type": "official_site",
+                    "language": "nl",
+                    "language_source": "html_lang",
+                    "excluded_competitor": False,
+                    "contact_basis_status": "review_required",
+                },
+                {
+                    "name_hint": "VanHaren",
+                    "website_hint": "https://stores.vanharen.nl/rotterdam",
+                    "official_domain_hint": "stores.vanharen.nl",
+                    "public_business_emails": ["klantenservice@vanharen.nl"],
+                    "email_source_urls": ["https://stores.vanharen.nl/rotterdam"],
+                    "email_source_types": ["official_site"],
+                    "email_source_refs": ["https://stores.vanharen.nl/rotterdam"],
+                    "verified_observation": "Winkel Rotterdam",
+                    "verified_observation_source_url": "https://stores.vanharen.nl/rotterdam",
+                    "verified_observation_source_type": "official_site",
+                    "language": "nl",
+                    "language_source": "html_lang",
+                    "excluded_competitor": False,
+                    "contact_basis_status": "review_required",
+                },
+                {
+                    "name_hint": "VanHaren",
+                    "website_hint": "https://vanharen.nl/",
+                    "official_domain_hint": "vanharen.nl",
+                    "public_business_emails": ["klantenservice@vanharen.nl"],
+                    "email_source_urls": ["https://vanharen.nl/contact"],
+                    "email_source_types": ["official_site"],
+                    "email_source_refs": ["https://vanharen.nl/contact"],
+                    "verified_observation": "Schoenen en accessoires",
+                    "verified_observation_source_url": "https://vanharen.nl/",
+                    "verified_observation_source_type": "official_site",
+                    "language": "nl",
+                    "language_source": "html_lang",
+                    "excluded_competitor": False,
+                    "contact_basis_status": "review_required",
+                },
+            ]
+            (root / "verification-ready.json").write_text(json.dumps({"ready_for_copy": ready}), encoding="utf-8")
+            (root / "public-contacts.json").write_text(json.dumps({"candidates": contacts}), encoding="utf-8")
+            result = build_contacts([root], {"growth_lead_ids": [], "growth_emails": []}, 2)
+            self.assertEqual(
+                [candidate["official_domain_hint"] for candidate in result["candidates"]],
+                ["newyorkpizza.nl", "vanharen.nl"],
+            )
+
+    def test_same_brand_distinct_locations_remain_selectable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "one"
+            rows = [
+                {
+                    "company": "Anytime Fitness",
+                    "domain": "afeindhoven.nl",
+                    "website": "https://afeindhoven.nl/",
+                    "email": "eindhoven@anytimefitness.nl",
+                    "observation": "Fitness Eindhoven",
+                },
+                {
+                    "company": "Anytime Fitness",
+                    "domain": "afrotterdamzevenkamp.nl",
+                    "website": "https://afrotterdamzevenkamp.nl/",
+                    "email": "rotterdam-zevenkamp@anytimefitness.nl",
+                    "observation": "Fitness Rotterdam",
+                },
+            ]
+            self.make_source(root, rows)
+            result = build_contacts([root], {"growth_lead_ids": [], "growth_emails": []}, 2)
+            self.assertEqual(result["selected_count"], 2)
+            self.assertEqual(
+                [candidate["official_domain_hint"] for candidate in result["candidates"]],
+                ["afeindhoven.nl", "afrotterdamzevenkamp.nl"],
+            )
+
     def test_fails_closed_when_not_enough_new_verified_prospects(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "one"

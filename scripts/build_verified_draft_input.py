@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from extract_public_contacts import valid_email
+from extract_public_contacts import email_business_priority, valid_email
 from prepare_growth_batch import stable_lead_id
 
 
@@ -14,6 +14,23 @@ def load_json(path: Path) -> dict:
 
 def _norm(value: object) -> str:
     return str(value or "").strip().casefold()
+
+
+SECONDARY_SURFACE_MARKERS = (
+    "werkenbij",
+    "careers",
+    "jobs",
+    "vacature",
+    "vacatures",
+    "recruit",
+)
+
+
+def _is_secondary_surface(candidate: dict) -> bool:
+    domain = _norm(candidate.get("official_domain_hint"))
+    website = _norm(candidate.get("website_hint"))
+    haystack = f"{domain} {website}"
+    return domain.startswith("stores.") or any(marker in haystack for marker in SECONDARY_SURFACE_MARKERS)
 
 
 def build_contacts(source_dirs: list[Path], inventory: dict, requested_count: int) -> dict:
@@ -51,21 +68,44 @@ def build_contacts(source_dirs: list[Path], inventory: dict, requested_count: in
                 ready_company_domains.add((company, domain))
         verified_ready_total += len(ready_company_domains)
 
+        source_candidates = []
+        primary_companies: set[str] = set()
         for candidate in contacts_payload.get("candidates") or []:
             company = _norm(candidate.get("name_hint"))
             domain = _norm(candidate.get("official_domain_hint"))
             if not company or not domain or (company, domain) not in ready_company_domains:
                 continue
+            source_candidates.append(candidate)
+            if not _is_secondary_surface(candidate):
+                primary_companies.add(company)
 
-            emails = list(candidate.get("public_business_emails") or [])
-            chosen_index = next(
-                (index for index, value in enumerate(emails) if valid_email(_norm(value))),
-                None,
-            )
-            if chosen_index is None:
+        for candidate in source_candidates:
+            company = _norm(candidate.get("name_hint"))
+            domain = _norm(candidate.get("official_domain_hint"))
+            if _is_secondary_surface(candidate) and company in primary_companies:
                 invalid_or_unmatched += 1
                 continue
-            email = _norm(emails[chosen_index])
+
+            emails = list(candidate.get("public_business_emails") or [])
+            valid_candidates = [
+                (index, _norm(value))
+                for index, value in enumerate(emails)
+                if valid_email(_norm(value))
+            ]
+            if not valid_candidates:
+                invalid_or_unmatched += 1
+                continue
+            chosen_index, email = min(
+                valid_candidates,
+                key=lambda item: (
+                    email_business_priority(
+                        item[1],
+                        candidate.get("official_domain_hint"),
+                        candidate.get("name_hint"),
+                    ),
+                    item[0],
+                ),
+            )
 
             candidate = dict(candidate)
             candidate["public_business_emails"] = [email]
