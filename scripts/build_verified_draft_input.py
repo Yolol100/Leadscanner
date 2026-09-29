@@ -33,7 +33,13 @@ def _is_secondary_surface(candidate: dict) -> bool:
     return domain.startswith("stores.") or any(marker in haystack for marker in SECONDARY_SURFACE_MARKERS)
 
 
-def build_contacts(source_dirs: list[Path], inventory: dict, requested_count: int) -> dict:
+def build_contacts(
+    source_dirs: list[Path],
+    inventory: dict,
+    requested_count: int,
+    excluded_companies: set[str] | None = None,
+    excluded_domains: set[str] | None = None,
+) -> dict:
     if not 1 <= requested_count <= 100:
         raise ValueError("requested_count must be 1-100")
 
