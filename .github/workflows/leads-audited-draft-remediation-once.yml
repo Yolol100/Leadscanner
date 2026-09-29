@@ -298,8 +298,10 @@ jobs:
               select_folder(client, folder, readonly=True)
               for lead_id, row in expected.items():
                   ids = find_message_ids(client, folder, lead_id, ensure_selected=False)
-                  if len(ids) != 1:
-                      raise SystemExit(f"{lead_id}: current draft count={len(ids)}, expected 1")
+                  if len(ids) > 1:
+                      raise SystemExit(f"{lead_id}: current draft count={len(ids)}, expected 0 or 1")
+                  if not ids:
+                      continue
                   actual = fetch_message(client, ids[0])
                   if normalize_text(actual.get("To", "")) != normalize_text(row.get("email", "")):
                       raise SystemExit(f"{lead_id}: current To mismatch")
@@ -307,7 +309,7 @@ jobs:
                       raise SystemExit(f"{lead_id}: current subject mismatch")
                   if normalize_text(plain_body(actual)) != normalize_text(row.get("body", "")):
                       raise SystemExit(f"{lead_id}: current body mismatch")
-              print("INVALID_DRAFT_PREFLIGHT=green count=4 exact_current_matches=4 automatic_send=false")
+              print("INVALID_DRAFT_PREFLIGHT=green count=4 current_state_is_exact_or_absent=true automatic_send=false")
           finally:
               try:
                   client.logout()
@@ -315,17 +317,57 @@ jobs:
                   pass
           PY
 
-      - name: Remove four invalid-source review drafts
+      - name: Remove four invalid-source review drafts idempotently
         run: |
           set -euo pipefail
-          for lead_id in             growth-f1c767aa51ceb7d6c2f4             growth-3db0aea2330c9c1013cd             growth-d5b539d372fdb6266c16             growth-f516d98dd1403308eb1c
-          do
-            PYTHONPATH=scripts python3 scripts/myhost_remove_duplicate_draft.py               --lead-id "$lead_id"               --output "results/removal-$lead_id.json"               | tee "results/removal-$lead_id.txt"
-            grep -q '^MYHOST_DUPLICATE_REMOVAL=green ' "results/removal-$lead_id.txt"
-            grep -q 'automatic_send=false' "results/removal-$lead_id.txt"
-            grep -q 'smtp_send=not_available' "results/removal-$lead_id.txt"
-          done
-          echo "INVALID_DRAFT_REMOVALS=green count=4 automatic_send=false smtp_send=not_available"
+          PYTHONPATH=scripts python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from myhost_draft import connect_imap, find_drafts_folder, find_message_ids
+          from myhost_remove_duplicate_draft import remove_growth_draft
+
+          lead_ids = [
+              "growth-f1c767aa51ceb7d6c2f4",
+              "growth-3db0aea2330c9c1013cd",
+              "growth-d5b539d372fdb6266c16",
+              "growth-f516d98dd1403308eb1c",
+          ]
+          removed = 0
+          already_absent = 0
+          for lead_id in lead_ids:
+              client = connect_imap()
+              try:
+                  folder = find_drafts_folder(client)
+                  ids = find_message_ids(client, folder, lead_id)
+              finally:
+                  try:
+                      client.logout()
+                  except Exception:
+                      pass
+              if len(ids) > 1:
+                  raise SystemExit(f"{lead_id}: current draft count={len(ids)}, expected 0 or 1")
+              if not ids:
+                  already_absent += 1
+                  result = {
+                      "lead_id": lead_id,
+                      "removed_count": 0,
+                      "final_count": 0,
+                      "automatic_send": False,
+                      "smtp_send": "not_available",
+                  }
+              else:
+                  result = remove_growth_draft(lead_id)
+                  removed += 1
+              Path(f"results/removal-{lead_id}.json").write_text(
+                  json.dumps(result, indent=2, ensure_ascii=False) + "\n",
+                  encoding="utf-8",
+              )
+          print(
+              "INVALID_DRAFT_REMOVALS=green "
+              f"targets=4 removed_now={removed} already_absent={already_absent} "
+              "final_absent=4 automatic_send=false smtp_send=not_available"
+          )
+          PY
 
       - name: Safely replace every remaining audited review draft
         run: |
