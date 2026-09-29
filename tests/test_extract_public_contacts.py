@@ -77,6 +77,8 @@ class PublicContactDiscoveryTests(unittest.TestCase):
         self.assertFalse(valid_email("press@example.nl"))
         self.assertFalse(valid_email("press-emea@example.nl"))
         self.assertFalse(valid_email("hr@example.nl"))
+        self.assertFalse(valid_email("pers@example.nl"))
+        self.assertFalse(valid_email("sollicitatie@example.nl"))
         self.assertFalse(valid_email("work@example.nl"))
         self.assertFalse(valid_email("investorrelations@example.nl"))
         self.assertTrue(valid_email("customercare@example.nl"))

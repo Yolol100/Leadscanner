@@ -31,8 +31,8 @@ PLACEHOLDER_LOCAL_PARTS = {"naam", "name", "yourname", "your.name", "email", "e-
 PLACEHOLDER_DOMAINS = {"voorbeeld.nl", "voorbeeld.com", "example.com", "example.org", "example.net", "jouwdomein.nl", "yourdomain.com", "mysite.com"}
 BLOCKED_TECHNICAL_EMAIL_DOMAIN_SUFFIXES = ("sentry.wixpress.com", "sentry-next.wixpress.com", "sentry.io")
 UNSUITABLE_OUTREACH_LOCAL_PARTS = {
-    "press", "pressemea", "media", "hr", "work", "job", "jobs", "career", "careers",
-    "vacature", "vacatures", "recruit", "recruitment", "privacy", "legal", "dpo",
+    "press", "pressemea", "pers", "media", "hr", "work", "job", "jobs", "career", "careers",
+    "vacature", "vacatures", "recruit", "recruitment", "sollicitatie", "solliciteren", "privacy", "legal", "dpo",
     "security", "abuse", "webmaster", "investorrelations",
 }
 PUBLIC_MAIL_DOMAINS = {"gmail.com", "hotmail.com", "outlook.com", "live.nl", "live.com", "icloud.com", "yahoo.com", "proton.me", "protonmail.com"}
