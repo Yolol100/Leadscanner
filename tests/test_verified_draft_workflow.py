@@ -17,6 +17,15 @@ class VerifiedDraftWorkflowTests(unittest.TestCase):
         self.assertIn(selector, text)
         self.assertLess(text.index(install), text.index(selector))
 
+    def test_registry_exclusions_are_bound_into_selector(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("exclude_companies", text)
+        self.assertIn("exclude_domains", text)
+        self.assertIn("--exclude-company", text)
+        self.assertIn("--exclude-domain", text)
+        self.assertIn("results/exclude-companies.txt", text)
+        self.assertIn("results/exclude-domains.txt", text)
+
     def test_verified_draft_workflow_stays_review_only(self):
         text = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("scripts/myhost_growth_inventory.py", text)

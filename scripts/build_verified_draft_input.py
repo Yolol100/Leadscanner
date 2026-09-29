@@ -47,6 +47,14 @@ def build_contacts(source_dirs: list[Path], inventory: dict, requested_count: in
         for value in (inventory.get("growth_emails") or [])
         if _norm(value)
     }
+    request_excluded_companies = {
+        _norm(value) for value in (excluded_companies or set()) if _norm(value)
+    }
+    request_excluded_domains = {
+        _norm(value).removeprefix("www.")
+        for value in (excluded_domains or set())
+        if _norm(value)
+    }
 
     selected: list[dict] = []
     seen_emails: set[str] = set()
@@ -74,6 +82,9 @@ def build_contacts(source_dirs: list[Path], inventory: dict, requested_count: in
             company = _norm(candidate.get("name_hint"))
             domain = _norm(candidate.get("official_domain_hint"))
             if not company or not domain or (company, domain) not in ready_company_domains:
+                continue
+            if company in request_excluded_companies or domain in request_excluded_domains:
+                request_excluded += 1
                 continue
             source_candidates.append(candidate)
             if not _is_secondary_surface(candidate):
@@ -176,6 +187,8 @@ def main() -> int:
     parser.add_argument("--source-dir", action="append", required=True)
     parser.add_argument("--inventory", required=True)
     parser.add_argument("--requested-count", type=int, required=True)
+    parser.add_argument("--exclude-company", action="append", default=[])
+    parser.add_argument("--exclude-domain", action="append", default=[])
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
 
@@ -183,12 +196,15 @@ def main() -> int:
         [Path(value) for value in args.source_dir],
         load_json(Path(args.inventory)),
         args.requested_count,
+        excluded_companies=set(args.exclude_company),
+        excluded_domains=set(args.exclude_domain),
     )
     Path(args.output).write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(
         "VERIFIED_DRAFT_INPUT=green "
         f"requested={result['requested_count']} selected={result['selected_count']} "
         f"inventory_excluded={result['inventory_excluded_count']} "
+        f"request_excluded={result['request_excluded_count']} "
         "automatic_send=false"
     )
     return 0

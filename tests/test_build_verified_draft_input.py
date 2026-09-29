@@ -338,6 +338,38 @@ class BuildVerifiedDraftInputTests(unittest.TestCase):
                 ["afeindhoven.nl", "afrotterdamzevenkamp.nl"],
             )
 
+    def test_explicit_registry_company_domain_exclusions_are_applied(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "one"
+            rows = [
+                {
+                    "company": "Jumbo",
+                    "domain": "jumbo.com",
+                    "website": "https://jumbo.com/",
+                    "email": "klantenservice@jumbo.com",
+                    "observation": "Boodschappen en winkels",
+                },
+                {
+                    "company": "Andere Supermarkt",
+                    "domain": "andere-supermarkt.nl",
+                    "website": "https://andere-supermarkt.nl/",
+                    "email": "info@andere-supermarkt.nl",
+                    "observation": "Boodschappen en winkels",
+                },
+            ]
+            self.make_source(root, rows)
+            result = build_contacts(
+                [root],
+                {"growth_lead_ids": [], "growth_emails": []},
+                1,
+                excluded_companies={"Jumbo"},
+                excluded_domains={"jumbo.com"},
+            )
+            self.assertEqual(result["selected_count"], 1)
+            self.assertEqual(result["request_excluded_count"], 1)
+            self.assertEqual(result["candidates"][0]["name_hint"], "Andere Supermarkt")
+            self.assertTrue(result["safety"]["request_company_domain_exclusions_applied"])
+
     def test_fails_closed_when_not_enough_new_verified_prospects(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "one"

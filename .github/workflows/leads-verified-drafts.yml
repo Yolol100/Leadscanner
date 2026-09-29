@@ -12,6 +12,16 @@ on:
         required: true
         default: '75'
         type: string
+      exclude_companies:
+        description: 'Optional comma-separated company names already present in Lead Registry'
+        required: false
+        default: ''
+        type: string
+      exclude_domains:
+        description: 'Optional comma-separated domains already present in Lead Registry'
+        required: false
+        default: ''
+        type: string
   issues:
     types: [opened]
 
@@ -52,6 +62,8 @@ jobs:
           EVENT_PATH: ${{ github.event_path }}
           INPUT_ARTIFACT_IDS: ${{ inputs.artifact_ids }}
           INPUT_REQUESTED_COUNT: ${{ inputs.requested_count }}
+          INPUT_EXCLUDE_COMPANIES: ${{ inputs.exclude_companies }}
+          INPUT_EXCLUDE_DOMAINS: ${{ inputs.exclude_domains }}
         run: |
           set -euo pipefail
           mkdir -p results
@@ -69,9 +81,13 @@ jobs:
                   raise SystemExit(f"issue body must be JSON: {exc}")
               raw_ids = request.get("artifact_ids") or []
               requested = int(request.get("requested_count") or 75)
+              raw_exclude_companies = request.get("exclude_companies") or []
+              raw_exclude_domains = request.get("exclude_domains") or []
           else:
               raw_ids = os.environ["INPUT_ARTIFACT_IDS"]
               requested = int(os.environ["INPUT_REQUESTED_COUNT"] or 75)
+              raw_exclude_companies = os.environ.get("INPUT_EXCLUDE_COMPANIES") or ""
+              raw_exclude_domains = os.environ.get("INPUT_EXCLUDE_DOMAINS") or ""
 
           if isinstance(raw_ids, str):
               artifact_ids = [int(x) for x in re.split(r"[,\s]+", raw_ids.strip()) if x]
@@ -85,12 +101,41 @@ jobs:
           if not 1 <= requested <= 100:
               raise SystemExit("requested_count must be 1-100")
 
+          def normalize_list(raw, label):
+              if isinstance(raw, str):
+                  values = [part.strip() for part in raw.split(",") if part.strip()]
+              elif isinstance(raw, list):
+                  values = [str(part).strip() for part in raw if str(part).strip()]
+              else:
+                  raise SystemExit(f"{label} must be a list or comma-separated string")
+              values = list(dict.fromkeys(values))
+              if len(values) > 100:
+                  raise SystemExit(f"{label} is limited to 100 values")
+              if any(len(value) > 160 or any(ch in value for ch in "\r\n\0") for value in values):
+                  raise SystemExit(f"{label} contains an invalid value")
+              return values
+
+          exclude_companies = normalize_list(raw_exclude_companies, "exclude_companies")
+          exclude_domains = [value.casefold().removeprefix("www.") for value in normalize_list(raw_exclude_domains, "exclude_domains")]
+          domain_re = re.compile(r"^[a-z0-9.-]+$")
+          if any(not domain_re.fullmatch(value) or "." not in value for value in exclude_domains):
+              raise SystemExit("exclude_domains contains an invalid domain")
+
           Path("results/artifact-ids.txt").write_text(
               "".join(f"{x}\n" for x in artifact_ids), encoding="utf-8"
           )
+          Path("results/exclude-companies.txt").write_text(
+              "".join(f"{x}\n" for x in exclude_companies), encoding="utf-8"
+          )
+          Path("results/exclude-domains.txt").write_text(
+              "".join(f"{x}\n" for x in exclude_domains), encoding="utf-8"
+          )
           with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as out:
               out.write(f"requested={requested}\n")
-          print(f"VERIFIED_DRAFT_REQUEST=green artifacts={len(artifact_ids)} requested={requested}")
+          print(
+              f"VERIFIED_DRAFT_REQUEST=green artifacts={len(artifact_ids)} requested={requested} "
+              f"exclude_companies={len(exclude_companies)} exclude_domains={len(exclude_domains)}"
+          )
           PY
 
       - name: Download Phase 3 verification artifacts
@@ -132,8 +177,16 @@ jobs:
           set -euo pipefail
           args=()
           for dir in results/source/*/; do args+=(--source-dir "$dir"); done
+          exclude_args=()
+          while IFS= read -r company; do
+            if [ -n "$company" ]; then exclude_args+=(--exclude-company "$company"); fi
+          done < results/exclude-companies.txt
+          while IFS= read -r domain; do
+            if [ -n "$domain" ]; then exclude_args+=(--exclude-domain "$domain"); fi
+          done < results/exclude-domains.txt
           PYTHONPATH=scripts python3 scripts/build_verified_draft_input.py \
             "${args[@]}" \
+            "${exclude_args[@]}" \
             --inventory results/myhost-inventory.json \
             --requested-count "$REQUESTED" \
             --output results/verified-draft-input.json
