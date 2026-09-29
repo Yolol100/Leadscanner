@@ -80,6 +80,61 @@ class BuildVerifiedDraftInputTests(unittest.TestCase):
             self.assertEqual(result["candidates"][0]["name_hint"], "B BV")
             self.assertFalse(result["safety"]["automatic_send"])
 
+    def test_revalidates_old_verified_email_and_uses_next_currently_valid_contact(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "one"
+            root.mkdir(parents=True, exist_ok=True)
+            (root / "verification-ready.json").write_text(
+                json.dumps(
+                    {
+                        "ready_for_copy": [
+                            {
+                                "company": "A BV",
+                                "official_domain": "a.nl",
+                                "email": "press@a.nl",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (root / "public-contacts.json").write_text(
+                json.dumps(
+                    {
+                        "candidates": [
+                            {
+                                "name_hint": "A BV",
+                                "website_hint": "https://a.nl",
+                                "official_domain_hint": "a.nl",
+                                "public_business_emails": ["press@a.nl", "info@a.nl"],
+                                "email_source_urls": [
+                                    "https://a.nl/contact",
+                                    "https://a.nl/contact",
+                                ],
+                                "email_source_types": ["official_site", "official_site"],
+                                "email_source_refs": [
+                                    "https://a.nl/contact",
+                                    "https://a.nl/contact",
+                                ],
+                                "verified_observation": "Dienstverlening voor bedrijven",
+                                "verified_observation_source_url": "https://a.nl",
+                                "verified_observation_source_type": "official_site",
+                                "language": "nl",
+                                "language_source": "html_lang",
+                                "excluded_competitor": False,
+                                "contact_basis_status": "review_required",
+                                "contact_basis_hint": "public_email_review_required",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = build_contacts([root], {"growth_lead_ids": []}, 1)
+            self.assertEqual(result["selected_count"], 1)
+            self.assertEqual(result["candidates"][0]["public_business_emails"], ["info@a.nl"])
+
     def test_fails_closed_when_not_enough_new_verified_prospects(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "one"

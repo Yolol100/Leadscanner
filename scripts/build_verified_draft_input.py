@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
+from extract_public_contacts import valid_email
 from prepare_growth_batch import stable_lead_id
 
 
@@ -37,20 +38,35 @@ def build_contacts(source_dirs: list[Path], inventory: dict, requested_count: in
         ready_payload = load_json(source_dir / "verification-ready.json")
         contacts_payload = load_json(source_dir / "public-contacts.json")
 
-        ready_keys: set[tuple[str, str]] = set()
+        ready_company_domains: set[tuple[str, str]] = set()
         for row in ready_payload.get("ready_for_copy") or []:
-            email = _norm(row.get("email"))
+            company = _norm(row.get("company"))
             domain = _norm(row.get("official_domain"))
-            if email and domain:
-                ready_keys.add((email, domain))
-        verified_ready_total += len(ready_keys)
+            if company and domain:
+                ready_company_domains.add((company, domain))
+        verified_ready_total += len(ready_company_domains)
 
         for candidate in contacts_payload.get("candidates") or []:
-            emails = candidate.get("public_business_emails") or []
-            email = _norm(emails[0] if emails else "")
+            company = _norm(candidate.get("name_hint"))
             domain = _norm(candidate.get("official_domain_hint"))
-            if not email or not domain or (email, domain) not in ready_keys:
+            if not company or not domain or (company, domain) not in ready_company_domains:
                 continue
+
+            emails = list(candidate.get("public_business_emails") or [])
+            chosen_index = next(
+                (index for index, value in enumerate(emails) if valid_email(_norm(value))),
+                None,
+            )
+            if chosen_index is None:
+                invalid_or_unmatched += 1
+                continue
+            email = _norm(emails[chosen_index])
+
+            candidate = dict(candidate)
+            candidate["public_business_emails"] = [email]
+            for key in ("email_source_urls", "email_source_types", "email_source_refs"):
+                values = list(candidate.get(key) or [])
+                candidate[key] = [values[chosen_index]] if chosen_index < len(values) else []
 
             website = str(candidate.get("website_hint") or "").strip()
             observation = str(candidate.get("verified_observation") or "").strip()
