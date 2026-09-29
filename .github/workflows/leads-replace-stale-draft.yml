@@ -1,0 +1,293 @@
+name: Leads Replace Stale Draft Contact
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+concurrency:
+  group: leads-replace-stale-draft-contact
+  cancel-in-progress: false
+
+jobs:
+  replace:
+    if: >-
+      github.event.issue.user.login == github.repository_owner &&
+      startsWith(github.event.issue.title, '[growth-draft-replace-stale]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Install replacement evidence dependencies
+        run: python3 -m pip install --disable-pip-version-check -r requirements.txt
+
+      - name: Resolve stale replacement request
+        id: request
+        env:
+          EVENT_PATH: ${{ github.event_path }}
+        run: |
+          set -euo pipefail
+          mkdir -p results/old results/new
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          event = json.loads(Path(os.environ["EVENT_PATH"]).read_text(encoding="utf-8"))
+          request = json.loads(event["issue"].get("body") or "{}")
+          old_artifact = int(request.get("old_artifact_id") or 0)
+          new_artifact = int(request.get("new_artifact_id") or 0)
+          remove_id = str(request.get("remove_lead_id") or "").strip()
+          keep_id = str(request.get("keep_lead_id") or "").strip()
+          lead_re = re.compile(r"^growth-[0-9a-f]{20}$")
+          if old_artifact <= 0 or new_artifact <= 0 or old_artifact == new_artifact:
+              raise SystemExit("old/new artifact IDs must be distinct positive integers")
+          if not lead_re.fullmatch(remove_id) or not lead_re.fullmatch(keep_id) or remove_id == keep_id:
+              raise SystemExit("remove/keep lead IDs must be distinct canonical growth IDs")
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as out:
+              out.write(f"old_artifact={old_artifact}\n")
+              out.write(f"new_artifact={new_artifact}\n")
+              out.write(f"remove_id={remove_id}\n")
+              out.write(f"keep_id={keep_id}\n")
+          PY
+
+      - name: Download old and replacement draft artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OLD_ARTIFACT: ${{ steps.request.outputs.old_artifact }}
+          NEW_ARTIFACT: ${{ steps.request.outputs.new_artifact }}
+        run: |
+          set -euo pipefail
+          gh api -H "Accept: application/vnd.github+json"             "/repos/$GITHUB_REPOSITORY/actions/artifacts/$OLD_ARTIFACT/zip" > results/old.zip
+          gh api -H "Accept: application/vnd.github+json"             "/repos/$GITHUB_REPOSITORY/actions/artifacts/$NEW_ARTIFACT/zip" > results/new.zip
+          unzip -q results/old.zip -d results/old
+          unzip -q results/new.zip -d results/new
+          test -s results/old/growth-batch.json
+          test -s results/new/growth-batch.json
+
+      - name: Prove same prospect and better recipient
+        env:
+          REMOVE_ID: ${{ steps.request.outputs.remove_id }}
+          KEEP_ID: ${{ steps.request.outputs.keep_id }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH=scripts python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          from extract_public_contacts import email_business_priority, valid_email
+          from prepare_growth_batch import stable_lead_id
+
+          def load_row(path, lead_id):
+              payload = json.loads(Path(path).read_text(encoding="utf-8"))
+              for row in payload.get("rows") or []:
+                  if row.get("status") == "review_draft" and row.get("lead_id") == lead_id:
+                      return row
+              raise SystemExit(f"{lead_id}: review_draft row not found")
+
+          old = load_row("results/old/growth-batch.json", os.environ["REMOVE_ID"])
+          new = load_row("results/new/growth-batch.json", os.environ["KEEP_ID"])
+
+          for field in ("company", "website", "official_domain_hint"):
+              if str(old.get(field) or "").strip().casefold() != str(new.get(field) or "").strip().casefold():
+                  raise SystemExit(f"prospect identity mismatch for {field}")
+          if old.get("contact_basis_status") != "review_required" or new.get("contact_basis_status") != "review_required":
+              raise SystemExit("both drafts must remain review_required")
+
+          old_email = str(old.get("email") or "").strip().casefold()
+          new_email = str(new.get("email") or "").strip().casefold()
+          if not valid_email(old_email) or not valid_email(new_email) or old_email == new_email:
+              raise SystemExit("replacement requires two distinct currently valid email addresses")
+
+          domain = new.get("official_domain_hint")
+          company = new.get("company")
+          old_priority = email_business_priority(old_email, domain, company)
+          new_priority = email_business_priority(new_email, domain, company)
+          if new_priority >= old_priority:
+              raise SystemExit(
+                  f"replacement recipient is not higher priority: old={old_priority} new={new_priority}"
+              )
+
+          if stable_lead_id(old_email, old.get("website")) != os.environ["REMOVE_ID"]:
+              raise SystemExit("old lead ID does not match old recipient/website")
+          if stable_lead_id(new_email, new.get("website")) != os.environ["KEEP_ID"]:
+              raise SystemExit("new lead ID does not match new recipient/website")
+
+          Path("results/evidence.json").write_text(
+              json.dumps(
+                  {
+                      "company": new.get("company"),
+                      "website": new.get("website"),
+                      "official_domain_hint": new.get("official_domain_hint"),
+                      "old_lead_id": os.environ["REMOVE_ID"],
+                      "new_lead_id": os.environ["KEEP_ID"],
+                      "old_email": old_email,
+                      "new_email": new_email,
+                      "old_priority": old_priority,
+                      "new_priority": new_priority,
+                      "automatic_send": False,
+                  },
+                  indent=2,
+                  ensure_ascii=False,
+              ) + "\n",
+              encoding="utf-8",
+          )
+          print(
+              "STALE_REPLACEMENT_EVIDENCE=green "
+              f"old_priority={old_priority} new_priority={new_priority} automatic_send=false"
+          )
+          PY
+
+      - name: Prove both drafts exist and replacement is exact
+        env:
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
+          REMOVE_ID: ${{ steps.request.outputs.remove_id }}
+          KEEP_ID: ${{ steps.request.outputs.keep_id }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH=scripts python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          from myhost_draft import (
+              build_message,
+              connect_imap,
+              exact_message_matches,
+              fetch_message,
+              find_drafts_folder,
+              find_message_ids,
+          )
+
+          new_payload = json.loads(Path("results/new/growth-batch.json").read_text(encoding="utf-8"))
+          new_row = next(
+              row for row in new_payload.get("rows") or []
+              if row.get("status") == "review_draft" and row.get("lead_id") == os.environ["KEEP_ID"]
+          )
+          client = connect_imap()
+          try:
+              folder = find_drafts_folder(client)
+              old_ids = find_message_ids(client, folder, os.environ["REMOVE_ID"])
+              new_ids = find_message_ids(client, folder, os.environ["KEEP_ID"])
+              if len(old_ids) != 1 or len(new_ids) != 1:
+                  raise SystemExit(
+                      f"pre-removal mailbox counts old={len(old_ids)} new={len(new_ids)}, expected 1/1"
+                  )
+              actual = fetch_message(client, new_ids[0])
+              _, expected = build_message(new_row)
+              if not exact_message_matches(actual, expected):
+                  raise SystemExit("replacement draft exact readback mismatch before removal")
+              print("STALE_REPLACEMENT_PREFLIGHT=green old=1 new=1 automatic_send=false")
+          finally:
+              try:
+                  client.logout()
+              except Exception:
+                  pass
+          PY
+
+      - name: Remove only the stale old draft
+        env:
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
+          REMOVE_ID: ${{ steps.request.outputs.remove_id }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH=scripts python3 scripts/myhost_remove_duplicate_draft.py             --lead-id "$REMOVE_ID"             --output results/removal.json | tee results/removal.txt
+          grep -q '^MYHOST_DUPLICATE_REMOVAL=green ' results/removal.txt
+          grep -q 'automatic_send=false' results/removal.txt
+          grep -q 'smtp_send=not_available' results/removal.txt
+
+      - name: Final replacement readback
+        env:
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
+          REMOVE_ID: ${{ steps.request.outputs.remove_id }}
+          KEEP_ID: ${{ steps.request.outputs.keep_id }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH=scripts python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          from myhost_draft import (
+              build_message,
+              connect_imap,
+              exact_message_matches,
+              fetch_message,
+              find_drafts_folder,
+              find_message_ids,
+          )
+
+          payload = json.loads(Path("results/new/growth-batch.json").read_text(encoding="utf-8"))
+          row = next(
+              row for row in payload.get("rows") or []
+              if row.get("status") == "review_draft" and row.get("lead_id") == os.environ["KEEP_ID"]
+          )
+          client = connect_imap()
+          try:
+              folder = find_drafts_folder(client)
+              old_ids = find_message_ids(client, folder, os.environ["REMOVE_ID"])
+              new_ids = find_message_ids(client, folder, os.environ["KEEP_ID"])
+              if old_ids or len(new_ids) != 1:
+                  raise SystemExit(
+                      f"final mailbox counts old={len(old_ids)} new={len(new_ids)}, expected 0/1"
+                  )
+              actual = fetch_message(client, new_ids[0])
+              _, expected = build_message(row)
+              if not exact_message_matches(actual, expected):
+                  raise SystemExit("replacement draft exact final readback mismatch")
+              print("STALE_REPLACEMENT_READBACK=green old=0 new=1 automatic_send=false smtp_send=not_available")
+          finally:
+              try:
+                  client.logout()
+              except Exception:
+                  pass
+          PY
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: stale-draft-replacement-${{ github.run_number }}
+          path: |
+            results/evidence.json
+            results/removal.json
+            results/removal.txt
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Remove source artifact residue
+        if: always()
+        run: rm -rf results/old results/new results/old.zip results/new.zip
+
+      - name: Close owner request issue
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --body "Stale review draft safely replaced and exactly read back. Nothing was sent."
+          gh issue close "$ISSUE_NUMBER"
