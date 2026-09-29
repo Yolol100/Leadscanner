@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       phase4_artifact_id:
-        description: 'Phase 4 artifact ID'
+        description: 'First verified-draft artifact ID'
         required: true
         type: string
       phase5_artifact_id:
-        description: 'Phase 5 artifact ID'
+        description: 'Second verified-draft artifact ID'
         required: true
         type: string
   issues:
@@ -42,7 +42,6 @@ jobs:
           python-version: '3.12'
 
       - name: Resolve final audit request
-        id: request
         env:
           EVENT_NAME: ${{ github.event_name }}
           EVENT_PATH: ${{ github.event_path }}
@@ -54,6 +53,7 @@ jobs:
           python3 - <<'PY'
           import json
           import os
+          import re
           from pathlib import Path
 
           if os.environ["EVENT_NAME"] == "issues":
@@ -62,40 +62,62 @@ jobs:
                   request = json.loads(event["issue"].get("body") or "{}")
               except json.JSONDecodeError as exc:
                   raise SystemExit(f"issue body must be JSON: {exc}")
-              p4 = int(request.get("phase4_artifact_id") or 0)
-              p5 = int(request.get("phase5_artifact_id") or 0)
+              raw_ids = request.get("artifact_ids")
+              if raw_ids is None:
+                  raw_ids = [
+                      request.get("phase4_artifact_id"),
+                      request.get("phase5_artifact_id"),
+                  ]
+              exclusions = request.get("exclude_lead_ids") or []
           else:
-              p4 = int(os.environ["INPUT_PHASE4"] or 0)
-              p5 = int(os.environ["INPUT_PHASE5"] or 0)
+              raw_ids = [os.environ["INPUT_PHASE4"], os.environ["INPUT_PHASE5"]]
+              exclusions = []
 
-          if p4 <= 0 or p5 <= 0 or p4 == p5:
-              raise SystemExit("Provide two distinct positive artifact IDs")
+          artifact_ids = [int(value) for value in raw_ids if str(value or "").strip()]
+          if not 1 <= len(artifact_ids) <= 10 or any(value <= 0 for value in artifact_ids):
+              raise SystemExit("Provide 1-10 positive artifact IDs")
+          if len(set(artifact_ids)) != len(artifact_ids):
+              raise SystemExit("Artifact IDs must be distinct")
 
-          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as out:
-              out.write(f"phase4={p4}\n")
-              out.write(f"phase5={p5}\n")
-          print(f"FINAL_AUDIT_REQUEST=green phase4={p4} phase5={p5}")
+          lead_re = re.compile(r"^growth-[0-9a-f]{20}$")
+          exclusions = [str(value).strip() for value in exclusions if str(value).strip()]
+          if len(exclusions) > 10 or len(set(exclusions)) != len(exclusions):
+              raise SystemExit("Excluded lead IDs must be unique and limited to 10")
+          if any(not lead_re.fullmatch(value) for value in exclusions):
+              raise SystemExit("Excluded lead IDs must be canonical growth IDs")
+
+          Path("results/artifact-ids.txt").write_text(
+              "".join(f"{value}\n" for value in artifact_ids),
+              encoding="utf-8",
+          )
+          Path("results/excluded-lead-ids.txt").write_text(
+              "".join(f"{value}\n" for value in exclusions),
+              encoding="utf-8",
+          )
+          print(
+              "FINAL_AUDIT_REQUEST=green "
+              f"artifacts={len(artifact_ids)} exclusions={len(exclusions)}"
+          )
           PY
 
-      - name: Download Phase 4 and 5 artifacts
+      - name: Download verified-draft artifacts
         env:
           GH_TOKEN: ${{ github.token }}
-          PHASE4: ${{ steps.request.outputs.phase4 }}
-          PHASE5: ${{ steps.request.outputs.phase5 }}
         run: |
           set -euo pipefail
-          mkdir -p results/p4 results/p5
-          gh api -H "Accept: application/vnd.github+json"             "/repos/$GITHUB_REPOSITORY/actions/artifacts/$PHASE4/zip" > results/p4.zip
-          gh api -H "Accept: application/vnd.github+json"             "/repos/$GITHUB_REPOSITORY/actions/artifacts/$PHASE5/zip" > results/p5.zip
-          unzip -q results/p4.zip -d results/p4
-          unzip -q results/p5.zip -d results/p5
-          for dir in results/p4 results/p5; do
-            test -s "$dir/growth-batch.json"
-            test -s "$dir/myhost-drafts.json"
-          done
-          echo "FINAL_ARTIFACT_READBACK=green"
+          mkdir -p results/source
+          n=0
+          while IFS= read -r artifact_id; do
+            n=$((n + 1))
+            mkdir -p "results/source/$n"
+            gh api -H "Accept: application/vnd.github+json"               "/repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip"               > "results/source/$n.zip"
+            unzip -q "results/source/$n.zip" -d "results/source/$n"
+            test -s "results/source/$n/growth-batch.json"
+            test -s "results/source/$n/myhost-drafts.json"
+          done < results/artifact-ids.txt
+          echo "FINAL_ARTIFACT_READBACK=green count=$n"
 
-      - name: Audit draft artifacts and current mijn.host mailbox read-only
+      - name: Audit artifacts and current mijn.host mailbox read-only
         env:
           OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
           OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
@@ -104,7 +126,17 @@ jobs:
           OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
         run: |
           set -euo pipefail
-          PYTHONPATH=scripts python3 scripts/myhost_final_audit.py             --batch results/p4/growth-batch.json             --batch results/p5/growth-batch.json             --report results/p4/myhost-drafts.json             --report results/p5/myhost-drafts.json             --config config/growth-subscription.json             --output results/final-audit.json | tee results/final-audit.txt
+          args=()
+          for dir in results/source/*/; do
+            args+=(--batch "$dir/growth-batch.json" --report "$dir/myhost-drafts.json")
+          done
+          exclude_args=()
+          while IFS= read -r lead_id; do
+            if [ -n "$lead_id" ]; then
+              exclude_args+=(--exclude-lead-id "$lead_id")
+            fi
+          done < results/excluded-lead-ids.txt
+          PYTHONPATH=scripts python3 scripts/myhost_final_audit.py             "${args[@]}"             "${exclude_args[@]}"             --config config/growth-subscription.json             --output results/final-audit.json | tee results/final-audit.txt
           grep -q '^FINAL_LEADS_AUDIT=green ' results/final-audit.txt
           grep -q 'automatic_send=false' results/final-audit.txt
           grep -q 'smtp_send=not_available' results/final-audit.txt
@@ -115,25 +147,32 @@ jobs:
           python3 - <<'PY'
           import json
           from pathlib import Path
+
           report = json.loads(Path("results/final-audit.json").read_text(encoding="utf-8"))
           if report.get("failure_count") != 0:
               raise SystemExit("final audit contains failures")
           requested = int(report.get("requested_total") or 0)
           if requested <= 0:
               raise SystemExit("final total must be positive")
-          if report.get("artifact_rows") != requested:
-              raise SystemExit("artifact row total mismatch")
+          for key in ("artifact_rows", "unique_lead_ids", "unique_emails", "unique_domains", "unique_companies"):
+              if report.get(key) != requested:
+                  raise SystemExit(f"{key} does not equal canonical total")
           if report.get("final_set_current_expected") != requested:
               raise SystemExit("mailbox expected total mismatch")
           if report.get("final_set_current_exact_matches") != requested:
               raise SystemExit("current mailbox exact match is incomplete")
+          if report.get("excluded_mailbox_absent") != report.get("excluded_mailbox_expected_absent"):
+              raise SystemExit("excluded duplicate is still present")
           if report.get("automatic_send") is not False:
               raise SystemExit("automatic_send must be false")
           if report.get("smtp_send") != "not_available":
               raise SystemExit("SMTP/send must be unavailable")
           if report.get("read_only") is not True:
               raise SystemExit("mailbox audit must be read-only")
-          print("FINAL_READ_ONLY_BOUNDARY=green")
+          print(
+              "FINAL_READ_ONLY_BOUNDARY=green "
+              f"total={requested} automatic_send=false smtp_send=not_available"
+          )
           PY
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -147,4 +186,4 @@ jobs:
 
       - name: Remove source artifact residue
         if: always()
-        run: rm -rf results/p4 results/p5 results/p4.zip results/p5.zip
+        run: rm -rf results/source results/artifact-ids.txt results/excluded-lead-ids.txt

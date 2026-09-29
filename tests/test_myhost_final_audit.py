@@ -93,8 +93,8 @@ class FinalAuditTests(unittest.TestCase):
             [batch100, batch34], [report100, report34], self.config()
         )
         self.assertEqual(metrics["requested_total"], 134)
-        self.assertTrue(any("expected 100 review_draft rows" in failure for failure in failures))
-        self.assertTrue(any("expected 34 review_draft rows" in failure for failure in failures))
+        self.assertTrue(any("expected 100 canonical review_draft rows" in failure for failure in failures))
+        self.assertTrue(any("expected 34 canonical review_draft rows" in failure for failure in failures))
 
     def test_no_automatic_send_is_required(self):
         batch = {"rows": [], "safety": {"automatic_send": True}}
