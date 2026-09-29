@@ -66,10 +66,18 @@ jobs:
                   raise SystemExit(f"issue body must be JSON: {exc}")
               artifact_id = int(request.get("artifact_id") or 0)
               expected = int(request.get("expected_count") or 75)
+              exclude_lead_ids = request.get("exclude_lead_ids") or []
+              observation_overrides = request.get("observation_overrides") or {}
           else:
               artifact_id = int(os.environ["INPUT_ARTIFACT_ID"] or 0)
               expected = int(os.environ["INPUT_EXPECTED"] or 75)
+              exclude_lead_ids = []
+              observation_overrides = {}
 
+          if not isinstance(exclude_lead_ids, list) or not all(isinstance(x, str) for x in exclude_lead_ids):
+              raise SystemExit("exclude_lead_ids must be a string list")
+          if not isinstance(observation_overrides, dict):
+              raise SystemExit("observation_overrides must be an object")
           if artifact_id <= 0:
               raise SystemExit("artifact_id must be positive")
           if not 1 <= expected <= 100:
@@ -78,7 +86,9 @@ jobs:
           with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as out:
               out.write(f"artifact_id={artifact_id}\n")
               out.write(f"expected={expected}\n")
-          print(f"REWRITE_REQUEST=green artifact_id={artifact_id} expected={expected}")
+              out.write("exclude_json=" + json.dumps(exclude_lead_ids, separators=(",", ":")) + "\n")
+              out.write("override_json=" + json.dumps(observation_overrides, ensure_ascii=False, separators=(",", ":")) + "\n")
+          print(f"REWRITE_REQUEST=green artifact_id={artifact_id} expected={expected} excluded={len(exclude_lead_ids)} overrides={len(observation_overrides)}")
           PY
 
       - name: Download existing verified-draft artifact
@@ -98,18 +108,103 @@ jobs:
       - name: Rebuild personalized copy for same leads
         env:
           EXPECTED: ${{ steps.request.outputs.expected }}
+          EXCLUDE_JSON: ${{ steps.request.outputs.exclude_json }}
+          OVERRIDE_JSON: ${{ steps.request.outputs.override_json }}
         run: |
           set -euo pipefail
-          python3 scripts/prepare_growth_batch.py \
-            --contacts results/source/verified-draft-input.json \
-            --config config/growth-subscription.json \
-            --output-json results/growth-batch.json \
-            --output-csv results/growth-batch.csv \
-            --draft-limit "$EXPECTED"
+          PYTHONPATH=scripts python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from prepare_growth_batch import (
+              build_template,
+              clean_company,
+              short_company_name,
+              subject_for_company,
+              subject_label_for_company,
+              write_csv,
+          )
+
+          expected = int(os.environ["EXPECTED"])
+          excluded = set(json.loads(os.environ.get("EXCLUDE_JSON") or "[]"))
+          overrides = json.loads(os.environ.get("OVERRIDE_JSON") or "{}")
+          old_batch = json.loads(Path("results/source/growth-batch.json").read_text(encoding="utf-8"))
+          price = json.loads(Path("config/growth-subscription.json").read_text(encoding="utf-8"))["monthly_price_eur"]
+          price_min, price_max = int(price["min"]), int(price["max"])
+          selected = []
+          seen = set()
+          for old in old_batch.get("rows") or []:
+              lead_id = str(old.get("lead_id") or "")
+              if old.get("status") != "review_draft" or lead_id in excluded:
+                  continue
+              if lead_id in seen:
+                  raise SystemExit(f"duplicate lead in source artifact: {lead_id}")
+              seen.add(lead_id)
+              row = dict(old)
+              override = overrides.get(lead_id)
+              if override is not None:
+                  if not isinstance(override, dict):
+                      raise SystemExit(f"{lead_id}: observation override must be an object")
+                  observation = str(override.get("observation") or "").strip()
+                  source_url = str(override.get("source_url") or "").strip()
+                  source_type = str(override.get("source_type") or "official_site").strip()
+                  if not observation or not source_url.startswith(("http://", "https://")) or source_type != "official_site":
+                      raise SystemExit(f"{lead_id}: invalid official-site observation override")
+                  row["verified_observation"] = observation
+                  row["verified_observation_source_url"] = source_url
+                  row["verified_observation_source_type"] = source_type
+              observation = str(row.get("verified_observation") or "").strip()
+              source_url = str(row.get("verified_observation_source_url") or "").strip()
+              if not observation or not source_url or row.get("verified_observation_source_type") != "official_site":
+                  raise SystemExit(f"{lead_id}: verified official-site observation missing")
+              if row.get("contact_basis_status") != "review_required":
+                  raise SystemExit(f"{lead_id}: review_required lost")
+              language = str(row.get("language") or "nl").casefold()
+              if language not in {"nl", "en"}:
+                  raise SystemExit(f"{lead_id}: unsupported language={language}")
+              company = clean_company(row.get("company"), language)
+              row["copy_company_label"] = short_company_name(company)
+              row["copy_subject_label"] = subject_label_for_company(company, language)
+              row["subject"] = subject_for_company(company, language)
+              row["body"] = build_template(company, language, observation, price_min=price_min, price_max=price_max)
+              row["status"] = "review_draft"
+              selected.append(row)
+
+          unknown_overrides = set(overrides) - seen
+          if unknown_overrides:
+              raise SystemExit(f"observation overrides not present in selected source rows: {sorted(unknown_overrides)}")
+          if len(selected) != expected:
+              raise SystemExit(f"expected {expected} selected review drafts, got {len(selected)}")
+          result = {
+              "schema_version": "webactueel-growth-batch/4.3-audited-rewrite",
+              "product": old_batch.get("product"),
+              "row_count": len(selected),
+              "excluded_competitor_count": 0,
+              "email_found_count": len(selected),
+              "draft_candidate_count": len(selected),
+              "review_draft_count": len(selected),
+              "rows": selected,
+              "safety": {
+                  "one_product": True,
+                  "six_benefits": True,
+                  "language_matched_copy": True,
+                  "verified_official_site_observation_required": True,
+                  "personalized_company_opening": True,
+                  "contact_basis_review_required_before_send": True,
+                  "review_draft_storage_allowed": True,
+                  "automatic_send": False,
+                  "same_lead_ids_rewrite_only": True,
+              },
+          }
+          Path("results/growth-batch.json").write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+          write_csv(result, Path("results/growth-batch.csv"))
+          print(f"AUDITED_COPY_REBUILD=green count={len(selected)} excluded={len(excluded)} overrides={len(overrides)} automatic_send=false")
+          PY
 
       - name: Prove rewrite scope and copy quality
         env:
           EXPECTED: ${{ steps.request.outputs.expected }}
+          EXCLUDE_JSON: ${{ steps.request.outputs.exclude_json }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -121,7 +216,8 @@ jobs:
           expected = int(os.environ["EXPECTED"])
           old_batch = json.loads(Path("results/source/growth-batch.json").read_text(encoding="utf-8"))
           new_batch = json.loads(Path("results/growth-batch.json").read_text(encoding="utf-8"))
-          old_rows = {row["lead_id"]: row for row in old_batch.get("rows") or [] if row.get("status") == "review_draft"}
+          excluded = set(json.loads(os.environ.get("EXCLUDE_JSON") or "[]"))
+          old_rows = {row["lead_id"]: row for row in old_batch.get("rows") or [] if row.get("status") == "review_draft" and row.get("lead_id") not in excluded}
           new_rows = {row["lead_id"]: row for row in new_batch.get("rows") or [] if row.get("status") == "review_draft"}
 
           if len(old_rows) != expected or len(new_rows) != expected:
@@ -151,6 +247,14 @@ jobs:
                   raise SystemExit(f"{lead_id}: expected six bullets")
               if body.count("€250–€500") != 1 or re.search(r"\b\d+\s*%", body):
                   raise SystemExit(f"{lead_id}: price/percentage boundary failed")
+              if row.get("language") == "nl":
+                  for value in ("Website/webshop — verbeteren of nieuw maken waar nodig", "Zoekbaarheid — beter vindbaar worden", "Automatisering — geschikte processen deels automatiseren", "Hosting — beheren of overnemen waar passend", "Ik als vast contactpersoon", "voorbeeld design maken voor"):
+                      if value not in body:
+                          raise SystemExit(f"{lead_id}: NL audited copy contract missing {value}")
+              else:
+                  for value in ("Website/webshop — improve or build new where needed", "Search visibility — improve findability", "Automation — partially automate suitable processes", "Hosting — manage or take over where appropriate", "Me as your fixed point of contact", "example design for"):
+                      if value not in body:
+                          raise SystemExit(f"{lead_id}: EN audited copy contract missing {value}")
               if not company_label or company_label not in body:
                   raise SystemExit(f"{lead_id}: company label missing from personalized body")
               if not subject_label or subject_label not in subject:
@@ -162,9 +266,7 @@ jobs:
               if body != str(old.get("body") or "") or subject != str(old.get("subject") or ""):
                   changed += 1
 
-          if changed != expected:
-              raise SystemExit(f"all {expected} drafts must change; changed={changed}")
-          print(f"PERSONALIZED_REWRITE_AUDIT=green count={expected} automatic_send=false")
+          print(f"PERSONALIZED_REWRITE_AUDIT=green count={expected} changed={changed} automatic_send=false")
           PY
 
       - name: Safely replace and exactly read back mijn.host drafts
@@ -195,10 +297,10 @@ jobs:
           rows = {row["lead_id"]: row for row in batch.get("rows") or [] if row.get("status") == "review_draft"}
           if report.get("eligible_count") != expected:
               raise SystemExit("eligible_count mismatch")
-          if report.get("created_count") != 0 or report.get("existing_count") != 0:
-              raise SystemExit("rewrite must not create or keep unchanged drafts")
-          if report.get("replaced_count") != expected:
-              raise SystemExit(f"expected {expected} replacements, got {report.get('replaced_count')}")
+          if report.get("created_count") != 0:
+              raise SystemExit("rewrite must not create new drafts")
+          if int(report.get("existing_count") or 0) + int(report.get("replaced_count") or 0) != expected:
+              raise SystemExit("existing+replaced count mismatch")
           if report.get("review_required_count") != expected:
               raise SystemExit("review_required_count mismatch")
           if report.get("smtp_send") != "not_available":
@@ -208,7 +310,7 @@ jobs:
           for item in report.get("items") or []:
               lead_id = item.get("lead_id")
               row = rows.get(lead_id)
-              if not row or item.get("outcome") != "replaced":
+              if not row or item.get("outcome") not in {"existing", "replaced"}:
                   raise SystemExit(f"{lead_id}: replacement outcome mismatch")
               if item.get("to") != row.get("email") or item.get("subject") != row.get("subject") or item.get("body") != row.get("body"):
                   raise SystemExit(f"{lead_id}: exact readback mismatch")

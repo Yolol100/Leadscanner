@@ -12,7 +12,10 @@ class RewriteExistingDraftWorkflowTests(unittest.TestCase):
     def test_rewrite_workflow_is_bounded_and_draft_only(self):
         text = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("[growth-draft-rewrite]", text)
-        self.assertIn("scripts/prepare_growth_batch.py", text)
+        self.assertIn("from prepare_growth_batch import", text)
+        self.assertIn("exclude_lead_ids", text)
+        self.assertIn("observation_overrides", text)
+        self.assertIn("same_lead_ids_rewrite_only", text)
         self.assertIn("scripts/myhost_draft.py", text)
         self.assertIn("replaced_count", text)
         self.assertIn("PERSONALIZED_REWRITE_READBACK=green", text)
