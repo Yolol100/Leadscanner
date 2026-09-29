@@ -29,6 +29,7 @@ HTML_LANG_RE = re.compile(r"<html[^>]*\blang\s*=\s*['\"]?([a-zA-Z-]{2,12})", re.
 BLOCKED_LOCAL_PARTS = {"noreply", "no-reply", "donotreply", "do-not-reply", "example", "test"}
 PLACEHOLDER_LOCAL_PARTS = {"naam", "name", "yourname", "your.name", "email", "e-mail", "mail", "voorbeeld"}
 PLACEHOLDER_DOMAINS = {"voorbeeld.nl", "voorbeeld.com", "example.com", "example.org", "example.net", "jouwdomein.nl", "yourdomain.com"}
+BLOCKED_TECHNICAL_EMAIL_DOMAIN_SUFFIXES = ("sentry.wixpress.com", "sentry-next.wixpress.com", "sentry.io")
 PUBLIC_MAIL_DOMAINS = {"gmail.com", "hotmail.com", "outlook.com", "live.nl", "live.com", "icloud.com", "yahoo.com", "proton.me", "protonmail.com"}
 
 HARD_COMPETITOR_PHRASES = (
@@ -235,6 +236,11 @@ def valid_email(value: str) -> bool:
     if local.startswith("no-reply") or local.startswith("noreply"):
         return False
     if domain in PLACEHOLDER_DOMAINS or domain.endswith((".example", ".test", ".invalid", ".localhost")):
+        return False
+    if any(
+        domain == suffix or domain.endswith("." + suffix)
+        for suffix in BLOCKED_TECHNICAL_EMAIL_DOMAIN_SUFFIXES
+    ):
         return False
     return True
 
