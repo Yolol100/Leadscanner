@@ -10,6 +10,7 @@ from extract_public_contacts import (
     discover_contacts,
     extract_emails,
     extract_verified_observation,
+    email_business_priority,
     email_fits_business_context,
     inspect_candidate,
     valid_email,
@@ -64,7 +65,34 @@ class PublicContactDiscoveryTests(unittest.TestCase):
         self.assertFalse(valid_email("dd0a55ccb8124b9c9d938e3acf41f8aa@sentry.wixpress.com"))
         self.assertFalse(valid_email("88170cb0c9d64f94b5821ca7fd2d55a4@sentry-next.wixpress.com"))
         self.assertFalse(valid_email("b357dce2cda744d5a1263db46c56a6f6@o478484.ingest.sentry.io"))
+        self.assertFalse(valid_email("info@mysite.com"))
         self.assertFalse(valid_email("bad-address"))
+
+    def test_email_business_priority_keeps_related_local_domains_and_demotes_unrelated_provider_domains(self):
+        self.assertEqual(
+            email_business_priority(
+                "reserveren@daalderamsterdam.nl",
+                "daalderamsterdam.nl",
+                "Restaurant Daalder",
+            ),
+            0,
+        )
+        self.assertEqual(
+            email_business_priority(
+                "info@brandocean.nl",
+                "daalderamsterdam.nl",
+                "Restaurant Daalder",
+            ),
+            2,
+        )
+        self.assertEqual(
+            email_business_priority(
+                "info@intersportroden.nl",
+                "intersport.nl",
+                "Intersport Superstore Roden",
+            ),
+            0,
+        )
 
     def test_fallback_email_must_fit_business_context(self):
         self.assertTrue(email_fits_business_context("info@example.nl", "example.nl", "overture"))

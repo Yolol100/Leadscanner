@@ -28,7 +28,7 @@ CONTACT_HINT_RE = re.compile(
 HTML_LANG_RE = re.compile(r"<html[^>]*\blang\s*=\s*['\"]?([a-zA-Z-]{2,12})", re.I)
 BLOCKED_LOCAL_PARTS = {"noreply", "no-reply", "donotreply", "do-not-reply", "example", "test"}
 PLACEHOLDER_LOCAL_PARTS = {"naam", "name", "yourname", "your.name", "email", "e-mail", "mail", "voorbeeld"}
-PLACEHOLDER_DOMAINS = {"voorbeeld.nl", "voorbeeld.com", "example.com", "example.org", "example.net", "jouwdomein.nl", "yourdomain.com"}
+PLACEHOLDER_DOMAINS = {"voorbeeld.nl", "voorbeeld.com", "example.com", "example.org", "example.net", "jouwdomein.nl", "yourdomain.com", "mysite.com"}
 BLOCKED_TECHNICAL_EMAIL_DOMAIN_SUFFIXES = ("sentry.wixpress.com", "sentry-next.wixpress.com", "sentry.io")
 PUBLIC_MAIL_DOMAINS = {"gmail.com", "hotmail.com", "outlook.com", "live.nl", "live.com", "icloud.com", "yahoo.com", "proton.me", "protonmail.com"}
 
@@ -257,6 +257,25 @@ def email_fits_business_context(email: str, official_domain: str | None, source_
     return email_domain in PUBLIC_MAIL_DOMAINS
 
 
+def email_business_priority(email: str, official_domain: str | None, company_name: str | None) -> int:
+    email_domain = email.rsplit("@", 1)[1].casefold().rstrip(".")
+    official = str(official_domain or "").casefold().rstrip(".")
+    if official and (email_domain == official or email_domain.endswith("." + official)):
+        return 0
+
+    normalized_email_domain = re.sub(r"[^a-z0-9]+", "", email_domain)
+    company_tokens = [
+        token
+        for token in re.findall(r"[a-z0-9]+", _normalize_text(company_name))
+        if len(token) >= 4
+    ]
+    if any(token in normalized_email_domain for token in company_tokens):
+        return 0
+    if email_domain in PUBLIC_MAIL_DOMAINS:
+        return 1
+    return 2
+
+
 class LinkParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
@@ -475,6 +494,20 @@ def inspect_candidate(candidate: dict, *, session_factory=requests.Session) -> d
                 break
         if len(emails) >= 3:
             break
+
+    if emails:
+        ranked = sorted(
+            zip(emails, sources, source_types, source_refs),
+            key=lambda item: email_business_priority(
+                item[0],
+                domain,
+                str(candidate.get("name_hint") or ""),
+            ),
+        )
+        emails = [item[0] for item in ranked]
+        sources = [item[1] for item in ranked]
+        source_types = [item[2] for item in ranked]
+        source_refs = [item[3] for item in ranked]
 
     if not emails:
         for item in candidate.get("discovery_email_candidates") or []:
