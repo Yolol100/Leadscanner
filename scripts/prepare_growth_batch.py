@@ -77,7 +77,7 @@ def observation_is_low_signal(company: str, observation: str) -> bool:
     low = text.casefold()
     if not text:
         return True
-    if re.search(r"\\b\\d+\\s*%", text):
+    if re.search(r"\b\d+\s*%", text):
         return True
     if re.match(r"^(home|homepage|welkom|welcome)\b", low):
         return True
