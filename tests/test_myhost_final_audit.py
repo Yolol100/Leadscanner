@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from myhost_final_audit import audit_rows
+from prepare_growth_batch import prepare_batch
 
 
 class FinalAuditTests(unittest.TestCase):
@@ -133,13 +134,43 @@ class FinalAuditTests(unittest.TestCase):
 
 
     def test_final_audit_accepts_mixed_existing_and_replaced_rewrite_outcomes(self):
-        batch = self.batch_payload()
-        report = self.report_payload()
-        report["created_count"] = 0
-        report["existing_count"] = 1
-        report["replaced_count"] = 0
-        report["items"][0]["outcome"] = "existing"
-        rows, failures, metrics = audit_rows([batch], [report], self.config())
+        contact = {
+            "name_hint": "Voorbeeld Fysiotherapie",
+            "website_hint": "https://voorbeeld.nl/",
+            "official_domain_hint": "voorbeeld.nl",
+            "category_hint": "physical_medicine_and_rehabilitation",
+            "public_business_emails": ["info@voorbeeld.nl"],
+            "email_source_urls": ["https://voorbeeld.nl/contact"],
+            "email_source_types": ["official_site"],
+            "email_source_refs": ["https://voorbeeld.nl/contact"],
+            "verified_observation": "Fysiotherapie in Utrecht",
+            "verified_observation_source_url": "https://voorbeeld.nl/",
+            "verified_observation_source_type": "official_site",
+            "language": "nl",
+            "language_source": "html_lang",
+            "excluded_competitor": False,
+            "contact_basis_status": "review_required",
+            "contact_basis_hint": "public_email_review_required",
+        }
+        batch = prepare_batch({"candidates": [contact]}, self.config(), draft_limit=1)
+        row = batch["rows"][0]
+        report = {
+            "eligible_count": 1,
+            "created_count": 0,
+            "existing_count": 1,
+            "replaced_count": 0,
+            "review_required_count": 1,
+            "smtp_send": "not_available",
+            "items": [{
+                "lead_id": row["lead_id"],
+                "to": row["email"],
+                "subject": row["subject"],
+                "body": row["body"],
+                "review_status": "contact-basis",
+                "outcome": "existing",
+            }],
+        }
+        rows, failures, _ = audit_rows([batch], [report], self.config())
         self.assertEqual(len(rows), 1)
         self.assertEqual(failures, [])
 
