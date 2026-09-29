@@ -52,6 +52,14 @@ class PublicContactDiscoveryTests(unittest.TestCase):
         )
         self.assertEqual(extract_emails(html), ["sales@example.nl", "info@example.nl"])
 
+    def test_extract_emails_drops_unsuitable_outreach_roles_when_general_contact_exists(self):
+        html = (
+            '<a href="mailto:work@starbucks.nl">Jobs</a>'
+            '<span>customercare@starbucks.nl</span>'
+            '<span>press@starbucks.com</span>'
+        )
+        self.assertEqual(extract_emails(html), ["customercare@starbucks.nl"])
+
     def test_contact_links_stay_on_official_domain(self):
         html = '<a href="/contact">Contact</a><a href="https://other.example/contact">Extern</a>'
         links = discover_contact_links(html, "https://example.nl/", "example.nl")
@@ -66,6 +74,12 @@ class PublicContactDiscoveryTests(unittest.TestCase):
         self.assertFalse(valid_email("88170cb0c9d64f94b5821ca7fd2d55a4@sentry-next.wixpress.com"))
         self.assertFalse(valid_email("b357dce2cda744d5a1263db46c56a6f6@o478484.ingest.sentry.io"))
         self.assertFalse(valid_email("info@mysite.com"))
+        self.assertFalse(valid_email("press@example.nl"))
+        self.assertFalse(valid_email("press-emea@example.nl"))
+        self.assertFalse(valid_email("hr@example.nl"))
+        self.assertFalse(valid_email("work@example.nl"))
+        self.assertFalse(valid_email("investorrelations@example.nl"))
+        self.assertTrue(valid_email("customercare@example.nl"))
         self.assertFalse(valid_email("bad-address"))
 
     def test_email_business_priority_keeps_related_local_domains_and_demotes_unrelated_provider_domains(self):

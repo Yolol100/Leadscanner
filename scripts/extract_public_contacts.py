@@ -30,6 +30,11 @@ BLOCKED_LOCAL_PARTS = {"noreply", "no-reply", "donotreply", "do-not-reply", "exa
 PLACEHOLDER_LOCAL_PARTS = {"naam", "name", "yourname", "your.name", "email", "e-mail", "mail", "voorbeeld"}
 PLACEHOLDER_DOMAINS = {"voorbeeld.nl", "voorbeeld.com", "example.com", "example.org", "example.net", "jouwdomein.nl", "yourdomain.com", "mysite.com"}
 BLOCKED_TECHNICAL_EMAIL_DOMAIN_SUFFIXES = ("sentry.wixpress.com", "sentry-next.wixpress.com", "sentry.io")
+UNSUITABLE_OUTREACH_LOCAL_PARTS = {
+    "press", "pressemea", "media", "hr", "work", "job", "jobs", "career", "careers",
+    "vacature", "vacatures", "recruit", "recruitment", "privacy", "legal", "dpo",
+    "security", "abuse", "webmaster", "investorrelations",
+}
 PUBLIC_MAIL_DOMAINS = {"gmail.com", "hotmail.com", "outlook.com", "live.nl", "live.com", "icloud.com", "yahoo.com", "proton.me", "protonmail.com"}
 
 HARD_COMPETITOR_PHRASES = (
@@ -234,6 +239,9 @@ def valid_email(value: str) -> bool:
     if local in BLOCKED_LOCAL_PARTS or local in PLACEHOLDER_LOCAL_PARTS:
         return False
     if local.startswith("no-reply") or local.startswith("noreply"):
+        return False
+    normalized_local = re.sub(r"[^a-z0-9]+", "", local)
+    if normalized_local in UNSUITABLE_OUTREACH_LOCAL_PARTS:
         return False
     if domain in PLACEHOLDER_DOMAINS or domain.endswith((".example", ".test", ".invalid", ".localhost")):
         return False
