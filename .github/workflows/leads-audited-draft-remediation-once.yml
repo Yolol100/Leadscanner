@@ -1,0 +1,447 @@
+name: Leads One-Shot Audited Draft Remediation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/leads-audited-draft-remediation-once.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: leads-audited-draft-remediation-once
+  cancel-in-progress: false
+
+jobs:
+  remediate:
+    if: contains(github.event.head_commit.message, 'Run one-shot audited draft remediation')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+      OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+      OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+      OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+      OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME || 'Andrew Baeten' }}
+      OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
+      OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Install runtime dependencies
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check -r requirements.txt -r requirements-discovery.txt
+
+      - name: Download canonical source artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p results/source results/rewrite
+          for artifact_id in             11009012767 11013906065 11019071378 11013926537             11014736981 11014722896 11013934695 11020970770             11021895322 11022648826 11023991566 11024151826             11025033182 11025636561 11025158483 11026955968
+          do
+            mkdir -p "results/source/$artifact_id"
+            gh api -H "Accept: application/vnd.github+json"               "/repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip"               > "results/source/$artifact_id.zip"
+            unzip -q "results/source/$artifact_id.zip" -d "results/source/$artifact_id"
+            test -s "results/source/$artifact_id/growth-batch.json"
+            test -s "results/source/$artifact_id/verified-draft-input.json"
+          done
+          echo "SOURCE_ARTIFACTS=green count=16"
+
+      - name: Preflight all audited replacement copy before mailbox writes
+        run: |
+          set -euo pipefail
+          PYTHONPATH=scripts python3 - <<'PY'
+          import json
+          import re
+          from collections import Counter
+          from pathlib import Path
+          from prepare_growth_batch import (
+              build_template,
+              clean_company,
+              short_company_name,
+              subject_for_company,
+              subject_label_for_company,
+              write_csv,
+          )
+
+          artifact_ids = [
+              11009012767,11013906065,11019071378,11013926537,
+              11014736981,11014722896,11013934695,11020970770,
+              11021895322,11022648826,11023991566,11024151826,
+              11025033182,11025636561,11025158483,11026955968,
+          ]
+          excluded = {
+              "growth-43f68aa9f09b4f8b1986",
+              "growth-6f28a46a4b8c2b06e812",
+              "growth-f1c767aa51ceb7d6c2f4",
+              "growth-3db0aea2330c9c1013cd",
+              "growth-d5b539d372fdb6266c16",
+              "growth-f516d98dd1403308eb1c",
+          }
+          invalid_expected = {
+              "growth-f1c767aa51ceb7d6c2f4": 11009012767,
+              "growth-3db0aea2330c9c1013cd": 11014736981,
+              "growth-d5b539d372fdb6266c16": 11023991566,
+              "growth-f516d98dd1403308eb1c": 11014722896,
+          }
+          price = json.loads(Path("config/growth-subscription.json").read_text(encoding="utf-8"))["monthly_price_eur"]
+          price_min, price_max = int(price["min"]), int(price["max"])
+          global_rows = []
+          invalid_seen = {}
+          language_split = Counter()
+
+          for artifact_id in artifact_ids:
+              source_dir = Path(f"results/source/{artifact_id}")
+              old_batch = json.loads((source_dir / "growth-batch.json").read_text(encoding="utf-8"))
+              verified = json.loads((source_dir / "verified-draft-input.json").read_text(encoding="utf-8"))
+              candidates = verified.get("candidates") or []
+              selected = []
+              for old in old_batch.get("rows") or []:
+                  if old.get("status") != "review_draft":
+                      continue
+                  lead_id = str(old.get("lead_id") or "")
+                  if lead_id in invalid_expected:
+                      invalid_seen[lead_id] = artifact_id
+                  if lead_id in excluded:
+                      continue
+                  matches = [
+                      c for c in candidates
+                      if str(old.get("email") or "").casefold()
+                         in {str(v or "").casefold() for v in (c.get("public_business_emails") or [])}
+                      and str(c.get("website_hint") or "") == str(old.get("website") or "")
+                  ]
+                  if len(matches) != 1:
+                      raise SystemExit(f"{lead_id}: verified-input match count={len(matches)}")
+                  candidate = matches[0]
+                  if old.get("contact_basis_status") != "review_required":
+                      raise SystemExit(f"{lead_id}: contact basis is not review_required")
+                  if old.get("verified_observation_source_type") != "official_site":
+                      raise SystemExit(f"{lead_id}: official-site observation provenance missing")
+                  language = str(old.get("language") or "").casefold()
+                  if language not in {"nl","en"}:
+                      raise SystemExit(f"{lead_id}: unsupported language={language}")
+                  category_hint = str(candidate.get("category_hint") or "").strip()
+                  if not category_hint:
+                      raise SystemExit(f"{lead_id}: category_hint missing")
+                  company = clean_company(old.get("company"), language)
+                  row = dict(old)
+                  row["category_hint"] = category_hint
+                  row["copy_company_label"] = short_company_name(company)
+                  row["copy_subject_label"] = subject_label_for_company(company, language)
+                  row["subject"] = subject_for_company(company, language)
+                  row["body"] = build_template(
+                      company,
+                      language,
+                      str(old.get("verified_observation") or ""),
+                      price_min=price_min,
+                      price_max=price_max,
+                      category_hint=category_hint,
+                  )
+                  row["status"] = "review_draft"
+
+                  body = row["body"]
+                  subject = row["subject"]
+                  bullets = [line for line in body.splitlines() if line.startswith("• ")]
+                  if len(bullets) != 6:
+                      raise SystemExit(f"{lead_id}: bullet count={len(bullets)}")
+                  if body.count("€250–€500") != 1 or re.search(r"\b\d+\s*%", body):
+                      raise SystemExit(f"{lead_id}: price/percentage boundary failed")
+                  if not 2 <= len(subject.split()) <= 8:
+                      raise SystemExit(f"{lead_id}: subject word count invalid")
+                  if any(ord(ch) > 0xFFFF for ch in subject):
+                      raise SystemExit(f"{lead_id}: decorative symbol survived subject")
+                  if "Ik heb de website van " in body or ("I looked through " in body and "'s website." in body):
+                      raise SystemExit(f"{lead_id}: generic opening survived")
+                  if language == "nl":
+                      required = (
+                          "Website/webshop — verbeteren of nieuw maken waar nodig",
+                          "Zoekbaarheid — beter vindbaar worden",
+                          "Social content — passende content maken",
+                          "Automatisering — geschikte processen deels automatiseren",
+                          "Hosting — beheren of overnemen waar passend",
+                          "Ik als vast contactpersoon",
+                          "€250–€500 per maand, afhankelijk van wat jullie nodig hebben",
+                          "Zal ik vrijblijvend een voorbeeld design maken voor ",
+                          "Geen interesse? Laat het gerust weten.",
+                          "Groet,\nAndrew",
+                      )
+                  else:
+                      required = (
+                          "Website/webshop — improve or build new where needed",
+                          "Search visibility — improve findability",
+                          "Social content — create relevant content",
+                          "Automation — partially automate suitable processes",
+                          "Hosting — manage or take over where appropriate",
+                          "Me as your fixed point of contact",
+                          "€250–€500 per month, depending on what you need",
+                          "Would you like me to make a no-obligation example design for ",
+                          "Not interested? Just let me know.",
+                          "Regards,\nAndrew",
+                      )
+                  for value in required:
+                      if value not in body:
+                          raise SystemExit(f"{lead_id}: audited copy contract missing {value!r}")
+                  if row["copy_company_label"] not in body or row["copy_subject_label"] not in subject:
+                      raise SystemExit(f"{lead_id}: company personalization missing")
+                  language_split[language] += 1
+                  selected.append(row)
+                  global_rows.append(row)
+
+              out_dir = Path(f"results/rewrite/{artifact_id}")
+              out_dir.mkdir(parents=True, exist_ok=True)
+              payload = {
+                  "schema_version": "webactueel-growth-batch/4.3-audited-rewrite",
+                  "product": old_batch.get("product"),
+                  "row_count": len(selected),
+                  "excluded_competitor_count": 0,
+                  "email_found_count": len(selected),
+                  "draft_candidate_count": len(selected),
+                  "review_draft_count": len(selected),
+                  "rows": selected,
+                  "safety": {
+                      "one_product": True,
+                      "six_benefits": True,
+                      "language_matched_copy": True,
+                      "verified_official_site_observation_required": True,
+                      "personalized_company_opening": True,
+                      "contact_basis_review_required_before_send": True,
+                      "review_draft_storage_allowed": True,
+                      "automatic_send": False,
+                      "same_lead_ids_rewrite_only": True,
+                  },
+              }
+              (out_dir / "growth-batch.json").write_text(
+                  json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+              )
+              write_csv(payload, out_dir / "growth-batch.csv")
+
+          if invalid_seen != invalid_expected:
+              raise SystemExit(f"invalid lead/artifact mapping mismatch: {invalid_seen}")
+          if len(global_rows) != 1152:
+              raise SystemExit(f"expected 1152 canonical audited rows, found {len(global_rows)}")
+          for key in ("lead_id","email","official_domain_hint"):
+              values = [str(row.get(key) or "").strip().casefold() for row in global_rows]
+              dupes = [value for value,count in Counter(values).items() if value and count > 1]
+              if dupes:
+                  raise SystemExit(f"global duplicate {key}: {dupes[:10]}")
+          summary = {
+              "canonical_count": len(global_rows),
+              "language_split": dict(language_split),
+              "excluded_lead_ids": sorted(excluded),
+              "automatic_send": False,
+              "smtp_send": "not_available",
+          }
+          Path("results/preflight-summary.json").write_text(
+              json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+          )
+          print(
+              "AUDITED_COPY_PREFLIGHT=green "
+              f"count={len(global_rows)} nl={language_split['nl']} en={language_split['en']} "
+              "duplicates=0 generic_openings=0 automatic_send=false smtp_send=not_available"
+          )
+          PY
+
+      - name: Preflight four proven invalid drafts against current mailbox
+        run: |
+          set -euo pipefail
+          PYTHONPATH=scripts python3 - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+          from myhost_draft import (
+              connect_imap, fetch_message, find_drafts_folder, find_message_ids,
+              normalize_text, plain_body, select_folder,
+          )
+
+          invalid = {
+              "growth-f1c767aa51ceb7d6c2f4": 11009012767,
+              "growth-3db0aea2330c9c1013cd": 11014736981,
+              "growth-d5b539d372fdb6266c16": 11023991566,
+              "growth-f516d98dd1403308eb1c": 11014722896,
+          }
+          bad = re.compile(
+              r"reserved domain|domainorder|coming soon|under construction|"
+              r"crypto casinos?|bitcoin casinos?|without code",
+              re.IGNORECASE,
+          )
+          expected = {}
+          for lead_id, artifact_id in invalid.items():
+              payload = json.loads(
+                  Path(f"results/source/{artifact_id}/growth-batch.json").read_text(encoding="utf-8")
+              )
+              rows = [r for r in payload.get("rows") or [] if r.get("lead_id") == lead_id]
+              if len(rows) != 1:
+                  raise SystemExit(f"{lead_id}: source row count={len(rows)}")
+              row = rows[0]
+              if row.get("status") != "review_draft" or row.get("contact_basis_status") != "review_required":
+                  raise SystemExit(f"{lead_id}: source is not review_required review_draft")
+              if row.get("verified_observation_source_type") != "official_site":
+                  raise SystemExit(f"{lead_id}: official-site provenance missing")
+              if not bad.search(str(row.get("verified_observation") or "")):
+                  raise SystemExit(f"{lead_id}: invalid-site observation not proven")
+              expected[lead_id] = row
+
+          client = connect_imap()
+          try:
+              folder = find_drafts_folder(client)
+              select_folder(client, folder, readonly=True)
+              for lead_id, row in expected.items():
+                  ids = find_message_ids(client, folder, lead_id, ensure_selected=False)
+                  if len(ids) != 1:
+                      raise SystemExit(f"{lead_id}: current draft count={len(ids)}, expected 1")
+                  actual = fetch_message(client, ids[0])
+                  if normalize_text(actual.get("To", "")) != normalize_text(row.get("email", "")):
+                      raise SystemExit(f"{lead_id}: current To mismatch")
+                  if normalize_text(actual.get("Subject", "")) != normalize_text(row.get("subject", "")):
+                      raise SystemExit(f"{lead_id}: current subject mismatch")
+                  if normalize_text(plain_body(actual)) != normalize_text(row.get("body", "")):
+                      raise SystemExit(f"{lead_id}: current body mismatch")
+              print("INVALID_DRAFT_PREFLIGHT=green count=4 exact_current_matches=4 automatic_send=false")
+          finally:
+              try:
+                  client.logout()
+              except Exception:
+                  pass
+          PY
+
+      - name: Remove four invalid-source review drafts
+        run: |
+          set -euo pipefail
+          for lead_id in             growth-f1c767aa51ceb7d6c2f4             growth-3db0aea2330c9c1013cd             growth-d5b539d372fdb6266c16             growth-f516d98dd1403308eb1c
+          do
+            PYTHONPATH=scripts python3 scripts/myhost_remove_duplicate_draft.py               --lead-id "$lead_id"               --output "results/removal-$lead_id.json"               | tee "results/removal-$lead_id.txt"
+            grep -q '^MYHOST_DUPLICATE_REMOVAL=green ' "results/removal-$lead_id.txt"
+            grep -q 'automatic_send=false' "results/removal-$lead_id.txt"
+            grep -q 'smtp_send=not_available' "results/removal-$lead_id.txt"
+          done
+          echo "INVALID_DRAFT_REMOVALS=green count=4 automatic_send=false smtp_send=not_available"
+
+      - name: Safely replace every remaining audited review draft
+        run: |
+          set -euo pipefail
+          total=0
+          replaced=0
+          existing=0
+          for artifact_id in             11009012767 11013906065 11019071378 11013926537             11014736981 11014722896 11013934695 11020970770             11021895322 11022648826 11023991566 11024151826             11025033182 11025636561 11025158483 11026955968
+          do
+            batch="results/rewrite/$artifact_id/growth-batch.json"
+            count="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["review_draft_count"])' "$batch")"
+            if [ "$count" -eq 0 ]; then
+              continue
+            fi
+            PYTHONPATH=scripts python3 scripts/myhost_draft.py               --batch "$batch"               --report "results/rewrite/$artifact_id/myhost-drafts.json"               | tee "results/rewrite/$artifact_id/myhost-drafts.txt"
+            grep -q '^MYHOST_DRAFT_SYNC=green ' "results/rewrite/$artifact_id/myhost-drafts.txt"
+            grep -q 'smtp_send=not_available' "results/rewrite/$artifact_id/myhost-drafts.txt"
+            read r e c <<<"$(python3 - "$artifact_id" <<'PY'
+          import json,sys
+          aid=sys.argv[1]
+          p=json.load(open(f"results/rewrite/{aid}/myhost-drafts.json"))
+          eligible=int(p.get("eligible_count") or 0)
+          replaced=int(p.get("replaced_count") or 0)
+          existing=int(p.get("existing_count") or 0)
+          created=int(p.get("created_count") or 0)
+          if created != 0:
+              raise SystemExit(f"{aid}: created_count={created}, expected 0")
+          if replaced + existing != eligible:
+              raise SystemExit(f"{aid}: replaced+existing mismatch")
+          if p.get("review_required_count") != eligible:
+              raise SystemExit(f"{aid}: review_required mismatch")
+          if p.get("smtp_send") != "not_available":
+              raise SystemExit(f"{aid}: smtp_send boundary failed")
+          rows=json.load(open(f"results/rewrite/{aid}/growth-batch.json"))
+          by_id={r["lead_id"]:r for r in rows["rows"]}
+          if len(p.get("items") or []) != eligible:
+              raise SystemExit(f"{aid}: exact readback item count mismatch")
+          for item in p.get("items") or []:
+              row=by_id.get(item.get("lead_id"))
+              if not row or item.get("outcome") not in {"existing","replaced"}:
+                  raise SystemExit(f"{aid}: unexpected readback outcome")
+              if item.get("to") != row.get("email") or item.get("subject") != row.get("subject") or item.get("body") != row.get("body"):
+                  raise SystemExit(f"{aid}: exact To/subject/body mismatch")
+              if item.get("review_status") != "contact-basis":
+                  raise SystemExit(f"{aid}: review status mismatch")
+          print(replaced, existing, eligible)
+          PY
+          )"
+            replaced=$((replaced + r))
+            existing=$((existing + e))
+            total=$((total + c))
+          done
+          test "$total" -eq 1152
+          echo "AUDITED_REWRITE_READBACK=green total=$total replaced=$replaced existing=$existing created=0 review_required=$total automatic_send=false smtp_send=not_available"
+
+      - name: Final read-only audit group A
+        run: |
+          set -euo pipefail
+          PYTHONPATH=scripts python3 scripts/myhost_final_audit.py             --batch results/rewrite/11009012767/growth-batch.json --report results/rewrite/11009012767/myhost-drafts.json             --batch results/rewrite/11013906065/growth-batch.json --report results/rewrite/11013906065/myhost-drafts.json             --batch results/rewrite/11019071378/growth-batch.json --report results/rewrite/11019071378/myhost-drafts.json             --batch results/rewrite/11013926537/growth-batch.json --report results/rewrite/11013926537/myhost-drafts.json             --batch results/rewrite/11014736981/growth-batch.json --report results/rewrite/11014736981/myhost-drafts.json             --batch results/rewrite/11014722896/growth-batch.json --report results/rewrite/11014722896/myhost-drafts.json             --batch results/rewrite/11013934695/growth-batch.json --report results/rewrite/11013934695/myhost-drafts.json             --batch results/rewrite/11020970770/growth-batch.json --report results/rewrite/11020970770/myhost-drafts.json             --config config/growth-subscription.json             --output results/final-audit-a.json             | tee results/final-audit-a.txt
+          grep -q '^FINAL_LEADS_AUDIT=green ' results/final-audit-a.txt
+          grep -q 'automatic_send=false' results/final-audit-a.txt
+          grep -q 'smtp_send=not_available' results/final-audit-a.txt
+
+      - name: Final read-only audit group B
+        run: |
+          set -euo pipefail
+          PYTHONPATH=scripts python3 scripts/myhost_final_audit.py             --batch results/rewrite/11021895322/growth-batch.json --report results/rewrite/11021895322/myhost-drafts.json             --batch results/rewrite/11022648826/growth-batch.json --report results/rewrite/11022648826/myhost-drafts.json             --batch results/rewrite/11023991566/growth-batch.json --report results/rewrite/11023991566/myhost-drafts.json             --batch results/rewrite/11024151826/growth-batch.json --report results/rewrite/11024151826/myhost-drafts.json             --batch results/rewrite/11025033182/growth-batch.json --report results/rewrite/11025033182/myhost-drafts.json             --batch results/rewrite/11025636561/growth-batch.json --report results/rewrite/11025636561/myhost-drafts.json             --batch results/rewrite/11025158483/growth-batch.json --report results/rewrite/11025158483/myhost-drafts.json             --batch results/rewrite/11026955968/growth-batch.json --report results/rewrite/11026955968/myhost-drafts.json             --config config/growth-subscription.json             --output results/final-audit-b.json             | tee results/final-audit-b.txt
+          grep -q '^FINAL_LEADS_AUDIT=green ' results/final-audit-b.txt
+          grep -q 'automatic_send=false' results/final-audit-b.txt
+          grep -q 'smtp_send=not_available' results/final-audit-b.txt
+
+      - name: Final absence and total-count proof
+        run: |
+          set -euo pipefail
+          PYTHONPATH=scripts python3 - <<'PY'
+          from myhost_draft import connect_imap, find_drafts_folder, find_message_ids, select_folder
+          excluded = [
+              "growth-43f68aa9f09b4f8b1986",
+              "growth-6f28a46a4b8c2b06e812",
+              "growth-f1c767aa51ceb7d6c2f4",
+              "growth-3db0aea2330c9c1013cd",
+              "growth-d5b539d372fdb6266c16",
+              "growth-f516d98dd1403308eb1c",
+          ]
+          client=connect_imap()
+          try:
+              folder=find_drafts_folder(client)
+              select_folder(client, folder, readonly=True)
+              for lead_id in excluded:
+                  ids=find_message_ids(client,folder,lead_id,ensure_selected=False)
+                  if ids:
+                      raise SystemExit(f"{lead_id}: excluded draft still present count={len(ids)}")
+              print("FINAL_EXCLUDED_ABSENCE=green count=6 read_only=true automatic_send=false smtp_send=not_available")
+          finally:
+              try: client.logout()
+              except Exception: pass
+          PY
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: audited-draft-remediation-${{ github.run_number }}
+          path: |
+            results/preflight-summary.json
+            results/rewrite/*/growth-batch.json
+            results/rewrite/*/growth-batch.csv
+            results/rewrite/*/myhost-drafts.json
+            results/rewrite/*/myhost-drafts.txt
+            results/removal-*.json
+            results/removal-*.txt
+            results/final-audit-a.json
+            results/final-audit-a.txt
+            results/final-audit-b.json
+            results/final-audit-b.txt
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Remove downloaded source residue
+        if: always()
+        run: rm -rf results/source results/source/*.zip
