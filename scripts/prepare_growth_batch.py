@@ -33,6 +33,56 @@ FOCUS_PATTERNS = (
 )
 
 
+CATEGORY_FOCUS = {
+    "restaurant": ("restaurant en gastvrijheid", "restaurant and hospitality"),
+    "casual_eatery": ("eten en gastvrijheid", "food and hospitality"),
+    "fast_food_restaurant": ("eten en gastvrijheid", "food and hospitality"),
+    "cafe": ("koffie, lunch en horeca", "coffee, lunch and hospitality"),
+    "coffee_shop": ("koffie, lunch en horeca", "coffee, lunch and hospitality"),
+    "non_alcoholic_beverage_venue": ("dranken en horeca", "drinks and hospitality"),
+    "hotel": ("overnachten en gastvrijheid", "accommodation and hospitality"),
+    "food_and_beverage_store": ("eten, drinken en retail", "food, drinks and retail"),
+    "convenience_store": ("dagelijkse boodschappen en retail", "everyday groceries and retail"),
+    "warehouse_club_store": ("retail en boodschappen", "retail and groceries"),
+    "fashion_and_apparel_store": ("mode en kleding", "fashion and clothing"),
+    "personal_care_and_beauty_store": ("beauty en persoonlijke verzorging", "beauty and personal care"),
+    "hardware_home_and_garden_store": ("wonen, klussen en tuin", "home, DIY and garden"),
+    "home_service": ("diensten rond wonen en onderhoud", "home and maintenance services"),
+    "gym": ("sport en fitness", "sports and fitness"),
+    "sporting_goods_store": ("sport en sportartikelen", "sports and sporting goods"),
+    "animal_or_pet_service": ("dierenzorg", "animal care"),
+    "animal_and_pet_store": ("dieren en dierbenodigdheden", "pets and pet supplies"),
+    "personal_or_beauty_service": ("haar en beauty", "hair and beauty"),
+    "auto_dealer": ("auto's en mobiliteit", "cars and mobility"),
+    "vehicle_dealer": ("voertuigen en mobiliteit", "vehicles and mobility"),
+    "automotive_service": ("auto-onderhoud en mobiliteit", "car maintenance and mobility"),
+    "vehicle_parts_store": ("auto-onderdelen en mobiliteit", "vehicle parts and mobility"),
+    "dental_clinic": ("tandzorg en mondzorg", "dental care"),
+    "physical_medicine_and_rehabilitation": ("fysiotherapie en revalidatie", "physical therapy and rehabilitation"),
+    "primary_care_or_general_clinic": ("eerstelijnszorg", "primary care"),
+    "medical_service": ("zorg en gezondheid", "healthcare"),
+    "behavioral_or_mental_health_clinic": ("mentale gezondheid en begeleiding", "mental health and support"),
+    "wellness_service": ("wellness en gezondheid", "wellness and health"),
+    "pharmacy_and_drug_store": ("apotheekzorg en gezondheid", "pharmacy and health"),
+    "flowers_and_gifts_store": ("bloemen, planten en cadeaus", "flowers, plants and gifts"),
+    "books_music_and_video_store": ("boeken, muziek en media", "books, music and media"),
+    "musical_instrument_and_pro_audio_store": ("muziek en instrumenten", "music and instruments"),
+    "vision_or_eye_care_clinic": ("optiek en oogzorg", "eyewear and eye care"),
+    "real_estate_service": ("makelaardij en vastgoed", "real estate"),
+    "second_hand_store": ("tweedehands en hergebruik", "second-hand and reuse"),
+    "shopping_mall": ("winkelen en retail", "shopping and retail"),
+    "shopping": ("winkelen en retail", "shopping and retail"),
+    "department_store": ("retail en warenhuis", "retail and department store"),
+    "electronics_store": ("elektronica en retail", "electronics and retail"),
+    "toys_and_games_store": ("speelgoed en spellen", "toys and games"),
+    "office_supply_store": ("kantoorartikelen en retail", "office supplies and retail"),
+    "arts_crafts_and_hobby_store": ("creatieve hobby en retail", "arts, crafts and retail"),
+    "supplier_or_distributor": ("levering en distributie", "supply and distribution"),
+    "family_service": ("dienstverlening voor gezinnen", "family services"),
+    "legal_service": ("juridische dienstverlening", "legal services"),
+    "high_school": ("onderwijs", "education"),
+}
+
 def load_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -88,7 +138,8 @@ def subject_label_for_company(company: str, language: str) -> str:
     prefix = "An idea for " if language == "en" else "Idee voor "
     max_label_words = 8 - len(prefix.split())
     if len(words) > max_label_words:
-        words = _trim_dangling_connectors(words[:max_label_words])
+        words = words[:max_label_words]
+    words = _trim_dangling_connectors(words)
     while len(words) > 1 and len(prefix + " ".join(words)) > 64:
         words = _trim_dangling_connectors(words[:-1])
     return " ".join(words) or ("your company" if language == "en" else "jullie bedrijf")
@@ -99,11 +150,19 @@ def subject_for_company(company: str, language: str) -> str:
     return f"An idea for {label}" if language == "en" else f"Idee voor {label}"
 
 
-def infer_focus_from_observation(observation: str, language: str) -> str | None:
+def infer_focus_from_observation(
+    observation: str,
+    language: str,
+    category_hint: str | None = None,
+) -> str | None:
     haystack = str(observation or "").casefold()
     for nl, en, pattern in FOCUS_PATTERNS:
         if re.search(pattern, haystack, flags=re.IGNORECASE):
             return en if language == "en" else nl
+    category = str(category_hint or "").strip().casefold()
+    focus = CATEGORY_FOCUS.get(category)
+    if focus:
+        return focus[1] if language == "en" else focus[0]
     return None
 
 
@@ -133,12 +192,17 @@ def observation_is_low_signal(company: str, observation: str) -> bool:
     return False
 
 
-def build_opening(company: str, language: str, observation: str) -> str:
+def build_opening(
+    company: str,
+    language: str,
+    observation: str,
+    category_hint: str | None = None,
+) -> str:
     company_label = short_company_name(company)
     low_signal = observation_is_low_signal(company, observation)
-    focus = infer_focus_from_observation(observation, language)
+    focus = infer_focus_from_observation(observation, language, category_hint if low_signal else None)
     if focus is None and low_signal:
-        focus = infer_focus_from_observation(company_label, language)
+        focus = infer_focus_from_observation(company_label, language, category_hint)
     if language == "en":
         if focus:
             return (
@@ -158,9 +222,17 @@ def build_opening(company: str, language: str, observation: str) -> str:
     return f"Ik heb de website van {company_label} bekeken."
 
 
-def build_template(company: str, language: str, observation: str, *, price_min: int, price_max: int) -> str:
+def build_template(
+    company: str,
+    language: str,
+    observation: str,
+    *,
+    price_min: int,
+    price_max: int,
+    category_hint: str | None = None,
+) -> str:
     company_label = short_company_name(company)
-    opening = build_opening(company, language, observation)
+    opening = build_opening(company, language, observation, category_hint)
     if language == "en":
         return (
             "Hello,\n\n"
@@ -214,13 +286,21 @@ def prepare_batch(contacts_payload: dict, config: dict, *, draft_limit: int = 1)
         observation = str(candidate.get("verified_observation") or "").strip()
         observation_source_url = str(candidate.get("verified_observation_source_url") or "").strip()
         observation_source_type = str(candidate.get("verified_observation_source_type") or "").strip()
+        category_hint = str(candidate.get("category_hint") or "").strip() or None
         has_verified_observation = bool(
             observation
             and observation_source_url
             and observation_source_type == "official_site"
         )
         preview = (
-            build_template(company, language, observation, price_min=price_min, price_max=price_max)
+            build_template(
+                company,
+                language,
+                observation,
+                price_min=price_min,
+                price_max=price_max,
+                category_hint=category_hint,
+            )
             if has_verified_observation
             else None
         )
@@ -236,6 +316,7 @@ def prepare_batch(contacts_payload: dict, config: dict, *, draft_limit: int = 1)
             "product_id": "growth_subscription",
             "language": language,
             "language_source": candidate.get("language_source"),
+            "category_hint": category_hint,
             "monthly_price_min_eur": price_min,
             "monthly_price_max_eur": price_max,
             "excluded_competitor": excluded,

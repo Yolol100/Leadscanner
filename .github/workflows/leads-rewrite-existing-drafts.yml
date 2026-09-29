@@ -129,6 +129,8 @@ jobs:
           excluded = set(json.loads(os.environ.get("EXCLUDE_JSON") or "[]"))
           overrides = json.loads(os.environ.get("OVERRIDE_JSON") or "{}")
           old_batch = json.loads(Path("results/source/growth-batch.json").read_text(encoding="utf-8"))
+          verified_input = json.loads(Path("results/source/verified-draft-input.json").read_text(encoding="utf-8"))
+          verified_candidates = verified_input.get("candidates") or []
           price = json.loads(Path("config/growth-subscription.json").read_text(encoding="utf-8"))["monthly_price_eur"]
           price_min, price_max = int(price["min"]), int(price["max"])
           selected = []
@@ -162,11 +164,29 @@ jobs:
               language = str(row.get("language") or "nl").casefold()
               if language not in {"nl", "en"}:
                   raise SystemExit(f"{lead_id}: unsupported language={language}")
+              matches = [
+                  candidate
+                  for candidate in verified_candidates
+                  if str(row.get("email") or "").casefold()
+                  in {str(value or "").casefold() for value in (candidate.get("public_business_emails") or [])}
+                  and str(candidate.get("website_hint") or "") == str(row.get("website") or "")
+              ]
+              if len(matches) != 1:
+                  raise SystemExit(f"{lead_id}: expected exactly one verified-input candidate match, got {len(matches)}")
+              category_hint = str(matches[0].get("category_hint") or "").strip() or None
+              row["category_hint"] = category_hint
               company = clean_company(row.get("company"), language)
               row["copy_company_label"] = short_company_name(company)
               row["copy_subject_label"] = subject_label_for_company(company, language)
               row["subject"] = subject_for_company(company, language)
-              row["body"] = build_template(company, language, observation, price_min=price_min, price_max=price_max)
+              row["body"] = build_template(
+                  company,
+                  language,
+                  observation,
+                  price_min=price_min,
+                  price_max=price_max,
+                  category_hint=category_hint,
+              )
               row["status"] = "review_draft"
               selected.append(row)
 
@@ -261,6 +281,8 @@ jobs:
                   raise SystemExit(f"{lead_id}: company label missing from personalized subject")
               if "Op jullie website staat" in body or "Your website highlights" in body:
                   raise SystemExit(f"{lead_id}: old vague opening survived")
+              if "Ik heb de website van " in body or ("I looked through " in body and "'s website." in body):
+                  raise SystemExit(f"{lead_id}: generic opening survived audited rewrite")
               if not 2 <= len(subject.split()) <= 8:
                   raise SystemExit(f"{lead_id}: subject length invalid")
               if body != str(old.get("body") or "") or subject != str(old.get("subject") or ""):

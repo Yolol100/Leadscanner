@@ -13,6 +13,7 @@ class GrowthBatchTests(unittest.TestCase):
         return {
             "name_hint": "Voorbeeld Fysiotherapie" if language == "nl" else "Example Physiotherapy",
             "website_hint": "https://voorbeeld.nl" if language == "nl" else "https://example.com",
+            "category_hint": "physical_medicine_and_rehabilitation",
             "official_domain_hint": "voorbeeld.nl" if language == "nl" else "example.com",
             "public_business_emails": ["info@voorbeeld.nl" if language == "nl" else "sales@example.com"],
             "email_source_urls": ["https://voorbeeld.nl/contact"],
@@ -141,6 +142,21 @@ class GrowthBatchTests(unittest.TestCase):
         self.assertEqual(row["copy_subject_label"], "Kindergarden Voormalige Stadstimmertuin Amsterdam")
         self.assertEqual(row["subject"], "Idee voor Kindergarden Voormalige Stadstimmertuin Amsterdam")
         self.assertNotIn("jullie online aanpak", row["subject"])
+
+    def test_low_signal_observation_uses_verified_discovery_category_hint(self):
+        contact = self.contact()
+        contact["name_hint"] = "David Lloyd Amsterdam"
+        contact["verified_observation"] = "Welkom bij David Lloyd Amsterdam"
+        contact["category_hint"] = "gym"
+        row = prepare_batch({"candidates": [contact]}, self.config(), draft_limit=1)["rows"][0]
+        self.assertIn("zich richt op sport en fitness", row["body"])
+        self.assertEqual(row["category_hint"], "gym")
+
+    def test_subject_trims_connector_even_without_word_limit_truncation(self):
+        self.assertEqual(
+            subject_for_company("Steakhouse The Longhorn Rib and", "nl"),
+            "Idee voor Steakhouse The Longhorn Rib",
+        )
 
     def test_subject_removes_decorative_emoji_and_avoids_dangling_connector(self):
         self.assertEqual(subject_for_company("Piccola Italia 🇮🇹", "nl"), "Idee voor Piccola Italia")
