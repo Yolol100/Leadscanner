@@ -52,14 +52,34 @@ class InventoryTests(unittest.TestCase):
         with patch("myhost_growth_inventory.connect_imap", return_value=client):
             result = inventory_growth_drafts()
         self.assertEqual(result["growth_draft_count"], 1)
+        self.assertEqual(result["growth_physical_draft_count"], 1)
         self.assertEqual(result["growth_lead_ids"], ["growth-0123456789abcdefabcd"])
         self.assertEqual(result["growth_emails"], ["info@example.nl"])
+        self.assertEqual(result["duplicate_growth_lead_ids"], [])
+        self.assertEqual(result["duplicate_growth_emails"], [])
         self.assertTrue(result["safety"]["read_only"])
         self.assertFalse(result["safety"]["draft_created"])
         self.assertFalse(result["safety"]["draft_deleted"])
         self.assertEqual(result["safety"]["smtp_send"], "not_available")
+        self.assertFalse(result["safety"]["duplicates_detected"])
         self.assertTrue(client.readonly)
 
+
+    def test_duplicate_physical_growth_drafts_are_reported(self):
+        client = FakeIMAP()
+        lead_id = "growth-0123456789abcdefabcd"
+        client.messages = [
+            raw_message(lead_id, "info@example.nl"),
+            raw_message(lead_id, "info@example.nl"),
+        ]
+        with patch("myhost_growth_inventory.connect_imap", return_value=client):
+            result = inventory_growth_drafts()
+        self.assertEqual(result["growth_draft_count"], 1)
+        self.assertEqual(result["growth_physical_draft_count"], 2)
+        self.assertEqual(result["duplicate_growth_lead_ids"], [lead_id])
+        self.assertEqual(result["duplicate_growth_emails"], ["info@example.nl"])
+        self.assertTrue(result["safety"]["duplicates_detected"])
+        self.assertTrue(result["safety"]["read_only"])
 
 if __name__ == "__main__":
     unittest.main()
