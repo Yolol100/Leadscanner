@@ -43,6 +43,22 @@ def build_contacts(
     if not 1 <= requested_count <= 100:
         raise ValueError("requested_count must be 1-100")
 
+    duplicate_inventory_ids = sorted(
+        str(value).strip()
+        for value in (inventory.get("duplicate_growth_lead_ids") or [])
+        if str(value).strip()
+    )
+    duplicate_inventory_emails = sorted(
+        _norm(value)
+        for value in (inventory.get("duplicate_growth_emails") or [])
+        if _norm(value)
+    )
+    if duplicate_inventory_ids or duplicate_inventory_emails:
+        raise RuntimeError(
+            "Mailbox growth inventory contains duplicate drafts; resolve duplicates before selection "
+            f"(lead_ids={len(duplicate_inventory_ids)} emails={len(duplicate_inventory_emails)})"
+        )
+
     existing_ids = {
         str(value).strip()
         for value in (inventory.get("growth_lead_ids") or [])
@@ -184,6 +200,7 @@ def build_contacts(
             "source_phase": "phase3_verified_ready",
             "existing_growth_ids_excluded": True,
             "existing_growth_emails_excluded": True,
+            "mailbox_inventory_duplicate_free": True,
             "request_company_domain_exclusions_applied": True,
             "contact_basis_review_required": True,
             "automatic_send": False,

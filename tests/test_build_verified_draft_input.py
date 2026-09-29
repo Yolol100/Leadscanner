@@ -389,5 +389,15 @@ class BuildVerifiedDraftInputTests(unittest.TestCase):
                 build_contacts([root], {"growth_lead_ids": []}, 2)
 
 
+    def test_fails_closed_when_mailbox_inventory_reports_duplicates(self):
+        inventory = {
+            "growth_lead_ids": ["growth-0123456789abcdefabcd"],
+            "growth_emails": ["info@example.nl"],
+            "duplicate_growth_lead_ids": ["growth-0123456789abcdefabcd"],
+            "duplicate_growth_emails": ["info@example.nl"],
+        }
+        with self.assertRaisesRegex(RuntimeError, "duplicate drafts"):
+            build_contacts([], inventory, 1)
+
 if __name__ == "__main__":
     unittest.main()
