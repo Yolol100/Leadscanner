@@ -88,12 +88,38 @@ jobs:
               "growth-3db0aea2330c9c1013cd",
               "growth-d5b539d372fdb6266c16",
               "growth-f516d98dd1403308eb1c",
+              "growth-80a578edcfc30d043762",
+              "growth-67fd975851a9b546d46f",
           }
           invalid_expected = {
               "growth-f1c767aa51ceb7d6c2f4": 11009012767,
               "growth-3db0aea2330c9c1013cd": 11014736981,
               "growth-d5b539d372fdb6266c16": 11023991566,
               "growth-f516d98dd1403308eb1c": 11014722896,
+              "growth-80a578edcfc30d043762": 11021895322,
+              "growth-67fd975851a9b546d46f": 11013934695,
+          }
+          observation_overrides = {
+              "growth-8b01fa84969ecd524c49": {
+                  "observation": "Izakaya Tanuki is een Japans izakaya- en sushirestaurant in Amsterdam.",
+                  "source_url": "https://gelderlandplein.izakayatanuki.com/informatie",
+                  "source_type": "official_site",
+              },
+              "growth-d847726c241e2c4d4f59": {
+                  "observation": "Anytime Fitness Berkel en Rodenrijs biedt 24/7 fitness, persoonlijke begeleiding en groepslessen.",
+                  "source_url": "https://www.anytimefitness.nl/gyms/nl-1068/berkel-en-rodenrijs-zuid-holland-2652-kw/",
+                  "source_type": "official_site",
+              },
+              "growth-69284f7f2b9eca98dc54": {
+                  "observation": "KFC Nederland heeft meer dan 90 restaurants en serveert onder meer verse kip.",
+                  "source_url": "https://kfc.nl/",
+                  "source_type": "official_site",
+              },
+              "growth-e4f88bf6b254cd2f601b": {
+                  "observation": "Ku Kitchen & Bar in Amsterdam richt zich op Japanse fusion, sushi en cocktails.",
+                  "source_url": "https://www.kukitchen.nl/",
+                  "source_type": "official_site",
+              },
           }
           price = json.loads(Path("config/growth-subscription.json").read_text(encoding="utf-8"))["monthly_price_eur"]
           price_min, price_max = int(price["min"]), int(price["max"])
@@ -124,18 +150,27 @@ jobs:
                   if len(matches) != 1:
                       raise SystemExit(f"{lead_id}: verified-input match count={len(matches)}")
                   candidate = matches[0]
-                  if old.get("contact_basis_status") != "review_required":
+                  row = dict(old)
+                  override = observation_overrides.get(lead_id)
+                  if override:
+                      row["verified_observation"] = override["observation"]
+                      row["verified_observation_source_url"] = override["source_url"]
+                      row["verified_observation_source_type"] = override["source_type"]
+                  if row.get("contact_basis_status") != "review_required":
                       raise SystemExit(f"{lead_id}: contact basis is not review_required")
-                  if old.get("verified_observation_source_type") != "official_site":
+                  if row.get("verified_observation_source_type") != "official_site":
                       raise SystemExit(f"{lead_id}: official-site observation provenance missing")
-                  language = str(old.get("language") or "").casefold()
+                  if not str(row.get("verified_observation") or "").strip():
+                      raise SystemExit(f"{lead_id}: verified observation missing")
+                  if not str(row.get("verified_observation_source_url") or "").startswith(("http://", "https://")):
+                      raise SystemExit(f"{lead_id}: verified observation URL missing")
+                  language = str(row.get("language") or "").casefold()
                   if language not in {"nl","en"}:
                       raise SystemExit(f"{lead_id}: unsupported language={language}")
                   category_hint = str(candidate.get("category_hint") or "").strip()
                   if not category_hint:
                       raise SystemExit(f"{lead_id}: category_hint missing")
-                  company = clean_company(old.get("company"), language)
-                  row = dict(old)
+                  company = clean_company(row.get("company"), language)
                   row["category_hint"] = category_hint
                   row["copy_company_label"] = short_company_name(company)
                   row["copy_subject_label"] = subject_label_for_company(company, language)
@@ -143,7 +178,7 @@ jobs:
                   row["body"] = build_template(
                       company,
                       language,
-                      str(old.get("verified_observation") or ""),
+                      str(row.get("verified_observation") or ""),
                       price_min=price_min,
                       price_max=price_max,
                       category_hint=category_hint,
@@ -157,8 +192,10 @@ jobs:
                       raise SystemExit(f"{lead_id}: bullet count={len(bullets)}")
                   if body.count("€250–€500") != 1 or re.search(r"\b\d+\s*%", body):
                       raise SystemExit(f"{lead_id}: price/percentage boundary failed")
-                  if not 2 <= len(subject.split()) <= 8:
+                  if not 2 <= len(subject.split()) <= 6:
                       raise SystemExit(f"{lead_id}: subject word count invalid")
+                  if len(body.split()) > 115:
+                      raise SystemExit(f"{lead_id}: body word count exceeds 115")
                   if any(ord(ch) > 0xFFFF for ch in subject):
                       raise SystemExit(f"{lead_id}: decorative symbol survived subject")
                   if "Ik heb de website van " in body or ("I looked through " in body and "'s website." in body):
@@ -167,8 +204,8 @@ jobs:
                       required = (
                           "Website/webshop — verbeteren of nieuw maken waar nodig",
                           "Zoekbaarheid — beter vindbaar worden",
-                          "Social content — passende content maken",
-                          "Automatisering — geschikte processen deels automatiseren",
+                          "Social content — passende content",
+                          "Automatisering — geschikte processen deels automatiseren waar haalbaar",
                           "Hosting — beheren of overnemen waar passend",
                           "Ik als vast contactpersoon",
                           "€250–€500 per maand, afhankelijk van wat jullie nodig hebben",
@@ -180,8 +217,8 @@ jobs:
                       required = (
                           "Website/webshop — improve or build new where needed",
                           "Search visibility — improve findability",
-                          "Social content — create relevant content",
-                          "Automation — partially automate suitable processes",
+                          "Social content — relevant content",
+                          "Automation — partially automate suitable processes where feasible",
                           "Hosting — manage or take over where appropriate",
                           "Me as your fixed point of contact",
                           "€250–€500 per month, depending on what you need",
@@ -192,6 +229,10 @@ jobs:
                   for value in required:
                       if value not in body:
                           raise SystemExit(f"{lead_id}: audited copy contract missing {value!r}")
+                  if language == "nl" and "Dan kunnen jullie eerst bekijken of de richting interessant is." not in body:
+                      raise SystemExit(f"{lead_id}: NL CTA wording mismatch")
+                  if language == "en" and "so you can first see whether the direction is relevant?" not in body:
+                      raise SystemExit(f"{lead_id}: EN CTA wording mismatch")
                   if row["copy_company_label"] not in body or row["copy_subject_label"] not in subject:
                       raise SystemExit(f"{lead_id}: company personalization missing")
                   language_split[language] += 1
@@ -228,8 +269,10 @@ jobs:
 
           if invalid_seen != invalid_expected:
               raise SystemExit(f"invalid lead/artifact mapping mismatch: {invalid_seen}")
-          if len(global_rows) != 1152:
-              raise SystemExit(f"expected 1152 canonical audited rows, found {len(global_rows)}")
+          if len(global_rows) != 1150:
+              raise SystemExit(f"expected 1150 canonical audited rows, found {len(global_rows)}")
+          if dict(language_split) != {"nl": 1080, "en": 70}:
+              raise SystemExit(f"unexpected language split: {dict(language_split)}")
           for key in ("lead_id","email","official_domain_hint"):
               values = [str(row.get(key) or "").strip().casefold() for row in global_rows]
               dupes = [value for value,count in Counter(values).items() if value and count > 1]
@@ -269,10 +312,12 @@ jobs:
               "growth-3db0aea2330c9c1013cd": 11014736981,
               "growth-d5b539d372fdb6266c16": 11023991566,
               "growth-f516d98dd1403308eb1c": 11014722896,
+              "growth-80a578edcfc30d043762": 11021895322,
+              "growth-67fd975851a9b546d46f": 11013934695,
           }
           bad = re.compile(
               r"reserved domain|domainorder|coming soon|under construction|"
-              r"crypto casinos?|bitcoin casinos?|without code",
+              r"crypto casinos?|bitcoin casinos?|without code|geparkeerd|vimexx|konoha|tempat main",
               re.IGNORECASE,
           )
           expected = {}
@@ -309,7 +354,7 @@ jobs:
                       raise SystemExit(f"{lead_id}: current subject mismatch")
                   if normalize_text(plain_body(actual)) != normalize_text(row.get("body", "")):
                       raise SystemExit(f"{lead_id}: current body mismatch")
-              print("INVALID_DRAFT_PREFLIGHT=green count=4 current_state_is_exact_or_absent=true automatic_send=false")
+              print("INVALID_DRAFT_PREFLIGHT=green count=6 current_state_is_exact_or_absent=true automatic_send=false")
           finally:
               try:
                   client.logout()
@@ -331,6 +376,8 @@ jobs:
               "growth-3db0aea2330c9c1013cd",
               "growth-d5b539d372fdb6266c16",
               "growth-f516d98dd1403308eb1c",
+              "growth-80a578edcfc30d043762",
+              "growth-67fd975851a9b546d46f",
           ]
           removed = 0
           already_absent = 0
@@ -364,8 +411,8 @@ jobs:
               )
           print(
               "INVALID_DRAFT_REMOVALS=green "
-              f"targets=4 removed_now={removed} already_absent={already_absent} "
-              "final_absent=4 automatic_send=false smtp_send=not_available"
+              f"targets=6 removed_now={removed} already_absent={already_absent} "
+              "final_absent=6 automatic_send=false smtp_send=not_available"
           )
           PY
 
@@ -420,7 +467,7 @@ jobs:
             existing=$((existing + e))
             total=$((total + c))
           done
-          test "$total" -eq 1152
+          test "$total" -eq 1150
           echo "AUDITED_REWRITE_READBACK=green total=$total replaced=$replaced existing=$existing created=0 review_required=$total automatic_send=false smtp_send=not_available"
 
       - name: Final read-only audit group A
@@ -451,6 +498,8 @@ jobs:
               "growth-3db0aea2330c9c1013cd",
               "growth-d5b539d372fdb6266c16",
               "growth-f516d98dd1403308eb1c",
+              "growth-80a578edcfc30d043762",
+              "growth-67fd975851a9b546d46f",
           ]
           client=connect_imap()
           try:
@@ -460,7 +509,7 @@ jobs:
                   ids=find_message_ids(client,folder,lead_id,ensure_selected=False)
                   if ids:
                       raise SystemExit(f"{lead_id}: excluded draft still present count={len(ids)}")
-              print("FINAL_EXCLUDED_ABSENCE=green count=6 read_only=true automatic_send=false smtp_send=not_available")
+              print("FINAL_EXCLUDED_ABSENCE=green count=8 read_only=true automatic_send=false smtp_send=not_available")
           finally:
               try: client.logout()
               except Exception: pass
