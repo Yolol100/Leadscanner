@@ -31,16 +31,32 @@ def audit_rows(batch_payloads: list[dict], reports: list[dict], config: dict) ->
     rows: list[dict] = []
     failures: list[str] = []
 
+    if len(batch_payloads) != len(reports):
+        failures.append(
+            f"artifact_count_mismatch: batches={len(batch_payloads)} reports={len(reports)}"
+        )
+
+    expected_counts: list[int] = []
     for index, batch in enumerate(batch_payloads, start=1):
         phase_rows = [row for row in batch.get("rows") or [] if row.get("status") == "review_draft"]
-        if len(phase_rows) != 75:
-            failures.append(f"batch{index}: expected 75 review_draft rows, found {len(phase_rows)}")
+        report = reports[index - 1] if index - 1 < len(reports) else {}
+        expected = int(report.get("eligible_count") or 0)
+        if expected <= 0:
+            failures.append(f"batch{index}: eligible_count must be positive")
+        expected_counts.append(expected)
+        if len(phase_rows) != expected:
+            failures.append(
+                f"batch{index}: expected {expected} review_draft rows, found {len(phase_rows)}"
+            )
         if (batch.get("safety") or {}).get("automatic_send") is not False:
             failures.append(f"batch{index}: automatic_send is not false")
         rows.extend(phase_rows)
 
-    if len(rows) != 150:
-        failures.append(f"final_set: expected 150 rows, found {len(rows)}")
+    requested_total = sum(expected_counts)
+    if len(rows) != requested_total:
+        failures.append(
+            f"final_set: expected {requested_total} rows, found {len(rows)}"
+        )
 
     for label, key in (
         ("lead_id", "lead_id"),
@@ -151,20 +167,21 @@ def audit_rows(batch_payloads: list[dict], reports: list[dict], config: dict) ->
     readback_by_id: dict[str, dict] = {}
     allowed_outcomes_by_id: dict[str, str] = {}
     for index, report in enumerate(reports, start=1):
-        if report.get("eligible_count") != 75:
+        expected = expected_counts[index - 1] if index - 1 < len(expected_counts) else 0
+        if report.get("eligible_count") != expected:
             failures.append(f"report{index}: eligible_count mismatch")
         created = int(report.get("created_count") or 0)
         existing = int(report.get("existing_count") or 0)
         replaced = int(report.get("replaced_count") or 0)
         if existing != 0:
             failures.append(f"report{index}: existing_count should be zero")
-        if (created, replaced) not in {(75, 0), (0, 75)}:
+        if (created, replaced) not in {(expected, 0), (0, expected)}:
             failures.append(
-                f"report{index}: expected exactly 75 created or 75 safely replaced drafts, "
+                f"report{index}: expected exactly {expected} created or {expected} safely replaced drafts, "
                 f"got created={created} replaced={replaced}"
             )
-        expected_outcome = "replaced" if replaced == 75 else "created"
-        if report.get("review_required_count") != 75:
+        expected_outcome = "replaced" if replaced == expected and expected > 0 else "created"
+        if report.get("review_required_count") != expected:
             failures.append(f"report{index}: review_required_count mismatch")
         if report.get("smtp_send") != "not_available":
             failures.append(f"report{index}: smtp_send must be not_available")
@@ -196,7 +213,7 @@ def audit_rows(batch_payloads: list[dict], reports: list[dict], config: dict) ->
             )
 
     metrics = {
-        "requested_total": 150,
+        "requested_total": requested_total,
         "artifact_rows": len(rows),
         "artifact_readbacks": len(readback_by_id),
         "unique_lead_ids": len({norm(row.get("lead_id")) for row in rows}),
@@ -265,7 +282,7 @@ def main() -> int:
     args = parser.parse_args()
 
     if len(args.batch) != 2 or len(args.report) != 2:
-        raise SystemExit("Final audit requires exactly two 75-draft artifacts")
+        raise SystemExit("Final audit requires exactly two draft artifacts")
 
     batch_payloads = [load(path) for path in args.batch]
     reports = [load(path) for path in args.report]
@@ -302,16 +319,22 @@ def main() -> int:
     if failures:
         print(
             "FINAL_LEADS_AUDIT=red "
-            f"failures={len(failures)} exact_mailbox={mailbox_metrics['final_set_current_exact_matches']}/150 "
+            f"failures={len(failures)} "
+            f"exact_mailbox={mailbox_metrics['final_set_current_exact_matches']}/{metrics['requested_total']} "
             "automatic_send=false"
         )
         return 2
 
     print(
         "FINAL_LEADS_AUDIT=green "
-        "total=150 unique_lead_ids=150 unique_emails=150 unique_domains=150 unique_companies=150 "
+        f"total={metrics['requested_total']} "
+        f"unique_lead_ids={metrics['unique_lead_ids']} "
+        f"unique_emails={metrics['unique_emails']} "
+        f"unique_domains={metrics['unique_domains']} "
+        f"unique_companies={metrics['unique_companies']} "
         f"nl={metrics['language_split'].get('nl', 0)} en={metrics['language_split'].get('en', 0)} "
-        "exact_mailbox=150/150 automatic_send=false smtp_send=not_available"
+        f"exact_mailbox={mailbox_metrics['final_set_current_exact_matches']}/{metrics['requested_total']} "
+        "automatic_send=false smtp_send=not_available"
     )
     return 0
 

@@ -68,6 +68,34 @@ class FinalAuditTests(unittest.TestCase):
         _, failures, _ = audit_rows([batch1, batch2], [report, report], self.config())
         self.assertTrue(any("duplicate_company" in failure for failure in failures))
 
+    def test_mixed_batch_sizes_use_report_eligible_counts(self):
+        report100 = {
+            "eligible_count": 100,
+            "created_count": 100,
+            "existing_count": 0,
+            "replaced_count": 0,
+            "review_required_count": 100,
+            "smtp_send": "not_available",
+            "items": [],
+        }
+        report34 = {
+            "eligible_count": 34,
+            "created_count": 34,
+            "existing_count": 0,
+            "replaced_count": 0,
+            "review_required_count": 34,
+            "smtp_send": "not_available",
+            "items": [],
+        }
+        batch100 = {"rows": [], "safety": {"automatic_send": False}}
+        batch34 = {"rows": [], "safety": {"automatic_send": False}}
+        _, failures, metrics = audit_rows(
+            [batch100, batch34], [report100, report34], self.config()
+        )
+        self.assertEqual(metrics["requested_total"], 134)
+        self.assertTrue(any("expected 100 review_draft rows" in failure for failure in failures))
+        self.assertTrue(any("expected 34 review_draft rows" in failure for failure in failures))
+
     def test_no_automatic_send_is_required(self):
         batch = {"rows": [], "safety": {"automatic_send": True}}
         report = {

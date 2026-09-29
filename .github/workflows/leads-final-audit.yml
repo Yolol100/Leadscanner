@@ -95,7 +95,7 @@ jobs:
           done
           echo "FINAL_ARTIFACT_READBACK=green"
 
-      - name: Audit 150 artifacts and current mijn.host mailbox read-only
+      - name: Audit draft artifacts and current mijn.host mailbox read-only
         env:
           OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
           OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
@@ -106,8 +106,6 @@ jobs:
           set -euo pipefail
           PYTHONPATH=scripts python3 scripts/myhost_final_audit.py             --batch results/p4/growth-batch.json             --batch results/p5/growth-batch.json             --report results/p4/myhost-drafts.json             --report results/p5/myhost-drafts.json             --config config/growth-subscription.json             --output results/final-audit.json | tee results/final-audit.txt
           grep -q '^FINAL_LEADS_AUDIT=green ' results/final-audit.txt
-          grep -q 'total=150' results/final-audit.txt
-          grep -q 'exact_mailbox=150/150' results/final-audit.txt
           grep -q 'automatic_send=false' results/final-audit.txt
           grep -q 'smtp_send=not_available' results/final-audit.txt
 
@@ -120,10 +118,15 @@ jobs:
           report = json.loads(Path("results/final-audit.json").read_text(encoding="utf-8"))
           if report.get("failure_count") != 0:
               raise SystemExit("final audit contains failures")
-          if report.get("requested_total") != 150:
-              raise SystemExit("final total is not 150")
-          if report.get("final_set_current_exact_matches") != 150:
-              raise SystemExit("current mailbox exact match is not 150/150")
+          requested = int(report.get("requested_total") or 0)
+          if requested <= 0:
+              raise SystemExit("final total must be positive")
+          if report.get("artifact_rows") != requested:
+              raise SystemExit("artifact row total mismatch")
+          if report.get("final_set_current_expected") != requested:
+              raise SystemExit("mailbox expected total mismatch")
+          if report.get("final_set_current_exact_matches") != requested:
+              raise SystemExit("current mailbox exact match is incomplete")
           if report.get("automatic_send") is not False:
               raise SystemExit("automatic_send must be false")
           if report.get("smtp_send") != "not_available":
