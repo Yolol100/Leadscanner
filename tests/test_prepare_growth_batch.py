@@ -64,6 +64,15 @@ class GrowthBatchTests(unittest.TestCase):
         self.assertIn("Ik zag dat 030 Fietsen zich richt op fietsen en fietsservice", row["body"])
         self.assertNotIn("Tweedehands Fietsen Utrecht elektrische fietsen", row["body"])
 
+    def test_percentage_observation_is_not_quoted_into_first_touch(self):
+        contact = self.contact()
+        contact["name_hint"] = "Acme BV"
+        contact["verified_observation"] = "Nu tot 30% voordeel op geselecteerde producten"
+        row = prepare_batch({"candidates": [contact]}, self.config(), draft_limit=1)["rows"][0]
+        self.assertNotIn("%", row["body"])
+        self.assertIn("Ik heb de website van Acme BV bekeken.", row["body"])
+        self.assertNotIn(contact["verified_observation"], row["body"])
+
     def test_observation_overrides_misleading_company_name_for_focus(self):
         contact = self.contact()
         contact["name_hint"] = "De Juwelier"
