@@ -132,5 +132,16 @@ class FinalAuditTests(unittest.TestCase):
         self.assertTrue(any("automatic_send" in failure for failure in failures))
 
 
+    def test_final_audit_accepts_mixed_existing_and_replaced_rewrite_outcomes(self):
+        batch = self.batch_payload()
+        report = self.report_payload()
+        report["created_count"] = 0
+        report["existing_count"] = 1
+        report["replaced_count"] = 0
+        report["items"][0]["outcome"] = "existing"
+        rows, failures, metrics = audit_rows([batch], [report], self.config())
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(failures, [])
+
 if __name__ == "__main__":
     unittest.main()

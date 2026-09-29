@@ -159,15 +159,33 @@ def audit_rows(
         if "Op jullie website staat" in body or "Your website highlights" in body:
             failures.append(f"{lead_id}: old vague opening survived")
         if language == "nl":
-            if body.count("Zal ik vrijblijvend een voorbeeld voor jullie homepage maken?") != 1:
+            if body.count("Zal ik vrijblijvend een voorbeeld design maken voor ") != 1:
                 failures.append(f"{lead_id}: NL CTA count mismatch")
+            for value in (
+                "Website/webshop — verbeteren of nieuw maken waar nodig",
+                "Zoekbaarheid — beter vindbaar worden",
+                "Automatisering — geschikte processen deels automatiseren",
+                "Hosting — beheren of overnemen waar passend",
+                "Ik als vast contactpersoon",
+            ):
+                if value not in body:
+                    failures.append(f"{lead_id}: NL audited copy contract missing {value}")
             if "Geen interesse? Laat het gerust weten" not in body:
                 failures.append(f"{lead_id}: NL easy-no missing")
             if not body.endswith("Groet,\nAndrew"):
                 failures.append(f"{lead_id}: NL signature mismatch")
         elif language == "en":
-            if body.count("Would you like me to make a no-obligation example for your homepage?") != 1:
+            if body.count("Would you like me to make a no-obligation example design for ") != 1:
                 failures.append(f"{lead_id}: EN CTA count mismatch")
+            for value in (
+                "Website/webshop — improve or build new where needed",
+                "Search visibility — improve findability",
+                "Automation — partially automate suitable processes",
+                "Hosting — manage or take over where appropriate",
+                "Me as your fixed point of contact",
+            ):
+                if value not in body:
+                    failures.append(f"{lead_id}: EN audited copy contract missing {value}")
             if "Not interested? Just let me know." not in body:
                 failures.append(f"{lead_id}: EN easy-no missing")
             if not body.endswith("Regards,\nAndrew"):
@@ -186,6 +204,7 @@ def audit_rows(
             "verified_observation_source_type": row.get("verified_observation_source_type"),
             "language": row.get("language"),
             "language_source": row.get("language_source"),
+            "category_hint": row.get("category_hint"),
             "excluded_competitor": False,
             "contact_basis_status": "review_required",
             "contact_basis_hint": row.get("contact_basis_hint"),
@@ -207,14 +226,13 @@ def audit_rows(
         created = int(report.get("created_count") or 0)
         existing = int(report.get("existing_count") or 0)
         replaced = int(report.get("replaced_count") or 0)
-        if existing != 0:
-            failures.append(f"report{index}: existing_count should be zero")
-        if (created, replaced) not in {(original_expected, 0), (0, original_expected)}:
+        if created != 0:
+            failures.append(f"report{index}: final audit rewrite report must not create drafts")
+        if existing + replaced != original_expected:
             failures.append(
-                f"report{index}: expected exactly {original_expected} created or {original_expected} safely replaced drafts, "
-                f"got created={created} replaced={replaced}"
+                f"report{index}: expected existing+replaced={original_expected}, "
+                f"got existing={existing} replaced={replaced}"
             )
-        expected_outcome = "replaced" if replaced == original_expected and original_expected > 0 else "created"
         if report.get("review_required_count") != original_expected:
             failures.append(f"report{index}: review_required_count mismatch")
         if report.get("smtp_send") != "not_available":
@@ -226,7 +244,10 @@ def audit_rows(
             if lead_id in readback_by_id:
                 failures.append(f"{lead_id}: duplicate artifact readback")
             readback_by_id[lead_id] = item
-            allowed_outcomes_by_id[lead_id] = expected_outcome
+            outcome = str(item.get("outcome") or "")
+            if outcome not in {"existing", "replaced"}:
+                failures.append(f"{lead_id}: unsupported rewrite outcome {outcome!r}")
+            allowed_outcomes_by_id[lead_id] = outcome
 
     for row in rows:
         lead_id = row["lead_id"]
