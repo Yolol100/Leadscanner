@@ -104,6 +104,14 @@ class PublicContactDiscoveryTests(unittest.TestCase):
         )
         self.assertEqual(
             email_business_priority(
+                "info@restaurantmarketing.nl",
+                "daalderamsterdam.nl",
+                "Restaurant Daalder",
+            ),
+            2,
+        )
+        self.assertEqual(
+            email_business_priority(
                 "info@intersportroden.nl",
                 "intersport.nl",
                 "Intersport Superstore Roden",
@@ -168,6 +176,14 @@ class PublicContactDiscoveryTests(unittest.TestCase):
                 "prospect.nl",
                 "official_site",
                 "Prospect BV",
+            )
+        )
+        self.assertFalse(
+            email_fits_business_context(
+                "info@restaurantmarketing.nl",
+                "daalderamsterdam.nl",
+                "official_site",
+                "Restaurant Daalder",
             )
         )
         self.assertTrue(

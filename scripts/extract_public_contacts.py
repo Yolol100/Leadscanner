@@ -281,12 +281,16 @@ def email_business_priority(email: str, official_domain: str | None, company_nam
         return 0
 
     normalized_email_domain = re.sub(r"[^a-z0-9]+", "", email_domain)
+    normalized_official_domain = re.sub(r"[^a-z0-9]+", "", official)
     company_tokens = [
         token
         for token in re.findall(r"[a-z0-9]+", _normalize_text(company_name))
         if len(token) >= 4
     ]
-    if any(token in normalized_email_domain for token in company_tokens):
+    if any(
+        token in normalized_email_domain and token in normalized_official_domain
+        for token in company_tokens
+    ):
         return 0
     if email_domain in PUBLIC_MAIL_DOMAINS:
         return 1
