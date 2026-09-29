@@ -35,8 +35,8 @@ def build_message(row: dict) -> tuple[str, EmailMessage]:
         raise RuntimeError("Only draft_ready or review_draft rows may enter mijn.host")
     if status == "draft_ready" and basis != "pass":
         raise RuntimeError("draft_ready requires contact_basis_status=pass")
-    if status == "review_draft" and basis == "pass":
-        raise RuntimeError("review_draft is reserved for contact-basis review")
+    if status == "review_draft" and basis != "review_required":
+        raise RuntimeError("review_draft requires contact_basis_status=review_required")
 
     email = normalize_text(row.get("email"))
     subject = normalize_text(row.get("subject"))
@@ -193,15 +193,17 @@ def create_drafts(batch: dict) -> dict:
     rows = [
         row
         for row in (batch.get("rows") or [])
-        if (
-            (row.get("status") == "draft_ready" and row.get("contact_basis_status") == "pass")
-            or (row.get("status") == "review_draft" and row.get("contact_basis_status") != "pass")
-        )
+        if row.get("status") in {"draft_ready", "review_draft"}
     ]
     if len(rows) > MAX_DRAFTS_PER_RUN:
         raise RuntimeError(f"At most {MAX_DRAFTS_PER_RUN} drafts may be created per run")
 
-    if not rows:
+    prepared: list[tuple[dict, str, EmailMessage]] = []
+    for row in rows:
+        lead_id, msg = build_message(row)
+        prepared.append((row, lead_id, msg))
+
+    if not prepared:
         return {
             "eligible_count": 0,
             "created_count": 0,
@@ -220,8 +222,7 @@ def create_drafts(batch: dict) -> dict:
         existing = 0
         replaced = 0
         items = []
-        for row in rows:
-            lead_id, msg = build_message(row)
+        for row, lead_id, msg in prepared:
             outcome = append_and_verify(client, folder, lead_id, msg)
             if outcome == "created":
                 created += 1

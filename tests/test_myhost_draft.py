@@ -85,6 +85,27 @@ class DraftTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             build_message(self.row(status="email_found_not_selected"))
 
+    def test_review_draft_requires_explicit_review_required_basis(self):
+        for basis in ("", "unverified", "unknown", "pass"):
+            with self.subTest(basis=basis):
+                with self.assertRaises(RuntimeError):
+                    build_message(self.row(status="review_draft", basis=basis))
+
+    def test_invalid_draft_ready_basis_is_not_silently_skipped(self):
+        with self.assertRaises(RuntimeError):
+            create_drafts({"rows": [self.row(status="draft_ready", basis="review_required")]})
+
+    def test_batch_is_fully_preflighted_before_first_imap_write(self):
+        client = FakeIMAP()
+        good = self.row()
+        bad = self.row(basis="unverified")
+        bad["lead_id"] = "growth-1123456789abcdefabcd"
+        bad["email"] = "other@voorbeeld.nl"
+        with patch("myhost_draft.connect_imap", return_value=client):
+            with self.assertRaises(RuntimeError):
+                create_drafts({"rows": [good, bad]})
+        self.assertEqual(client.messages, [])
+
     def test_zero_ready_rows_needs_no_mail_password(self):
         result = create_drafts({"rows": [{"status": "no_public_email"}]})
         self.assertEqual(result["eligible_count"], 0)
