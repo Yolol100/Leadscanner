@@ -35,18 +35,18 @@ class GrowthBatchTests(unittest.TestCase):
         self.assertEqual(row["subject"], "Idee voor Voorbeeld Fysiotherapie")
         self.assertEqual(row["copy_company_label"], "Voorbeeld Fysiotherapie")
         self.assertIn("Ik zag dat Voorbeeld Fysiotherapie zich richt op fysiotherapie", row["body"])
-        self.assertIn("jullie online aanpak sterker en duidelijker", row["body"])
+        self.assertIn("Met mijn Groeiabonnement kan ik helpen met", row["body"])
         self.assertNotIn("Op jullie website staat", row["body"])
         self.assertEqual(row["verified_observation_source_type"], "official_site")
         for value in (
-            "Website/webshop — verbeteren of vernieuwen",
-            "Vindbaarheid — beter zichtbaar in Google",
-            "Social content — passende content verzorgen",
-            "Automatisering — terugkerend werk slimmer inrichten",
-            "Hosting — beheer en onderhoud",
-            "Vast contact — rechtstreeks contact met mij",
-            "€250–€500 p/m",
-            "voorbeeld voor jullie homepage",
+            "Website/webshop — verbeteren of nieuw maken waar nodig",
+            "Zoekbaarheid — beter vindbaar worden",
+            "Social content — passende content maken",
+            "Automatisering — geschikte processen deels automatiseren",
+            "Hosting — beheren of overnemen waar passend",
+            "Ik als vast contactpersoon",
+            "€250–€500 per maand, afhankelijk van wat jullie nodig hebben",
+            "voorbeeld design maken voor Voorbeeld Fysiotherapie",
             "Groet,\nAndrew",
         ):
             self.assertIn(value, row["body"])
@@ -89,9 +89,9 @@ class GrowthBatchTests(unittest.TestCase):
         )["rows"][0]
         self.assertEqual(row["status"], "draft_ready")
         self.assertEqual(row["subject"], "An idea for Example Physiotherapy")
-        self.assertIn("I looked through Example Physiotherapy's website", row["body"])
-        self.assertIn("€250–€500/month", row["body"])
-        self.assertIn("no-obligation example for your homepage", row["body"])
+        self.assertIn("I saw that Example Physiotherapy focuses on physical therapy and rehabilitation", row["body"])
+        self.assertIn("€250–€500 per month, depending on what you need", row["body"])
+        self.assertIn("no-obligation example design for Example Physiotherapy", row["body"])
         self.assertNotIn("30%", row["body"])
 
     def test_missing_verified_observation_blocks_draft(self):
@@ -138,9 +138,30 @@ class GrowthBatchTests(unittest.TestCase):
             self.config(),
             draft_limit=1,
         )["rows"][0]
-        self.assertEqual(row["copy_subject_label"], "Kindergarden Voormalige Stadstimmertuin")
-        self.assertEqual(row["subject"], "Idee voor Kindergarden Voormalige Stadstimmertuin")
+        self.assertEqual(row["copy_subject_label"], "Kindergarden Voormalige Stadstimmertuin Amsterdam")
+        self.assertEqual(row["subject"], "Idee voor Kindergarden Voormalige Stadstimmertuin Amsterdam")
         self.assertNotIn("jullie online aanpak", row["subject"])
+
+    def test_subject_removes_decorative_emoji_and_avoids_dangling_connector(self):
+        self.assertEqual(subject_for_company("Piccola Italia 🇮🇹", "nl"), "Idee voor Piccola Italia")
+        self.assertEqual(subject_for_company("Bistro De Buik Van Parijs | Zwolle", "nl"), "Idee voor Bistro De Buik Van Parijs")
+        self.assertEqual(subject_for_company("Busch & van der Worp", "nl"), "Idee voor Busch & van der Worp")
+
+    def test_template_follows_growth_policy_order_and_single_offer(self):
+        row = prepare_batch({"candidates": [self.contact()]}, self.config())["rows"][0]
+        body = row["body"]
+        self.assertLess(body.index("• Website/webshop"), body.index("€250–€500 per maand"))
+        self.assertIn("• Ik als vast contactpersoon", body)
+        self.assertIn("voorbeeld design maken voor Voorbeeld Fysiotherapie", body)
+        self.assertNotIn("30%", body)
+        self.assertNotIn("meeting", body.casefold())
+
+    def test_weak_website_titles_are_not_quoted(self):
+        contact = self.contact()
+        contact["name_hint"] = "KU Kitchen & Bar"
+        contact["verified_observation"] = "🔒 Beveiligde Website"
+        row = prepare_batch({"candidates": [contact]}, self.config())["rows"][0]
+        self.assertNotIn("Beveiligde Website", row["body"])
 
 
 if __name__ == "__main__":

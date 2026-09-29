@@ -5,19 +5,31 @@ import csv
 import hashlib
 import json
 import re
+import unicodedata
 from pathlib import Path
 
 
 FOCUS_PATTERNS = (
-    ("fysiotherapie", "physical therapy", r"fysio|fysiotherapie|revalidatie|dry needling"),
-    ("fietsen en fietsservice", "bicycles and bike service", r"fiets|bike|tweewiel|giant store|rental & repair"),
-    ("bloemen en planten", "flowers and plants", r"bloem|flower|florist|boeket"),
-    ("auto-onderhoud en reparatie", "car maintenance and repair", r"garage|auto|automotive|apk|carservice|car center|car service|autoservice|werkplaats"),
-    ("tandzorg en mondzorg", "dental care", r"tand|dental|mondzorg|tandheel"),
+    ("fysiotherapie en revalidatie", "physical therapy and rehabilitation", r"fysio|fysiotherapie|revalidatie|dry needling|rugcentrum"),
+    ("fietsen en fietsservice", "bicycles and bike service", r"fiets|bike|tweewiel|giant store|rental & repair|fietsenwinkel"),
+    ("bloemen, planten en cadeaus", "flowers, plants and gifts", r"bloem|flower|florist|boeket|orchidee|tuincentrum"),
+    ("auto's en mobiliteit", "cars and mobility", r"garage|auto|automotive|apk|carservice|car center|car service|autoservice|werkplaats|dealer|bmw|mazda|toyota|renault|nissan|mitsubishi"),
+    ("tandzorg en mondzorg", "dental care", r"tand|dental|mondzorg|tandheel|orthodont"),
     ("optiek en oogzorg", "eyewear and eye care", r"optiek|opticien|bril|oog|eyewear|contactlen|optometr"),
     ("sieraden en juwelierswerk", "jewellery and jewellery services", r"juwel|sieraad|goud|diamant|edelsteen|goldsmith|goudsmid|jewelry|jeweler"),
-    ("kinderopvang", "childcare", r"kinderopvang|kinderdag|bso|day care|kinderfort|kindergarden|kinder"),
-    ("restaurant en gastvrijheid", "restaurant and hospitality", r"restaurant|à la carte|horeca"),
+    ("kinderopvang", "childcare", r"kinderopvang|kinderdag|bso|day care|kinderfort|kindergarden"),
+    ("restaurant en gastvrijheid", "restaurant and hospitality", r"restaurant|à la carte|horeca|bistro|brasserie|pannenkoek|sushi|pizza|grill|steak|lunchroom|eetcaf|eetkamer"),
+    ("koffie, lunch en horeca", "coffee, lunch and hospitality", r"café|cafe|coffee|koffie|barista"),
+    ("brood en banket", "bread and pastry", r"bakker|brood|banket|patisserie|bakery"),
+    ("slagerij en versproducten", "butchery and fresh food", r"slager|keurslager|butcher"),
+    ("haar en beauty", "hair and beauty", r"kapsalon|kapper|coiffure|hair|haarmode|hairstyl|beauty|schoonheid"),
+    ("dierenzorg", "animal care", r"dierenarts|dierenkliniek|veterin|kattenkliniek|paardenkliniek"),
+    ("sport en fitness", "sports and fitness", r"fitness|sportschool|sportcentrum|crossfit|gym|hockey|racket|pilates"),
+    ("mode en kleding", "fashion and clothing", r"mode|kleding|fashion|boutique|herenmode|schoenen|suit store"),
+    ("boeken, muziek en media", "books, music and media", r"boekhandel|bookstore|muziekhuis|music|plato|read shop"),
+    ("wonen en interieur", "home and interiors", r"interieur|woon|meubel|raamdecoratie|zonwering|vloerdecoratie"),
+    ("eten en delicatessen", "food and delicacies", r"delicatessen|wijn|wine|kaas|vis|food|toko|speciaalzaak"),
+    ("makelaardij en vastgoed", "real estate", r"makelaar|makelaardij|real estate|taxatie"),
 )
 
 
@@ -30,28 +42,55 @@ def stable_lead_id(email: str, website: str) -> str:
     return "growth-" + hashlib.sha256(seed.encode("utf-8")).hexdigest()[:20]
 
 
+TRAILING_CONNECTORS = {"&", "and", "en", "van", "der", "den", "de", "het", "ter", "ten", "e", "of"}
+
+
+def _strip_decorative_symbols(value: object) -> str:
+    chars = []
+    for ch in str(value or ""):
+        category = unicodedata.category(ch)
+        if category in {"So", "Cs"} or ch in {"\ufe0f", "\u200d"}:
+            continue
+        chars.append(ch)
+    return re.sub(r"\s+", " ", "".join(chars)).strip()
+
+
 def clean_company(value: object, language: str) -> str:
-    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    text = _strip_decorative_symbols(value)
     return text or ("your company" if language == "en" else "jullie bedrijf")
 
 
-def short_company_name(company: str) -> str:
-    text = re.sub(r"\s+", " ", str(company or "")).strip()
+def _base_company_name(company: str) -> str:
+    text = clean_company(company, "nl")
     for separator in (" – ", " - ", " | ", " / "):
         if separator in text:
             text = text.split(separator, 1)[0].strip()
             break
-    words = text.split()
-    if len(words) > 4:
-        text = " ".join(words[:4])
     return text
 
 
+def _trim_dangling_connectors(words: list[str]) -> list[str]:
+    trimmed = list(words)
+    while len(trimmed) > 1 and trimmed[-1].casefold().strip(".,") in TRAILING_CONNECTORS:
+        trimmed.pop()
+    return trimmed
+
+
+def short_company_name(company: str) -> str:
+    words = _base_company_name(company).split()
+    if len(words) > 6:
+        words = _trim_dangling_connectors(words[:6])
+    return " ".join(words)
+
+
 def subject_label_for_company(company: str, language: str) -> str:
-    words = short_company_name(company).split()
+    words = _base_company_name(company).split()
     prefix = "An idea for " if language == "en" else "Idee voor "
-    while len(words) > 1 and (len(prefix + " ".join(words)) > 56 or len((prefix + " ".join(words)).split()) > 7):
-        words.pop()
+    max_label_words = 8 - len(prefix.split())
+    if len(words) > max_label_words:
+        words = _trim_dangling_connectors(words[:max_label_words])
+    while len(words) > 1 and len(prefix + " ".join(words)) > 64:
+        words = _trim_dangling_connectors(words[:-1])
     return " ".join(words) or ("your company" if language == "en" else "jullie bedrijf")
 
 
@@ -81,7 +120,9 @@ def observation_is_low_signal(company: str, observation: str) -> bool:
         return True
     if re.match(r"^(home|homepage|welkom|welcome)\b", low):
         return True
-    if low in {"gelieve te wachten", "mysite", "wij zijn verhuisd..", "wij zijn verhuisd"}:
+    if low in {"gelieve te wachten", "mysite", "wij zijn verhuisd..", "wij zijn verhuisd", "wie zijn wij?", "wie zijn wij", "🔒 beveiligde website", "beveiligde website", "staff member carousel"}:
+        return True
+    if re.search(r"reserved domain|under construction|coming soon|domainorder|geparkeerd|crypto casino|bitcoin casino|tempat main|window \d+|without code", low):
         return True
     company_words = _word_set(company)
     observation_words = _word_set(text)
@@ -94,8 +135,10 @@ def observation_is_low_signal(company: str, observation: str) -> bool:
 
 def build_opening(company: str, language: str, observation: str) -> str:
     company_label = short_company_name(company)
-    focus = infer_focus_from_observation(observation, language)
     low_signal = observation_is_low_signal(company, observation)
+    focus = infer_focus_from_observation(observation, language)
+    if focus is None and low_signal:
+        focus = infer_focus_from_observation(company_label, language)
     if language == "en":
         if focus:
             return (
@@ -103,44 +146,34 @@ def build_opening(company: str, language: str, observation: str) -> str:
                 "I have an idea to make your online presence clearer and stronger."
             )
         if not low_signal:
-            return (
-                f"I looked through {company_label}'s website and noticed “{observation}”. "
-                "I have an idea to make your online presence clearer and stronger."
-            )
-        return (
-            f"I looked through {company_label}'s website. "
-            "I have an idea to make your online presence clearer and stronger."
-        )
+            return f'I saw on your website: “{observation}”.'
+        return f"I looked through {company_label}'s website."
     if focus:
         return (
             f"Ik zag dat {company_label} zich richt op {focus}. "
             "Ik heb een idee om jullie online aanpak sterker en duidelijker te maken."
         )
     if not low_signal:
-        return (
-            f"Ik heb de website van {company_label} bekeken en zag “{observation}”. "
-            "Ik heb een idee om jullie online aanpak sterker en duidelijker te maken."
-        )
-    return (
-        f"Ik heb de website van {company_label} bekeken. "
-        "Ik heb een idee om jullie online aanpak sterker en duidelijker te maken."
-    )
+        return f'Op jullie website zag ik “{observation}”.'
+    return f"Ik heb de website van {company_label} bekeken."
 
 
 def build_template(company: str, language: str, observation: str, *, price_min: int, price_max: int) -> str:
+    company_label = short_company_name(company)
     opening = build_opening(company, language, observation)
     if language == "en":
         return (
             "Hello,\n\n"
             f"{opening}\n\n"
-            f"With my Growth Subscription (€{price_min}–€{price_max}/month), I help with:\n\n"
-            "• Website/webshop — improve or renew\n"
-            "• Search visibility — become more visible in Google\n"
+            "With my Growth Subscription, I can help with:\n\n"
+            "• Website/webshop — improve or build new where needed\n"
+            "• Search visibility — improve findability\n"
             "• Social content — create relevant content\n"
-            "• Automation — streamline recurring work\n"
-            "• Hosting — management and maintenance\n"
-            "• Fixed contact — direct contact with me\n\n"
-            "Would you like me to make a no-obligation example for your homepage? "
+            "• Automation — partially automate suitable processes\n"
+            "• Hosting — manage or take over where appropriate\n"
+            "• Me as your fixed point of contact\n\n"
+            f"€{price_min}–€{price_max} per month, depending on what you need.\n\n"
+            f"Would you like me to make a no-obligation example design for {company_label}? "
             "Then you can first see whether the direction fits.\n\n"
             "Not interested? Just let me know.\n\n"
             "Regards,\nAndrew"
@@ -148,15 +181,16 @@ def build_template(company: str, language: str, observation: str, *, price_min: 
     return (
         "Goedendag,\n\n"
         f"{opening}\n\n"
-        f"Met mijn Groeiabonnement (€{price_min}–€{price_max} p/m) help ik met:\n\n"
-        "• Website/webshop — verbeteren of vernieuwen\n"
-        "• Vindbaarheid — beter zichtbaar in Google\n"
-        "• Social content — passende content verzorgen\n"
-        "• Automatisering — terugkerend werk slimmer inrichten\n"
-        "• Hosting — beheer en onderhoud\n"
-        "• Vast contact — rechtstreeks contact met mij\n\n"
-        "Zal ik vrijblijvend een voorbeeld voor jullie homepage maken? "
-        "Dan kunnen jullie eerst zien of de richting past.\n\n"
+        "Met mijn Groeiabonnement kan ik helpen met:\n\n"
+        "• Website/webshop — verbeteren of nieuw maken waar nodig\n"
+        "• Zoekbaarheid — beter vindbaar worden\n"
+        "• Social content — passende content maken\n"
+        "• Automatisering — geschikte processen deels automatiseren\n"
+        "• Hosting — beheren of overnemen waar passend\n"
+        "• Ik als vast contactpersoon\n\n"
+        f"€{price_min}–€{price_max} per maand, afhankelijk van wat jullie nodig hebben.\n\n"
+        f"Zal ik vrijblijvend een voorbeeld design maken voor {company_label}? "
+        "Dan kunnen jullie eerst bekijken of de richting past.\n\n"
         "Geen interesse? Laat het gerust weten.\n\n"
         "Groet,\nAndrew"
     )
