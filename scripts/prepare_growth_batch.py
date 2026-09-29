@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 FOCUS_PATTERNS = (
-    ("fysiotherapie en revalidatie", "physical therapy and rehabilitation", r"fysio|fysiotherapie|revalidatie|dry needling|rugcentrum"),
+    ("fysiotherapie en revalidatie", "physical therapy and rehabilitation", r"fysio|fysiotherapie|revalidatie|physical therapy|rehabilitation|dry needling|rugcentrum"),
     ("fietsen en fietsservice", "bicycles and bike service", r"fiets|bike|tweewiel|giant store|rental & repair|fietsenwinkel"),
     ("bloemen, planten en cadeaus", "flowers, plants and gifts", r"bloem|flower|florist|boeket|orchidee|tuincentrum"),
     ("auto's en mobiliteit", "cars and mobility", r"garage|auto|automotive|apk|carservice|car center|car service|autoservice|werkplaats|dealer|bmw|mazda|toyota|renault|nissan|mitsubishi"),
