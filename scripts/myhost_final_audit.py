@@ -90,12 +90,18 @@ def audit_rows(
         ("lead_id", "lead_id"),
         ("email", "email"),
         ("domain", "official_domain_hint"),
-        ("company", "company"),
     ):
         values = [norm(row.get(key)) for row in rows]
         duplicates = [value for value, count in Counter(values).items() if value and count > 1]
         if duplicates:
             failures.append(f"duplicate_{label}: {duplicates[:10]}")
+
+    company_counts = Counter(norm(row.get("company")) for row in rows)
+    company_name_collisions = {
+        value: count
+        for value, count in company_counts.items()
+        if value and count > 1
+    }
 
     language_split = Counter()
     email_source_types = Counter()
@@ -250,6 +256,8 @@ def audit_rows(
         "unique_emails": len({norm(row.get("email")) for row in rows}),
         "unique_domains": len({norm(row.get("official_domain_hint")) for row in rows}),
         "unique_companies": len({norm(row.get("company")) for row in rows}),
+        "company_name_collision_groups": len(company_name_collisions),
+        "company_name_collision_rows": sum(company_name_collisions.values()),
         "language_split": dict(language_split),
         "email_source_types": dict(email_source_types),
         "excluded_lead_ids": sorted(excluded),

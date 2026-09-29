@@ -154,9 +154,12 @@ jobs:
           requested = int(report.get("requested_total") or 0)
           if requested <= 0:
               raise SystemExit("final total must be positive")
-          for key in ("artifact_rows", "unique_lead_ids", "unique_emails", "unique_domains", "unique_companies"):
+          for key in ("artifact_rows", "unique_lead_ids", "unique_emails", "unique_domains"):
               if report.get(key) != requested:
                   raise SystemExit(f"{key} does not equal canonical total")
+          unique_companies = int(report.get("unique_companies") or 0)
+          if not 1 <= unique_companies <= requested:
+              raise SystemExit("unique_companies is outside the valid range")
           if report.get("final_set_current_expected") != requested:
               raise SystemExit("mailbox expected total mismatch")
           if report.get("final_set_current_exact_matches") != requested:

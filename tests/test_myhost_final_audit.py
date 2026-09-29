@@ -51,22 +51,43 @@ class FinalAuditTests(unittest.TestCase):
             "body": body,
         }
 
-    def test_duplicate_company_is_a_failure(self):
+    def test_shared_brand_name_is_allowed_when_domain_email_and_lead_are_unique(self):
         base = self.row("Voorbeeld BV", "a@example.nl", "a.nl", "growth-0123456789abcdefabcd")
         other = self.row("Voorbeeld BV", "b@example.nl", "b.nl", "growth-1123456789abcdefabcd")
-        batch1 = {"rows": [base] * 75, "safety": {"automatic_send": False}}
-        batch2 = {"rows": [other] * 75, "safety": {"automatic_send": False}}
-        report = {
-            "eligible_count": 75,
-            "created_count": 75,
-            "existing_count": 0,
-            "replaced_count": 0,
-            "review_required_count": 75,
-            "smtp_send": "not_available",
-            "items": [],
-        }
-        _, failures, _ = audit_rows([batch1, batch2], [report, report], self.config())
-        self.assertTrue(any("duplicate_company" in failure for failure in failures))
+        batch1 = {"rows": [base], "safety": {"automatic_send": False}}
+        batch2 = {"rows": [other], "safety": {"automatic_send": False}}
+
+        def report(row):
+            return {
+                "eligible_count": 1,
+                "created_count": 1,
+                "existing_count": 0,
+                "replaced_count": 0,
+                "review_required_count": 1,
+                "smtp_send": "not_available",
+                "items": [
+                    {
+                        "lead_id": row["lead_id"],
+                        "to": row["email"],
+                        "subject": row["subject"],
+                        "body": row["body"],
+                        "review_status": "contact-basis",
+                        "outcome": "created",
+                    }
+                ],
+            }
+
+        _, failures, metrics = audit_rows(
+            [batch1, batch2], [report(base), report(other)], self.config()
+        )
+        self.assertFalse(any("duplicate_company" in failure for failure in failures))
+        self.assertFalse(any("duplicate_domain" in failure for failure in failures))
+        self.assertFalse(any("duplicate_email" in failure for failure in failures))
+        self.assertFalse(any("duplicate_lead_id" in failure for failure in failures))
+        self.assertEqual(metrics["requested_total"], 2)
+        self.assertEqual(metrics["unique_companies"], 1)
+        self.assertEqual(metrics["company_name_collision_groups"], 1)
+        self.assertEqual(metrics["company_name_collision_rows"], 2)
 
     def test_mixed_batch_sizes_use_report_eligible_counts(self):
         report100 = {
