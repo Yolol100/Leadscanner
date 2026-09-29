@@ -36,14 +36,14 @@ class GrowthBatchTests(unittest.TestCase):
         self.assertEqual(row["subject"], "Idee voor Voorbeeld Fysiotherapie")
         self.assertEqual(row["copy_company_label"], "Voorbeeld Fysiotherapie")
         self.assertIn("Ik zag dat Voorbeeld Fysiotherapie zich richt op fysiotherapie", row["body"])
-        self.assertIn("Met mijn Groeiabonnement kan ik helpen met", row["body"])
+        self.assertIn("Met mijn Groeiabonnement help ik met", row["body"])
         self.assertNotIn("Op jullie website staat", row["body"])
         self.assertEqual(row["verified_observation_source_type"], "official_site")
         for value in (
             "Website/webshop — verbeteren of nieuw maken waar nodig",
             "Zoekbaarheid — beter vindbaar worden",
-            "Social content — passende content maken",
-            "Automatisering — geschikte processen deels automatiseren",
+            "Social content — passende content",
+            "Automatisering — geschikte processen deels automatiseren waar haalbaar",
             "Hosting — beheren of overnemen waar passend",
             "Ik als vast contactpersoon",
             "€250–€500 per maand, afhankelijk van wat jullie nodig hebben",
@@ -126,7 +126,8 @@ class GrowthBatchTests(unittest.TestCase):
         for language in ("nl", "en"):
             row = prepare_batch({"candidates": [self.contact(language=language)]}, self.config())["rows"][0]
             self.assertLessEqual(len(row["body"].split()), 150)
-            self.assertLessEqual(len(row["subject"].split()), 7)
+            self.assertLessEqual(len(row["subject"].split()), 6)
+            self.assertLessEqual(len(row["body"].split()), 115)
 
     def test_long_company_uses_personal_short_label(self):
         self.assertEqual(
@@ -161,8 +162,8 @@ class GrowthBatchTests(unittest.TestCase):
 
     def test_subject_removes_decorative_emoji_and_avoids_dangling_connector(self):
         self.assertEqual(subject_for_company("Piccola Italia 🇮🇹", "nl"), "Idee voor Piccola Italia")
-        self.assertEqual(subject_for_company("Bistro De Buik Van Parijs | Zwolle", "nl"), "Idee voor Bistro De Buik Van Parijs")
-        self.assertEqual(subject_for_company("Busch & van der Worp", "nl"), "Idee voor Busch & van der Worp")
+        self.assertEqual(subject_for_company("Bistro De Buik Van Parijs | Zwolle", "nl"), "Idee voor Bistro De Buik Van")
+        self.assertEqual(subject_for_company("Busch & van der Worp", "nl"), "Idee voor Busch")
 
     def test_template_follows_growth_policy_order_and_single_offer(self):
         row = prepare_batch({"candidates": [self.contact()]}, self.config())["rows"][0]
@@ -170,6 +171,7 @@ class GrowthBatchTests(unittest.TestCase):
         self.assertLess(body.index("• Website/webshop"), body.index("€250–€500 per maand"))
         self.assertIn("• Ik als vast contactpersoon", body)
         self.assertIn("voorbeeld design maken voor Voorbeeld Fysiotherapie", body)
+        self.assertIn("richting interessant is", body)
         self.assertNotIn("30%", body)
         self.assertNotIn("meeting", body.casefold())
 

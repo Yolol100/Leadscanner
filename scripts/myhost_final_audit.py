@@ -161,10 +161,12 @@ def audit_rows(
         if language == "nl":
             if body.count("Zal ik vrijblijvend een voorbeeld design maken voor ") != 1:
                 failures.append(f"{lead_id}: NL CTA count mismatch")
+            if "Dan kunnen jullie eerst bekijken of de richting interessant is." not in body:
+                failures.append(f"{lead_id}: NL CTA wording mismatch")
             for value in (
                 "Website/webshop — verbeteren of nieuw maken waar nodig",
                 "Zoekbaarheid — beter vindbaar worden",
-                "Automatisering — geschikte processen deels automatiseren",
+                "Automatisering — geschikte processen deels automatiseren waar haalbaar",
                 "Hosting — beheren of overnemen waar passend",
                 "Ik als vast contactpersoon",
             ):
@@ -177,10 +179,12 @@ def audit_rows(
         elif language == "en":
             if body.count("Would you like me to make a no-obligation example design for ") != 1:
                 failures.append(f"{lead_id}: EN CTA count mismatch")
+            if "so you can first see whether the direction is relevant?" not in body:
+                failures.append(f"{lead_id}: EN CTA wording mismatch")
             for value in (
                 "Website/webshop — improve or build new where needed",
                 "Search visibility — improve findability",
-                "Automation — partially automate suitable processes",
+                "Automation — partially automate suitable processes where feasible",
                 "Hosting — manage or take over where appropriate",
                 "Me as your fixed point of contact",
             ):

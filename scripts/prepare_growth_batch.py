@@ -136,7 +136,7 @@ def short_company_name(company: str) -> str:
 def subject_label_for_company(company: str, language: str) -> str:
     words = _base_company_name(company).split()
     prefix = "An idea for " if language == "en" else "Idee voor "
-    max_label_words = 8 - len(prefix.split())
+    max_label_words = 6 - len(prefix.split())
     if len(words) > max_label_words:
         words = words[:max_label_words]
     words = _trim_dangling_connectors(words)
@@ -207,7 +207,7 @@ def build_opening(
         if focus:
             return (
                 f"I saw that {company_label} focuses on {focus}. "
-                "I have an idea to make your online presence clearer and stronger."
+                "I can support that online."
             )
         if not low_signal:
             return f'I saw on your website: “{observation}”.'
@@ -215,7 +215,7 @@ def build_opening(
     if focus:
         return (
             f"Ik zag dat {company_label} zich richt op {focus}. "
-            "Ik heb een idee om jullie online aanpak sterker en duidelijker te maken."
+            "Daar kan ik jullie online bij ondersteunen."
         )
     if not low_signal:
         return f'Op jullie website zag ik “{observation}”.'
@@ -237,32 +237,32 @@ def build_template(
         return (
             "Hello,\n\n"
             f"{opening}\n\n"
-            "With my Growth Subscription, I can help with:\n\n"
+            "With my Growth Subscription I help with:\n\n"
             "• Website/webshop — improve or build new where needed\n"
             "• Search visibility — improve findability\n"
-            "• Social content — create relevant content\n"
-            "• Automation — partially automate suitable processes\n"
+            "• Social content — relevant content\n"
+            "• Automation — partially automate suitable processes where feasible\n"
             "• Hosting — manage or take over where appropriate\n"
             "• Me as your fixed point of contact\n\n"
             f"€{price_min}–€{price_max} per month, depending on what you need.\n\n"
-            f"Would you like me to make a no-obligation example design for {company_label}? "
-            "Then you can first see whether the direction fits.\n\n"
+            f"Would you like me to make a no-obligation example design for {company_label}, "
+            "so you can first see whether the direction is relevant?\n\n"
             "Not interested? Just let me know.\n\n"
             "Regards,\nAndrew"
         )
     return (
         "Goedendag,\n\n"
         f"{opening}\n\n"
-        "Met mijn Groeiabonnement kan ik helpen met:\n\n"
+        "Met mijn Groeiabonnement help ik met:\n\n"
         "• Website/webshop — verbeteren of nieuw maken waar nodig\n"
         "• Zoekbaarheid — beter vindbaar worden\n"
-        "• Social content — passende content maken\n"
-        "• Automatisering — geschikte processen deels automatiseren\n"
+        "• Social content — passende content\n"
+        "• Automatisering — geschikte processen deels automatiseren waar haalbaar\n"
         "• Hosting — beheren of overnemen waar passend\n"
         "• Ik als vast contactpersoon\n\n"
         f"€{price_min}–€{price_max} per maand, afhankelijk van wat jullie nodig hebben.\n\n"
         f"Zal ik vrijblijvend een voorbeeld design maken voor {company_label}? "
-        "Dan kunnen jullie eerst bekijken of de richting past.\n\n"
+        "Dan kunnen jullie eerst bekijken of de richting interessant is.\n\n"
         "Geen interesse? Laat het gerust weten.\n\n"
         "Groet,\nAndrew"
     )
