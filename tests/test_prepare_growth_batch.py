@@ -160,6 +160,25 @@ class GrowthBatchTests(unittest.TestCase):
             "Idee voor Steakhouse The Longhorn Rib",
         )
 
+    def test_body_company_label_never_ends_in_connector(self):
+        contact = self.contact()
+        contact["name_hint"] = "Steakhouse The Longhorn Rib and"
+        contact["category_hint"] = "restaurant"
+        contact["verified_observation"] = "Welkom bij The Longhorn"
+        row = prepare_batch({"candidates": [contact]}, self.config(), draft_limit=1)["rows"][0]
+        self.assertEqual(row["copy_company_label"], "Steakhouse The Longhorn Rib")
+        self.assertIn("voorbeeld design maken voor Steakhouse The Longhorn Rib?", row["body"])
+        self.assertNotIn("Rib and?", row["body"])
+
+    def test_camping_name_beats_broad_restaurant_category_for_low_signal_title(self):
+        contact = self.contact()
+        contact["name_hint"] = "Camping Ganspoort"
+        contact["category_hint"] = "restaurant"
+        contact["verified_observation"] = "Welkom op de Camping!"
+        row = prepare_batch({"candidates": [contact]}, self.config(), draft_limit=1)["rows"][0]
+        self.assertIn("zich richt op camping en recreatie", row["body"])
+        self.assertNotIn("restaurant en gastvrijheid", row["body"])
+
     def test_subject_removes_decorative_emoji_and_avoids_dangling_connector(self):
         self.assertEqual(subject_for_company("Piccola Italia 🇮🇹", "nl"), "Idee voor Piccola Italia")
         self.assertEqual(subject_for_company("Bistro De Buik Van Parijs | Zwolle", "nl"), "Idee voor Bistro De Buik")

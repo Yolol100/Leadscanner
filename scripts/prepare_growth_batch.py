@@ -30,6 +30,10 @@ FOCUS_PATTERNS = (
     ("wonen en interieur", "home and interiors", r"interieur|woon|meubel|raamdecoratie|zonwering|vloerdecoratie"),
     ("eten en delicatessen", "food and delicacies", r"delicatessen|wijn|wine|kaas|vis|food|toko|speciaalzaak"),
     ("makelaardij en vastgoed", "real estate", r"makelaar|makelaardij|real estate|taxatie"),
+    ("camping en recreatie", "camping and recreation", r"camping|kampeer|camper|caravan"),
+    ("winkelen en retail", "shopping and retail", r"winkelcentrum|shopping mall"),
+    ("tweedehands en hergebruik", "second-hand and reuse", r"kringloop|tweedehands"),
+    ("apotheekzorg en gezondheid", "pharmacy and health", r"apotheek|pharmacy"),
 )
 
 
@@ -129,7 +133,8 @@ def _trim_dangling_connectors(words: list[str]) -> list[str]:
 def short_company_name(company: str) -> str:
     words = _base_company_name(company).split()
     if len(words) > 6:
-        words = _trim_dangling_connectors(words[:6])
+        words = words[:6]
+    words = _trim_dangling_connectors(words)
     return " ".join(words)
 
 
