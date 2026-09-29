@@ -12,6 +12,7 @@ from extract_public_contacts import (
     extract_verified_observation,
     email_business_priority,
     email_fits_business_context,
+    fetch_html,
     inspect_candidate,
     valid_email,
 )
@@ -159,6 +160,131 @@ class PublicContactDiscoveryTests(unittest.TestCase):
         self.assertEqual(result["verified_observation"], "Ambachtelijke bakkerij voor Den Haag")
         self.assertEqual(result["verified_observation_source_type"], "official_site")
         self.assertEqual(result["verified_observation_source_url"], "https://example.nl/")
+
+    def test_official_site_email_must_fit_business_context(self):
+        self.assertFalse(
+            email_fits_business_context(
+                "credit@webagency.nl",
+                "prospect.nl",
+                "official_site",
+                "Prospect BV",
+            )
+        )
+        self.assertTrue(
+            email_fits_business_context(
+                "info@intersportroden.nl",
+                "intersport.nl",
+                "official_site",
+                "Intersport Superstore Roden",
+            )
+        )
+
+    def test_official_site_provider_credit_is_not_selected_as_prospect_contact(self):
+        class ProviderResponse:
+            status_code = 200
+            url = "https://prospect.nl/"
+            encoding = "utf-8"
+            headers = {"content-type": "text/html"}
+
+            def iter_content(self, chunk_size=65536, decode_unicode=False):
+                yield (
+                    b'<html lang="nl"><body><h1>Prospect zakelijke dienstverlening</h1>'
+                    b'<a href="mailto:credit@webagency.nl">Website partner</a></body></html>'
+                )
+
+            def close(self):
+                pass
+
+        class ProviderSession:
+            def get(self, *args, **kwargs):
+                self.allow_redirects = kwargs.get("allow_redirects")
+                return ProviderResponse()
+
+        session = ProviderSession()
+        candidate = {
+            "name_hint": "Prospect BV",
+            "website_hint": "https://prospect.nl/",
+            "category_hint": "zakelijke dienstverlening",
+        }
+        with patch("extract_public_contacts.is_public_http_url", return_value=True):
+            result = inspect_candidate(candidate, session_factory=lambda: session)
+        self.assertEqual(result["public_business_emails"], [])
+        self.assertEqual(result["contact_basis_status"], "unverified")
+        self.assertFalse(session.allow_redirects)
+
+    def test_private_redirect_target_is_rejected_before_second_request(self):
+        class RedirectResponse:
+            status_code = 302
+            url = "https://example.nl/"
+            encoding = "utf-8"
+            headers = {"content-type": "text/html", "location": "http://127.0.0.1/admin"}
+
+            def close(self):
+                pass
+
+        class RedirectSession:
+            def __init__(self):
+                self.calls = []
+
+            def get(self, url, **kwargs):
+                self.calls.append((url, kwargs.get("allow_redirects")))
+                return RedirectResponse()
+
+        session = RedirectSession()
+        with patch(
+            "extract_public_contacts.is_public_http_url",
+            side_effect=lambda value: "127.0.0.1" not in str(value),
+        ):
+            body, final_url, status = fetch_html(session, "https://example.nl/")
+        self.assertIsNone(body)
+        self.assertEqual(final_url, "http://127.0.0.1/admin")
+        self.assertEqual(status, 302)
+        self.assertEqual(session.calls, [("https://example.nl/", False)])
+
+    def test_same_domain_redirect_is_followed_manually(self):
+        class RedirectResponse:
+            encoding = "utf-8"
+
+            def __init__(self, status_code, url, headers, body=b""):
+                self.status_code = status_code
+                self.url = url
+                self.headers = headers
+                self.body = body
+
+            def iter_content(self, chunk_size=65536, decode_unicode=False):
+                if self.body:
+                    yield self.body
+
+            def close(self):
+                pass
+
+        class RedirectSession:
+            def __init__(self):
+                self.calls = []
+                self.responses = [
+                    RedirectResponse(302, "https://example.nl/", {"location": "/contact"}),
+                    RedirectResponse(
+                        200,
+                        "https://example.nl/contact",
+                        {"content-type": "text/html"},
+                        b"<html><body>Contact</body></html>",
+                    ),
+                ]
+
+            def get(self, url, **kwargs):
+                self.calls.append((url, kwargs.get("allow_redirects")))
+                return self.responses.pop(0)
+
+        session = RedirectSession()
+        with patch("extract_public_contacts.is_public_http_url", return_value=True):
+            body, final_url, status = fetch_html(session, "https://example.nl/")
+        self.assertEqual(body, "<html><body>Contact</body></html>")
+        self.assertEqual(final_url, "https://example.nl/contact")
+        self.assertEqual(status, 200)
+        self.assertEqual(
+            session.calls,
+            [("https://example.nl/", False), ("https://example.nl/contact", False)],
+        )
 
     def test_contact_discovery_is_bounded_to_100_candidates(self):
         with self.assertRaises(ValueError):

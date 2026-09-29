@@ -19,6 +19,7 @@ MAX_CANDIDATES_PER_RUN = 100
 MAX_PAGES_PER_SITE = 3
 MAX_BYTES_PER_PAGE = 1_000_000
 DEFAULT_TIMEOUT = 12
+MAX_REDIRECTS = 5
 
 EMAIL_RE = re.compile(r"(?<![A-Z0-9._%+-])([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,63})(?![A-Z0-9._%+-])", re.I)
 CONTACT_HINT_RE = re.compile(
@@ -253,16 +254,24 @@ def valid_email(value: str) -> bool:
     return True
 
 
-def email_fits_business_context(email: str, official_domain: str | None, source_type: str) -> bool:
+def email_fits_business_context(
+    email: str,
+    official_domain: str | None,
+    source_type: str,
+    company_name: str | None = None,
+) -> bool:
     if not valid_email(email):
         return False
     email_domain = email.rsplit("@", 1)[1].casefold().rstrip(".")
     official = str(official_domain or "").casefold().rstrip(".")
-    if source_type == "official_site":
-        return True
+    _ = source_type
     if official and (email_domain == official or email_domain.endswith("." + official)):
         return True
-    return email_domain in PUBLIC_MAIL_DOMAINS
+    if email_domain in PUBLIC_MAIL_DOMAINS:
+        return True
+    if company_name and email_business_priority(email, official_domain, company_name) == 0:
+        return True
+    return False
 
 
 def email_business_priority(email: str, official_domain: str | None, company_name: str | None) -> int:
@@ -362,38 +371,61 @@ def discover_contact_links(html: str, base_url: str, official_domain: str) -> li
 def fetch_html(session, url: str, *, timeout: int = DEFAULT_TIMEOUT) -> tuple[str | None, str | None, int | None]:
     if not is_public_http_url(url):
         return None, None, None
-    try:
-        response = session.get(
-            url,
-            timeout=timeout,
-            allow_redirects=True,
-            headers={"User-Agent": "WebactueelLeadContactDiscovery/1.0 (+https://andrewbaeten.nl)"},
-            stream=True,
-        )
-    except requests.RequestException:
-        return None, None, None
 
-    try:
-        status = int(response.status_code)
-        final_url = str(response.url or "").strip()
-        if not is_public_http_url(final_url):
-            return None, final_url or None, status
-        content_type = str(response.headers.get("content-type") or "").lower()
-        if not (200 <= status < 400) or "text/html" not in content_type:
-            return None, final_url or None, status
-        chunks = []
-        total = 0
-        for chunk in response.iter_content(chunk_size=65536, decode_unicode=False):
-            if not chunk:
+    current_url = url
+    original_domain = normalize_domain(url)
+    last_status: int | None = None
+    for _ in range(MAX_REDIRECTS + 1):
+        if not is_public_http_url(current_url):
+            return None, current_url or None, last_status
+        try:
+            response = session.get(
+                current_url,
+                timeout=timeout,
+                allow_redirects=False,
+                headers={"User-Agent": "WebactueelLeadContactDiscovery/1.0 (+https://andrewbaeten.nl)"},
+                stream=True,
+            )
+        except requests.RequestException:
+            return None, current_url or None, last_status
+
+        try:
+            status = int(response.status_code)
+            last_status = status
+            response_url = str(response.url or current_url).strip()
+            if not is_public_http_url(response_url):
+                return None, response_url or current_url, status
+
+            if status in {301, 302, 303, 307, 308}:
+                location = str((response.headers or {}).get("location") or "").strip()
+                if not location:
+                    return None, response_url or current_url, status
+                next_url = urljoin(response_url or current_url, location)
+                if not is_public_http_url(next_url):
+                    return None, next_url, status
+                if original_domain and normalize_domain(next_url) != original_domain:
+                    return None, next_url, status
+                current_url = next_url
                 continue
-            total += len(chunk)
-            if total > MAX_BYTES_PER_PAGE:
-                break
-            chunks.append(chunk)
-        body = b"".join(chunks).decode(response.encoding or "utf-8", errors="replace")
-        return body, final_url or url, status
-    finally:
-        response.close()
+
+            content_type = str((response.headers or {}).get("content-type") or "").lower()
+            if not (200 <= status < 400) or "text/html" not in content_type:
+                return None, response_url or current_url, status
+            chunks = []
+            total = 0
+            for chunk in response.iter_content(chunk_size=65536, decode_unicode=False):
+                if not chunk:
+                    continue
+                total += len(chunk)
+                if total > MAX_BYTES_PER_PAGE:
+                    break
+                chunks.append(chunk)
+            body = b"".join(chunks).decode(response.encoding or "utf-8", errors="replace")
+            return body, response_url or current_url, status
+        finally:
+            response.close()
+
+    return None, current_url or None, last_status
 
 
 def purpose_hint(url: str, html: str) -> str:
@@ -491,7 +523,12 @@ def inspect_candidate(candidate: dict, *, session_factory=requests.Session) -> d
         if page_emails:
             hints.append(purpose_hint(page_url, page_html))
         for email in page_emails:
-            if not email_fits_business_context(email, domain, "official_site"):
+            if not email_fits_business_context(
+                email,
+                domain,
+                "official_site",
+                str(candidate.get("name_hint") or ""),
+            ):
                 continue
             if email not in emails:
                 emails.append(email)
@@ -523,7 +560,12 @@ def inspect_candidate(candidate: dict, *, session_factory=requests.Session) -> d
                 continue
             email = str(item.get("email") or "").strip().lower().strip(".,;:()[]<>")
             source = str(item.get("source") or "discovery").strip() or "discovery"
-            if not email_fits_business_context(email, domain, source) or email in emails:
+            if not email_fits_business_context(
+                email,
+                domain,
+                source,
+                str(candidate.get("name_hint") or ""),
+            ) or email in emails:
                 continue
             emails.append(email)
             source_types.append(source)
