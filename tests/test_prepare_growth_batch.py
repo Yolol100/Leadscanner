@@ -162,7 +162,7 @@ class GrowthBatchTests(unittest.TestCase):
 
     def test_subject_removes_decorative_emoji_and_avoids_dangling_connector(self):
         self.assertEqual(subject_for_company("Piccola Italia 🇮🇹", "nl"), "Idee voor Piccola Italia")
-        self.assertEqual(subject_for_company("Bistro De Buik Van Parijs | Zwolle", "nl"), "Idee voor Bistro De Buik Van")
+        self.assertEqual(subject_for_company("Bistro De Buik Van Parijs | Zwolle", "nl"), "Idee voor Bistro De Buik")
         self.assertEqual(subject_for_company("Busch & van der Worp", "nl"), "Idee voor Busch")
 
     def test_template_follows_growth_policy_order_and_single_offer(self):
