@@ -68,6 +68,7 @@ class GrowthBatchTests(unittest.TestCase):
     def test_percentage_observation_is_not_quoted_into_first_touch(self):
         contact = self.contact()
         contact["name_hint"] = "Acme BV"
+        contact["category_hint"] = None
         contact["verified_observation"] = "Nu tot 30% voordeel op geselecteerde producten"
         row = prepare_batch({"candidates": [contact]}, self.config(), draft_limit=1)["rows"][0]
         self.assertNotIn("%", row["body"])
