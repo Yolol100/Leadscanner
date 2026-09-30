@@ -86,8 +86,10 @@ jobs:
           from collections import Counter
           from pathlib import Path
           from prepare_growth_batch import (
+              build_opening,
               build_template,
               clean_company,
+              observation_is_low_signal,
               short_company_name,
               stable_lead_id,
               subject_for_company,
@@ -129,6 +131,52 @@ jobs:
               "growth-a40dbd990fd6614309a6",
           }
           observation_overrides = {
+              "growth-78f54d9aa278297c0350": {
+                  "observation": "Bij Hoogenboom kun je nieuwe auto's en occasions kopen, leasen of huren.",
+                  "source_url": "https://www.autohoogenboom.nl/",
+                  "source_type": "official_site",
+              },
+              "growth-fdd74d151ebc5eea8ba4": {
+                  "observation": "Restaurant De Orchidee in Eindhoven serveert Aziatische gerechten.",
+                  "source_url": "https://bestellen.restaurantdeorchidee.nl/",
+                  "source_type": "official_site",
+              },
+              "growth-3aaf767223065c8aef60": {
+                  "observation": "Het Goed in Geldrop is een warenhuis met een gevarieerd aanbod tweedehands spullen.",
+                  "source_url": "https://www.hetgoed.nl/vestigingen/geldrop/",
+                  "source_type": "official_site",
+                  "website": "https://www.hetgoed.nl/vestigingen/geldrop/",
+              },
+              "growth-cc28486426a88d573f16": {
+                  "observation": "Het bijna 400 jaar oude monumentale Goudkantoor is een café-restaurant met koffie, lunch en diner.",
+                  "source_url": "https://www.goudkantoor.nl/",
+                  "source_type": "official_site",
+              },
+              "growth-7b6ca7bc872760f3e386": {
+                  "observation": "Bij Hoogvliet kunnen klanten boodschappen online bestellen en thuis laten bezorgen of ophalen in de winkel.",
+                  "source_url": "https://www.hoogvliet.com/online-bestellen",
+                  "source_type": "official_site",
+              },
+              "growth-a40dbd990fd6614309a6": {
+                  "observation": "Camping Ganspoort biedt vier vergaderruimtes voor groepen van 1 tot 50 personen.",
+                  "source_url": "https://www.campingganspoort.nl/nl/vergaderen/",
+                  "source_type": "official_site",
+              },
+              "growth-ca90dcb6eea97b76d1af": {
+                  "observation": "Plato is een Grieks specialiteitenrestaurant met klassiekers zoals souvlaki en gyros.",
+                  "source_url": "https://grieksrestaurantplato.nl/over-ons/",
+                  "source_type": "official_site",
+              },
+              "growth-5ec7d416deb8c1d2c5e8": {
+                  "observation": "De winkel heeft een uitgebreid assortiment voor honden, katten, knaagdieren, vogels, aquaria, reptielen en hengelsport.",
+                  "source_url": "https://pierrebeelen.wordpress.com/",
+                  "source_type": "official_site",
+              },
+              "growth-d891390a45c1c6d47603": {
+                  "observation": "Slagerij Reinders biedt onder meer Heydehoeve-varkensvlees, huisgemaakte vleeswaren en worstenbroodjes.",
+                  "source_url": "https://slagerijreinders.nl/",
+                  "source_type": "official_site",
+              },
               "growth-d89de3e363388788c054": {
                   "observation": "Woonzorglocatie Bloemhof in Ten Boer.",
                   "source_url": "https://www.zorggroepgroningen.nl/locaties/bloemhof",
@@ -187,6 +235,8 @@ jobs:
                       row["verified_observation"] = override["observation"]
                       row["verified_observation_source_url"] = override["source_url"]
                       row["verified_observation_source_type"] = override["source_type"]
+                      if override.get("website"):
+                          row["website"] = override["website"]
                   if row.get("contact_basis_status") != "review_required":
                       raise SystemExit(f"{lead_id}: contact basis is not review_required")
                   if row.get("verified_observation_source_type") != "official_site":
@@ -218,6 +268,11 @@ jobs:
 
                   body = row["body"]
                   subject = row["subject"]
+                  opening = build_opening(company, language, row["verified_observation"], category_hint)
+                  if opening not in body or row["verified_observation"] not in opening:
+                      raise SystemExit(f"{lead_id}: opening does not use the verified official-site fact")
+                  if observation_is_low_signal(company, row["verified_observation"]):
+                      raise SystemExit(f"{lead_id}: opening fact is too weak for outreach")
                   bullets = [line for line in body.splitlines() if line.startswith("• ")]
                   if len(bullets) != 6:
                       raise SystemExit(f"{lead_id}: bullet count={len(bullets)}")
@@ -455,15 +510,28 @@ jobs:
           grep -q 'automatic_send=false' results/final-audit-b.txt
           grep -q 'smtp_send=not_available' results/final-audit-b.txt
 
+      - name: Remove draft content from the shared audit artifact
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          for filename in ("results/final-audit-a.json", "results/final-audit-b.json"):
+              path = Path(filename)
+              report = json.loads(path.read_text(encoding="utf-8"))
+              report.pop("sample_real_created_draft", None)
+              path.write_text(
+                  json.dumps(report, indent=2, ensure_ascii=False) + "\n",
+                  encoding="utf-8",
+              )
+          PY
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: audited-draft-remediation-${{ github.run_number }}
           path: |
             results/preflight-summary.json
-            results/rewrite/*/growth-batch.json
-            results/rewrite/*/growth-batch.csv
-            results/rewrite/*/myhost-drafts.json
-            results/rewrite/*/myhost-drafts.txt
             results/final-audit-a.json
             results/final-audit-a.txt
             results/final-audit-b.json
