@@ -34,7 +34,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Yolol100/myhost-mailbox
-          ref: 9a02f94191fb19c5bbc42f6acecd806e411d2603
+          ref: d7cdfc60d9e056650c733644099a39f92be192b3
           path: mailbox-runtime
           persist-credentials: false
 
@@ -113,6 +113,9 @@ jobs:
               raise SystemExit("mailbox request digest mismatch")
           if int(envelope.get("expires_at") or 0) <= int(time.time()):
               raise SystemExit("mailbox request already expired")
+          digest_path = root / "request.sha256"
+          digest_path.write_text(digest + "\n", encoding="ascii")
+          digest_path.chmod(0o600)
           target = root / "request.json"
           target.write_text(
               json.dumps(request, ensure_ascii=False, separators=(",", ":")) + "\n",
@@ -156,8 +159,10 @@ jobs:
           oidc=$(OIDC="$token_json" python3 -c 'import json,os; print(json.loads(os.environ["OIDC"])["value"])')
           unset token_json
 
+          request_sha=$(tr -d '\r\n' < "$root/request.sha256")
+          [[ "$request_sha" =~ ^[a-f0-9]{64}$ ]]
           ack="$root/result-ack.json"
-          code=$(curl --silent --show-error --output "$ack" --write-out '%{http_code}'             --connect-timeout 10 --max-time 120             --header 'Accept: application/json'             --header 'Content-Type: application/json'             --header "X-Webactueel-GitHub-OIDC: ${oidc}"             --data-binary "@$root/result.json"             "$base/mailbox/results/$REQUEST_ID")
+          code=$(curl --silent --show-error --output "$ack" --write-out '%{http_code}'             --connect-timeout 10 --max-time 120             --header 'Accept: application/json'             --header 'Content-Type: application/json'             --header "X-Webactueel-GitHub-OIDC: ${oidc}"             --header "X-Webactueel-Mailbox-Request-SHA256: ${request_sha}"             --data-binary "@$root/result.json"             "$base/mailbox/results/$REQUEST_ID")
           unset oidc
           [[ "$code" == 201 ]]
           python3 - "$ack" <<'PY'
