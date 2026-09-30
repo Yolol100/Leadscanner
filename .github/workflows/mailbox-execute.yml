@@ -131,7 +131,13 @@ jobs:
           code=$(curl --silent --show-error --output "$response" --write-out '%{http_code}'             --connect-timeout 10 --max-time 90             --header 'Accept: application/json'             --header 'Content-Type: application/json'             --header "X-Webactueel-GitHub-OIDC: ${oidc}"             --data-binary "@$RUNNER_TEMP/mailbox-result.json"             "$base/mailbox/results/$REQUEST_ID")
           unset oidc token_json
           [[ "$code" == 201 ]]
-          php -r '$d=json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR);if(empty($d["ok"]))exit(1);' "$response"
+          RESPONSE="$response" python3 - <<'PY'
+          import json, os
+          with open(os.environ["RESPONSE"], encoding="utf-8") as handle:
+              data = json.load(handle)
+          if not data.get("ok"):
+              raise SystemExit("mailbox result was not accepted")
+          PY
 
       - name: Close opaque trigger issue
         if: always()
