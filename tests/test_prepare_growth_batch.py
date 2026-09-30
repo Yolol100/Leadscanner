@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from prepare_growth_batch import prepare_batch, subject_for_company
+from prepare_growth_batch import build_opening, infer_focus_from_observation, prepare_batch, subject_for_company
 
 
 class GrowthBatchTests(unittest.TestCase):
@@ -170,14 +170,41 @@ class GrowthBatchTests(unittest.TestCase):
         self.assertIn("voorbeeld design maken voor Steakhouse The Longhorn Rib?", row["body"])
         self.assertNotIn("Rib and?", row["body"])
 
-    def test_camping_name_beats_broad_restaurant_category_for_low_signal_title(self):
+    def test_verified_category_beats_ambiguous_camping_heading(self):
         contact = self.contact()
         contact["name_hint"] = "Camping Ganspoort"
         contact["category_hint"] = "restaurant"
         contact["verified_observation"] = "Welkom op de Camping!"
         row = prepare_batch({"candidates": [contact]}, self.config(), draft_limit=1)["rows"][0]
-        self.assertIn("zich richt op camping en recreatie", row["body"])
-        self.assertNotIn("restaurant en gastvrijheid", row["body"])
+        self.assertIn("zich richt op restaurant en gastvrijheid", row["body"])
+        self.assertNotIn("camping en recreatie", row["body"])
+
+    def test_substring_false_positives_do_not_assign_business_focus(self):
+        self.assertIsNone(infer_focus_from_observation("Hoogvliet Houten", "nl"))
+        self.assertIsNone(infer_focus_from_observation("De Bloemhof", "nl"))
+        self.assertEqual(
+            infer_focus_from_observation("Dierenkliniek Oog in Al", "nl"),
+            "dierenzorg",
+        )
+        self.assertIsNone(infer_focus_from_observation("Het Goudkantoor", "nl"))
+        self.assertIsNone(infer_focus_from_observation("De Orchidee", "nl"))
+        self.assertIsNone(infer_focus_from_observation("Plato", "nl"))
+        self.assertIsNone(infer_focus_from_observation("Gewoon een goede service", "nl"))
+        self.assertIsNone(infer_focus_from_observation("Grill", "nl"))
+        self.assertEqual(
+            infer_focus_from_observation("Hengelsport en fishing tackle", "nl"),
+            "hengelsport en visbenodigdheden",
+        )
+
+    def test_supermarket_category_fallback_is_personalized_correctly(self):
+        opening = build_opening(
+            "Hoogvliet Houten",
+            "nl",
+            "Welkom bij Hoogvliet Houten",
+            "supermarket",
+        )
+        self.assertIn("zich richt op dagelijkse boodschappen en retail", opening)
+        self.assertNotIn("optiek en oogzorg", opening)
 
     def test_subject_removes_decorative_emoji_and_avoids_dangling_connector(self):
         self.assertEqual(subject_for_company("Piccola Italia 🇮🇹", "nl"), "Idee voor Piccola Italia")
