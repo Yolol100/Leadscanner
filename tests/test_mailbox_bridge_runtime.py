@@ -58,10 +58,12 @@ class MailboxBridgeRuntimeTests(unittest.TestCase):
             "ref: 9a02f94191fb19c5bbc42f6acecd806e411d2603",
             "https://andrewbaeten.nl",
             "secrets.OUTREACH_MAIL_PASSWORD",
+            "secrets.OUTREACH_SMTP_PASSWORD || secrets.OUTREACH_MAIL_PASSWORD",
             "vars.OUTREACH_SMTP_SEND_ENABLED || 'false'",
             "MAILBOX_PRIVATE_REQUEST=green",
             "MAILBOX_PRIVATE_RESULT=green",
             'set(request) != {"request_id"}',
+            'json.dumps(request, ensure_ascii=True, separators=(",", ":"))',
             'rm -rf "$RUNNER_TEMP/mailbox"',
         )
         for needle in required:
