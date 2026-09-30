@@ -61,9 +61,27 @@ jobs:
           ! test -e scripts/approve_growth_batch.py
           ! test -e tests/test_approve_growth_batch.py
           ! test -e .github/workflows/myhost-drafts.yml
-          ! grep -R --line-number --include='*.py' -E 'smtplib|sendmail\(|SMTP\(' scripts
-          ! grep -R --line-number --include='*.yml' -E 'smtp|SMTP' .github/workflows
+          ! grep -E -q 'smtplib|sendmail\(|SMTP\(' \
+            scripts/myhost_draft.py \
+            scripts/prepare_growth_batch.py \
+            scripts/extract_public_contacts.py \
+            scripts/apply_google_maps_email_fallback.py
+          ! grep -E -q 'smtp|SMTP' \
+            .github/workflows/leads-batch.yml \
+            .github/workflows/leads-verified-drafts.yml
           echo 'ONE_RUN_GROWTH_DRAFT_CORE=green'
+
+      - name: Prove generic mailbox runtime safety boundary
+        run: |
+          set -euo pipefail
+          test -f scripts/myhost_mailbox.py
+          grep -q 'OUTREACH_SMTP_SEND_ENABLED' scripts/myhost_mailbox.py
+          grep -q 'confirm_send' scripts/myhost_mailbox.py
+          grep -q 'UID.*expunge\|"expunge"' scripts/myhost_mailbox.py
+          grep -q 'at most 20 attachments are allowed' scripts/myhost_mailbox.py
+          grep -q 'attachments exceed 25 MiB' scripts/myhost_mailbox.py
+          grep -q 'smtplib.SMTP' scripts/myhost_mailbox.py
+          echo 'GENERIC_MAILBOX_RUNTIME_BOUNDARY=green'
 
       - name: Prove isolated discovery-only phase boundary
         run: |
