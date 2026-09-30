@@ -61,9 +61,32 @@ jobs:
           ! test -e scripts/approve_growth_batch.py
           ! test -e tests/test_approve_growth_batch.py
           ! test -e .github/workflows/myhost-drafts.yml
-          ! grep -R --line-number --include='*.py' -E 'smtplib|sendmail\(|SMTP\(' scripts
-          ! grep -R --line-number --include='*.yml' -E 'smtp|SMTP' .github/workflows
+          ! grep -E -q 'smtplib|sendmail\(|SMTP\(' \
+            scripts/myhost_draft.py \
+            scripts/prepare_growth_batch.py \
+            scripts/extract_public_contacts.py \
+            scripts/apply_google_maps_email_fallback.py
+          ! grep -E -q 'smtp|SMTP' \
+            .github/workflows/leads-batch.yml \
+            .github/workflows/leads-verified-drafts.yml
           echo 'ONE_RUN_GROWTH_DRAFT_CORE=green'
+
+      - name: Prove isolated generic mailbox executor boundary
+        run: |
+          set -euo pipefail
+          test -f .github/workflows/mailbox-execute.yml
+          grep -q 'issues:' .github/workflows/mailbox-execute.yml
+          grep -q "github.event.issue.user.login == github.repository_owner" .github/workflows/mailbox-execute.yml
+          grep -F -q "startsWith(github.event.issue.title, '[mailbox-runtime] ')" .github/workflows/mailbox-execute.yml
+          grep -q 'id-token: write' .github/workflows/mailbox-execute.yml
+          grep -q 'ACTIONS_ID_TOKEN_REQUEST_TOKEN' .github/workflows/mailbox-execute.yml
+          grep -q '9a02f94191fb19c5bbc42f6acecd806e411d2603' .github/workflows/mailbox-execute.yml
+          grep -q 'OUTREACH_SMTP_SEND_ENABLED' .github/workflows/mailbox-execute.yml
+          grep -q 'mailbox/requests/' .github/workflows/mailbox-execute.yml
+          grep -q 'mailbox/results/' .github/workflows/mailbox-execute.yml
+          ! grep -q 'github.event.issue.body' .github/workflows/mailbox-execute.yml
+          ! grep -q 'actions/upload-artifact' .github/workflows/mailbox-execute.yml
+          echo 'GENERIC_MAILBOX_EXECUTOR_BOUNDARY=green'
 
       - name: Prove isolated discovery-only phase boundary
         run: |
