@@ -1,4 +1,5 @@
 name: Leads One-Shot Audited Draft Remediation
+# The target list, source artifact, and fact overrides are audited below before any mailbox write.
 
 on:
   push:
