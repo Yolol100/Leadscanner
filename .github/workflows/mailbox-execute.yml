@@ -107,7 +107,7 @@ jobs:
               raise SystemExit("mailbox request payload is invalid")
           digest = str(envelope.get("sha256") or "")
           expected = hashlib.sha256(
-              json.dumps(request, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+              json.dumps(request, ensure_ascii=True, separators=(",", ":")).encode("utf-8")
           ).hexdigest()
           if len(digest) != 64 or digest != expected:
               raise SystemExit("mailbox request digest mismatch")
