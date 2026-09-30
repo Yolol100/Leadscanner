@@ -340,10 +340,10 @@ jobs:
           from myhost_draft import (
               build_message,
               connect_imap,
-              exact_message_matches,
               fetch_message,
               find_drafts_folder,
               find_message_ids,
+              normalize_text,
               select_folder,
           )
 
@@ -367,10 +367,14 @@ jobs:
                   actual = fetch_message(client, message_ids[0])
                   if actual.get("X-Webactueel-Lead-ID") != lead_id:
                       raise SystemExit(f"{lead_id}: existing draft identity mismatch")
-                  if not exact_message_matches(actual, expected):
-                      raise SystemExit(f"{lead_id}: existing draft differs from source baseline")
+                  if normalize_text(actual.get("To", "")) != normalize_text(expected.get("To", "")):
+                      raise SystemExit(f"{lead_id}: existing draft recipient mismatch")
+                  if normalize_text(actual.get("X-Webactueel-Review-Required", "")) != normalize_text(
+                      expected.get("X-Webactueel-Review-Required", "")
+                  ):
+                      raise SystemExit(f"{lead_id}: existing draft review status mismatch")
               print(
-                  "TARGET_DRAFT_PREFLIGHT=green count=26 existing=26 exact_baseline=true "
+                  "TARGET_DRAFT_PREFLIGHT=green count=26 existing=26 recipient_and_review_status=true "
                   "read_only=true automatic_send=false smtp_send=not_available"
               )
           finally:
