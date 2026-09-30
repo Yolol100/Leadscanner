@@ -42,21 +42,40 @@ jobs:
           set -euo pipefail
           python3 -m pip install --disable-pip-version-check -r requirements.txt -r requirements-discovery.txt
 
-      - name: Download canonical source artifacts
+      - name: Download successful audited source artifact
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           mkdir -p results/source results/rewrite
-          for artifact_id in             11009012767 11013906065 11019071378 11013926537 11014736981 11014722896 11013934695 11020970770 11021895322 11022648826 11023991566 11024151826 11025033182 11025636561 11025158483 11026955968
+          source_artifact_id=11069173400
+          gh api -H "Accept: application/vnd.github+json" \
+            "/repos/$GITHUB_REPOSITORY/actions/artifacts/$source_artifact_id" \
+            > results/source/artifact-metadata.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          artifact = json.loads(Path("results/source/artifact-metadata.json").read_text(encoding="utf-8"))
+          if artifact.get("id") != 11069173400:
+              raise SystemExit("audited source artifact ID mismatch")
+          if artifact.get("name") != "audited-draft-remediation-2":
+              raise SystemExit(f"unexpected audited source artifact name: {artifact.get('name')}")
+          if artifact.get("expired") is not False:
+              raise SystemExit("audited source artifact is expired or missing expiry state")
+          if (artifact.get("workflow_run") or {}).get("id") != 36645646301:
+              raise SystemExit("audited source artifact run mismatch")
+          PY
+          gh api -H "Accept: application/vnd.github+json" \
+            "/repos/$GITHUB_REPOSITORY/actions/artifacts/$source_artifact_id/zip" \
+            > results/source/audited-source.zip
+          unzip -q results/source/audited-source.zip -d results/source
+          for artifact_id in             11009012767 11013906065 11013926537 11014736981 11014722896 11021895322 11022648826 11023991566 11024151826 11025033182 11025636561 11026955968
           do
-            mkdir -p "results/source/$artifact_id"
-            gh api -H "Accept: application/vnd.github+json"               "/repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip"               > "results/source/$artifact_id.zip"
-            unzip -q "results/source/$artifact_id.zip" -d "results/source/$artifact_id"
-            test -s "results/source/$artifact_id/growth-batch.json"
-            test -s "results/source/$artifact_id/verified-draft-input.json"
+            test -s "results/source/rewrite/$artifact_id/growth-batch.json"
+            test -s "results/source/rewrite/$artifact_id/myhost-drafts.json"
           done
-          echo "SOURCE_ARTIFACTS=green count=16"
+          echo "SOURCE_ARTIFACT=green id=$source_artifact_id run_id=36645646301 target_batches=12"
 
       - name: Preflight all audited replacement copy before mailbox writes
         run: |
@@ -70,16 +89,16 @@ jobs:
               build_template,
               clean_company,
               short_company_name,
+              stable_lead_id,
               subject_for_company,
               subject_label_for_company,
               write_csv,
           )
 
           artifact_ids = [
-              11009012767,11013906065,11019071378,11013926537,
-              11014736981,11014722896,11013934695,11020970770,
-              11021895322,11022648826,11023991566,11024151826,
-              11025033182,11025636561,11025158483,11026955968,
+              11009012767,11013906065,11013926537,11014736981,
+              11014722896,11021895322,11022648826,11023991566,
+              11024151826,11025033182,11025636561,11026955968,
           ]
           target_lead_ids = {
               "growth-0ce85322cbce0efc3227",
@@ -133,10 +152,13 @@ jobs:
           language_split = Counter()
 
           for artifact_id in artifact_ids:
-              source_dir = Path(f"results/source/{artifact_id}")
+              source_dir = Path(f"results/source/rewrite/{artifact_id}")
               old_batch = json.loads((source_dir / "growth-batch.json").read_text(encoding="utf-8"))
-              verified = json.loads((source_dir / "verified-draft-input.json").read_text(encoding="utf-8"))
-              candidates = verified.get("candidates") or []
+              previous_report = json.loads((source_dir / "myhost-drafts.json").read_text(encoding="utf-8"))
+              previous_items = {
+                  str(item.get("lead_id") or ""): item
+                  for item in (previous_report.get("items") or [])
+              }
               selected = []
               for old in old_batch.get("rows") or []:
                   if old.get("status") != "review_draft":
@@ -144,15 +166,17 @@ jobs:
                   lead_id = str(old.get("lead_id") or "")
                   if lead_id not in target_lead_ids:
                       continue
-                  matches = [
-                      c for c in candidates
-                      if str(old.get("email") or "").casefold()
-                         in {str(v or "").casefold() for v in (c.get("public_business_emails") or [])}
-                      and str(c.get("website_hint") or "") == str(old.get("website") or "")
-                  ]
-                  if len(matches) != 1:
-                      raise SystemExit(f"{lead_id}: verified-input match count={len(matches)}")
-                  candidate = matches[0]
+                  if lead_id != stable_lead_id(str(old.get("email") or ""), str(old.get("website") or "")):
+                      raise SystemExit(f"{lead_id}: source lead ID does not match its email and website")
+                  source_item = previous_items.get(lead_id)
+                  if (
+                      not source_item
+                      or source_item.get("outcome") not in {"existing", "replaced"}
+                      or source_item.get("to") != old.get("email")
+                      or source_item.get("subject") != old.get("subject")
+                      or source_item.get("body") != old.get("body")
+                  ):
+                      raise SystemExit(f"{lead_id}: successful source readback does not match the audited row")
                   baseline_rows.append({
                       key: old.get(key)
                       for key in ("lead_id", "email", "subject", "body", "status", "contact_basis_status")
@@ -174,7 +198,7 @@ jobs:
                   language = str(row.get("language") or "").casefold()
                   if language not in {"nl","en"}:
                       raise SystemExit(f"{lead_id}: unsupported language={language}")
-                  category_hint = str(candidate.get("category_hint") or "").strip()
+                  category_hint = str(row.get("category_hint") or "").strip()
                   if not category_hint:
                       raise SystemExit(f"{lead_id}: category_hint missing")
                   company = clean_company(row.get("company"), language)
