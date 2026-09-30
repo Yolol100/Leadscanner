@@ -111,6 +111,38 @@ class DraftTests(unittest.TestCase):
         self.assertEqual(result["eligible_count"], 0)
         self.assertEqual(result["smtp_send"], "not_available")
 
+    def test_rewrite_existing_only_does_not_create_missing_draft(self):
+        client = FakeIMAP()
+        with patch("myhost_draft.connect_imap", return_value=client):
+            with self.assertRaisesRegex(RuntimeError, "exactly one existing draft"):
+                create_drafts({"rows": [self.row()]}, rewrite_existing_only=True)
+        self.assertEqual(client.messages, [])
+
+    def test_rewrite_existing_only_preflights_entire_batch_before_updates(self):
+        client = FakeIMAP()
+        original = self.row()
+        with patch("myhost_draft.connect_imap", return_value=client):
+            create_drafts({"rows": [original]})
+
+        updated = {**original, "body": "Gewijzigde gecontroleerde versie."}
+        missing = {
+            **self.row(),
+            "lead_id": "growth-1123456789abcdefabcd",
+            "email": "ander@voorbeeld.nl",
+            "subject": "Idee voor ander",
+        }
+        with patch("myhost_draft.connect_imap", return_value=client):
+            with self.assertRaisesRegex(RuntimeError, "exactly one existing draft"):
+                create_drafts(
+                    {"rows": [updated, missing]},
+                    rewrite_existing_only=True,
+                )
+
+        self.assertEqual(len(client.messages), 1)
+        actual = BytesParser(policy=default).parsebytes(client.messages[0])
+        self.assertEqual(actual.get("Subject"), original["subject"])
+        self.assertEqual(actual.get_content().strip(), original["body"])
+
     def test_create_readback_and_idempotency(self):
         client = FakeIMAP()
         with patch("myhost_draft.connect_imap", return_value=client):
