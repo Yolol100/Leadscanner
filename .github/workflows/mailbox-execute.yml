@@ -1,0 +1,144 @@
+name: Mailbox Execute
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  id-token: write
+  issues: write
+
+concurrency:
+  group: mailbox-runtime-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  execute:
+    if: >-
+      github.event.issue.user.login == github.repository_owner &&
+      startsWith(github.event.issue.title, '[mailbox-runtime] ')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Validate opaque request id
+        id: request
+        env:
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, re
+          title = os.environ["ISSUE_TITLE"]
+          match = re.fullmatch(r"\[mailbox-runtime\] ([A-Za-z0-9][A-Za-z0-9._-]{7,99})", title)
+          if not match:
+              raise SystemExit("invalid mailbox runtime trigger")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"request_id={match.group(1)}\n")
+          PY
+
+      - name: Fetch private mailbox request from WordPress
+        env:
+          SITE_URL: https://andrewbaeten.nl
+          REQUEST_ID: ${{ steps.request.outputs.request_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${SITE_URL%/}/wp-json/webactueel-wordpress-connector/v1"
+          audience=$(python3 -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1],safe=""))' "$base")
+          token_json=$(curl --silent --show-error --header "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${audience}")
+          oidc=$(OIDC="$token_json" python3 -c 'import json,os;print(json.loads(os.environ["OIDC"])["value"])')
+          response="$RUNNER_TEMP/mailbox-request-envelope.json"
+          code=$(curl --silent --show-error --output "$response" --write-out '%{http_code}'             --connect-timeout 10 --max-time 60             --header 'Accept: application/json'             --header "X-Webactueel-GitHub-OIDC: ${oidc}"             "$base/mailbox/requests/$REQUEST_ID")
+          unset oidc token_json
+          [[ "$code" == 200 ]]
+          REQUEST_ID="$REQUEST_ID" RESPONSE="$response" OUTPUT="$RUNNER_TEMP/mailbox-request.json" python3 - <<'PY'
+          import json, os
+          with open(os.environ["RESPONSE"], encoding="utf-8") as handle:
+              envelope = json.load(handle)
+          if envelope.get("request_id") != os.environ["REQUEST_ID"] or not isinstance(envelope.get("request"), dict):
+              raise SystemExit("invalid mailbox request envelope")
+          with open(os.environ["OUTPUT"], "w", encoding="utf-8") as handle:
+              json.dump(envelope["request"], handle, ensure_ascii=False)
+          PY
+
+      - name: Fetch pinned mailbox engine
+        env:
+          ENGINE_SHA: 9a02f94191fb19c5bbc42f6acecd806e411d2603
+        shell: bash
+        run: |
+          set -euo pipefail
+          engine="$RUNNER_TEMP/myhost-mailbox"
+          git clone --quiet --filter=blob:none https://github.com/Yolol100/myhost-mailbox.git "$engine"
+          git -C "$engine" checkout --quiet --detach "$ENGINE_SHA"
+          [[ "$(git -C "$engine" rev-parse HEAD)" == "$ENGINE_SHA" ]]
+          test -f "$engine/myhost_mailbox.py"
+
+      - name: Execute mailbox request without public output
+        id: execute
+        continue-on-error: true
+        env:
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_SMTP_HOST: ${{ vars.OUTREACH_SMTP_HOST || vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_SMTP_PORT: ${{ vars.OUTREACH_SMTP_PORT || '587' }}
+          OUTREACH_SMTP_MODE: ${{ vars.OUTREACH_SMTP_MODE || 'starttls' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_SMTP_PASSWORD: ${{ secrets.OUTREACH_SMTP_PASSWORD || secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME || 'Andrew Baeten' }}
+          OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_SMTP_SEND_ENABLED: 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ENGINE="$RUNNER_TEMP/myhost-mailbox/myhost_mailbox.py"           REQUEST="$RUNNER_TEMP/mailbox-request.json"           RESULT="$RUNNER_TEMP/mailbox-result.json"           python3 - <<'PY'
+          import importlib.util, json, os, traceback
+          spec = importlib.util.spec_from_file_location("myhost_mailbox_runtime", os.environ["ENGINE"])
+          module = importlib.util.module_from_spec(spec)
+          assert spec.loader is not None
+          spec.loader.exec_module(module)
+          try:
+              with open(os.environ["REQUEST"], encoding="utf-8") as handle:
+                  request = json.load(handle)
+              result = {"ok": True, "result": module.execute(request)}
+          except Exception as exc:
+              result = {
+                  "ok": False,
+                  "error_type": type(exc).__name__,
+                  "error": str(exc)[:4000],
+              }
+          with open(os.environ["RESULT"], "w", encoding="utf-8") as handle:
+              json.dump(result, handle, ensure_ascii=False)
+          PY
+
+      - name: Store private mailbox result in WordPress
+        if: always()
+        env:
+          SITE_URL: https://andrewbaeten.nl
+          REQUEST_ID: ${{ steps.request.outputs.request_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s "$RUNNER_TEMP/mailbox-result.json"
+          base="${SITE_URL%/}/wp-json/webactueel-wordpress-connector/v1"
+          audience=$(python3 -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1],safe=""))' "$base")
+          token_json=$(curl --silent --show-error --header "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${audience}")
+          oidc=$(OIDC="$token_json" python3 -c 'import json,os;print(json.loads(os.environ["OIDC"])["value"])')
+          response="$RUNNER_TEMP/mailbox-result-response.json"
+          code=$(curl --silent --show-error --output "$response" --write-out '%{http_code}'             --connect-timeout 10 --max-time 90             --header 'Accept: application/json'             --header 'Content-Type: application/json'             --header "X-Webactueel-GitHub-OIDC: ${oidc}"             --data-binary "@$RUNNER_TEMP/mailbox-result.json"             "$base/mailbox/results/$REQUEST_ID")
+          unset oidc token_json
+          [[ "$code" == 201 ]]
+          php -r '$d=json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR);if(empty($d["ok"]))exit(1);' "$response"
+
+      - name: Close opaque trigger issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --silent --show-error --fail             --request PATCH             --header 'Accept: application/vnd.github+json'             --header "Authorization: Bearer ${GH_TOKEN}"             --header 'X-GitHub-Api-Version: 2022-11-28'             "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}"             --data '{"state":"closed"}'             --output /dev/null
