@@ -132,7 +132,7 @@ jobs:
           OUTREACH_SMTP_HOST: ${{ vars.OUTREACH_SMTP_HOST || vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
           OUTREACH_SMTP_PORT: ${{ vars.OUTREACH_SMTP_PORT || '587' }}
           OUTREACH_SMTP_MODE: ${{ vars.OUTREACH_SMTP_MODE || 'starttls' }}
-          OUTREACH_SMTP_PASSWORD: ${{ secrets.OUTREACH_SMTP_PASSWORD }}
+          OUTREACH_SMTP_PASSWORD: ${{ secrets.OUTREACH_SMTP_PASSWORD || secrets.OUTREACH_MAIL_PASSWORD }}
           OUTREACH_SMTP_SEND_ENABLED: ${{ vars.OUTREACH_SMTP_SEND_ENABLED || 'false' }}
           OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME || 'Andrew Baeten' }}
           OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
