@@ -137,6 +137,29 @@ def exact_message_matches(actual: EmailMessage, expected: EmailMessage) -> bool:
     )
 
 
+def require_existing_drafts(
+    client,
+    folder: str,
+    prepared: list[tuple[dict, str, EmailMessage]],
+) -> None:
+    select_folder(client, folder, readonly=True)
+    for row, lead_id, expected in prepared:
+        existing = find_message_ids(client, folder, lead_id, ensure_selected=False)
+        if len(existing) != 1:
+            raise RuntimeError(
+                f"rewrite-existing-only requires exactly one existing draft for {lead_id}, found {len(existing)}"
+            )
+        actual = fetch_message(client, existing[0])
+        if normalize_text(actual.get("X-Webactueel-Lead-ID", "")) != lead_id:
+            raise RuntimeError(f"Existing draft identity mismatch for {lead_id}")
+        if normalize_text(actual.get("To", "")) != normalize_text(expected.get("To", "")):
+            raise RuntimeError(f"Existing draft recipient mismatch for {lead_id}")
+        if normalize_text(actual.get("X-Webactueel-Review-Required", "")) != normalize_text(
+            expected.get("X-Webactueel-Review-Required", "")
+        ):
+            raise RuntimeError(f"Existing draft review status mismatch for {lead_id}")
+
+
 def append_and_verify(client, folder: str, lead_id: str, msg: EmailMessage) -> str:
     existing = find_message_ids(client, folder, lead_id)
     if len(existing) > 1:
@@ -189,7 +212,7 @@ def append_and_verify(client, folder: str, lead_id: str, msg: EmailMessage) -> s
     return "created"
 
 
-def create_drafts(batch: dict) -> dict:
+def create_drafts(batch: dict, *, rewrite_existing_only: bool = False) -> dict:
     rows = [
         row
         for row in (batch.get("rows") or [])
@@ -213,11 +236,14 @@ def create_drafts(batch: dict) -> dict:
             "review_required_count": 0,
             "items": [],
             "smtp_send": "not_available",
+            "rewrite_existing_only": rewrite_existing_only,
         }
 
     client = connect_imap()
     try:
         folder = find_drafts_folder(client)
+        if rewrite_existing_only:
+            require_existing_drafts(client, folder, prepared)
         created = 0
         existing = 0
         replaced = 0
@@ -260,6 +286,7 @@ def create_drafts(batch: dict) -> dict:
             "review_required_count": sum(1 for row in rows if row.get("status") == "review_draft"),
             "items": items,
             "smtp_send": "not_available",
+            "rewrite_existing_only": rewrite_existing_only,
         }
     finally:
         try:
@@ -272,10 +299,15 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch", required=True)
     parser.add_argument("--report", required=True)
+    parser.add_argument(
+        "--rewrite-existing-only",
+        action="store_true",
+        help="Require one matching draft for every lead before writing; never create missing drafts.",
+    )
     args = parser.parse_args()
 
     batch = json.loads(Path(args.batch).read_text(encoding="utf-8"))
-    result = create_drafts(batch)
+    result = create_drafts(batch, rewrite_existing_only=args.rewrite_existing_only)
     report = Path(args.report)
     report.parent.mkdir(parents=True, exist_ok=True)
     report.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -286,6 +318,7 @@ def main() -> int:
         f"existing={result['existing_count']} "
         f"replaced={result['replaced_count']} "
         f"review_required={result['review_required_count']} "
+        f"rewrite_existing_only={str(result['rewrite_existing_only']).lower()} "
         "smtp_send=not_available"
     )
     return 0
