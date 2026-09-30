@@ -62,6 +62,7 @@ class MailboxBridgeRuntimeTests(unittest.TestCase):
             "MAILBOX_PRIVATE_REQUEST=green",
             "MAILBOX_PRIVATE_RESULT=green",
             'set(request) != {"request_id"}',
+            'json.dumps(request, ensure_ascii=True, separators=(",", ":"))',
             'rm -rf "$RUNNER_TEMP/mailbox"',
         )
         for needle in required:
