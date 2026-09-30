@@ -146,7 +146,6 @@ jobs:
                   "observation": "Het Goed in Geldrop is een warenhuis met een gevarieerd aanbod tweedehands spullen.",
                   "source_url": "https://www.hetgoed.nl/vestigingen/geldrop/",
                   "source_type": "official_site",
-                  "website": "https://www.hetgoed.nl/vestigingen/geldrop/",
               },
               "growth-cc28486426a88d573f16": {
                   "observation": "Het bijna 400 jaar oude monumentale Goudkantoor is een café-restaurant met koffie, lunch en diner.",
@@ -236,8 +235,6 @@ jobs:
                       row["verified_observation"] = override["observation"]
                       row["verified_observation_source_url"] = override["source_url"]
                       row["verified_observation_source_type"] = override["source_type"]
-                      if override.get("website"):
-                          row["website"] = override["website"]
                   if row.get("contact_basis_status") != "review_required":
                       raise SystemExit(f"{lead_id}: contact basis is not review_required")
                   if row.get("verified_observation_source_type") != "official_site":
