@@ -79,14 +79,14 @@ jobs:
           mkdir -p "$root"
           chmod 700 "$root"
 
-          base="${SITE_URL%/}/wp-json/webactueel-wordpress-connector/v1"
+          base="${SITE_URL%/}/wp-json/webactueel-mailbox-bridge/v1"
           audience=$(python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$base")
           token_json=$(curl --silent --show-error             --header "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}"             "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${audience}")
           oidc=$(OIDC="$token_json" python3 -c 'import json,os; print(json.loads(os.environ["OIDC"])["value"])')
           unset token_json
 
           response="$root/request-envelope.json"
-          code=$(curl --silent --show-error --output "$response" --write-out '%{http_code}'             --connect-timeout 10 --max-time 60             --header 'Accept: application/json'             --header "X-Webactueel-GitHub-OIDC: ${oidc}"             "$base/mailbox/requests/$REQUEST_ID")
+          code=$(curl --silent --show-error --output "$response" --write-out '%{http_code}'             --connect-timeout 10 --max-time 60             --header 'Accept: application/json'             --header "X-Webactueel-GitHub-OIDC: ${oidc}"             "$base/requests/$REQUEST_ID")
           unset oidc
           [[ "$code" == 200 ]]
 
@@ -153,7 +153,7 @@ jobs:
         run: |
           set -euo pipefail
           root="$RUNNER_TEMP/mailbox"
-          base="${SITE_URL%/}/wp-json/webactueel-wordpress-connector/v1"
+          base="${SITE_URL%/}/wp-json/webactueel-mailbox-bridge/v1"
           audience=$(python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$base")
           token_json=$(curl --silent --show-error             --header "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}"             "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${audience}")
           oidc=$(OIDC="$token_json" python3 -c 'import json,os; print(json.loads(os.environ["OIDC"])["value"])')
@@ -162,7 +162,7 @@ jobs:
           request_sha=$(tr -d '\r\n' < "$root/request.sha256")
           [[ "$request_sha" =~ ^[a-f0-9]{64}$ ]]
           ack="$root/result-ack.json"
-          code=$(curl --silent --show-error --output "$ack" --write-out '%{http_code}'             --connect-timeout 10 --max-time 120             --header 'Accept: application/json'             --header 'Content-Type: application/json'             --header "X-Webactueel-GitHub-OIDC: ${oidc}"             --header "X-Webactueel-Mailbox-Request-SHA256: ${request_sha}"             --data-binary "@$root/result.json"             "$base/mailbox/results/$REQUEST_ID")
+          code=$(curl --silent --show-error --output "$ack" --write-out '%{http_code}'             --connect-timeout 10 --max-time 120             --header 'Accept: application/json'             --header 'Content-Type: application/json'             --header "X-Webactueel-GitHub-OIDC: ${oidc}"             --header "X-Webactueel-Mailbox-Request-SHA256: ${request_sha}"             --data-binary "@$root/result.json"             "$base/results/$REQUEST_ID")
           unset oidc
           [[ "$code" == 201 ]]
           python3 - "$ack" <<'PY'

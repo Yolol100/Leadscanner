@@ -57,6 +57,9 @@ class MailboxBridgeRuntimeTests(unittest.TestCase):
             "repository: Yolol100/myhost-mailbox",
             "ref: d7cdfc60d9e056650c733644099a39f92be192b3",
             "https://andrewbaeten.nl",
+            "webactueel-mailbox-bridge/v1",
+            "$base/requests/$REQUEST_ID",
+            "$base/results/$REQUEST_ID",
             "secrets.OUTREACH_MAIL_PASSWORD",
             "secrets.OUTREACH_SMTP_PASSWORD || secrets.OUTREACH_MAIL_PASSWORD",
             "vars.OUTREACH_SMTP_SEND_ENABLED || 'false'",
@@ -77,6 +80,9 @@ class MailboxBridgeRuntimeTests(unittest.TestCase):
             "cat $RUNNER_TEMP/mailbox/result.json",
             "tee $RUNNER_TEMP/mailbox",
             "OUTREACH_SMTP_SEND_ENABLED: true",
+            "webactueel-wordpress-connector/v1",
+            "$base/mailbox/requests/$REQUEST_ID",
+            "$base/mailbox/results/$REQUEST_ID",
         )
         for needle in forbidden:
             self.assertNotIn(needle, text)
