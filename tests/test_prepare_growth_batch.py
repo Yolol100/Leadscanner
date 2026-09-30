@@ -29,13 +29,24 @@ class GrowthBatchTests(unittest.TestCase):
             "contact_basis_hint": "public_email_review_required",
         }
 
+    def test_specific_verified_observation_is_used_in_opening(self):
+        contact = self.contact()
+        contact["verified_observation"] = "Fysiotherapie in Utrecht"
+        opening = build_opening(
+            "Voorbeeld Fysiotherapie",
+            "nl",
+            contact["verified_observation"],
+            contact["category_hint"],
+        )
+        self.assertEqual(opening, "Op jullie site viel me op: “Fysiotherapie in Utrecht”.")
+
     def test_review_required_contact_becomes_personal_review_draft(self):
         row = prepare_batch({"candidates": [self.contact()]}, self.config(), draft_limit=1)["rows"][0]
         self.assertEqual(row["status"], "review_draft")
         self.assertTrue(row["lead_id"].startswith("growth-"))
         self.assertEqual(row["subject"], "Idee voor Voorbeeld Fysiotherapie")
         self.assertEqual(row["copy_company_label"], "Voorbeeld Fysiotherapie")
-        self.assertIn("Ik zag dat Voorbeeld Fysiotherapie zich richt op fysiotherapie", row["body"])
+        self.assertIn("Op jullie site viel me op: “Fysiotherapie in Utrecht”.", row["body"])
         self.assertIn("Met mijn Groeiabonnement help ik met", row["body"])
         self.assertNotIn("Op jullie website staat", row["body"])
         self.assertEqual(row["verified_observation_source_type"], "official_site")
@@ -65,22 +76,20 @@ class GrowthBatchTests(unittest.TestCase):
         self.assertIn("Ik zag dat 030 Fietsen zich richt op fietsen en fietsservice", row["body"])
         self.assertNotIn("Tweedehands Fietsen Utrecht elektrische fietsen", row["body"])
 
-    def test_percentage_observation_is_not_quoted_into_first_touch(self):
+    def test_weak_observation_without_reliable_focus_blocks_copy(self):
         contact = self.contact()
         contact["name_hint"] = "Acme BV"
         contact["category_hint"] = None
         contact["verified_observation"] = "Nu tot 30% voordeel op geselecteerde producten"
-        row = prepare_batch({"candidates": [contact]}, self.config(), draft_limit=1)["rows"][0]
-        self.assertNotIn("%", row["body"])
-        self.assertIn("Ik heb de website van Acme BV bekeken.", row["body"])
-        self.assertNotIn(contact["verified_observation"], row["body"])
+        with self.assertRaisesRegex(ValueError, "No specific verified site detail"):
+            prepare_batch({"candidates": [contact]}, self.config(), draft_limit=1)
 
     def test_observation_overrides_misleading_company_name_for_focus(self):
         contact = self.contact()
         contact["name_hint"] = "De Juwelier"
         contact["verified_observation"] = "À LA CARTE RESTAURANT"
         row = prepare_batch({"candidates": [contact]}, self.config(), draft_limit=1)["rows"][0]
-        self.assertIn("zich richt op restaurant en gastvrijheid", row["body"])
+        self.assertIn("Op jullie site viel me op: “À LA CARTE RESTAURANT”.", row["body"])
         self.assertNotIn("sieraden en juwelierswerk", row["body"])
 
     def test_pass_contact_becomes_draft_ready(self):
@@ -91,7 +100,7 @@ class GrowthBatchTests(unittest.TestCase):
         )["rows"][0]
         self.assertEqual(row["status"], "draft_ready")
         self.assertEqual(row["subject"], "An idea for Example Physiotherapy")
-        self.assertIn("I saw that Example Physiotherapy focuses on physical therapy and rehabilitation", row["body"])
+        self.assertIn("I noticed this on your website: “Physical therapy in Utrecht”.", row["body"])
         self.assertIn("€250–€500 per month, depending on what you need", row["body"])
         self.assertIn("no-obligation example design for Example Physiotherapy", row["body"])
         self.assertNotIn("30%", row["body"])
