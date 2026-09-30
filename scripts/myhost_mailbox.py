@@ -204,9 +204,7 @@ def copy_message(client, source_folder: str, uid: str, destination_folder: str) 
 def delete_message(client, folder: str, uid: str) -> None:
     select_folder(client, folder, readonly=False)
     _uid(client, "store", str(uid), "+FLAGS.SILENT", "(\\Deleted)")
-    status, _ = client.expunge()
-    if status != "OK":
-        raise RuntimeError("Could not expunge deleted message")
+    _uid(client, "expunge", str(uid))
 
 
 def move_message(client, source_folder: str, uid: str, destination_folder: str) -> None:
@@ -253,8 +251,15 @@ def build_message(payload: dict, *, include_bcc: bool = True) -> EmailMessage:
     else:
         msg.set_content(body_text)
 
-    for attachment in payload.get("attachments") or []:
+    attachments = payload.get("attachments") or []
+    if len(attachments) > 20:
+        raise ValueError("at most 20 attachments are allowed")
+    total_attachment_bytes = 0
+    for attachment in attachments:
         raw = base64.b64decode(str(attachment.get("content_base64") or ""), validate=True)
+        total_attachment_bytes += len(raw)
+        if total_attachment_bytes > 25 * 1024 * 1024:
+            raise ValueError("attachments exceed 25 MiB")
         content_type = normalize_text(attachment.get("content_type")) or "application/octet-stream"
         maintype, _, subtype = content_type.partition("/")
         if not subtype:
