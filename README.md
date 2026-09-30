@@ -49,6 +49,6 @@ The runtime is designed around explicit inputs, bounded batches and review-only 
 
 ## About the developer
 
-I am **Andrew Baeten**, a Senior WordPress Developer & Web Designer with 10+ years of experience across **90+ WordPress projects** and ongoing management of **120+ websites and webshops**. I also build internal automation and QA tooling that makes repetitive web operations more controlled and reviewable.
+I am **Andrew Baeten**, a Senior WordPress Developer with 10+ years of experience and **70+ delivered projects**. I also build internal automation and QA tooling that makes repetitive web operations more controlled and reviewable.
 
 [Portfolio cases](https://andrewbaeten.nl/category/cases) · [LinkedIn](https://www.linkedin.com/in/andrew-baeten-305a1478/) · [GitHub profile](https://github.com/Yolol100)
