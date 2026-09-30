@@ -12,28 +12,59 @@ from pathlib import Path
 FOCUS_PATTERNS = (
     ("fysiotherapie en revalidatie", "physical therapy and rehabilitation", r"fysio|fysiotherapie|revalidatie|physical therapy|rehabilitation|dry needling|rugcentrum"),
     ("fietsen en fietsservice", "bicycles and bike service", r"fiets|bike|tweewiel|giant store|rental & repair|fietsenwinkel"),
-    ("bloemen, planten en cadeaus", "flowers, plants and gifts", r"bloem|flower|florist|boeket|orchidee|tuincentrum"),
+    ("bloemen, planten en cadeaus", "flowers, plants and gifts", r"\bbloemen(?:winkel|zaak)?\b|\bbloemist\b|flower|florist|boeket|tuincentrum"),
     ("auto's en mobiliteit", "cars and mobility", r"garage|auto|automotive|apk|carservice|car center|car service|autoservice|werkplaats|dealer|bmw|mazda|toyota|renault|nissan|mitsubishi"),
     ("tandzorg en mondzorg", "dental care", r"tand|dental|mondzorg|tandheel|orthodont"),
-    ("optiek en oogzorg", "eyewear and eye care", r"optiek|opticien|bril|oog|eyewear|contactlen|optometr"),
-    ("sieraden en juwelierswerk", "jewellery and jewellery services", r"juwel|sieraad|goud|diamant|edelsteen|goldsmith|goudsmid|jewelry|jeweler"),
+    ("optiek en oogzorg", "eyewear and eye care", r"optiek|opticien|bril|oog(?:zorg|kliniek|heelkund|arts|mode)|eyewear|contactlen|optometr"),
+    ("fotografie en fotoapparatuur", "photography and camera retail", r"\bfoto(?:\s+|[-–])?(?:speciaalzaak|winkel|studio|grafie|camera(?:'s)?)\b|\bfotografie\b|\bfotograaf\b|\bcamera shop\b|\bphotograph(?:y|er)?\b"),
+    ("sieraden en juwelierswerk", "jewellery and jewellery services", r"juwel|sieraad|diamant|edelsteen|goldsmith|goudsmid|jewelry|jeweler"),
     ("kinderopvang", "childcare", r"kinderopvang|kinderdag|bso|day care|kinderfort|kindergarden"),
-    ("restaurant en gastvrijheid", "restaurant and hospitality", r"restaurant|à la carte|horeca|bistro|brasserie|pannenkoek|sushi|pizza|grill|steak|lunchroom|eetcaf|eetkamer"),
+    ("restaurant en gastvrijheid", "restaurant and hospitality", r"restaurant|à la carte|horeca|bistro|brasserie|pannenkoek|sushi|pizza|burger|grill(?:restaurant|room|bar)|steak(?:house)?|lunchroom|eetcaf|eetkamer|eethuis"),
     ("koffie, lunch en horeca", "coffee, lunch and hospitality", r"café|cafe|coffee|koffie|barista"),
-    ("brood en banket", "bread and pastry", r"bakker|brood|banket|patisserie|bakery"),
+    ("dagelijkse boodschappen en retail", "everyday groceries and retail", r"supermarkt|supermarket|boodschappen|grocery|groceries"),
+    ("brood en banket", "bread and pastry", r"bakker|\bbrood\b|banket|patisserie|bakery"),
     ("slagerij en versproducten", "butchery and fresh food", r"slager|keurslager|butcher"),
     ("haar en beauty", "hair and beauty", r"kapsalon|kapper|coiffure|hair|haarmode|hairstyl|beauty|schoonheid"),
     ("dierenzorg", "animal care", r"dierenarts|dierenkliniek|veterin|kattenkliniek|paardenkliniek"),
+    ("dieren en dierbenodigdheden", "pets and pet supplies", r"dierenwinkel|dierenspeciaalzaak|dierenbenodigdheden|pet shop|pet store|reptielen|aquarium"),
+    ("hengelsport en visbenodigdheden", "angling and fishing supplies", r"\bhengelsport\b|\bhengel(?:s)?\b|fishing tackle|fishing gear|fishing supplies|vismateriaal|visaas"),
     ("sport en fitness", "sports and fitness", r"fitness|sportschool|sportcentrum|crossfit|gym|hockey|racket|pilates"),
-    ("mode en kleding", "fashion and clothing", r"mode|kleding|fashion|boutique|herenmode|schoenen|suit store"),
-    ("boeken, muziek en media", "books, music and media", r"boekhandel|bookstore|muziekhuis|music|plato|read shop"),
-    ("wonen en interieur", "home and interiors", r"interieur|woon|meubel|raamdecoratie|zonwering|vloerdecoratie"),
-    ("eten en delicatessen", "food and delicacies", r"delicatessen|wijn|wine|kaas|vis|food|toko|speciaalzaak"),
-    ("makelaardij en vastgoed", "real estate", r"makelaar|makelaardij|real estate|taxatie"),
+    ("mode en kleding", "fashion and clothing", r"mode|kleding|fashion|boutique|herenmode|schoenen|lingerie|ondermode|lingeriezaak|suit store"),
+    ("boeken, muziek en media", "books, music and media", r"boekhandel|bookstore|muziekhuis|music|read shop"),
+    ("bedden en slaapcomfort", "beds and sleep comfort", r"boxspring|matras|slaapcomfort|beddenwinkel"),
+    ("wonen en interieur", "home and interiors", r"interieur|\bwoon(?:winkel|boulevard|accessoire|decoratie|interieur|kamer|stijl|huis|beton)\w*|meubel|raamdecoratie|zonwering|vloerdecoratie"),
+    ("wonen met zorg en ouderenzorg", "residential elder care", r"woonzorg|woonzorglocatie|ouderenzorg|nursing home|care home|elderly care"),
+    ("loterijen en kansspelen", "lotteries and games of chance", r"staatsloten|staatsloterij|krasloten|loterij|lotter(?:y|ies)|kansspelen|gambling"),
+    ("eten en delicatessen", "food and delicacies", r"delicatessen|wijn|wine|kaas|\bvis\b|\bvisspeciaalzaak\b|\bvishandel\b|\bviswinkel\b|\bvisboer\b|fishmonger|fish market|food|toko"),
+    ("makelaardij en vastgoed", "real estate", r"\bmakelaar\b|\bmakelaardij\b|real estate|taxatie"),
     ("camping en recreatie", "camping and recreation", r"camping|kampeer|camper|caravan"),
     ("winkelen en retail", "shopping and retail", r"winkelcentrum|shopping mall"),
     ("tweedehands en hergebruik", "second-hand and reuse", r"kringloop|tweedehands"),
     ("apotheekzorg en gezondheid", "pharmacy and health", r"apotheek|pharmacy"),
+)
+
+
+EXPLICIT_BUSINESS_MARKER = re.compile(
+    r"\bfiets(?:en)?\b|fietsenwinkel|fietsenmaker|bike shop|bicycle shop|"
+    r"bloemenwinkel|bloemenzaak|bloemist|florist|flower shop|tuincentrum|"
+    r"supermarkt|supermarket|grocery|groceries|boodschappen|"
+    r"garage|autodealer|autobedrijf|auto service|autoservice|"
+    r"tandarts|tandheel|dental|mondzorg|orthodont|"
+    r"optiek|opticien|oogzorg|oogkliniek|oogheelkund|oogarts|oogmode|eyewear|contactlen|optometr|"
+    r"foto\s+speciaalzaak|fotospeciaalzaak|fotowinkel|fotografie|fotograaf|camera shop|photograph|"
+    r"juwelier|jeweler|jewelry|jewellery|goudsmid|goldsmith|"
+    r"kinderopvang|kinderdag|day care|kindergarden|"
+    r"restaurant|bistro|brasserie|café|cafe|lunchroom|eetcaf|eetkamer|steakhouse|"
+    r"bakker|patisserie|banketbakker|slager|keurslager|butcher|"
+    r"dierenarts|dierenkliniek|veterin|dierenwinkel|dierenspeciaalzaak|dierenbenodigdheden|pet shop|pet store|"
+    r"sportschool|sportcentrum|fitness|gym|crossfit|hengelsport|"
+    r"mode|kleding|fashion|lingerie|ondermode|"
+    r"boekhandel|bookstore|muziekhuis|music shop|"
+    r"visspeciaalzaak|vishandel|viswinkel|visboer|fishmonger|"
+    r"woonzorg|ouderenzorg|nursing home|care home|elderly care|"
+    r"staatslot|kraslot|loterij|lotter|kansspel|"
+    r"makelaar|makelaardij|real estate|taxatie|apotheek|pharmacy",
+    flags=re.IGNORECASE,
 )
 
 
@@ -47,6 +78,9 @@ CATEGORY_FOCUS = {
     "hotel": ("overnachten en gastvrijheid", "accommodation and hospitality"),
     "food_and_beverage_store": ("eten, drinken en retail", "food, drinks and retail"),
     "convenience_store": ("dagelijkse boodschappen en retail", "everyday groceries and retail"),
+    "supermarket": ("dagelijkse boodschappen en retail", "everyday groceries and retail"),
+    "grocery_store": ("dagelijkse boodschappen en retail", "everyday groceries and retail"),
+    "grocery_or_supermarket": ("dagelijkse boodschappen en retail", "everyday groceries and retail"),
     "warehouse_club_store": ("retail en boodschappen", "retail and groceries"),
     "fashion_and_apparel_store": ("mode en kleding", "fashion and clothing"),
     "personal_care_and_beauty_store": ("beauty en persoonlijke verzorging", "beauty and personal care"),
@@ -205,9 +239,17 @@ def build_opening(
 ) -> str:
     company_label = short_company_name(company)
     low_signal = observation_is_low_signal(company, observation)
-    focus = infer_focus_from_observation(observation, language, category_hint if low_signal else None)
-    if focus is None and low_signal:
-        focus = infer_focus_from_observation(company_label, language, category_hint)
+    focus = infer_focus_from_observation(observation, language)
+    category_focus = infer_focus_from_observation("", language, category_hint)
+    boilerplate_heading = bool(re.match(r"^(home|homepage|welkom|welcome)\b", str(observation or "").strip(), flags=re.IGNORECASE))
+    if low_signal and boilerplate_heading and not EXPLICIT_BUSINESS_MARKER.search(str(observation or "")):
+        company_focus = infer_focus_from_observation(company_label, language)
+        if company_focus and EXPLICIT_BUSINESS_MARKER.search(company_label):
+            focus = company_focus
+        else:
+            focus = category_focus or focus
+    elif focus is None:
+        focus = infer_focus_from_observation(company_label, language) or category_focus
     if language == "en":
         if focus:
             return (
