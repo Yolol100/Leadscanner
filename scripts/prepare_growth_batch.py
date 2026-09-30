@@ -240,8 +240,36 @@ def build_opening(
     company_label = short_company_name(company)
     observed = re.sub(r"\s+", " ", str(observation or "")).strip()
     low_signal = observation_is_low_signal(company, observed)
+    low = observed.casefold()
+    boilerplate_heading = bool(
+        re.match(r"^(home|homepage|welkom|welcome)\b", observed, flags=re.IGNORECASE)
+    )
+    placeholder_observation = low in {
+        "gelieve te wachten",
+        "mysite",
+        "wij zijn verhuisd..",
+        "wij zijn verhuisd",
+        "wie zijn wij?",
+        "wie zijn wij",
+        "🔒 beveiligde website",
+        "beveiligde website",
+        "staff member carousel",
+    } or bool(
+        re.search(
+            r"reserved domain|under construction|coming soon|domainorder|geparkeerd|"
+            r"crypto casino|bitcoin casino|tempat main|window \d+|without code",
+            low,
+        )
+    )
+    weak_observation = bool(re.search(r"\b\d+\s*%", observed))
 
-    if observed and not low_signal:
+    if (
+        observed
+        and len(_word_set(observed)) >= 3
+        and not boilerplate_heading
+        and not placeholder_observation
+        and not weak_observation
+    ):
         punctuation = "" if observed.endswith((".", "!", "?")) else "."
         if language == "en":
             return f'I noticed this on your website: “{observed}”{punctuation}'
@@ -250,9 +278,6 @@ def build_opening(
     focus = infer_focus_from_observation(observed, language)
     company_focus = infer_focus_from_observation(company_label, language)
     category_focus = infer_focus_from_observation("", language, category_hint)
-    boilerplate_heading = bool(
-        re.match(r"^(home|homepage|welkom|welcome)\b", observed, flags=re.IGNORECASE)
-    )
     if low_signal and boilerplate_heading and not EXPLICIT_BUSINESS_MARKER.search(observed):
         if company_focus and EXPLICIT_BUSINESS_MARKER.search(company_label):
             focus = company_focus
