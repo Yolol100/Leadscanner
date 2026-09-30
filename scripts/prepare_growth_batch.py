@@ -238,36 +238,37 @@ def build_opening(
     category_hint: str | None = None,
 ) -> str:
     company_label = short_company_name(company)
-    low_signal = observation_is_low_signal(company, observation)
-    focus = infer_focus_from_observation(observation, language)
+    observed = re.sub(r"\s+", " ", str(observation or "")).strip()
+    low_signal = observation_is_low_signal(company, observed)
+
+    if observed and not low_signal:
+        punctuation = "" if observed.endswith((".", "!", "?")) else "."
+        if language == "en":
+            return f'I noticed this on your website: “{observed}”{punctuation}'
+        return f'Op jullie site viel me op: “{observed}”{punctuation}'
+
+    focus = infer_focus_from_observation(observed, language)
+    company_focus = infer_focus_from_observation(company_label, language)
     category_focus = infer_focus_from_observation("", language, category_hint)
-    boilerplate_heading = bool(re.match(r"^(home|homepage|welkom|welcome)\b", str(observation or "").strip(), flags=re.IGNORECASE))
-    if low_signal and boilerplate_heading and not EXPLICIT_BUSINESS_MARKER.search(str(observation or "")):
-        company_focus = infer_focus_from_observation(company_label, language)
+    boilerplate_heading = bool(
+        re.match(r"^(home|homepage|welkom|welcome)\b", observed, flags=re.IGNORECASE)
+    )
+    if low_signal and boilerplate_heading and not EXPLICIT_BUSINESS_MARKER.search(observed):
         if company_focus and EXPLICIT_BUSINESS_MARKER.search(company_label):
             focus = company_focus
         else:
             focus = category_focus or focus
     elif focus is None:
-        focus = infer_focus_from_observation(company_label, language) or category_focus
-    if language == "en":
-        if focus:
-            return (
-                f"I saw that {company_label} focuses on {focus}. "
-                "I can support that online."
-            )
-        if not low_signal:
-            return f'I saw on your website: “{observation}”.'
-        return f"I looked through {company_label}'s website."
-    if focus:
-        return (
-            f"Ik zag dat {company_label} zich richt op {focus}. "
-            "Daar kan ik jullie online bij ondersteunen."
-        )
-    if not low_signal:
-        return f'Op jullie website zag ik “{observation}”.'
-    return f"Ik heb de website van {company_label} bekeken."
+        focus = company_focus or category_focus
 
+    if focus:
+        if language == "en":
+            return f"I saw that {company_label} focuses on {focus}."
+        return f"Ik zag dat {company_label} zich richt op {focus}."
+
+    raise ValueError(
+        "No specific verified site detail or reliable business focus for outreach opening"
+    )
 
 def build_template(
     company: str,
