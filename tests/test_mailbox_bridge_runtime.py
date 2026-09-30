@@ -55,7 +55,7 @@ class MailboxBridgeRuntimeTests(unittest.TestCase):
             "startsWith(github.event.issue.title, '[mailbox-execute]')",
             "id-token: write",
             "repository: Yolol100/myhost-mailbox",
-            "ref: 9a02f94191fb19c5bbc42f6acecd806e411d2603",
+            "ref: d7cdfc60d9e056650c733644099a39f92be192b3",
             "https://andrewbaeten.nl",
             "secrets.OUTREACH_MAIL_PASSWORD",
             "secrets.OUTREACH_SMTP_PASSWORD || secrets.OUTREACH_MAIL_PASSWORD",
@@ -64,6 +64,8 @@ class MailboxBridgeRuntimeTests(unittest.TestCase):
             "MAILBOX_PRIVATE_RESULT=green",
             'set(request) != {"request_id"}',
             'json.dumps(request, ensure_ascii=True, separators=(",", ":"))',
+            'request.sha256',
+            'X-Webactueel-Mailbox-Request-SHA256',
             'rm -rf "$RUNNER_TEMP/mailbox"',
         )
         for needle in required:
