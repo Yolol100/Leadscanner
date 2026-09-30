@@ -48,7 +48,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p results/source results/rewrite
-          for artifact_id in             11009012767 11013906065 11019071378 11013926537             11014736981 11014722896 11013934695 11020970770             11021895322 11022648826 11023991566 11024151826             11025033182 11025636561 11025158483 11026955968
+          for artifact_id in             11009012767 11013906065 11019071378 11013926537 11014736981 11014722896 11013934695 11020970770 11021895322 11022648826 11023991566 11024151826 11025033182 11025636561 11025158483 11026955968
           do
             mkdir -p "results/source/$artifact_id"
             gh api -H "Accept: application/vnd.github+json"               "/repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip"               > "results/source/$artifact_id.zip"
@@ -81,50 +81,55 @@ jobs:
               11021895322,11022648826,11023991566,11024151826,
               11025033182,11025636561,11025158483,11026955968,
           ]
-          excluded = {
-              "growth-43f68aa9f09b4f8b1986",
-              "growth-6f28a46a4b8c2b06e812",
-              "growth-f1c767aa51ceb7d6c2f4",
-              "growth-3db0aea2330c9c1013cd",
-              "growth-d5b539d372fdb6266c16",
-              "growth-f516d98dd1403308eb1c",
-              "growth-80a578edcfc30d043762",
-              "growth-67fd975851a9b546d46f",
-          }
-          invalid_expected = {
-              "growth-f1c767aa51ceb7d6c2f4": 11009012767,
-              "growth-3db0aea2330c9c1013cd": 11014736981,
-              "growth-d5b539d372fdb6266c16": 11023991566,
-              "growth-f516d98dd1403308eb1c": 11014722896,
-              "growth-80a578edcfc30d043762": 11021895322,
-              "growth-67fd975851a9b546d46f": 11013934695,
+          target_lead_ids = {
+              "growth-0ce85322cbce0efc3227",
+              "growth-d51cba8849640a5cc714",
+              "growth-83c374cdc3846ad9fe79",
+              "growth-3aaf767223065c8aef60",
+              "growth-7b6ca7bc872760f3e386",
+              "growth-78f54d9aa278297c0350",
+              "growth-7e3b5a98e11ced30a64a",
+              "growth-08fd403f7353c0f1ba9b",
+              "growth-ee46b2a22bdf51e316ac",
+              "growth-646e15113e45e5087692",
+              "growth-5ec7d416deb8c1d2c5e8",
+              "growth-717cbbcc9fec92c5ac0f",
+              "growth-566dd28f5316f406183c",
+              "growth-75fcd17e41e610b20a50",
+              "growth-a8a12bdffc53fffe2aee",
+              "growth-5798922de3efe210c99f",
+              "growth-8cbc335dd8cd08bb5b16",
+              "growth-bf178223dabeb3be7b2f",
+              "growth-d89de3e363388788c054",
+              "growth-fdd74d151ebc5eea8ba4",
+              "growth-ca90dcb6eea97b76d1af",
+              "growth-075df3b6b11a3ab8b652",
+              "growth-cc28486426a88d573f16",
+              "growth-03ef018b33dba6afb445",
+              "growth-d891390a45c1c6d47603",
+              "growth-a40dbd990fd6614309a6",
           }
           observation_overrides = {
-              "growth-8b01fa84969ecd524c49": {
-                  "observation": "Izakaya Tanuki is een Japans izakaya- en sushirestaurant in Amsterdam.",
-                  "source_url": "https://gelderlandplein.izakayatanuki.com/informatie",
+              "growth-d89de3e363388788c054": {
+                  "observation": "Woonzorglocatie Bloemhof in Ten Boer.",
+                  "source_url": "https://www.zorggroepgroningen.nl/locaties/bloemhof",
                   "source_type": "official_site",
               },
-              "growth-d847726c241e2c4d4f59": {
-                  "observation": "Anytime Fitness Berkel en Rodenrijs biedt 24/7 fitness, persoonlijke begeleiding en groepslessen.",
-                  "source_url": "https://www.anytimefitness.nl/gyms/nl-1068/berkel-en-rodenrijs-zuid-holland-2652-kw/",
+              "growth-075df3b6b11a3ab8b652": {
+                  "observation": "Primera Kosterman verkoopt online Staatsloten.",
+                  "source_url": "https://geluksmakelaar.nl/staatsloterij/",
                   "source_type": "official_site",
               },
-              "growth-69284f7f2b9eca98dc54": {
-                  "observation": "KFC Nederland heeft meer dan 90 restaurants en serveert onder meer verse kip.",
-                  "source_url": "https://kfc.nl/",
-                  "source_type": "official_site",
-              },
-              "growth-e4f88bf6b254cd2f601b": {
-                  "observation": "Ku Kitchen & Bar in Amsterdam richt zich op Japanse fusion, sushi en cocktails.",
-                  "source_url": "https://www.kukitchen.nl/",
+              "growth-d51cba8849640a5cc714": {
+                  "observation": "Søstrene Grene verkoopt woondecoratie en accessoires voor thuis.",
+                  "source_url": "https://sostrenegrene.com/nl/producten/wonen/interieur-c-8312",
                   "source_type": "official_site",
               },
           }
           price = json.loads(Path("config/growth-subscription.json").read_text(encoding="utf-8"))["monthly_price_eur"]
           price_min, price_max = int(price["min"]), int(price["max"])
           global_rows = []
-          invalid_seen = {}
+          baseline_rows = []
           language_split = Counter()
 
           for artifact_id in artifact_ids:
@@ -137,9 +142,7 @@ jobs:
                   if old.get("status") != "review_draft":
                       continue
                   lead_id = str(old.get("lead_id") or "")
-                  if lead_id in invalid_expected:
-                      invalid_seen[lead_id] = artifact_id
-                  if lead_id in excluded:
+                  if lead_id not in target_lead_ids:
                       continue
                   matches = [
                       c for c in candidates
@@ -150,6 +153,10 @@ jobs:
                   if len(matches) != 1:
                       raise SystemExit(f"{lead_id}: verified-input match count={len(matches)}")
                   candidate = matches[0]
+                  baseline_rows.append({
+                      key: old.get(key)
+                      for key in ("lead_id", "email", "subject", "body", "status", "contact_basis_status")
+                  })
                   row = dict(old)
                   override = observation_overrides.get(lead_id)
                   if override:
@@ -239,6 +246,8 @@ jobs:
                   selected.append(row)
                   global_rows.append(row)
 
+              if not selected:
+                  continue
               out_dir = Path(f"results/rewrite/{artifact_id}")
               out_dir.mkdir(parents=True, exist_ok=True)
               payload = {
@@ -267,12 +276,13 @@ jobs:
               )
               write_csv(payload, out_dir / "growth-batch.csv")
 
-          if invalid_seen != invalid_expected:
-              raise SystemExit(f"invalid lead/artifact mapping mismatch: {invalid_seen}")
-          if len(global_rows) != 1150:
-              raise SystemExit(f"expected 1150 canonical audited rows, found {len(global_rows)}")
-          if dict(language_split) != {"nl": 1080, "en": 70}:
-              raise SystemExit(f"unexpected language split: {dict(language_split)}")
+          seen_lead_ids = [str(row.get("lead_id") or "") for row in global_rows]
+          if len(seen_lead_ids) != len(target_lead_ids) or set(seen_lead_ids) != target_lead_ids:
+              missing = sorted(target_lead_ids - set(seen_lead_ids))
+              extra = sorted(set(seen_lead_ids) - target_lead_ids)
+              raise SystemExit(f"target set mismatch missing={missing} extra={extra}")
+          if dict(language_split) != {"nl": 26}:
+              raise SystemExit(f"unexpected target language split: {dict(language_split)}")
           for key in ("lead_id","email","official_domain_hint"):
               values = [str(row.get(key) or "").strip().casefold() for row in global_rows]
               dupes = [value for value,count in Counter(values).items() if value and count > 1]
@@ -281,180 +291,88 @@ jobs:
           summary = {
               "canonical_count": len(global_rows),
               "language_split": dict(language_split),
-              "excluded_lead_ids": sorted(excluded),
               "automatic_send": False,
               "smtp_send": "not_available",
           }
           Path("results/preflight-summary.json").write_text(
               json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
           )
+          Path("results/target-baseline.json").write_text(
+              json.dumps(baseline_rows, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+          )
           print(
               "AUDITED_COPY_PREFLIGHT=green "
-              f"count={len(global_rows)} nl={language_split['nl']} en={language_split['en']} "
+              f"count={len(global_rows)} nl={language_split['nl']} en={language_split.get('en', 0)} "
               "duplicates=0 generic_openings=0 automatic_send=false smtp_send=not_available"
           )
           PY
 
-      - name: Download latest successful exact readback baseline
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/remediation-baseline"
-          gh api -H "Accept: application/vnd.github+json" \
-            "/repos/$GITHUB_REPOSITORY/actions/workflows/leads-audited-draft-remediation-once.yml/runs?branch=main&per_page=100" \
-            > "$RUNNER_TEMP/remediation-runs.json"
-          python3 - "$RUNNER_TEMP/remediation-runs.json" "$GITHUB_RUN_ID" > "$RUNNER_TEMP/previous-run-id" <<'PY'
-          import json,sys
-          payload=json.load(open(sys.argv[1],encoding="utf-8"))
-          current=sys.argv[2]
-          runs=[r for r in payload.get("workflow_runs",[]) if r.get("conclusion")=="success" and str(r.get("id"))!=current]
-          if runs:
-              print(max(runs,key=lambda r:(r.get("run_number",0),r.get("id",0)))["id"])
-          PY
-          if [ -s "$RUNNER_TEMP/previous-run-id" ]; then
-            run_id="$(cat "$RUNNER_TEMP/previous-run-id")"
-            gh api -H "Accept: application/vnd.github+json" \
-              "/repos/$GITHUB_REPOSITORY/actions/runs/$run_id/artifacts?per_page=100" \
-              > "$RUNNER_TEMP/previous-artifacts.json"
-            python3 - "$RUNNER_TEMP/previous-artifacts.json" > "$RUNNER_TEMP/previous-artifact-id" <<'PY'
-          import json,sys
-          payload=json.load(open(sys.argv[1],encoding="utf-8"))
-          rows=[a for a in payload.get("artifacts",[]) if a.get("name","").startswith("audited-draft-remediation") and not a.get("expired")]
-          if len(rows)>1:
-              raise SystemExit("latest successful run has ambiguous remediation artifacts")
-          if rows:
-              print(rows[0]["id"])
-          PY
-            if [ -s "$RUNNER_TEMP/previous-artifact-id" ]; then
-              artifact_id="$(cat "$RUNNER_TEMP/previous-artifact-id")"
-              gh api -H "Accept: application/vnd.github+json" \
-                "/repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" \
-                > "$RUNNER_TEMP/previous-audit.zip"
-              echo "PREVIOUS_EXACT_READBACK=available"
-            else
-              echo "PREVIOUS_EXACT_READBACK=unavailable"
-            fi
-          else
-            echo "PREVIOUS_EXACT_READBACK=unavailable"
-          fi
-
-      - name: Preflight six proven invalid drafts against current mailbox
+      - name: Verify existing target drafts before mailbox changes
         run: |
           set -euo pipefail
           PYTHONPATH=scripts python3 - <<'PY'
           import json
-          import re
           from pathlib import Path
-          from myhost_draft import connect_imap, fetch_message, find_drafts_folder, find_message_ids, select_folder
-          from myhost_invalid_draft_baselines import SCHEMA_VERSION, build_expected_versions, load_previous_exact_versions, version_matches_message
-
-          invalid = {
-              "growth-f1c767aa51ceb7d6c2f4": 11009012767,
-              "growth-3db0aea2330c9c1013cd": 11014736981,
-              "growth-d5b539d372fdb6266c16": 11023991566,
-              "growth-f516d98dd1403308eb1c": 11014722896,
-              "growth-80a578edcfc30d043762": 11021895322,
-              "growth-67fd975851a9b546d46f": 11013934695,
-          }
-          bad = re.compile(
-              r"reserved domain|domainorder|coming soon|under construction|"
-              r"crypto casinos?|bitcoin casinos?|without code|geparkeerd|vimexx|konoha|tempat main",
-              re.IGNORECASE,
+          from myhost_draft import (
+              build_message,
+              connect_imap,
+              exact_message_matches,
+              fetch_message,
+              find_drafts_folder,
+              find_message_ids,
+              select_folder,
           )
-          source_rows = {}
-          for lead_id, artifact_id in invalid.items():
-              payload = json.loads(Path(f"results/source/{artifact_id}/growth-batch.json").read_text(encoding="utf-8"))
-              rows = [r for r in payload.get("rows") or [] if r.get("lead_id") == lead_id]
-              if len(rows) != 1:
-                  raise SystemExit(f"{lead_id}: source row count={len(rows)}")
-              row = rows[0]
-              if row.get("status") != "review_draft" or row.get("contact_basis_status") != "review_required":
-                  raise SystemExit(f"{lead_id}: source is not review_required review_draft")
-              if row.get("verified_observation_source_type") != "official_site":
-                  raise SystemExit(f"{lead_id}: official-site provenance missing")
-              if not bad.search(str(row.get("verified_observation") or "")):
-                  raise SystemExit(f"{lead_id}: invalid-site observation not proven")
-              source_rows[lead_id] = row
 
-          previous_path = Path(__import__("os").environ.get("RUNNER_TEMP", "/tmp")) / "previous-audit.zip"
-          previous_versions = load_previous_exact_versions(previous_path, set(invalid))
-          baselines = build_expected_versions(source_rows, previous_versions)
+          expected_rows = json.loads(
+              Path("results/target-baseline.json").read_text(encoding="utf-8")
+          )
+          if len(expected_rows) != 26:
+              raise SystemExit(f"expected 26 existing-draft baselines, found {len(expected_rows)}")
+
           client = connect_imap()
           try:
               folder = find_drafts_folder(client)
               select_folder(client, folder, readonly=True)
-              for lead_id, row in source_rows.items():
-                  ids = find_message_ids(client, folder, lead_id, ensure_selected=False)
-                  if len(ids) > 1:
-                      raise SystemExit(f"{lead_id}: current draft count={len(ids)}, expected 0 or 1")
-                  if not ids:
-                      continue
-                  actual = fetch_message(client, ids[0])
-                  if not any(version_matches_message(actual, lead_id, v) for v in baselines[lead_id]["expected_versions"]):
-                      raise SystemExit(f"{lead_id}: current exact draft version mismatch")
+              for row in expected_rows:
+                  lead_id, expected = build_message(row)
+                  message_ids = find_message_ids(client, folder, lead_id, ensure_selected=False)
+                  if len(message_ids) != 1:
+                      raise SystemExit(
+                          f"{lead_id}: expected exactly one existing draft, found {len(message_ids)}"
+                      )
+                  actual = fetch_message(client, message_ids[0])
+                  if actual.get("X-Webactueel-Lead-ID") != lead_id:
+                      raise SystemExit(f"{lead_id}: existing draft identity mismatch")
+                  if not exact_message_matches(actual, expected):
+                      raise SystemExit(f"{lead_id}: existing draft differs from source baseline")
+              print(
+                  "TARGET_DRAFT_PREFLIGHT=green count=26 existing=26 exact_baseline=true "
+                  "read_only=true automatic_send=false smtp_send=not_available"
+              )
           finally:
               try:
                   client.logout()
               except Exception:
                   pass
-          Path("results/invalid-draft-baselines.json").write_text(
-              json.dumps({"schema_version": SCHEMA_VERSION, "lead_ids": baselines}, indent=2, ensure_ascii=False) + "\n",
-              encoding="utf-8",
-          )
-          print("INVALID_DRAFT_PREFLIGHT=green count=6 exact_source_or_prior_readback=true automatic_send=false smtp_send=not_available")
           PY
 
-      - name: Remove six invalid-source review drafts idempotently
-        run: |
-          set -euo pipefail
-          PYTHONPATH=scripts python3 - <<'PY'
-          import json
-          from pathlib import Path
-          from myhost_invalid_draft_baselines import load_expected_versions
-          from myhost_remove_duplicate_draft import remove_growth_draft
-
-          lead_ids = [
-              "growth-f1c767aa51ceb7d6c2f4",
-              "growth-3db0aea2330c9c1013cd",
-              "growth-d5b539d372fdb6266c16",
-              "growth-f516d98dd1403308eb1c",
-              "growth-80a578edcfc30d043762",
-              "growth-67fd975851a9b546d46f",
-          ]
-          removed = 0
-          already_absent = 0
-          for lead_id in lead_ids:
-              expected = load_expected_versions("results/invalid-draft-baselines.json", lead_id)
-              result = remove_growth_draft(lead_id, expected)
-              removed += result["removed_count"]
-              already_absent += int(result["removed_count"] == 0)
-              Path(f"results/removal-{lead_id}.json").write_text(
-                  json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
-              )
-          print(
-              "INVALID_DRAFT_REMOVALS=green "
-              f"targets=6 removed_now={removed} already_absent={already_absent} "
-              "final_absent=6 automatic_send=false smtp_send=not_available"
-          )
-          PY
-
-      - name: Safely replace every remaining audited review draft
+      - name: Safely replace the 26 audited target drafts
         run: |
           set -euo pipefail
           total=0
           replaced=0
           existing=0
-          for artifact_id in             11009012767 11013906065 11019071378 11013926537             11014736981 11014722896 11013934695 11020970770             11021895322 11022648826 11023991566 11024151826             11025033182 11025636561 11025158483 11026955968
+          for artifact_id in             11009012767 11013906065 11013926537 11014736981 11014722896 11021895322 11022648826 11023991566 11024151826 11025033182 11025636561 11026955968
           do
             batch="results/rewrite/$artifact_id/growth-batch.json"
             count="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["review_draft_count"])' "$batch")"
             if [ "$count" -eq 0 ]; then
               continue
             fi
-            PYTHONPATH=scripts python3 scripts/myhost_draft.py               --batch "$batch"               --report "results/rewrite/$artifact_id/myhost-drafts.json"               | tee "results/rewrite/$artifact_id/myhost-drafts.txt"
+            PYTHONPATH=scripts python3 scripts/myhost_draft.py --rewrite-existing-only               --batch "$batch"               --report "results/rewrite/$artifact_id/myhost-drafts.json"               | tee "results/rewrite/$artifact_id/myhost-drafts.txt"
             grep -q '^MYHOST_DRAFT_SYNC=green ' "results/rewrite/$artifact_id/myhost-drafts.txt"
             grep -q 'smtp_send=not_available' "results/rewrite/$artifact_id/myhost-drafts.txt"
+            grep -q 'rewrite_existing_only=true' "results/rewrite/$artifact_id/myhost-drafts.txt"
             read r e c <<<"$(python3 - "$artifact_id" <<'PY'
           import json,sys
           aid=sys.argv[1]
@@ -490,13 +408,13 @@ jobs:
             existing=$((existing + e))
             total=$((total + c))
           done
-          test "$total" -eq 1150
+          test "$total" -eq 26
           echo "AUDITED_REWRITE_READBACK=green total=$total replaced=$replaced existing=$existing created=0 review_required=$total automatic_send=false smtp_send=not_available"
 
       - name: Final read-only audit group A
         run: |
           set -euo pipefail
-          PYTHONPATH=scripts python3 scripts/myhost_final_audit.py             --batch results/rewrite/11009012767/growth-batch.json --report results/rewrite/11009012767/myhost-drafts.json             --batch results/rewrite/11013906065/growth-batch.json --report results/rewrite/11013906065/myhost-drafts.json             --batch results/rewrite/11019071378/growth-batch.json --report results/rewrite/11019071378/myhost-drafts.json             --batch results/rewrite/11013926537/growth-batch.json --report results/rewrite/11013926537/myhost-drafts.json             --batch results/rewrite/11014736981/growth-batch.json --report results/rewrite/11014736981/myhost-drafts.json             --batch results/rewrite/11014722896/growth-batch.json --report results/rewrite/11014722896/myhost-drafts.json             --batch results/rewrite/11013934695/growth-batch.json --report results/rewrite/11013934695/myhost-drafts.json             --batch results/rewrite/11020970770/growth-batch.json --report results/rewrite/11020970770/myhost-drafts.json             --config config/growth-subscription.json             --output results/final-audit-a.json             | tee results/final-audit-a.txt
+          PYTHONPATH=scripts python3 scripts/myhost_final_audit.py             --batch results/rewrite/11009012767/growth-batch.json --report results/rewrite/11009012767/myhost-drafts.json             --batch results/rewrite/11013906065/growth-batch.json --report results/rewrite/11013906065/myhost-drafts.json             --batch results/rewrite/11013926537/growth-batch.json --report results/rewrite/11013926537/myhost-drafts.json             --batch results/rewrite/11014736981/growth-batch.json --report results/rewrite/11014736981/myhost-drafts.json             --batch results/rewrite/11014722896/growth-batch.json --report results/rewrite/11014722896/myhost-drafts.json             --config config/growth-subscription.json             --output results/final-audit-a.json             | tee results/final-audit-a.txt
           grep -q '^FINAL_LEADS_AUDIT=green ' results/final-audit-a.txt
           grep -q 'automatic_send=false' results/final-audit-a.txt
           grep -q 'smtp_send=not_available' results/final-audit-a.txt
@@ -504,39 +422,10 @@ jobs:
       - name: Final read-only audit group B
         run: |
           set -euo pipefail
-          PYTHONPATH=scripts python3 scripts/myhost_final_audit.py             --batch results/rewrite/11021895322/growth-batch.json --report results/rewrite/11021895322/myhost-drafts.json             --batch results/rewrite/11022648826/growth-batch.json --report results/rewrite/11022648826/myhost-drafts.json             --batch results/rewrite/11023991566/growth-batch.json --report results/rewrite/11023991566/myhost-drafts.json             --batch results/rewrite/11024151826/growth-batch.json --report results/rewrite/11024151826/myhost-drafts.json             --batch results/rewrite/11025033182/growth-batch.json --report results/rewrite/11025033182/myhost-drafts.json             --batch results/rewrite/11025636561/growth-batch.json --report results/rewrite/11025636561/myhost-drafts.json             --batch results/rewrite/11025158483/growth-batch.json --report results/rewrite/11025158483/myhost-drafts.json             --batch results/rewrite/11026955968/growth-batch.json --report results/rewrite/11026955968/myhost-drafts.json             --config config/growth-subscription.json             --output results/final-audit-b.json             | tee results/final-audit-b.txt
+          PYTHONPATH=scripts python3 scripts/myhost_final_audit.py             --batch results/rewrite/11021895322/growth-batch.json --report results/rewrite/11021895322/myhost-drafts.json             --batch results/rewrite/11022648826/growth-batch.json --report results/rewrite/11022648826/myhost-drafts.json             --batch results/rewrite/11023991566/growth-batch.json --report results/rewrite/11023991566/myhost-drafts.json             --batch results/rewrite/11024151826/growth-batch.json --report results/rewrite/11024151826/myhost-drafts.json             --batch results/rewrite/11025033182/growth-batch.json --report results/rewrite/11025033182/myhost-drafts.json             --batch results/rewrite/11025636561/growth-batch.json --report results/rewrite/11025636561/myhost-drafts.json             --batch results/rewrite/11026955968/growth-batch.json --report results/rewrite/11026955968/myhost-drafts.json             --config config/growth-subscription.json             --output results/final-audit-b.json             | tee results/final-audit-b.txt
           grep -q '^FINAL_LEADS_AUDIT=green ' results/final-audit-b.txt
           grep -q 'automatic_send=false' results/final-audit-b.txt
           grep -q 'smtp_send=not_available' results/final-audit-b.txt
-
-      - name: Final absence and total-count proof
-        run: |
-          set -euo pipefail
-          PYTHONPATH=scripts python3 - <<'PY'
-          from myhost_draft import connect_imap, find_drafts_folder, find_message_ids, select_folder
-          excluded = [
-              "growth-43f68aa9f09b4f8b1986",
-              "growth-6f28a46a4b8c2b06e812",
-              "growth-f1c767aa51ceb7d6c2f4",
-              "growth-3db0aea2330c9c1013cd",
-              "growth-d5b539d372fdb6266c16",
-              "growth-f516d98dd1403308eb1c",
-              "growth-80a578edcfc30d043762",
-              "growth-67fd975851a9b546d46f",
-          ]
-          client=connect_imap()
-          try:
-              folder=find_drafts_folder(client)
-              select_folder(client, folder, readonly=True)
-              for lead_id in excluded:
-                  ids=find_message_ids(client,folder,lead_id,ensure_selected=False)
-                  if ids:
-                      raise SystemExit(f"{lead_id}: excluded draft still present count={len(ids)}")
-              print("FINAL_EXCLUDED_ABSENCE=green count=8 read_only=true automatic_send=false smtp_send=not_available")
-          finally:
-              try: client.logout()
-              except Exception: pass
-          PY
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -547,8 +436,6 @@ jobs:
             results/rewrite/*/growth-batch.csv
             results/rewrite/*/myhost-drafts.json
             results/rewrite/*/myhost-drafts.txt
-            results/removal-*.json
-            results/removal-*.txt
             results/final-audit-a.json
             results/final-audit-a.txt
             results/final-audit-b.json
