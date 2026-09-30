@@ -156,7 +156,7 @@ jobs:
           REMOVE_ID: ${{ steps.request.outputs.remove_id }}
         run: |
           set -euo pipefail
-          PYTHONPATH=scripts python3 scripts/myhost_remove_duplicate_draft.py             --lead-id "$REMOVE_ID"             --output results/removal.json | tee results/removal.txt
+          PYTHONPATH=scripts python3 scripts/myhost_remove_duplicate_draft.py             --lead-id "$REMOVE_ID"             --expected-file results/source-row.json             --output results/removal.json | tee results/removal.txt
           grep -q '^MYHOST_DUPLICATE_REMOVAL=green ' results/removal.txt
           grep -q 'automatic_send=false' results/removal.txt
           grep -q 'smtp_send=not_available' results/removal.txt
@@ -211,3 +211,4 @@ jobs:
         run: |
           gh issue comment "$ISSUE_NUMBER" --body "Invalid-source review draft removed after exact current readback. Nothing was sent."
           gh issue close "$ISSUE_NUMBER"
+

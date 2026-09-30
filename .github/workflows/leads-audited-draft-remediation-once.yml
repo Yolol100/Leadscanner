@@ -295,17 +295,59 @@ jobs:
           )
           PY
 
-      - name: Preflight four proven invalid drafts against current mailbox
+      - name: Download latest successful exact readback baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/remediation-baseline"
+          gh api -H "Accept: application/vnd.github+json" \
+            "/repos/$GITHUB_REPOSITORY/actions/workflows/leads-audited-draft-remediation-once.yml/runs?branch=main&per_page=100" \
+            > "$RUNNER_TEMP/remediation-runs.json"
+          python3 - "$RUNNER_TEMP/remediation-runs.json" "$GITHUB_RUN_ID" > "$RUNNER_TEMP/previous-run-id" <<'PY'
+          import json,sys
+          payload=json.load(open(sys.argv[1],encoding="utf-8"))
+          current=sys.argv[2]
+          runs=[r for r in payload.get("workflow_runs",[]) if r.get("conclusion")=="success" and str(r.get("id"))!=current]
+          if runs:
+              print(max(runs,key=lambda r:(r.get("run_number",0),r.get("id",0)))["id"])
+          PY
+          if [ -s "$RUNNER_TEMP/previous-run-id" ]; then
+            run_id="$(cat "$RUNNER_TEMP/previous-run-id")"
+            gh api -H "Accept: application/vnd.github+json" \
+              "/repos/$GITHUB_REPOSITORY/actions/runs/$run_id/artifacts?per_page=100" \
+              > "$RUNNER_TEMP/previous-artifacts.json"
+            python3 - "$RUNNER_TEMP/previous-artifacts.json" > "$RUNNER_TEMP/previous-artifact-id" <<'PY'
+          import json,sys
+          payload=json.load(open(sys.argv[1],encoding="utf-8"))
+          rows=[a for a in payload.get("artifacts",[]) if a.get("name","").startswith("audited-draft-remediation") and not a.get("expired")]
+          if len(rows)>1:
+              raise SystemExit("latest successful run has ambiguous remediation artifacts")
+          if rows:
+              print(rows[0]["id"])
+          PY
+            if [ -s "$RUNNER_TEMP/previous-artifact-id" ]; then
+              artifact_id="$(cat "$RUNNER_TEMP/previous-artifact-id")"
+              gh api -H "Accept: application/vnd.github+json" \
+                "/repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" \
+                > "$RUNNER_TEMP/previous-audit.zip"
+              echo "PREVIOUS_EXACT_READBACK=available"
+            else
+              echo "PREVIOUS_EXACT_READBACK=unavailable"
+            fi
+          else
+            echo "PREVIOUS_EXACT_READBACK=unavailable"
+          fi
+
+      - name: Preflight six proven invalid drafts against current mailbox
         run: |
           set -euo pipefail
           PYTHONPATH=scripts python3 - <<'PY'
           import json
           import re
           from pathlib import Path
-          from myhost_draft import (
-              connect_imap, fetch_message, find_drafts_folder, find_message_ids,
-              normalize_text, plain_body, select_folder,
-          )
+          from myhost_draft import connect_imap, fetch_message, find_drafts_folder, find_message_ids, select_folder
+          from myhost_invalid_draft_baselines import SCHEMA_VERSION, build_expected_versions, load_previous_exact_versions, version_matches_message
 
           invalid = {
               "growth-f1c767aa51ceb7d6c2f4": 11009012767,
@@ -320,11 +362,9 @@ jobs:
               r"crypto casinos?|bitcoin casinos?|without code|geparkeerd|vimexx|konoha|tempat main",
               re.IGNORECASE,
           )
-          expected = {}
+          source_rows = {}
           for lead_id, artifact_id in invalid.items():
-              payload = json.loads(
-                  Path(f"results/source/{artifact_id}/growth-batch.json").read_text(encoding="utf-8")
-              )
+              payload = json.loads(Path(f"results/source/{artifact_id}/growth-batch.json").read_text(encoding="utf-8"))
               rows = [r for r in payload.get("rows") or [] if r.get("lead_id") == lead_id]
               if len(rows) != 1:
                   raise SystemExit(f"{lead_id}: source row count={len(rows)}")
@@ -335,40 +375,43 @@ jobs:
                   raise SystemExit(f"{lead_id}: official-site provenance missing")
               if not bad.search(str(row.get("verified_observation") or "")):
                   raise SystemExit(f"{lead_id}: invalid-site observation not proven")
-              expected[lead_id] = row
+              source_rows[lead_id] = row
 
+          previous_path = Path(__import__("os").environ.get("RUNNER_TEMP", "/tmp")) / "previous-audit.zip"
+          previous_versions = load_previous_exact_versions(previous_path, set(invalid))
+          baselines = build_expected_versions(source_rows, previous_versions)
           client = connect_imap()
           try:
               folder = find_drafts_folder(client)
               select_folder(client, folder, readonly=True)
-              for lead_id, row in expected.items():
+              for lead_id, row in source_rows.items():
                   ids = find_message_ids(client, folder, lead_id, ensure_selected=False)
                   if len(ids) > 1:
                       raise SystemExit(f"{lead_id}: current draft count={len(ids)}, expected 0 or 1")
                   if not ids:
                       continue
                   actual = fetch_message(client, ids[0])
-                  if normalize_text(actual.get("To", "")) != normalize_text(row.get("email", "")):
-                      raise SystemExit(f"{lead_id}: current To mismatch")
-                  if normalize_text(actual.get("Subject", "")) != normalize_text(row.get("subject", "")):
-                      raise SystemExit(f"{lead_id}: current subject mismatch")
-                  if normalize_text(plain_body(actual)) != normalize_text(row.get("body", "")):
-                      raise SystemExit(f"{lead_id}: current body mismatch")
-              print("INVALID_DRAFT_PREFLIGHT=green count=6 current_state_is_exact_or_absent=true automatic_send=false")
+                  if not any(version_matches_message(actual, lead_id, v) for v in baselines[lead_id]["expected_versions"]):
+                      raise SystemExit(f"{lead_id}: current exact draft version mismatch")
           finally:
               try:
                   client.logout()
               except Exception:
                   pass
+          Path("results/invalid-draft-baselines.json").write_text(
+              json.dumps({"schema_version": SCHEMA_VERSION, "lead_ids": baselines}, indent=2, ensure_ascii=False) + "\n",
+              encoding="utf-8",
+          )
+          print("INVALID_DRAFT_PREFLIGHT=green count=6 exact_source_or_prior_readback=true automatic_send=false smtp_send=not_available")
           PY
 
-      - name: Remove four invalid-source review drafts idempotently
+      - name: Remove six invalid-source review drafts idempotently
         run: |
           set -euo pipefail
           PYTHONPATH=scripts python3 - <<'PY'
           import json
           from pathlib import Path
-          from myhost_draft import connect_imap, find_drafts_folder, find_message_ids
+          from myhost_invalid_draft_baselines import load_expected_versions
           from myhost_remove_duplicate_draft import remove_growth_draft
 
           lead_ids = [
@@ -382,32 +425,12 @@ jobs:
           removed = 0
           already_absent = 0
           for lead_id in lead_ids:
-              client = connect_imap()
-              try:
-                  folder = find_drafts_folder(client)
-                  ids = find_message_ids(client, folder, lead_id)
-              finally:
-                  try:
-                      client.logout()
-                  except Exception:
-                      pass
-              if len(ids) > 1:
-                  raise SystemExit(f"{lead_id}: current draft count={len(ids)}, expected 0 or 1")
-              if not ids:
-                  already_absent += 1
-                  result = {
-                      "lead_id": lead_id,
-                      "removed_count": 0,
-                      "final_count": 0,
-                      "automatic_send": False,
-                      "smtp_send": "not_available",
-                  }
-              else:
-                  result = remove_growth_draft(lead_id)
-                  removed += 1
+              expected = load_expected_versions("results/invalid-draft-baselines.json", lead_id)
+              result = remove_growth_draft(lead_id, expected)
+              removed += result["removed_count"]
+              already_absent += int(result["removed_count"] == 0)
               Path(f"results/removal-{lead_id}.json").write_text(
-                  json.dumps(result, indent=2, ensure_ascii=False) + "\n",
-                  encoding="utf-8",
+                  json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
               )
           print(
               "INVALID_DRAFT_REMOVALS=green "
@@ -536,3 +559,4 @@ jobs:
       - name: Remove downloaded source residue
         if: always()
         run: rm -rf results/source results/source/*.zip
+

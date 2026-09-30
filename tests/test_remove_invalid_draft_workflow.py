@@ -18,6 +18,7 @@ class RemoveInvalidDraftWorkflowTests(unittest.TestCase):
         self.assertIn("exact_current_match=1", text)
         self.assertIn("INVALID_DRAFT_REMOVAL_READBACK=green", text)
         self.assertIn("scripts/myhost_remove_duplicate_draft.py", text)
+        self.assertIn("--expected-file results/source-row.json", text)
         self.assertIn("smtp_send=not_available", text)
         self.assertNotIn("smtplib", text)
         self.assertNotIn("sendmail(", text)
@@ -26,3 +27,4 @@ class RemoveInvalidDraftWorkflowTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

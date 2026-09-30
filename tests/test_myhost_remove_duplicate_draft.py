@@ -8,8 +8,9 @@ from myhost_remove_duplicate_draft import remove_growth_draft
 
 
 class FakeIMAP:
-    def __init__(self, raw: bytes):
+    def __init__(self, raw: bytes, count: int = 1):
         self.raw = raw
+        self.count = count
         self.deleted = False
         self.readonly = True
 
@@ -21,9 +22,9 @@ class FakeIMAP:
         return "OK", [b"1"]
 
     def search(self, charset, *criteria):
-        if self.deleted:
+        if self.deleted or self.count == 0:
             return "OK", [b""]
-        return "OK", [b"1"]
+        return "OK", [b" ".join(str(i).encode() for i in range(1, self.count + 1))]
 
     def fetch(self, message_id, query):
         return "OK", [(b"1 (RFC822)", self.raw)]
@@ -47,11 +48,13 @@ class RemoveDuplicateDraftTests(unittest.TestCase):
         msg["To"] = "info@example.nl"
         msg["Subject"] = "Test"
         msg["X-Webactueel-Lead-ID"] = lead_id
+        msg["X-Webactueel-Review-Required"] = "contact-basis"
         msg.set_content("Body")
+        expected = [{"to": "info@example.nl", "subject": "Test", "body": "Body", "review_status": "contact-basis"}]
         client = FakeIMAP(msg.as_bytes())
 
         with patch("myhost_remove_duplicate_draft.connect_imap", return_value=client):
-            result = remove_growth_draft(lead_id)
+            result = remove_growth_draft(lead_id, expected)
 
         self.assertEqual(result["removed_count"], 1)
         self.assertEqual(result["final_count"], 0)
@@ -59,6 +62,52 @@ class RemoveDuplicateDraftTests(unittest.TestCase):
         self.assertEqual(result["smtp_send"], "not_available")
         self.assertTrue(client.deleted)
 
+    def test_mismatch_stops_without_deleting(self):
+        lead_id = "growth-0123456789abcdefabcd"
+        msg = EmailMessage()
+        msg["To"] = "info@example.nl"
+        msg["Subject"] = "Changed"
+        msg["X-Webactueel-Lead-ID"] = lead_id
+        msg["X-Webactueel-Review-Required"] = "contact-basis"
+        msg.set_content("Body")
+        client = FakeIMAP(msg.as_bytes())
+        expected = [{"to": "info@example.nl", "subject": "Test", "body": "Body", "review_status": "contact-basis"}]
+
+        with patch("myhost_remove_duplicate_draft.connect_imap", return_value=client):
+            with self.assertRaisesRegex(RuntimeError, "version mismatch"):
+                remove_growth_draft(lead_id, expected)
+
+        self.assertFalse(client.deleted)
+
+    def test_already_absent_is_idempotent(self):
+        lead_id = "growth-0123456789abcdefabcd"
+        client = FakeIMAP(b"", count=0)
+        expected = [{"to": "info@example.nl", "subject": "Test", "body": "Body", "review_status": "contact-basis"}]
+
+        with patch("myhost_remove_duplicate_draft.connect_imap", return_value=client):
+            result = remove_growth_draft(lead_id, expected)
+
+        self.assertEqual(result["removed_count"], 0)
+        self.assertEqual(result["final_count"], 0)
+
+    def test_duplicate_matches_block_removal(self):
+        lead_id = "growth-0123456789abcdefabcd"
+        msg = EmailMessage()
+        msg["To"] = "info@example.nl"
+        msg["Subject"] = "Test"
+        msg["X-Webactueel-Lead-ID"] = lead_id
+        msg["X-Webactueel-Review-Required"] = "contact-basis"
+        msg.set_content("Body")
+        client = FakeIMAP(msg.as_bytes(), count=2)
+        expected = [{"to": "info@example.nl", "subject": "Test", "body": "Body", "review_status": "contact-basis"}]
+
+        with patch("myhost_remove_duplicate_draft.connect_imap", return_value=client):
+            with self.assertRaisesRegex(RuntimeError, "at most one"):
+                remove_growth_draft(lead_id, expected)
+
+        self.assertFalse(client.deleted)
+
 
 if __name__ == "__main__":
     unittest.main()
+
