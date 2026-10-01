@@ -54,8 +54,9 @@ class MailboxBridgeRuntimeTests(unittest.TestCase):
             "github.event.issue.user.login == github.repository_owner",
             "startsWith(github.event.issue.title, '[mailbox-execute]')",
             "id-token: write",
+            'os.environ["GITHUB_EVENT_PATH"]',
             "repository: Yolol100/myhost-mailbox",
-            "ref: d7374b54889712e0531ec5e86c095442c8e40bd1",
+            "ref: aae6dfa7b1cb5787ee2d9a48460721c79ea3d105",
             "https://andrewbaeten.nl",
             "webactueel-mailbox-bridge/v1",
             "$base/requests/$REQUEST_ID",
@@ -83,6 +84,7 @@ class MailboxBridgeRuntimeTests(unittest.TestCase):
             "webactueel-wordpress-connector/v1",
             "$base/mailbox/requests/$REQUEST_ID",
             "$base/mailbox/results/$REQUEST_ID",
+            "github.event_path",
         )
         for needle in forbidden:
             self.assertNotIn(needle, text)
