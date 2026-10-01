@@ -34,7 +34,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Yolol100/myhost-mailbox
-          ref: 42610b12e94dccc2921c8df6037870839e1ffc6c
+          ref: 9744218b7e76c33462924bf2eeae9cb8b93fc1e1
           path: mailbox-runtime
           persist-credentials: false
 
