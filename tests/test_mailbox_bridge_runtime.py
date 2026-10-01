@@ -56,7 +56,7 @@ class MailboxBridgeRuntimeTests(unittest.TestCase):
             "id-token: write",
             'os.environ["GITHUB_EVENT_PATH"]',
             "repository: Yolol100/myhost-mailbox",
-            "ref: 42610b12e94dccc2921c8df6037870839e1ffc6c",
+            "ref: 9744218b7e76c33462924bf2eeae9cb8b93fc1e1",
             "https://andrewbaeten.nl",
             "webactueel-mailbox-bridge/v1",
             "$base/requests/$REQUEST_ID",
