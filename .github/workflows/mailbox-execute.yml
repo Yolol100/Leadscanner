@@ -79,13 +79,28 @@ jobs:
 
           base="${SITE_URL%/}/wp-json/webactueel-mailbox-bridge/v1"
           audience=$(python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$base")
-          token_json=$(curl --silent --show-error             --header "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}"             "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${audience}")
-          oidc=$(OIDC="$token_json" python3 -c 'import json,os; print(json.loads(os.environ["OIDC"])["value"])')
-          unset token_json
 
           response="$root/request-envelope.json"
-          code=$(curl --silent --show-error --output "$response" --write-out '%{http_code}'             --connect-timeout 10 --max-time 60             --header 'Accept: application/json'             --header "X-Webactueel-GitHub-OIDC: ${oidc}"             "$base/requests/$REQUEST_ID")
-          unset oidc
+          code=""
+          for attempt in {1..12}; do
+            token_json=$(curl --silent --show-error               --header "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}"               "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${audience}")
+            oidc=$(OIDC="$token_json" python3 -c 'import json,os; print(json.loads(os.environ["OIDC"])["value"])')
+            unset token_json
+
+            code=$(curl --silent --show-error --output "$response" --write-out '%{http_code}'               --connect-timeout 10 --max-time 60               --header 'Accept: application/json'               --header "X-Webactueel-GitHub-OIDC: ${oidc}"               "$base/requests/$REQUEST_ID")
+            unset oidc
+            if [[ "$code" == 200 ]]; then
+              break
+            fi
+            if [[ "$code" != 404 ]]; then
+              exit 1
+            fi
+            rm -f "$response"
+            if [[ "$attempt" == 12 ]]; then
+              exit 1
+            fi
+            sleep 5
+          done
           [[ "$code" == 200 ]]
 
           REQUEST_ID="$REQUEST_ID" python3 - <<'PY'
