@@ -81,6 +81,9 @@ class MailboxBridgeRuntimeTests(unittest.TestCase):
             'request.sha256',
             'X-Webactueel-Mailbox-Request-SHA256',
             'rm -rf "$RUNNER_TEMP/mailbox"',
+            "Close failed public request shell",
+            "if: failure()",
+            "Mailbox request failed closed. No mailbox payload was published.",
         )
         for needle in required:
             self.assertIn(needle, text)
