@@ -17,6 +17,16 @@ class MailboxBridgeRuntimeTests(unittest.TestCase):
     def test_read_action_allowed(self):
         self.assertEqual(validate_request({"action": "list_folders"}), "list_folders")
 
+    def test_chunked_read_actions_allowed(self):
+        self.assertEqual(
+            validate_request({"action": "read_attachment_chunk"}),
+            "read_attachment_chunk",
+        )
+        self.assertEqual(
+            validate_request({"action": "read_body_chunk"}),
+            "read_body_chunk",
+        )
+
     def test_send_requires_explicit_confirmation(self):
         with self.assertRaises(ValueError):
             validate_request({"action": "send"})

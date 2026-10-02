@@ -10,6 +10,8 @@ ALLOWED_ACTIONS = {
     "search",
     "read",
     "read_attachment",
+    "read_attachment_chunk",
+    "read_body_chunk",
     "thread",
     "create_folder",
     "rename_folder",
