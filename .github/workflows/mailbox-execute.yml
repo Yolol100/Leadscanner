@@ -183,6 +183,17 @@ jobs:
           gh issue comment "$ISSUE_NUMBER" --body "Mailbox request completed. The result was stored privately."
           gh issue close "$ISSUE_NUMBER" --reason completed
 
+      - name: Close failed public request shell
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh issue comment "$ISSUE_NUMBER" --body "Mailbox request failed closed. No mailbox payload was published."
+          gh issue close "$ISSUE_NUMBER" --reason completed
+
       - name: Remove mailbox runtime residue
         if: always()
         shell: bash
