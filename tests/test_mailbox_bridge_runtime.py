@@ -107,7 +107,7 @@ class MailboxBridgeRuntimeTests(unittest.TestCase):
     def test_executor_retries_private_request_store_race_with_fresh_oidc(self):
         text = WORKFLOW.read_text(encoding="utf-8")
         start = text.index("for attempt in {1..12}")
-        end = text.index('[[ "$code" == 200 ]]', start)
+        end = text.index("          done", start) + len("          done")
         retry_block = text[start:end]
         self.assertIn("ACTIONS_ID_TOKEN_REQUEST_URL", retry_block)
         self.assertIn('if [[ "$code" != 404 ]]', retry_block)
