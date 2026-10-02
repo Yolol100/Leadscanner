@@ -104,6 +104,16 @@ class MailboxBridgeRuntimeTests(unittest.TestCase):
 
         self.assertGreaterEqual(text.count("ACTIONS_ID_TOKEN_REQUEST_URL"), 2)
 
+    def test_executor_retries_private_request_store_race_with_fresh_oidc(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        start = text.index("for attempt in {1..12}")
+        end = text.index("          done", start) + len("          done")
+        retry_block = text[start:end]
+        self.assertIn("ACTIONS_ID_TOKEN_REQUEST_URL", retry_block)
+        self.assertIn('if [[ "$code" != 404 ]]', retry_block)
+        self.assertIn("sleep 5", retry_block)
+        self.assertIn("rm -f \"$response\"", retry_block)
+
 
 if __name__ == "__main__":
     unittest.main()
