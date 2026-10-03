@@ -344,18 +344,21 @@ def build_template_from_opening(
         raise ValueError("opening is required")
 
     key = variant_key or f"{company_label}|{clean_opening}|{language}"
-    variant = _copy_variant_index(key, 3)
+    digest = hashlib.sha256(str(key).encode("utf-8")).digest()
 
     if language == "en":
         bridges = (
             "That fits the kind of work I handle through my Growth Subscription.",
             "That is something I can support with through my Growth Subscription.",
             f"That is why I thought my Growth Subscription could be relevant for {company_label}.",
+            "It is the kind of practical online work I bundle into my Growth Subscription.",
+            "That is where my Growth Subscription can be useful without turning it into a large separate project.",
         )
         headings = (
             "I can help with things like:",
             "In practice, that can include:",
             "Within the subscription I can help with:",
+            "Depending on what is useful, I can take care of:",
         )
         bullet_sets = (
             (
@@ -386,9 +389,9 @@ def build_template_from_opening(
         return (
             "Hello,\n\n"
             f"{clean_opening}\n\n"
-            f"{bridges[variant]}\n\n"
-            f"{headings[(variant + 1) % len(headings)]}\n\n"
-            + "\n".join(bullet_sets[(variant + 2) % len(bullet_sets)])
+            f"{bridges[digest[0] % len(bridges)]}\n\n"
+            f"{headings[digest[1] % len(headings)]}\n\n"
+            + "\n".join(bullet_sets[digest[2] % len(bullet_sets)])
             + "\n\n"
             f"The subscription is €{price_min}–€{price_max} per month, depending on what you need.\n\n"
             f"Would you like me to make a no-obligation example design for {company_label}, "
@@ -401,11 +404,14 @@ def build_template_from_opening(
         "Dat sluit goed aan bij het soort werk dat ik met mijn Groeiabonnement oppak.",
         "Daar kan ik met mijn Groeiabonnement praktisch bij ondersteunen.",
         f"Daarom dacht ik dat mijn Groeiabonnement mogelijk interessant is voor {company_label}.",
+        "Dit soort online werk bundel ik juist in mijn Groeiabonnement.",
+        "Daar kan mijn Groeiabonnement handig voor zijn zonder er meteen een groot los project van te maken.",
     )
     headings = (
         "Daarin kan ik onder andere helpen met:",
         "Praktisch komt dat neer op:",
         "Binnen het abonnement kan ik helpen met:",
+        "Afhankelijk van wat nuttig is, kan ik bijvoorbeeld oppakken:",
     )
     bullet_sets = (
         (
@@ -436,9 +442,9 @@ def build_template_from_opening(
     return (
         "Goedendag,\n\n"
         f"{clean_opening}\n\n"
-        f"{bridges[variant]}\n\n"
-        f"{headings[(variant + 1) % len(headings)]}\n\n"
-        + "\n".join(bullet_sets[(variant + 2) % len(bullet_sets)])
+        f"{bridges[digest[0] % len(bridges)]}\n\n"
+        f"{headings[digest[1] % len(headings)]}\n\n"
+        + "\n".join(bullet_sets[digest[2] % len(bullet_sets)])
         + "\n\n"
         f"Het abonnement kost €{price_min}–€{price_max} per maand, afhankelijk van wat jullie nodig hebben.\n\n"
         f"Zal ik vrijblijvend een voorbeeld design maken voor {company_label}? "
