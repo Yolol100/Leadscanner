@@ -14,6 +14,7 @@ from myhost_draft import (
     create_drafts,
     fetch_message,
     find_drafts_folder,
+    find_message_ids,
     normalize_text,
     plain_body,
     select_folder,
