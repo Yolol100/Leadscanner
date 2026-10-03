@@ -55,12 +55,12 @@ jobs:
               raise SystemExit(f"unsupported request fields: {sorted(unknown)}")
 
           mode = str(request.get("mode") or "inventory")
-          if mode not in {"inventory", "rewrite", "rewrite_all", "count_since", "inventory_since", "rewrite_since"}:
+          if mode not in {"inventory", "rewrite", "rewrite_all", "count_since", "inventory_since", "rewrite_since", "dedupe_same_id_since"}:
               raise SystemExit("unsupported naturalize mode")
           offset = int(request.get("offset") or 0)
           limit = int(request.get("limit") or 100)
           since_imap = str(request.get("since_imap") or "").strip()
-          if mode in {"count_since", "inventory_since", "rewrite_since"}:
+          if mode in {"count_since", "inventory_since", "rewrite_since", "dedupe_same_id_since"}:
               if not re.fullmatch(r"\d{2}-[A-Za-z]{3}-\d{4}", since_imap):
                   raise SystemExit("since_imap must use DD-Mon-YYYY")
           if offset < 0:
