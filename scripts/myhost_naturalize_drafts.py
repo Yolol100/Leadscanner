@@ -4,6 +4,8 @@ import argparse
 import json
 import re
 from email.message import EmailMessage
+from email.parser import BytesParser
+from email.policy import default
 from email.utils import getaddresses
 
 from myhost_draft import (
@@ -99,6 +101,62 @@ def rewrite_row_from_message(msg: EmailMessage) -> dict:
         "company": company,
         "_already_natural": normalize_text(new_body) == normalize_text(body),
     }
+
+
+def _lead_id_from_header(client, message_id: bytes) -> str:
+    status, data = client.fetch(
+        message_id,
+        "(BODY.PEEK[HEADER.FIELDS (X-Webactueel-Lead-ID)])",
+    )
+    if status != "OK":
+        raise RuntimeError("Could not fetch growth lead-id header")
+    for item in data or []:
+        if isinstance(item, tuple) and len(item) >= 2 and isinstance(item[1], (bytes, bytearray)):
+            header = BytesParser(policy=default).parsebytes(bytes(item[1]))
+            return normalize_text(header.get("X-Webactueel-Lead-ID", ""))
+    raise RuntimeError("Growth lead-id header fetch returned no bytes")
+
+
+def read_review_growth_rows_slice(
+    since_imap: str,
+    offset: int,
+    limit: int,
+) -> tuple[str, int, list[dict]]:
+    client = connect_imap()
+    try:
+        folder = find_drafts_folder(client)
+        select_folder(client, folder, readonly=True)
+        status, data = client.search(
+            None,
+            "SINCE",
+            since_imap,
+            "HEADER",
+            "X-Webactueel-Review-Required",
+            '"contact-basis"',
+        )
+        if status != "OK":
+            raise RuntimeError("Could not inventory mijn.host growth review drafts")
+
+        indexed: list[tuple[str, bytes]] = []
+        seen: set[str] = set()
+        for message_id in (data[0] if data else b"").split():
+            lead_id = _lead_id_from_header(client, message_id)
+            if not LEAD_ID_RE.fullmatch(lead_id):
+                continue
+            if lead_id in seen:
+                raise RuntimeError(f"Duplicate growth review draft detected for {lead_id}")
+            seen.add(lead_id)
+            indexed.append((lead_id, message_id))
+
+        indexed.sort(key=lambda item: item[0])
+        selected_ids = indexed[offset: offset + limit]
+        rows = [rewrite_row_from_message(fetch_message(client, message_id)) for _, message_id in selected_ids]
+        return folder, len(indexed), rows
+    finally:
+        try:
+            client.logout()
+        except Exception:
+            pass
 
 
 def read_review_growth_rows(since_imap: str | None = None) -> tuple[str, list[dict]]:
@@ -275,9 +333,7 @@ def run_rewrite_since(since_imap: str, offset: int, limit: int) -> dict:
     if not 1 <= limit <= MAX_REWRITE:
         raise ValueError(f"limit must be 1-{MAX_REWRITE}")
 
-    folder, rows = read_review_growth_rows(since_imap)
-    total = len(rows)
-    selected = rows[offset: offset + limit]
+    folder, total, selected = read_review_growth_rows_slice(since_imap, offset, limit)
     batch_rows = [{k: v for k, v in row.items() if not k.startswith("_")} for row in selected]
 
     if selected:
