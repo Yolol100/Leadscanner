@@ -352,7 +352,7 @@ def build_template_from_opening(
             "That is something I can support with through my Growth Subscription.",
             f"That is why I thought my Growth Subscription could be relevant for {company_label}.",
             "It is the kind of practical online work I bundle into my Growth Subscription.",
-            "That is where my Growth Subscription can be useful without turning it into a large separate project.",
+            "That is what my Growth Subscription is for.",
         )
         headings = (
             "I can help with things like:",
@@ -405,7 +405,7 @@ def build_template_from_opening(
         "Daar kan ik met mijn Groeiabonnement praktisch bij ondersteunen.",
         f"Daarom dacht ik dat mijn Groeiabonnement mogelijk interessant is voor {company_label}.",
         "Dit soort online werk bundel ik juist in mijn Groeiabonnement.",
-        "Daar kan mijn Groeiabonnement handig voor zijn zonder er meteen een groot los project van te maken.",
+        "Daarvoor is mijn Groeiabonnement bedoeld.",
     )
     headings = (
         "Daarin kan ik onder andere helpen met:",
