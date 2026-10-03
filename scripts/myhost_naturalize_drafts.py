@@ -269,39 +269,49 @@ def run_inventory_since(since_imap: str) -> dict:
     }
 
 
-def run_rewrite_since(since_imap: str) -> dict:
+def run_rewrite_since(since_imap: str, offset: int, limit: int) -> dict:
+    if offset < 0:
+        raise ValueError("offset must be >= 0")
+    if not 1 <= limit <= MAX_REWRITE:
+        raise ValueError(f"limit must be 1-{MAX_REWRITE}")
+
     folder, rows = read_review_growth_rows(since_imap)
     total = len(rows)
-    replaced = 0
-    existing = 0
+    selected = rows[offset: offset + limit]
+    batch_rows = [{k: v for k, v in row.items() if not k.startswith("_")} for row in selected]
 
-    for start in range(0, total, MAX_REWRITE):
-        selected = rows[start: start + MAX_REWRITE]
-        batch_rows = [{k: v for k, v in row.items() if not k.startswith("_")} for row in selected]
+    if selected:
         result = create_drafts({"rows": batch_rows}, rewrite_existing_only=True)
-        if result.get("created_count") != 0:
-            raise RuntimeError("rewrite-existing-only unexpectedly created a missing draft")
-        if result.get("eligible_count") != len(selected):
-            raise RuntimeError("rewrite eligible_count mismatch")
-        if result.get("review_required_count") != len(selected):
-            raise RuntimeError("rewrite review_required_count mismatch")
-        if result.get("smtp_send") != "not_available":
-            raise RuntimeError("SMTP/send boundary changed")
-        replaced += int(result.get("replaced_count") or 0)
-        existing += int(result.get("existing_count") or 0)
+    else:
+        result = {
+            "eligible_count": 0,
+            "created_count": 0,
+            "existing_count": 0,
+            "replaced_count": 0,
+            "review_required_count": 0,
+            "smtp_send": "not_available",
+        }
 
-    if replaced + existing != total:
-        raise RuntimeError("rewrite-since outcome count mismatch")
+    if result.get("created_count") != 0:
+        raise RuntimeError("rewrite-existing-only unexpectedly created a missing draft")
+    if result.get("eligible_count") != len(selected):
+        raise RuntimeError("rewrite eligible_count mismatch")
+    if result.get("review_required_count") != len(selected):
+        raise RuntimeError("rewrite review_required_count mismatch")
+    if result.get("smtp_send") != "not_available":
+        raise RuntimeError("SMTP/send boundary changed")
 
     return {
         "mode": "rewrite_since",
         "draft_folder": folder,
         "review_growth_total": total,
-        "naturalized_count": total,
-        "pending_count": 0,
-        "selected_count": total,
-        "replaced_count": replaced,
-        "existing_count": existing,
+        "naturalized_count": int(result.get("replaced_count") or 0) + int(result.get("existing_count") or 0),
+        "pending_count": max(total - (offset + len(selected)), 0),
+        "offset": offset,
+        "limit": limit,
+        "selected_count": len(selected),
+        "replaced_count": int(result.get("replaced_count") or 0),
+        "existing_count": int(result.get("existing_count") or 0),
         "created_count": 0,
         "smtp_send": "not_available",
         "read_only": False,
@@ -363,7 +373,7 @@ def main() -> int:
     elif args.mode == "inventory_since":
         result = run_inventory_since(args.since_imap)
     elif args.mode == "rewrite_since":
-        result = run_rewrite_since(args.since_imap)
+        result = run_rewrite_since(args.since_imap, args.offset, args.limit)
     elif args.mode == "rewrite_all":
         result = run_rewrite_all()
     else:
