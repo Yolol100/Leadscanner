@@ -214,6 +214,42 @@ def run_rewrite(offset: int, limit: int) -> dict:
 
 
 
+def run_count_since(since_imap: str) -> dict:
+    client = connect_imap()
+    try:
+        folder = find_drafts_folder(client)
+        select_folder(client, folder, readonly=True)
+        status, data = client.search(
+            None,
+            "SINCE",
+            since_imap,
+            "HEADER",
+            "X-Webactueel-Review-Required",
+            '"contact-basis"',
+        )
+        if status != "OK":
+            raise RuntimeError("Could not count mijn.host growth review drafts")
+        total = len((data[0] if data else b"").split())
+        return {
+            "mode": "count_since",
+            "draft_folder": folder,
+            "review_growth_total": total,
+            "naturalized_count": 0,
+            "pending_count": total,
+            "selected_count": 0,
+            "replaced_count": 0,
+            "existing_count": 0,
+            "created_count": 0,
+            "smtp_send": "not_available",
+            "read_only": True,
+            "since_imap": since_imap,
+        }
+    finally:
+        try:
+            client.logout()
+        except Exception:
+            pass
+
 def run_inventory_since(since_imap: str) -> dict:
     folder, rows = read_review_growth_rows(since_imap)
     natural = sum(1 for row in rows if row["_already_natural"])
@@ -312,16 +348,18 @@ def run_rewrite_all() -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=("inventory", "rewrite", "rewrite_all", "inventory_since", "rewrite_since"), required=True)
+    parser.add_argument("--mode", choices=("inventory", "rewrite", "rewrite_all", "count_since", "inventory_since", "rewrite_since"), required=True)
     parser.add_argument("--offset", type=int, default=0)
     parser.add_argument("--limit", type=int, default=100)
     parser.add_argument("--since-imap")
     args = parser.parse_args()
 
-    if args.mode in {"inventory_since", "rewrite_since"} and not args.since_imap:
+    if args.mode in {"count_since", "inventory_since", "rewrite_since"} and not args.since_imap:
         raise SystemExit("--since-imap is required for *_since modes")
     if args.mode == "inventory":
         result = run_inventory()
+    elif args.mode == "count_since":
+        result = run_count_since(args.since_imap)
     elif args.mode == "inventory_since":
         result = run_inventory_since(args.since_imap)
     elif args.mode == "rewrite_since":
