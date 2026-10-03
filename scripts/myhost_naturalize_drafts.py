@@ -467,9 +467,11 @@ def run_rewrite_since(since_imap: str, offset: int, limit: int) -> dict:
         raise ValueError(f"limit must be 1-{MAX_REWRITE}")
 
     folder, total, selected = read_review_growth_rows_slice(since_imap, offset, limit)
-    batch_rows = [{k: v for k, v in row.items() if not k.startswith("_")} for row in selected]
+    already_natural = [row for row in selected if row.get("_already_natural")]
+    pending_rows = [row for row in selected if not row.get("_already_natural")]
+    batch_rows = [{k: v for k, v in row.items() if not k.startswith("_")} for row in pending_rows]
 
-    if selected:
+    if pending_rows:
         result = create_drafts({"rows": batch_rows}, rewrite_existing_only=True)
     else:
         result = {
@@ -483,24 +485,29 @@ def run_rewrite_since(since_imap: str, offset: int, limit: int) -> dict:
 
     if result.get("created_count") != 0:
         raise RuntimeError("rewrite-existing-only unexpectedly created a missing draft")
-    if result.get("eligible_count") != len(selected):
+    if result.get("eligible_count") != len(pending_rows):
         raise RuntimeError("rewrite eligible_count mismatch")
-    if result.get("review_required_count") != len(selected):
+    if result.get("review_required_count") != len(pending_rows):
         raise RuntimeError("rewrite review_required_count mismatch")
     if result.get("smtp_send") != "not_available":
         raise RuntimeError("SMTP/send boundary changed")
+
+    existing_total = len(already_natural) + int(result.get("existing_count") or 0)
+    replaced_total = int(result.get("replaced_count") or 0)
+    if existing_total + replaced_total != len(selected):
+        raise RuntimeError("rewrite selected outcome mismatch")
 
     return {
         "mode": "rewrite_since",
         "draft_folder": folder,
         "review_growth_total": total,
-        "naturalized_count": int(result.get("replaced_count") or 0) + int(result.get("existing_count") or 0),
+        "naturalized_count": len(selected),
         "pending_count": max(total - (offset + len(selected)), 0),
         "offset": offset,
         "limit": limit,
         "selected_count": len(selected),
-        "replaced_count": int(result.get("replaced_count") or 0),
-        "existing_count": int(result.get("existing_count") or 0),
+        "replaced_count": replaced_total,
+        "existing_count": existing_total,
         "created_count": 0,
         "smtp_send": "not_available",
         "read_only": False,
