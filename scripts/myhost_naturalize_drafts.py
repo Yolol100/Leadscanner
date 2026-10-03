@@ -106,9 +106,14 @@ def read_review_growth_rows() -> tuple[str, list[dict]]:
     try:
         folder = find_drafts_folder(client)
         select_folder(client, folder, readonly=True)
-        status, data = client.search(None, "ALL")
+        status, data = client.search(
+            None,
+            "HEADER",
+            "X-Webactueel-Review-Required",
+            '"contact-basis"',
+        )
         if status != "OK":
-            raise RuntimeError("Could not inventory mijn.host drafts")
+            raise RuntimeError("Could not inventory mijn.host growth review drafts")
 
         rows: list[dict] = []
         seen: set[str] = set()

@@ -10,7 +10,7 @@ permissions:
 
 concurrency:
   group: leads-naturalize-existing-drafts
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   naturalize:
