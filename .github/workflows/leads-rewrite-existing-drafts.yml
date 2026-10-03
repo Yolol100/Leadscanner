@@ -268,13 +268,35 @@ jobs:
               if body.count("€250–€500") != 1 or re.search(r"\b\d+\s*%", body):
                   raise SystemExit(f"{lead_id}: price/percentage boundary failed")
               if row.get("language") == "nl":
-                  for value in ("Website/webshop — verbeteren of nieuw maken waar nodig", "Zoekbaarheid — beter vindbaar worden", "Automatisering — geschikte processen deels automatiseren", "Hosting — beheren of overnemen waar passend", "Ik als vast contactpersoon", "voorbeeld design maken voor"):
-                      if value not in body:
-                          raise SystemExit(f"{lead_id}: NL audited copy contract missing {value}")
+                  patterns = (
+                      r"(?im)^• .*website",
+                      r"(?im)^• .*(vindbaar|zoekbaarheid)",
+                      r"(?im)^• .*social",
+                      r"(?im)^• .*automat",
+                      r"(?im)^• .*hosting",
+                      r"(?im)^• .*(aanspreekpunt|afstemming|direct contact)",
+                  )
+                  required = ("voorbeeld design maken voor", "€250–€500 per maand")
+                  old_opening = "Op jullie site viel me op:"
               else:
-                  for value in ("Website/webshop — improve or build new where needed", "Search visibility — improve findability", "Automation — partially automate suitable processes", "Hosting — manage or take over where appropriate", "Me as your fixed point of contact", "example design for"):
-                      if value not in body:
-                          raise SystemExit(f"{lead_id}: EN audited copy contract missing {value}")
+                  patterns = (
+                      r"(?im)^• .*website",
+                      r"(?im)^• .*(find|search visibility)",
+                      r"(?im)^• .*social",
+                      r"(?im)^• .*automat",
+                      r"(?im)^• .*hosting",
+                      r"(?im)^• .*(point of contact|coordination|direct contact)",
+                  )
+                  required = ("example design for", "€250–€500 per month")
+                  old_opening = "I noticed this on your website:"
+              for pattern in patterns:
+                  if not re.search(pattern, body):
+                      raise SystemExit(f"{lead_id}: audited copy contract missing pattern {pattern}")
+              for value in required:
+                  if value not in body:
+                      raise SystemExit(f"{lead_id}: audited copy contract missing {value}")
+              if old_opening in body:
+                  raise SystemExit(f"{lead_id}: old templated opening survived")
               if not company_label or company_label not in body:
                   raise SystemExit(f"{lead_id}: company label missing from personalized body")
               if not subject_label or subject_label not in subject:

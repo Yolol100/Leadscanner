@@ -272,8 +272,8 @@ def build_opening(
     ):
         punctuation = "" if observed.endswith((".", "!", "?")) else "."
         if language == "en":
-            return f'I noticed this on your website: “{observed}”{punctuation}'
-        return f'Op jullie site viel me op: “{observed}”{punctuation}'
+            return f"What stood out to me on your website: {observed}{punctuation}"
+        return f"Wat me opviel op jullie website: {observed}{punctuation}"
 
     focus = infer_focus_from_observation(observed, language)
     company_focus = infer_focus_from_observation(company_label, language)
@@ -295,6 +295,159 @@ def build_opening(
         "No specific verified site detail or reliable business focus for outreach opening"
     )
 
+
+def naturalize_existing_opening(opening: str, language: str) -> str:
+    text = re.sub(r"\s+", " ", str(opening or "")).strip()
+    if language == "en":
+        match = re.fullmatch(
+            r'I noticed this on your website:\s*[“"](.+?)[”"]\.?',
+            text,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            observed = match.group(1).strip()
+            punctuation = "" if observed.endswith((".", "!", "?")) else "."
+            return f"What stood out to me on your website: {observed}{punctuation}"
+        return text
+
+    match = re.fullmatch(
+        r'Op jullie site viel me op:\s*[“"](.+?)[”"]\.?',
+        text,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        observed = match.group(1).strip()
+        punctuation = "" if observed.endswith((".", "!", "?")) else "."
+        return f"Wat me opviel op jullie website: {observed}{punctuation}"
+    return text
+
+
+def _copy_variant_index(key: str, count: int) -> int:
+    if count <= 0:
+        raise ValueError("count must be positive")
+    digest = hashlib.sha256(str(key).encode("utf-8")).digest()
+    return digest[0] % count
+
+
+def build_template_from_opening(
+    company: str,
+    language: str,
+    opening: str,
+    *,
+    price_min: int,
+    price_max: int,
+    variant_key: str | None = None,
+) -> str:
+    company_label = short_company_name(company)
+    clean_opening = naturalize_existing_opening(opening, language)
+    if not clean_opening:
+        raise ValueError("opening is required")
+
+    key = variant_key or f"{company_label}|{clean_opening}|{language}"
+    variant = _copy_variant_index(key, 3)
+
+    if language == "en":
+        bridges = (
+            "That fits the kind of work I handle through my Growth Subscription.",
+            "That is something I can support with through my Growth Subscription.",
+            f"That is why I thought my Growth Subscription could be relevant for {company_label}.",
+        )
+        headings = (
+            "I can help with things like:",
+            "In practice, that can include:",
+            "Within the subscription I can help with:",
+        )
+        bullet_sets = (
+            (
+                "• improving your website or webshop, or rebuilding where needed",
+                "• improving search visibility",
+                "• creating social content that fits your offer",
+                "• partially automating suitable processes where useful",
+                "• managing or taking over hosting where appropriate",
+                "• one fixed point of contact: me",
+            ),
+            (
+                "• developing your website or webshop further, or refreshing it where needed",
+                "• becoming easier to find online",
+                "• working out relevant social content",
+                "• automating suitable recurring work where it makes sense",
+                "• taking care of or taking over hosting",
+                "• direct contact with me as your fixed point of contact",
+            ),
+            (
+                "• maintaining and improving your website/webshop, or rebuilding where needed",
+                "• strengthening search visibility",
+                "• creating social content that matches your business",
+                "• partially automating suitable repetitive processes",
+                "• managing hosting where appropriate",
+                "• one person for coordination: me",
+            ),
+        )
+        return (
+            "Hello,\n\n"
+            f"{clean_opening}\n\n"
+            f"{bridges[variant]}\n\n"
+            f"{headings[(variant + 1) % len(headings)]}\n\n"
+            + "\n".join(bullet_sets[(variant + 2) % len(bullet_sets)])
+            + "\n\n"
+            f"The subscription is €{price_min}–€{price_max} per month, depending on what you need.\n\n"
+            f"Would you like me to make a no-obligation example design for {company_label}, "
+            "so you can first see whether the direction is relevant?\n\n"
+            "Not interested? Just let me know.\n\n"
+            "Regards,\nAndrew"
+        )
+
+    bridges = (
+        "Dat sluit goed aan bij het soort werk dat ik met mijn Groeiabonnement oppak.",
+        "Daar kan ik met mijn Groeiabonnement praktisch bij ondersteunen.",
+        f"Daarom dacht ik dat mijn Groeiabonnement mogelijk interessant is voor {company_label}.",
+    )
+    headings = (
+        "Daarin kan ik onder andere helpen met:",
+        "Praktisch komt dat neer op:",
+        "Binnen het abonnement kan ik helpen met:",
+    )
+    bullet_sets = (
+        (
+            "• website of webshop verbeteren, of opnieuw maken waar nodig",
+            "• beter vindbaar worden in zoekmachines",
+            "• social content maken die past bij jullie aanbod",
+            "• geschikte processen deels automatiseren waar dat zinvol is",
+            "• hosting beheren of overnemen waar passend",
+            "• één vast aanspreekpunt: ikzelf",
+        ),
+        (
+            "• website of webshop doorontwikkelen, of vernieuwen als dat nodig is",
+            "• online beter vindbaar worden",
+            "• passende social content uitwerken",
+            "• terugkerend werk automatiseren waar dat zinvol is",
+            "• hosting verzorgen of overnemen",
+            "• direct contact met mij als vast aanspreekpunt",
+        ),
+        (
+            "• website/webshop onderhouden, verbeteren of waar nodig opnieuw opzetten",
+            "• zoekbaarheid versterken",
+            "• social content maken die aansluit op jullie bedrijf",
+            "• geschikte repetitieve processen deels automatiseren",
+            "• hosting beheren waar passend",
+            "• één persoon voor afstemming: ik",
+        ),
+    )
+    return (
+        "Goedendag,\n\n"
+        f"{clean_opening}\n\n"
+        f"{bridges[variant]}\n\n"
+        f"{headings[(variant + 1) % len(headings)]}\n\n"
+        + "\n".join(bullet_sets[(variant + 2) % len(bullet_sets)])
+        + "\n\n"
+        f"Het abonnement kost €{price_min}–€{price_max} per maand, afhankelijk van wat jullie nodig hebben.\n\n"
+        f"Zal ik vrijblijvend een voorbeeld design maken voor {company_label}? "
+        "Dan kunnen jullie eerst bekijken of de richting interessant is.\n\n"
+        "Geen interesse? Laat het gerust weten.\n\n"
+        "Groet,\nAndrew"
+    )
+
+
 def build_template(
     company: str,
     language: str,
@@ -304,40 +457,13 @@ def build_template(
     price_max: int,
     category_hint: str | None = None,
 ) -> str:
-    company_label = short_company_name(company)
     opening = build_opening(company, language, observation, category_hint)
-    if language == "en":
-        return (
-            "Hello,\n\n"
-            f"{opening}\n\n"
-            "With my Growth Subscription I help with:\n\n"
-            "• Website/webshop — improve or build new where needed\n"
-            "• Search visibility — improve findability\n"
-            "• Social content — relevant content\n"
-            "• Automation — partially automate suitable processes where feasible\n"
-            "• Hosting — manage or take over where appropriate\n"
-            "• Me as your fixed point of contact\n\n"
-            f"€{price_min}–€{price_max} per month, depending on what you need.\n\n"
-            f"Would you like me to make a no-obligation example design for {company_label}, "
-            "so you can first see whether the direction is relevant?\n\n"
-            "Not interested? Just let me know.\n\n"
-            "Regards,\nAndrew"
-        )
-    return (
-        "Goedendag,\n\n"
-        f"{opening}\n\n"
-        "Met mijn Groeiabonnement help ik met:\n\n"
-        "• Website/webshop — verbeteren of nieuw maken waar nodig\n"
-        "• Zoekbaarheid — beter vindbaar worden\n"
-        "• Social content — passende content\n"
-        "• Automatisering — geschikte processen deels automatiseren waar haalbaar\n"
-        "• Hosting — beheren of overnemen waar passend\n"
-        "• Ik als vast contactpersoon\n\n"
-        f"€{price_min}–€{price_max} per maand, afhankelijk van wat jullie nodig hebben.\n\n"
-        f"Zal ik vrijblijvend een voorbeeld design maken voor {company_label}? "
-        "Dan kunnen jullie eerst bekijken of de richting interessant is.\n\n"
-        "Geen interesse? Laat het gerust weten.\n\n"
-        "Groet,\nAndrew"
+    return build_template_from_opening(
+        company,
+        language,
+        opening,
+        price_min=price_min,
+        price_max=price_max,
     )
 
 

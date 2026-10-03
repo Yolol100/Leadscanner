@@ -38,7 +38,7 @@ class GrowthBatchTests(unittest.TestCase):
             contact["verified_observation"],
             contact["category_hint"],
         )
-        self.assertEqual(opening, "Op jullie site viel me op: “Fysiotherapie in Utrecht”.")
+        self.assertEqual(opening, "Wat me opviel op jullie website: Fysiotherapie in Utrecht.")
 
     def test_review_required_contact_becomes_personal_review_draft(self):
         row = prepare_batch({"candidates": [self.contact()]}, self.config(), draft_limit=1)["rows"][0]
@@ -46,17 +46,13 @@ class GrowthBatchTests(unittest.TestCase):
         self.assertTrue(row["lead_id"].startswith("growth-"))
         self.assertEqual(row["subject"], "Idee voor Voorbeeld Fysiotherapie")
         self.assertEqual(row["copy_company_label"], "Voorbeeld Fysiotherapie")
-        self.assertIn("Op jullie site viel me op: “Fysiotherapie in Utrecht”.", row["body"])
-        self.assertIn("Met mijn Groeiabonnement help ik met", row["body"])
+        self.assertIn("Wat me opviel op jullie website: Fysiotherapie in Utrecht.", row["body"])
+        self.assertIn("Groeiabonnement", row["body"])
         self.assertNotIn("Op jullie website staat", row["body"])
         self.assertEqual(row["verified_observation_source_type"], "official_site")
+        bullets = [line for line in row["body"].splitlines() if line.startswith("• ")]
+        self.assertEqual(len(bullets), 6)
         for value in (
-            "Website/webshop — verbeteren of nieuw maken waar nodig",
-            "Zoekbaarheid — beter vindbaar worden",
-            "Social content — passende content",
-            "Automatisering — geschikte processen deels automatiseren waar haalbaar",
-            "Hosting — beheren of overnemen waar passend",
-            "Ik als vast contactpersoon",
             "€250–€500 per maand, afhankelijk van wat jullie nodig hebben",
             "voorbeeld design maken voor Voorbeeld Fysiotherapie",
             "Groet,\nAndrew",
@@ -89,7 +85,7 @@ class GrowthBatchTests(unittest.TestCase):
         contact["name_hint"] = "De Juwelier"
         contact["verified_observation"] = "À LA CARTE RESTAURANT"
         row = prepare_batch({"candidates": [contact]}, self.config(), draft_limit=1)["rows"][0]
-        self.assertIn("Op jullie site viel me op: “À LA CARTE RESTAURANT”.", row["body"])
+        self.assertIn("Wat me opviel op jullie website: À LA CARTE RESTAURANT.", row["body"])
         self.assertNotIn("sieraden en juwelierswerk", row["body"])
 
     def test_pass_contact_becomes_draft_ready(self):
@@ -100,7 +96,7 @@ class GrowthBatchTests(unittest.TestCase):
         )["rows"][0]
         self.assertEqual(row["status"], "draft_ready")
         self.assertEqual(row["subject"], "An idea for Example Physiotherapy")
-        self.assertIn("I noticed this on your website: “Physical therapy in Utrecht”.", row["body"])
+        self.assertIn("What stood out to me on your website: Physical therapy in Utrecht.", row["body"])
         self.assertIn("€250–€500 per month, depending on what you need", row["body"])
         self.assertIn("no-obligation example design for Example Physiotherapy", row["body"])
         self.assertNotIn("30%", row["body"])
@@ -136,7 +132,7 @@ class GrowthBatchTests(unittest.TestCase):
             row = prepare_batch({"candidates": [self.contact(language=language)]}, self.config())["rows"][0]
             self.assertLessEqual(len(row["body"].split()), 150)
             self.assertLessEqual(len(row["subject"].split()), 6)
-            self.assertLessEqual(len(row["body"].split()), 115)
+            self.assertLessEqual(len(row["body"].split()), 125)
 
     def test_long_company_uses_personal_short_label(self):
         self.assertEqual(
@@ -223,8 +219,9 @@ class GrowthBatchTests(unittest.TestCase):
     def test_template_follows_growth_policy_order_and_single_offer(self):
         row = prepare_batch({"candidates": [self.contact()]}, self.config())["rows"][0]
         body = row["body"]
-        self.assertLess(body.index("• Website/webshop"), body.index("€250–€500 per maand"))
-        self.assertIn("• Ik als vast contactpersoon", body)
+        bullets = [line for line in body.splitlines() if line.startswith("• ")]
+        self.assertEqual(len(bullets), 6)
+        self.assertLess(body.index(bullets[0]), body.index("€250–€500 per maand"))
         self.assertIn("voorbeeld design maken voor Voorbeeld Fysiotherapie", body)
         self.assertIn("richting interessant is", body)
         self.assertNotIn("30%", body)

@@ -1,0 +1,117 @@
+name: Leads Naturalize Existing Drafts
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: leads-naturalize-existing-drafts
+  cancel-in-progress: false
+
+jobs:
+  naturalize:
+    if: >-
+      github.event.issue.user.login == github.repository_owner &&
+      startsWith(github.event.issue.title, '[growth-draft-naturalize]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Resolve naturalize request
+        id: request
+        env:
+          EVENT_PATH: ${{ github.event_path }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          event = json.loads(Path(os.environ["EVENT_PATH"]).read_text(encoding="utf-8"))
+          try:
+              request = json.loads(event["issue"].get("body") or "{}")
+          except json.JSONDecodeError as exc:
+              raise SystemExit(f"issue body must be JSON: {exc}")
+
+          if not isinstance(request, dict):
+              raise SystemExit("issue body must be a JSON object")
+          allowed = {"mode", "offset", "limit"}
+          unknown = set(request) - allowed
+          if unknown:
+              raise SystemExit(f"unsupported request fields: {sorted(unknown)}")
+
+          mode = str(request.get("mode") or "inventory")
+          if mode not in {"inventory", "rewrite"}:
+              raise SystemExit("mode must be inventory or rewrite")
+          offset = int(request.get("offset") or 0)
+          limit = int(request.get("limit") or 100)
+          if offset < 0:
+              raise SystemExit("offset must be >= 0")
+          if not 1 <= limit <= 100:
+              raise SystemExit("limit must be 1-100")
+
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as out:
+              out.write(f"mode={mode}\n")
+              out.write(f"offset={offset}\n")
+              out.write(f"limit={limit}\n")
+          print(f"NATURALIZE_REQUEST=green mode={mode} offset={offset} limit={limit}")
+          PY
+
+      - name: Inventory or safely rewrite existing mijn.host review drafts
+        env:
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME || 'Andrew Baeten' }}
+          OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
+          OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
+          MODE: ${{ steps.request.outputs.mode }}
+          OFFSET: ${{ steps.request.outputs.offset }}
+          LIMIT: ${{ steps.request.outputs.limit }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH=scripts python3 scripts/myhost_naturalize_drafts.py \
+            --mode "$MODE" \
+            --offset "$OFFSET" \
+            --limit "$LIMIT" | tee naturalize-summary.txt
+          grep -q '^MYHOST_NATURALIZE=green ' naturalize-summary.txt
+          grep -q 'created=0 smtp_send=not_available' naturalize-summary.txt
+
+      - name: Close successful request
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          MODE: ${{ steps.request.outputs.mode }}
+        run: |
+          set -euo pipefail
+          gh issue comment "$ISSUE_NUMBER" --body "mijn.host Growth drafts processed in $MODE mode with exact readback. Nothing was sent."
+          gh issue close "$ISSUE_NUMBER" --reason completed
+
+      - name: Close failed request
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          gh issue comment "$ISSUE_NUMBER" --body "Naturalization failed closed. No email was sent."
+          gh issue close "$ISSUE_NUMBER" --reason completed
+
+      - name: Remove local mailbox summary
+        if: always()
+        run: rm -f naturalize-summary.txt
