@@ -101,17 +101,20 @@ def rewrite_row_from_message(msg: EmailMessage) -> dict:
     }
 
 
-def read_review_growth_rows() -> tuple[str, list[dict]]:
+def read_review_growth_rows(since_imap: str | None = None) -> tuple[str, list[dict]]:
     client = connect_imap()
     try:
         folder = find_drafts_folder(client)
         select_folder(client, folder, readonly=True)
-        status, data = client.search(
-            None,
+        criteria: list[str] = []
+        if since_imap:
+            criteria.extend(["SINCE", since_imap])
+        criteria.extend([
             "HEADER",
             "X-Webactueel-Review-Required",
             '"contact-basis"',
-        )
+        ])
+        status, data = client.search(None, *criteria)
         if status != "OK":
             raise RuntimeError("Could not inventory mijn.host growth review drafts")
 
@@ -211,6 +214,64 @@ def run_rewrite(offset: int, limit: int) -> dict:
 
 
 
+def run_inventory_since(since_imap: str) -> dict:
+    folder, rows = read_review_growth_rows(since_imap)
+    natural = sum(1 for row in rows if row["_already_natural"])
+    return {
+        "mode": "inventory_since",
+        "draft_folder": folder,
+        "review_growth_total": len(rows),
+        "naturalized_count": natural,
+        "pending_count": len(rows) - natural,
+        "selected_count": 0,
+        "replaced_count": 0,
+        "existing_count": 0,
+        "created_count": 0,
+        "smtp_send": "not_available",
+        "read_only": True,
+        "since_imap": since_imap,
+    }
+
+
+def run_rewrite_since(since_imap: str) -> dict:
+    folder, rows = read_review_growth_rows(since_imap)
+    total = len(rows)
+    replaced = 0
+    existing = 0
+
+    for start in range(0, total, MAX_REWRITE):
+        selected = rows[start: start + MAX_REWRITE]
+        batch_rows = [{k: v for k, v in row.items() if not k.startswith("_")} for row in selected]
+        result = create_drafts({"rows": batch_rows}, rewrite_existing_only=True)
+        if result.get("created_count") != 0:
+            raise RuntimeError("rewrite-existing-only unexpectedly created a missing draft")
+        if result.get("eligible_count") != len(selected):
+            raise RuntimeError("rewrite eligible_count mismatch")
+        if result.get("review_required_count") != len(selected):
+            raise RuntimeError("rewrite review_required_count mismatch")
+        if result.get("smtp_send") != "not_available":
+            raise RuntimeError("SMTP/send boundary changed")
+        replaced += int(result.get("replaced_count") or 0)
+        existing += int(result.get("existing_count") or 0)
+
+    if replaced + existing != total:
+        raise RuntimeError("rewrite-since outcome count mismatch")
+
+    return {
+        "mode": "rewrite_since",
+        "draft_folder": folder,
+        "review_growth_total": total,
+        "naturalized_count": total,
+        "pending_count": 0,
+        "selected_count": total,
+        "replaced_count": replaced,
+        "existing_count": existing,
+        "created_count": 0,
+        "smtp_send": "not_available",
+        "read_only": False,
+        "since_imap": since_imap,
+    }
+
 def run_rewrite_all() -> dict:
     folder, rows = read_review_growth_rows()
     total = len(rows)
@@ -251,12 +312,24 @@ def run_rewrite_all() -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=("inventory", "rewrite", "rewrite_all"), required=True)
+    parser.add_argument("--mode", choices=("inventory", "rewrite", "rewrite_all", "inventory_since", "rewrite_since"), required=True)
     parser.add_argument("--offset", type=int, default=0)
     parser.add_argument("--limit", type=int, default=100)
+    parser.add_argument("--since-imap")
     args = parser.parse_args()
 
-    result = run_inventory() if args.mode == "inventory" else (run_rewrite_all() if args.mode == "rewrite_all" else run_rewrite(args.offset, args.limit))
+    if args.mode in {"inventory_since", "rewrite_since"} and not args.since_imap:
+        raise SystemExit("--since-imap is required for *_since modes")
+    if args.mode == "inventory":
+        result = run_inventory()
+    elif args.mode == "inventory_since":
+        result = run_inventory_since(args.since_imap)
+    elif args.mode == "rewrite_since":
+        result = run_rewrite_since(args.since_imap)
+    elif args.mode == "rewrite_all":
+        result = run_rewrite_all()
+    else:
+        result = run_rewrite(args.offset, args.limit)
     print(
         "MYHOST_NATURALIZE=green "
         f"mode={result['mode']} "
