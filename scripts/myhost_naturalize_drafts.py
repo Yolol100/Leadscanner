@@ -133,6 +133,125 @@ def _bulk_index_growth_headers(client, message_ids: list[bytes]) -> list[tuple[s
     return indexed
 
 
+def _message_matches_rewrite_row(msg: EmailMessage, row: dict) -> bool:
+    return (
+        single_recipient(msg).casefold() == str(row.get("email") or "").strip().casefold()
+        and normalize_text(msg.get("Subject", "")) == normalize_text(row.get("subject"))
+        and normalize_text(msg.get("X-Webactueel-Review-Required", "")) == "contact-basis"
+        and plain_body(msg) == normalize_text(row.get("body"))
+    )
+
+
+def _duplicate_growth_lead_ids_since(client, since_imap: str) -> list[str]:
+    status, data = client.search(
+        None,
+        "SINCE",
+        since_imap,
+        "HEADER",
+        "X-Webactueel-Review-Required",
+        '"contact-basis"',
+    )
+    if status != "OK":
+        raise RuntimeError("Could not inventory mijn.host growth review drafts")
+    indexed = _bulk_index_growth_headers(
+        client,
+        list((data[0] if data else b"").split()),
+    )
+    counts: dict[str, int] = {}
+    for lead_id, _ in indexed:
+        counts[lead_id] = counts.get(lead_id, 0) + 1
+    return sorted(lead_id for lead_id, count in counts.items() if count > 1)
+
+
+def _collapse_same_lead_duplicate(client, folder: str, lead_id: str) -> int:
+    ids = find_message_ids(client, folder, lead_id)
+    if len(ids) <= 1:
+        return 0
+
+    messages = [fetch_message(client, message_id) for message_id in ids]
+    rows = [rewrite_row_from_message(msg) for msg in messages]
+    expected = rows[0]
+    for row in rows[1:]:
+        for key in ("email", "subject", "body", "contact_basis_status"):
+            if normalize_text(row.get(key)) != normalize_text(expected.get(key)):
+                raise RuntimeError(
+                    f"Duplicate physical drafts disagree on canonical rewrite for {lead_id}: {key}"
+                )
+
+    matching = [
+        message_id
+        for message_id, msg in zip(ids, messages)
+        if _message_matches_rewrite_row(msg, expected)
+    ]
+    keep_id = matching[-1] if matching else ids[-1]
+
+    select_folder(client, folder, readonly=False)
+    current_ids = find_message_ids(client, folder, lead_id, ensure_selected=False)
+    if current_ids != ids:
+        raise RuntimeError(f"Duplicate draft set changed during cleanup for {lead_id}")
+
+    for message_id in current_ids:
+        if message_id == keep_id:
+            continue
+        status, _ = client.store(message_id, "+FLAGS", "(\\Deleted)")
+        if status != "OK":
+            raise RuntimeError(f"Could not mark duplicate physical draft deleted for {lead_id}")
+    if client.expunge()[0] != "OK":
+        raise RuntimeError(f"Could not expunge duplicate physical drafts for {lead_id}")
+
+    final_ids = find_message_ids(client, folder, lead_id)
+    if len(final_ids) != 1:
+        raise RuntimeError(
+            f"Expected one physical draft after duplicate cleanup for {lead_id}, found {len(final_ids)}"
+        )
+    final_msg = fetch_message(client, final_ids[0])
+    final_row = rewrite_row_from_message(final_msg)
+    for key in ("email", "subject", "body", "contact_basis_status"):
+        if normalize_text(final_row.get(key)) != normalize_text(expected.get(key)):
+            raise RuntimeError(f"Duplicate cleanup readback mismatch for {lead_id}: {key}")
+    return len(ids) - 1
+
+
+def run_dedupe_same_id_since(since_imap: str, offset: int, limit: int) -> dict:
+    if offset < 0:
+        raise ValueError("offset must be >= 0")
+    if not 1 <= limit <= MAX_REWRITE:
+        raise ValueError(f"limit must be 1-{MAX_REWRITE}")
+
+    client = connect_imap()
+    try:
+        folder = find_drafts_folder(client)
+        select_folder(client, folder, readonly=True)
+        duplicate_ids = _duplicate_growth_lead_ids_since(client, since_imap)
+        selected = duplicate_ids[offset: offset + limit]
+        removed = 0
+        for lead_id in selected:
+            removed += _collapse_same_lead_duplicate(client, folder, lead_id)
+
+        select_folder(client, folder, readonly=True)
+        remaining = _duplicate_growth_lead_ids_since(client, since_imap)
+        return {
+            "mode": "dedupe_same_id_since",
+            "draft_folder": folder,
+            "review_growth_total": len(duplicate_ids),
+            "naturalized_count": 0,
+            "pending_count": len(remaining),
+            "selected_count": len(selected),
+            "replaced_count": 0,
+            "existing_count": 0,
+            "created_count": 0,
+            "removed_duplicate_count": removed,
+            "smtp_send": "not_available",
+            "read_only": False,
+            "since_imap": since_imap,
+        }
+    finally:
+        try:
+            client.logout()
+        except Exception:
+            pass
+
+
 def read_review_growth_rows_slice(
     since_imap: str,
     offset: int,
@@ -427,13 +546,13 @@ def run_rewrite_all() -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=("inventory", "rewrite", "rewrite_all", "count_since", "inventory_since", "rewrite_since"), required=True)
+    parser.add_argument("--mode", choices=("inventory", "rewrite", "rewrite_all", "count_since", "inventory_since", "rewrite_since", "dedupe_same_id_since"), required=True)
     parser.add_argument("--offset", type=int, default=0)
     parser.add_argument("--limit", type=int, default=100)
     parser.add_argument("--since-imap")
     args = parser.parse_args()
 
-    if args.mode in {"count_since", "inventory_since", "rewrite_since"} and not args.since_imap:
+    if args.mode in {"count_since", "inventory_since", "rewrite_since", "dedupe_same_id_since"} and not args.since_imap:
         raise SystemExit("--since-imap is required for *_since modes")
     if args.mode == "inventory":
         result = run_inventory()
@@ -443,6 +562,8 @@ def main() -> int:
         result = run_inventory_since(args.since_imap)
     elif args.mode == "rewrite_since":
         result = run_rewrite_since(args.since_imap, args.offset, args.limit)
+    elif args.mode == "dedupe_same_id_since":
+        result = run_dedupe_same_id_since(args.since_imap, args.offset, args.limit)
     elif args.mode == "rewrite_all":
         result = run_rewrite_all()
     else:
@@ -456,6 +577,7 @@ def main() -> int:
         f"selected={result['selected_count']} "
         f"replaced={result['replaced_count']} "
         f"existing={result['existing_count']} "
+        f"removed_duplicates={result.get('removed_duplicate_count', 0)} "
         "created=0 smtp_send=not_available"
     )
     return 0
