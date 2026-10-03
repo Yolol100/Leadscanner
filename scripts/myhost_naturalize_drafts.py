@@ -103,18 +103,34 @@ def rewrite_row_from_message(msg: EmailMessage) -> dict:
     }
 
 
-def _lead_id_from_header(client, message_id: bytes) -> str:
-    status, data = client.fetch(
-        message_id,
-        "(BODY.PEEK[HEADER.FIELDS (X-Webactueel-Lead-ID)])",
-    )
-    if status != "OK":
-        raise RuntimeError("Could not fetch growth lead-id header")
-    for item in data or []:
-        if isinstance(item, tuple) and len(item) >= 2 and isinstance(item[1], (bytes, bytearray)):
+def _bulk_index_growth_headers(client, message_ids: list[bytes]) -> list[tuple[str, bytes]]:
+    indexed: list[tuple[str, bytes]] = []
+    for start in range(0, len(message_ids), 200):
+        chunk = message_ids[start: start + 200]
+        if not chunk:
+            continue
+        status, data = client.fetch(
+            b",".join(chunk),
+            "(BODY.PEEK[HEADER.FIELDS (X-Webactueel-Lead-ID)])",
+        )
+        if status != "OK":
+            raise RuntimeError("Could not fetch growth lead-id headers")
+        for item in data or []:
+            if not (
+                isinstance(item, tuple)
+                and len(item) >= 2
+                and isinstance(item[0], (bytes, bytearray))
+                and isinstance(item[1], (bytes, bytearray))
+            ):
+                continue
+            match = re.match(rb"^(\d+)", bytes(item[0]))
+            if not match:
+                continue
             header = BytesParser(policy=default).parsebytes(bytes(item[1]))
-            return normalize_text(header.get("X-Webactueel-Lead-ID", ""))
-    raise RuntimeError("Growth lead-id header fetch returned no bytes")
+            lead_id = normalize_text(header.get("X-Webactueel-Lead-ID", ""))
+            if LEAD_ID_RE.fullmatch(lead_id):
+                indexed.append((lead_id, match.group(1)))
+    return indexed
 
 
 def read_review_growth_rows_slice(
@@ -137,16 +153,13 @@ def read_review_growth_rows_slice(
         if status != "OK":
             raise RuntimeError("Could not inventory mijn.host growth review drafts")
 
-        indexed: list[tuple[str, bytes]] = []
+        message_ids = list((data[0] if data else b"").split())
+        indexed = _bulk_index_growth_headers(client, message_ids)
         seen: set[str] = set()
-        for message_id in (data[0] if data else b"").split():
-            lead_id = _lead_id_from_header(client, message_id)
-            if not LEAD_ID_RE.fullmatch(lead_id):
-                continue
+        for lead_id, _ in indexed:
             if lead_id in seen:
                 raise RuntimeError(f"Duplicate growth review draft detected for {lead_id}")
             seen.add(lead_id)
-            indexed.append((lead_id, message_id))
 
         indexed.sort(key=lambda item: item[0])
         selected_ids = indexed[offset: offset + limit]
