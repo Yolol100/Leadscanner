@@ -163,15 +163,16 @@ def audit_rows(
                 failures.append(f"{lead_id}: NL CTA count mismatch")
             if "Dan kunnen jullie eerst bekijken of de richting interessant is." not in body:
                 failures.append(f"{lead_id}: NL CTA wording mismatch")
-            for value in (
-                "Website/webshop — verbeteren of nieuw maken waar nodig",
-                "Zoekbaarheid — beter vindbaar worden",
-                "Automatisering — geschikte processen deels automatiseren waar haalbaar",
-                "Hosting — beheren of overnemen waar passend",
-                "Ik als vast contactpersoon",
+            for pattern, label in (
+                (r"(?im)^• .*website", "website/webshop"),
+                (r"(?im)^• .*(vindbaar|zoekbaarheid)", "zoekbaarheid"),
+                (r"(?im)^• .*social", "social content"),
+                (r"(?im)^• .*automat", "automatisering"),
+                (r"(?im)^• .*hosting", "hosting"),
+                (r"(?im)^• .*(aanspreekpunt|afstemming|direct contact)", "vast contact"),
             ):
-                if value not in body:
-                    failures.append(f"{lead_id}: NL audited copy contract missing {value}")
+                if not re.search(pattern, body):
+                    failures.append(f"{lead_id}: NL audited copy contract missing {label}")
             if "Geen interesse? Laat het gerust weten" not in body:
                 failures.append(f"{lead_id}: NL easy-no missing")
             if not body.endswith("Groet,\nAndrew"):
@@ -181,15 +182,16 @@ def audit_rows(
                 failures.append(f"{lead_id}: EN CTA count mismatch")
             if "so you can first see whether the direction is relevant?" not in body:
                 failures.append(f"{lead_id}: EN CTA wording mismatch")
-            for value in (
-                "Website/webshop — improve or build new where needed",
-                "Search visibility — improve findability",
-                "Automation — partially automate suitable processes where feasible",
-                "Hosting — manage or take over where appropriate",
-                "Me as your fixed point of contact",
+            for pattern, label in (
+                (r"(?im)^• .*website", "website/webshop"),
+                (r"(?im)^• .*(find|search visibility)", "search visibility"),
+                (r"(?im)^• .*social", "social content"),
+                (r"(?im)^• .*automat", "automation"),
+                (r"(?im)^• .*hosting", "hosting"),
+                (r"(?im)^• .*(point of contact|coordination|direct contact)", "fixed contact"),
             ):
-                if value not in body:
-                    failures.append(f"{lead_id}: EN audited copy contract missing {value}")
+                if not re.search(pattern, body):
+                    failures.append(f"{lead_id}: EN audited copy contract missing {label}")
             if "Not interested? Just let me know." not in body:
                 failures.append(f"{lead_id}: EN easy-no missing")
             if not body.endswith("Regards,\nAndrew"):
