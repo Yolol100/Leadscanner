@@ -205,14 +205,53 @@ def run_rewrite(offset: int, limit: int) -> dict:
     }
 
 
+
+def run_rewrite_all() -> dict:
+    folder, rows = read_review_growth_rows()
+    total = len(rows)
+    replaced = 0
+    existing = 0
+
+    for start in range(0, total, MAX_REWRITE):
+        selected = rows[start: start + MAX_REWRITE]
+        batch_rows = [{k: v for k, v in row.items() if not k.startswith("_")} for row in selected]
+        result = create_drafts({"rows": batch_rows}, rewrite_existing_only=True)
+        if result.get("created_count") != 0:
+            raise RuntimeError("rewrite-existing-only unexpectedly created a missing draft")
+        if result.get("eligible_count") != len(selected):
+            raise RuntimeError("rewrite eligible_count mismatch")
+        if result.get("review_required_count") != len(selected):
+            raise RuntimeError("rewrite review_required_count mismatch")
+        if result.get("smtp_send") != "not_available":
+            raise RuntimeError("SMTP/send boundary changed")
+        replaced += int(result.get("replaced_count") or 0)
+        existing += int(result.get("existing_count") or 0)
+
+    if replaced + existing != total:
+        raise RuntimeError("rewrite-all outcome count mismatch")
+
+    return {
+        "mode": "rewrite_all",
+        "draft_folder": folder,
+        "review_growth_total": total,
+        "naturalized_count": total,
+        "pending_count": 0,
+        "selected_count": total,
+        "replaced_count": replaced,
+        "existing_count": existing,
+        "created_count": 0,
+        "smtp_send": "not_available",
+        "read_only": False,
+    }
+
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=("inventory", "rewrite"), required=True)
+    parser.add_argument("--mode", choices=("inventory", "rewrite", "rewrite_all"), required=True)
     parser.add_argument("--offset", type=int, default=0)
     parser.add_argument("--limit", type=int, default=100)
     args = parser.parse_args()
 
-    result = run_inventory() if args.mode == "inventory" else run_rewrite(args.offset, args.limit)
+    result = run_inventory() if args.mode == "inventory" else (run_rewrite_all() if args.mode == "rewrite_all" else run_rewrite(args.offset, args.limit))
     print(
         "MYHOST_NATURALIZE=green "
         f"mode={result['mode']} "

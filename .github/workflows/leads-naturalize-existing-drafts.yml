@@ -18,7 +18,7 @@ jobs:
       github.event.issue.user.login == github.repository_owner &&
       startsWith(github.event.issue.title, '[growth-draft-naturalize]')
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 120
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -54,8 +54,8 @@ jobs:
               raise SystemExit(f"unsupported request fields: {sorted(unknown)}")
 
           mode = str(request.get("mode") or "inventory")
-          if mode not in {"inventory", "rewrite"}:
-              raise SystemExit("mode must be inventory or rewrite")
+          if mode not in {"inventory", "rewrite", "rewrite_all"}:
+              raise SystemExit("mode must be inventory, rewrite or rewrite_all")
           offset = int(request.get("offset") or 0)
           limit = int(request.get("limit") or 100)
           if offset < 0:
