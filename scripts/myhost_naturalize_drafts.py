@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import imaplib
 import json
 import re
+import time
 from email.message import EmailMessage
 from email.parser import BytesParser
 from email.policy import default
@@ -10,8 +12,10 @@ from email.utils import getaddresses
 
 from myhost_draft import (
     LEAD_ID_RE,
+    build_message,
     connect_imap,
     create_drafts,
+    exact_message_matches,
     fetch_message,
     find_drafts_folder,
     find_message_ids,
@@ -132,6 +136,33 @@ def _bulk_index_growth_headers(client, message_ids: list[bytes]) -> list[tuple[s
             if LEAD_ID_RE.fullmatch(lead_id):
                 indexed.append((lead_id, match.group(1)))
     return indexed
+
+
+def _bulk_fetch_messages(client, message_ids: list[bytes]) -> dict[bytes, EmailMessage]:
+    messages: dict[bytes, EmailMessage] = {}
+    for start in range(0, len(message_ids), 100):
+        chunk = message_ids[start: start + 100]
+        if not chunk:
+            continue
+        status, data = client.fetch(b",".join(chunk), "(RFC822)")
+        if status != "OK":
+            raise RuntimeError("Could not bulk-fetch drafts for readback")
+        for item in data or []:
+            if not (
+                isinstance(item, tuple)
+                and len(item) >= 2
+                and isinstance(item[0], (bytes, bytearray))
+                and isinstance(item[1], (bytes, bytearray))
+            ):
+                continue
+            match = re.match(rb"^(\d+)", bytes(item[0]))
+            if not match:
+                continue
+            messages[match.group(1)] = BytesParser(policy=default).parsebytes(bytes(item[1]))
+    missing = [message_id for message_id in message_ids if message_id not in messages]
+    if missing:
+        raise RuntimeError(f"Bulk draft readback missed {len(missing)} messages")
+    return messages
 
 
 def _message_matches_rewrite_row(msg: EmailMessage, row: dict) -> bool:
@@ -494,56 +525,227 @@ def run_rewrite_slice(offset: int, limit: int) -> dict:
     if not 1 <= limit <= MAX_REWRITE:
         raise ValueError(f"limit must be 1-{MAX_REWRITE}")
 
-    folder, total, selected = read_review_growth_rows_slice_all(offset, limit)
-    already_natural = [row for row in selected if row.get("_already_natural")]
-    pending_rows = [row for row in selected if not row.get("_already_natural")]
-    batch_rows = [
-        {k: v for k, v in row.items() if not k.startswith("_")}
-        for row in pending_rows
-    ]
+    client = connect_imap()
+    try:
+        folder = find_drafts_folder(client)
+        select_folder(client, folder, readonly=True)
+        status, data = client.search(
+            None,
+            "HEADER",
+            "X-Webactueel-Review-Required",
+            '"contact-basis"',
+        )
+        if status != "OK":
+            raise RuntimeError("Could not inventory mijn.host growth review drafts")
 
-    if pending_rows:
-        result = create_drafts({"rows": batch_rows}, rewrite_existing_only=True)
-    else:
-        result = {
-            "eligible_count": 0,
+        indexed = _bulk_index_growth_headers(
+            client,
+            list((data[0] if data else b"").split()),
+        )
+        by_lead: dict[str, list[bytes]] = {}
+        for lead_id, message_id in indexed:
+            by_lead.setdefault(lead_id, []).append(message_id)
+        duplicates = [lead_id for lead_id, ids in by_lead.items() if len(ids) != 1]
+        if duplicates:
+            raise RuntimeError(f"Duplicate growth review draft detected for {duplicates[0]}")
+
+        indexed.sort(key=lambda item: item[0])
+        selected_pairs = indexed[offset: offset + limit]
+        selected_ids = [message_id for _, message_id in selected_pairs]
+        originals = _bulk_fetch_messages(client, selected_ids)
+
+        prepared: list[tuple[str, bytes, dict, EmailMessage]] = []
+        existing_count = 0
+        for lead_id, old_id in selected_pairs:
+            row = rewrite_row_from_message(originals[old_id])
+            expected_lead_id, expected = build_message(
+                {k: v for k, v in row.items() if not k.startswith("_")}
+            )
+            if expected_lead_id != lead_id:
+                raise RuntimeError(f"Rewrite lead-id mismatch for {lead_id}")
+            if row.get("_already_natural"):
+                if not exact_message_matches(originals[old_id], expected):
+                    raise RuntimeError(f"Existing exact readback mismatch for {lead_id}")
+                existing_count += 1
+            else:
+                prepared.append((lead_id, old_id, row, expected))
+
+        appended_leads: list[str] = []
+        try:
+            for lead_id, _, _, expected in prepared:
+                status, _ = client.append(
+                    folder,
+                    "(\\Draft)",
+                    imaplib.Time2Internaldate(time.time()),
+                    expected.as_bytes(policy=default),
+                )
+                if status != "OK":
+                    raise RuntimeError(f"IMAP APPEND failed for {lead_id}")
+                appended_leads.append(lead_id)
+
+            if prepared:
+                select_folder(client, folder, readonly=True)
+                status, data = client.search(
+                    None,
+                    "HEADER",
+                    "X-Webactueel-Review-Required",
+                    '"contact-basis"',
+                )
+                if status != "OK":
+                    raise RuntimeError("Could not inventory appended Growth drafts")
+                after_append = _bulk_index_growth_headers(
+                    client,
+                    list((data[0] if data else b"").split()),
+                )
+                append_map: dict[str, list[bytes]] = {}
+                for lead_id, message_id in after_append:
+                    append_map.setdefault(lead_id, []).append(message_id)
+
+                new_ids: list[bytes] = []
+                expected_by_new_id: dict[bytes, EmailMessage] = {}
+                for lead_id, old_id, _, expected in prepared:
+                    ids = append_map.get(lead_id) or []
+                    candidates = [message_id for message_id in ids if message_id != old_id]
+                    if len(ids) != 2 or len(candidates) != 1:
+                        raise RuntimeError(
+                            f"Expected old+new draft after append for {lead_id}, found {len(ids)}"
+                        )
+                    new_id = candidates[0]
+                    new_ids.append(new_id)
+                    expected_by_new_id[new_id] = expected
+
+                appended = _bulk_fetch_messages(client, new_ids)
+                for new_id, expected in expected_by_new_id.items():
+                    if not exact_message_matches(appended[new_id], expected):
+                        raise RuntimeError("Appended draft exact readback mismatch")
+
+                select_folder(client, folder, readonly=False)
+                old_ids = [old_id for _, old_id, _, _ in prepared]
+                status, _ = client.store(
+                    b",".join(old_ids),
+                    "+FLAGS",
+                    "(\\Deleted)",
+                )
+                if status != "OK":
+                    raise RuntimeError("Could not mark old Growth drafts deleted")
+                if client.expunge()[0] != "OK":
+                    raise RuntimeError("Could not expunge old Growth drafts")
+        except Exception:
+            if appended_leads:
+                try:
+                    select_folder(client, folder, readonly=True)
+                    status, data = client.search(
+                        None,
+                        "HEADER",
+                        "X-Webactueel-Review-Required",
+                        '"contact-basis"',
+                    )
+                    if status == "OK":
+                        current = _bulk_index_growth_headers(
+                            client,
+                            list((data[0] if data else b"").split()),
+                        )
+                        current_map: dict[str, list[bytes]] = {}
+                        for lead_id, message_id in current:
+                            current_map.setdefault(lead_id, []).append(message_id)
+                        old_by_lead = {lead_id: old_id for lead_id, old_id, _, _ in prepared}
+                        rollback_ids: list[bytes] = []
+                        for lead_id in appended_leads:
+                            old_id = old_by_lead[lead_id]
+                            rollback_ids.extend(
+                                message_id
+                                for message_id in current_map.get(lead_id, [])
+                                if message_id != old_id
+                            )
+                        if rollback_ids:
+                            select_folder(client, folder, readonly=False)
+                            client.store(
+                                b",".join(rollback_ids),
+                                "+FLAGS",
+                                "(\\Deleted)",
+                            )
+                            client.expunge()
+                except Exception:
+                    pass
+            raise
+
+        # Final exact readback after the old copies are gone. This verifies all
+        # selected rows, including rows that were already exact before the run.
+        select_folder(client, folder, readonly=True)
+        status, data = client.search(
+            None,
+            "HEADER",
+            "X-Webactueel-Review-Required",
+            '"contact-basis"',
+        )
+        if status != "OK":
+            raise RuntimeError("Could not perform final Growth draft inventory")
+        final_index = _bulk_index_growth_headers(
+            client,
+            list((data[0] if data else b"").split()),
+        )
+        final_map: dict[str, list[bytes]] = {}
+        for lead_id, message_id in final_index:
+            final_map.setdefault(lead_id, []).append(message_id)
+
+        final_ids: list[bytes] = []
+        expected_by_final_id: dict[bytes, EmailMessage] = {}
+        for lead_id, _, row, expected in prepared:
+            ids = final_map.get(lead_id) or []
+            if len(ids) != 1:
+                raise RuntimeError(
+                    f"Expected one final Growth draft for {lead_id}, found {len(ids)}"
+                )
+            final_ids.append(ids[0])
+            expected_by_final_id[ids[0]] = expected
+
+        for lead_id, old_id in selected_pairs:
+            if any(lead_id == pending_lead for pending_lead, _, _, _ in prepared):
+                continue
+            row = rewrite_row_from_message(originals[old_id])
+            expected_lead_id, expected = build_message(
+                {k: v for k, v in row.items() if not k.startswith("_")}
+            )
+            if expected_lead_id != lead_id:
+                raise RuntimeError(f"Final existing lead-id mismatch for {lead_id}")
+            ids = final_map.get(lead_id) or []
+            if len(ids) != 1:
+                raise RuntimeError(
+                    f"Expected one final existing Growth draft for {lead_id}, found {len(ids)}"
+                )
+            final_ids.append(ids[0])
+            expected_by_final_id[ids[0]] = expected
+
+        finals = _bulk_fetch_messages(client, final_ids) if final_ids else {}
+        for final_id, expected in expected_by_final_id.items():
+            if not exact_message_matches(finals[final_id], expected):
+                raise RuntimeError("Final Growth draft exact readback mismatch")
+
+        selected_count = len(selected_pairs)
+        replaced_count = len(prepared)
+        if existing_count + replaced_count != selected_count:
+            raise RuntimeError("rewrite selected outcome mismatch")
+
+        return {
+            "mode": "rewrite_slice",
+            "draft_folder": folder,
+            "review_growth_total": len(indexed),
+            "naturalized_count": selected_count,
+            "pending_count": max(len(indexed) - (offset + selected_count), 0),
+            "offset": offset,
+            "limit": limit,
+            "selected_count": selected_count,
+            "replaced_count": replaced_count,
+            "existing_count": existing_count,
             "created_count": 0,
-            "existing_count": 0,
-            "replaced_count": 0,
-            "review_required_count": 0,
             "smtp_send": "not_available",
+            "read_only": False,
         }
-
-    if result.get("created_count") != 0:
-        raise RuntimeError("rewrite-existing-only unexpectedly created a missing draft")
-    if result.get("eligible_count") != len(pending_rows):
-        raise RuntimeError("rewrite eligible_count mismatch")
-    if result.get("review_required_count") != len(pending_rows):
-        raise RuntimeError("rewrite review_required_count mismatch")
-    if result.get("smtp_send") != "not_available":
-        raise RuntimeError("SMTP/send boundary changed")
-
-    existing_total = len(already_natural) + int(result.get("existing_count") or 0)
-    replaced_total = int(result.get("replaced_count") or 0)
-    if existing_total + replaced_total != len(selected):
-        raise RuntimeError("rewrite selected outcome mismatch")
-
-    return {
-        "mode": "rewrite_slice",
-        "draft_folder": folder,
-        "review_growth_total": total,
-        "naturalized_count": len(selected),
-        "pending_count": max(total - (offset + len(selected)), 0),
-        "offset": offset,
-        "limit": limit,
-        "selected_count": len(selected),
-        "replaced_count": replaced_total,
-        "existing_count": existing_total,
-        "created_count": 0,
-        "smtp_send": "not_available",
-        "read_only": False,
-    }
-
+    finally:
+        try:
+            client.logout()
+        except Exception:
+            pass
 
 def run_count_since(since_imap: str) -> dict:
     client = connect_imap()
