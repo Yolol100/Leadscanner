@@ -58,8 +58,8 @@ def extract_opening(body: str, language: str) -> str:
         for part in re.split(r"\n\s*\n", normalize_text(body))
         if normalize_text(part)
     ]
-    expected_greeting = "Hello," if language == "en" else "Goedendag,"
-    if len(paragraphs) < 2 or paragraphs[0] != expected_greeting:
+    expected_greetings = {"Hello,"} if language == "en" else {"Goedendag,", "Hallo,"}
+    if len(paragraphs) < 2 or paragraphs[0] not in expected_greetings:
         raise RuntimeError("Existing growth draft has an unsupported greeting/layout")
     return naturalize_existing_opening(paragraphs[1], language)
 
