@@ -322,6 +322,27 @@ def naturalize_existing_opening(opening: str, language: str) -> str:
     return text
 
 
+def exact_nl_opening_from_existing(opening: str) -> str:
+    text = re.sub(r"\s+", " ", str(opening or "")).strip()
+    patterns = (
+        r"^Ik zag op jullie website dat\s+(.+)$",
+        r"^Wat me opviel op jullie website:\s*(.+)$",
+        r"^Ik zag dat\s+(.+)$",
+    )
+    fact = ""
+    for pattern in patterns:
+        match = re.fullmatch(pattern, text, flags=re.IGNORECASE)
+        if match:
+            fact = match.group(1).strip()
+            break
+    if not fact:
+        raise ValueError("unsupported existing Dutch verified opening")
+    fact = re.sub(r"[.!?]+$", "", fact).strip()
+    if not fact:
+        raise ValueError("existing Dutch verified opening has no fact")
+    return f"Ik zag op jullie website dat {fact}."
+
+
 def _copy_variant_index(key: str, count: int) -> int:
     if count <= 0:
         raise ValueError("count must be positive")
@@ -342,6 +363,8 @@ def build_template_from_opening(
     clean_opening = naturalize_existing_opening(opening, language)
     if not clean_opening:
         raise ValueError("opening is required")
+    if language == "nl":
+        clean_opening = exact_nl_opening_from_existing(clean_opening)
 
     # Keep variant_key for API compatibility; copy is intentionally fixed so every
     # Growth draft follows the same reviewed structure while the verified opening
@@ -381,7 +404,7 @@ def build_template_from_opening(
         f"Het abonnement kost €{price_min}–€{price_max} per maand, afhankelijk van wat jullie nodig hebben.\n\n"
         f"Zal ik vrijblijvend een voorbeeld design maken voor {company_label}? "
         "Dan kunnen jullie eerst bekijken of de richting interessant is.\n\n"
-        "Geen interesse? Antwoord gerust met ‘nee’, dan neem ik hierover geen contact meer op.\n\n"
+        "Geen interesse? Laat het gerust weten.\n\n"
         "Groet,\nAndrew"
     )
 
