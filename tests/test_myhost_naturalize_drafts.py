@@ -54,8 +54,10 @@ class MyHostNaturalizeDraftTests(unittest.TestCase):
         row = rewrite_row_from_message(self.message())
         self.assertEqual(row["email"], "info@example.com")
         self.assertEqual(row["subject"], "Idee voor Voorbeeld Fysio")
+        self.assertTrue(row["body"].startswith("Hallo,\n\n"))
         self.assertIn("Wat me opviel op jullie website: Fysiotherapie in Utrecht.", row["body"])
         self.assertIn("€250–€500 per maand", row["body"])
+        self.assertIn("Geen interesse? Antwoord gerust met ‘nee’, dan neem ik hierover geen contact meer op.", row["body"])
         self.assertEqual(len([line for line in row["body"].splitlines() if line.startswith("• ")]), 6)
         self.assertFalse(row["_already_natural"])
 
