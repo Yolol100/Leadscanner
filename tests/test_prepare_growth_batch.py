@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from prepare_growth_batch import build_opening, infer_focus_from_observation, prepare_batch, subject_for_company
+from prepare_growth_batch import build_opening, exact_nl_opening_from_existing, infer_focus_from_observation, prepare_batch, subject_for_company
 
 
 class GrowthBatchTests(unittest.TestCase):
@@ -28,6 +28,29 @@ class GrowthBatchTests(unittest.TestCase):
             "contact_basis_status": basis,
             "contact_basis_hint": "public_email_review_required",
         }
+
+    def test_exact_nl_opening_recovers_legacy_verified_fact_forms(self):
+        cases = (
+            ('Op jullie website staat “Fysiotherapie in Utrecht”. Met één compact Groeiabonnement help ik bedrijven.', "Ik zag op jullie website dat Fysiotherapie in Utrecht."),
+            ('Op jullie website zag ik “Fysiotherapie in Utrecht”.', "Ik zag op jullie website dat Fysiotherapie in Utrecht."),
+            ('Ik heb de website van Voorbeeld Fysio bekeken en zag “Fysiotherapie in Utrecht”. Ik heb een idee om jullie online aanpak sterker te maken.', "Ik zag op jullie website dat Fysiotherapie in Utrecht."),
+            ('Ik kwam Voorbeeld Fysio tegen en heb jullie website bekeken. Eén detail dat opviel was “Fysiotherapie in Utrecht”. Mijn idee voor Voorbeeld Fysio: website en content laten samenwerken.', "Ik zag op jullie website dat Fysiotherapie in Utrecht."),
+            ('Ik zag dat Voorbeeld Fysio zich richt op fysiotherapie. Ik heb een idee om jullie online aanpak sterker te maken.', "Ik zag op jullie website dat Voorbeeld Fysio zich richt op fysiotherapie."),
+            ('Ik kwam Voorbeeld Fysio tegen en heb jullie website bekeken. Jullie site draait duidelijk om fysiotherapie. Mijn idee voor Voorbeeld Fysio: website en content laten samenwerken.', "Ik zag op jullie website dat Voorbeeld Fysio zich richt op fysiotherapie."),
+        )
+        for opening, expected in cases:
+            with self.subTest(opening=opening):
+                self.assertEqual(
+                    exact_nl_opening_from_existing(opening, "Voorbeeld Fysio"),
+                    expected,
+                )
+
+    def test_exact_nl_opening_rejects_legacy_copy_without_verified_fact(self):
+        with self.assertRaisesRegex(ValueError, "unsupported existing Dutch verified opening"):
+            exact_nl_opening_from_existing(
+                "Ik kwam Voorbeeld Fysio online tegen. Met één compact Groeiabonnement help ik bedrijven.",
+                "Voorbeeld Fysio",
+            )
 
     def test_specific_verified_observation_is_used_in_opening(self):
         contact = self.contact()
