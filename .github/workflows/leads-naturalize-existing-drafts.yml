@@ -55,7 +55,7 @@ jobs:
               raise SystemExit(f"unsupported request fields: {sorted(unknown)}")
 
           mode = str(request.get("mode") or "inventory")
-          if mode not in {"inventory", "rewrite", "rewrite_all", "count_since", "inventory_since", "rewrite_since", "dedupe_same_id_since"}:
+          if mode not in {"inventory", "rewrite", "rewrite_all", "count_all", "rewrite_slice", "count_since", "inventory_since", "rewrite_since", "dedupe_same_id_since"}:
               raise SystemExit("unsupported naturalize mode")
           offset = int(request.get("offset") or 0)
           limit = int(request.get("limit") or 100)
