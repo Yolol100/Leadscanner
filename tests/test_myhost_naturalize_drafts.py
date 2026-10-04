@@ -55,10 +55,17 @@ class MyHostNaturalizeDraftTests(unittest.TestCase):
         self.assertEqual(row["email"], "info@example.com")
         self.assertEqual(row["subject"], "Idee voor Voorbeeld Fysio")
         self.assertTrue(row["body"].startswith("Hallo,\n\n"))
-        self.assertIn("Wat me opviel op jullie website: Fysiotherapie in Utrecht.", row["body"])
+        self.assertIn("Ik zag op jullie website dat Fysiotherapie in Utrecht.", row["body"])
         self.assertIn("€250–€500 per maand", row["body"])
-        self.assertIn("Geen interesse? Antwoord gerust met ‘nee’, dan neem ik hierover geen contact meer op.", row["body"])
+        self.assertIn("Geen interesse? Laat het gerust weten.", row["body"])
         self.assertEqual(len([line for line in row["body"].splitlines() if line.startswith("• ")]), 6)
+        self.assertFalse(row["_already_natural"])
+
+    def test_nl_stale_subject_is_canonicalized(self):
+        msg = self.message()
+        msg.replace_header("Subject", "Oud Groeiabonnement onderwerp")
+        row = rewrite_row_from_message(msg)
+        self.assertEqual(row["subject"], "Idee voor Voorbeeld Fysio")
         self.assertFalse(row["_already_natural"])
 
     def test_en_draft_becomes_natural_without_changing_recipient_or_subject(self):
