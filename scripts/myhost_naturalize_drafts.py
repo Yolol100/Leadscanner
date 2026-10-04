@@ -559,9 +559,16 @@ def run_rewrite_slice(offset: int, limit: int) -> dict:
         originals = _bulk_fetch_messages(client, selected_ids)
 
         prepared: list[tuple[str, bytes, dict, EmailMessage]] = []
+        skipped: list[tuple[str, bytes, EmailMessage]] = []
         existing_count = 0
         for lead_id, old_id in selected_pairs:
-            row = rewrite_row_from_message(originals[old_id])
+            try:
+                row = rewrite_row_from_message(originals[old_id])
+            except ValueError as exc:
+                if str(exc) != "unsupported existing Dutch verified opening":
+                    raise
+                skipped.append((lead_id, old_id, originals[old_id]))
+                continue
             expected_lead_id, expected = build_message(
                 {k: v for k, v in row.items() if not k.startswith("_")}
             )
@@ -703,8 +710,11 @@ def run_rewrite_slice(offset: int, limit: int) -> dict:
             final_ids.append(ids[0])
             expected_by_final_id[ids[0]] = expected
 
+        skipped_leads = {lead_id for lead_id, _, _ in skipped}
         for lead_id, old_id in selected_pairs:
             if any(lead_id == pending_lead for pending_lead, _, _, _ in prepared):
+                continue
+            if lead_id in skipped_leads:
                 continue
             row = rewrite_row_from_message(originals[old_id])
             expected_lead_id, expected = build_message(
@@ -720,6 +730,15 @@ def run_rewrite_slice(offset: int, limit: int) -> dict:
             final_ids.append(ids[0])
             expected_by_final_id[ids[0]] = expected
 
+        for lead_id, _, original in skipped:
+            ids = final_map.get(lead_id) or []
+            if len(ids) != 1:
+                raise RuntimeError(
+                    f"Expected one unchanged skipped Growth draft for {lead_id}, found {len(ids)}"
+                )
+            final_ids.append(ids[0])
+            expected_by_final_id[ids[0]] = original
+
         finals = _bulk_fetch_messages(client, final_ids) if final_ids else {}
         for final_id, expected in expected_by_final_id.items():
             if not exact_message_matches(finals[final_id], expected):
@@ -727,20 +746,22 @@ def run_rewrite_slice(offset: int, limit: int) -> dict:
 
         selected_count = len(selected_pairs)
         replaced_count = len(prepared)
-        if existing_count + replaced_count != selected_count:
+        skipped_count = len(skipped)
+        if existing_count + replaced_count + skipped_count != selected_count:
             raise RuntimeError("rewrite selected outcome mismatch")
 
         return {
             "mode": "rewrite_slice",
             "draft_folder": folder,
             "review_growth_total": len(indexed),
-            "naturalized_count": selected_count,
+            "naturalized_count": existing_count + replaced_count,
             "pending_count": max(len(indexed) - (offset + selected_count), 0),
             "offset": offset,
             "limit": limit,
             "selected_count": selected_count,
             "replaced_count": replaced_count,
             "existing_count": existing_count,
+            "skipped_count": skipped_count,
             "created_count": 0,
             "smtp_send": "not_available",
             "read_only": False,
@@ -935,6 +956,7 @@ def main() -> int:
         f"selected={result['selected_count']} "
         f"replaced={result['replaced_count']} "
         f"existing={result['existing_count']} "
+        f"skipped={result.get('skipped_count', 0)} "
         f"removed_duplicates={result.get('removed_duplicate_count', 0)} "
         "created=0 smtp_send=not_available"
     )
