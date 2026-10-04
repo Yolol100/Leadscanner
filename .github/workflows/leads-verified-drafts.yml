@@ -260,15 +260,15 @@ jobs:
                   raise SystemExit("subject must stay compact")
               language = row.get("language")
               if language == "nl":
-                  if body.count("Zal ik vrijblijvend een voorbeeld voor jullie homepage maken?") != 1:
-                      raise SystemExit("NL copy must contain exactly one homepage-example CTA")
-                  if "Geen interesse? Laat het gerust weten" not in body:
-                      raise SystemExit("NL copy must include an easy no")
+                  if body.count("Zal ik vrijblijvend een voorbeeld design maken voor ") != 1 or "Dan kunnen jullie eerst bekijken of de richting interessant is." not in body:
+                      raise SystemExit("NL copy must contain exactly one company example-design CTA")
+                  if "Geen interesse? Antwoord gerust met ‘nee’, dan neem ik hierover geen contact meer op." not in body:
+                      raise SystemExit("NL copy must include the reviewed easy no")
                   if not body.endswith("Groet,\nAndrew"):
                       raise SystemExit("NL signature mismatch")
               elif language == "en":
-                  if body.count("Would you like me to make a no-obligation example for your homepage?") != 1:
-                      raise SystemExit("EN copy must contain exactly one homepage-example CTA")
+                  if body.count("Would you like me to make a no-obligation example design for ") != 1 or "so you can first see whether the direction is relevant?" not in body:
+                      raise SystemExit("EN copy must contain exactly one company example-design CTA")
                   if "Not interested? Just let me know." not in body:
                       raise SystemExit("EN copy must include an easy no")
                   if not body.endswith("Regards,\nAndrew"):
