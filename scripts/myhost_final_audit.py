@@ -159,6 +159,11 @@ def audit_rows(
         if "Op jullie website staat" in body or "Your website highlights" in body:
             failures.append(f"{lead_id}: old vague opening survived")
         if language == "nl":
+            expected_subject = f"Idee voor {company_label}"
+            if subject != expected_subject:
+                failures.append(f"{lead_id}: NL subject mismatch")
+            if not body.startswith("Hallo,\n\nIk zag op jullie website dat "):
+                failures.append(f"{lead_id}: NL verified-fact opening mismatch")
             if body.count("Zal ik vrijblijvend een voorbeeld design maken voor ") != 1:
                 failures.append(f"{lead_id}: NL CTA count mismatch")
             if "Dan kunnen jullie eerst bekijken of de richting interessant is." not in body:
@@ -173,7 +178,7 @@ def audit_rows(
             ):
                 if not re.search(pattern, body):
                     failures.append(f"{lead_id}: NL audited copy contract missing {label}")
-            if "Geen interesse? Antwoord gerust met ‘nee’, dan neem ik hierover geen contact meer op." not in body:
+            if "Geen interesse? Laat het gerust weten." not in body:
                 failures.append(f"{lead_id}: NL easy-no missing")
             if not body.endswith("Groet,\nAndrew"):
                 failures.append(f"{lead_id}: NL signature mismatch")
