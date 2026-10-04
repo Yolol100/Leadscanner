@@ -292,6 +292,45 @@ def read_review_growth_rows_slice(
             pass
 
 
+
+def read_review_growth_rows_slice_all(
+    offset: int,
+    limit: int,
+) -> tuple[str, int, list[dict]]:
+    client = connect_imap()
+    try:
+        folder = find_drafts_folder(client)
+        select_folder(client, folder, readonly=True)
+        status, data = client.search(
+            None,
+            "HEADER",
+            "X-Webactueel-Review-Required",
+            '"contact-basis"',
+        )
+        if status != "OK":
+            raise RuntimeError("Could not inventory mijn.host growth review drafts")
+
+        message_ids = list((data[0] if data else b"").split())
+        indexed = _bulk_index_growth_headers(client, message_ids)
+        seen: set[str] = set()
+        for lead_id, _ in indexed:
+            if lead_id in seen:
+                raise RuntimeError(f"Duplicate growth review draft detected for {lead_id}")
+            seen.add(lead_id)
+
+        indexed.sort(key=lambda item: item[0])
+        selected_ids = indexed[offset: offset + limit]
+        rows = [
+            rewrite_row_from_message(fetch_message(client, message_id))
+            for _, message_id in selected_ids
+        ]
+        return folder, len(indexed), rows
+    finally:
+        try:
+            client.logout()
+        except Exception:
+            pass
+
 def read_review_growth_rows(since_imap: str | None = None) -> tuple[str, list[dict]]:
     client = connect_imap()
     try:
@@ -403,6 +442,107 @@ def run_rewrite(offset: int, limit: int) -> dict:
         "read_only": False,
     }
 
+
+
+
+def run_count_all() -> dict:
+    client = connect_imap()
+    try:
+        folder = find_drafts_folder(client)
+        select_folder(client, folder, readonly=True)
+        status, data = client.search(
+            None,
+            "HEADER",
+            "X-Webactueel-Review-Required",
+            '"contact-basis"',
+        )
+        if status != "OK":
+            raise RuntimeError("Could not count mijn.host growth review drafts")
+        indexed = _bulk_index_growth_headers(
+            client,
+            list((data[0] if data else b"").split()),
+        )
+        seen: set[str] = set()
+        for lead_id, _ in indexed:
+            if lead_id in seen:
+                raise RuntimeError(f"Duplicate growth review draft detected for {lead_id}")
+            seen.add(lead_id)
+        total = len(indexed)
+        return {
+            "mode": "count_all",
+            "draft_folder": folder,
+            "review_growth_total": total,
+            "naturalized_count": 0,
+            "pending_count": total,
+            "selected_count": 0,
+            "replaced_count": 0,
+            "existing_count": 0,
+            "created_count": 0,
+            "smtp_send": "not_available",
+            "read_only": True,
+        }
+    finally:
+        try:
+            client.logout()
+        except Exception:
+            pass
+
+
+def run_rewrite_slice(offset: int, limit: int) -> dict:
+    if offset < 0:
+        raise ValueError("offset must be >= 0")
+    if not 1 <= limit <= MAX_REWRITE:
+        raise ValueError(f"limit must be 1-{MAX_REWRITE}")
+
+    folder, total, selected = read_review_growth_rows_slice_all(offset, limit)
+    already_natural = [row for row in selected if row.get("_already_natural")]
+    pending_rows = [row for row in selected if not row.get("_already_natural")]
+    batch_rows = [
+        {k: v for k, v in row.items() if not k.startswith("_")}
+        for row in pending_rows
+    ]
+
+    if pending_rows:
+        result = create_drafts({"rows": batch_rows}, rewrite_existing_only=True)
+    else:
+        result = {
+            "eligible_count": 0,
+            "created_count": 0,
+            "existing_count": 0,
+            "replaced_count": 0,
+            "review_required_count": 0,
+            "smtp_send": "not_available",
+        }
+
+    if result.get("created_count") != 0:
+        raise RuntimeError("rewrite-existing-only unexpectedly created a missing draft")
+    if result.get("eligible_count") != len(pending_rows):
+        raise RuntimeError("rewrite eligible_count mismatch")
+    if result.get("review_required_count") != len(pending_rows):
+        raise RuntimeError("rewrite review_required_count mismatch")
+    if result.get("smtp_send") != "not_available":
+        raise RuntimeError("SMTP/send boundary changed")
+
+    existing_total = len(already_natural) + int(result.get("existing_count") or 0)
+    replaced_total = int(result.get("replaced_count") or 0)
+    if existing_total + replaced_total != len(selected):
+        raise RuntimeError("rewrite selected outcome mismatch")
+
+    return {
+        "mode": "rewrite_slice",
+        "draft_folder": folder,
+        "review_growth_total": total,
+        "naturalized_count": len(selected),
+        "pending_count": max(total - (offset + len(selected)), 0),
+        "offset": offset,
+        "limit": limit,
+        "selected_count": len(selected),
+        "replaced_count": replaced_total,
+        "existing_count": existing_total,
+        "created_count": 0,
+        "smtp_send": "not_available",
+        "read_only": False,
+    }
 
 
 def run_count_since(since_imap: str) -> dict:
@@ -554,7 +694,7 @@ def run_rewrite_all() -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=("inventory", "rewrite", "rewrite_all", "count_since", "inventory_since", "rewrite_since", "dedupe_same_id_since"), required=True)
+    parser.add_argument("--mode", choices=("inventory", "rewrite", "rewrite_all", "count_all", "rewrite_slice", "count_since", "inventory_since", "rewrite_since", "dedupe_same_id_since"), required=True)
     parser.add_argument("--offset", type=int, default=0)
     parser.add_argument("--limit", type=int, default=100)
     parser.add_argument("--since-imap")
@@ -564,6 +704,10 @@ def main() -> int:
         raise SystemExit("--since-imap is required for *_since modes")
     if args.mode == "inventory":
         result = run_inventory()
+    elif args.mode == "count_all":
+        result = run_count_all()
+    elif args.mode == "rewrite_slice":
+        result = run_rewrite_slice(args.offset, args.limit)
     elif args.mode == "count_since":
         result = run_count_since(args.since_imap)
     elif args.mode == "inventory_since":
