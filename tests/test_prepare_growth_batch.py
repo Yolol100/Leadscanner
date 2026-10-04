@@ -46,8 +46,10 @@ class GrowthBatchTests(unittest.TestCase):
         self.assertTrue(row["lead_id"].startswith("growth-"))
         self.assertEqual(row["subject"], "Idee voor Voorbeeld Fysiotherapie")
         self.assertEqual(row["copy_company_label"], "Voorbeeld Fysiotherapie")
+        self.assertTrue(row["body"].startswith("Hallo,\n\n"))
         self.assertIn("Wat me opviel op jullie website: Fysiotherapie in Utrecht.", row["body"])
-        self.assertIn("Groeiabonnement", row["body"])
+        self.assertIn("Dit soort online werk pak ik op binnen mijn Groeiabonnement.", row["body"])
+        self.assertIn("Geen interesse? Antwoord gerust met ‘nee’, dan neem ik hierover geen contact meer op.", row["body"])
         self.assertNotIn("Op jullie website staat", row["body"])
         self.assertEqual(row["verified_observation_source_type"], "official_site")
         bullets = [line for line in row["body"].splitlines() if line.startswith("• ")]
