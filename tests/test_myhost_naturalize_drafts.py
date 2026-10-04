@@ -55,11 +55,31 @@ class MyHostNaturalizeDraftTests(unittest.TestCase):
         self.assertEqual(row["email"], "info@example.com")
         self.assertEqual(row["subject"], "Idee voor Voorbeeld Fysio")
         self.assertTrue(row["body"].startswith("Hallo,\n\n"))
-        self.assertIn("Wat me opviel op jullie website: Fysiotherapie in Utrecht.", row["body"])
+        self.assertIn("Ik zag op jullie website dat Fysiotherapie in Utrecht.", row["body"])
         self.assertIn("€250–€500 per maand", row["body"])
-        self.assertIn("Geen interesse? Antwoord gerust met ‘nee’, dan neem ik hierover geen contact meer op.", row["body"])
+        self.assertIn("Geen interesse? Laat het gerust weten.", row["body"])
         self.assertEqual(len([line for line in row["body"].splitlines() if line.startswith("• ")]), 6)
         self.assertFalse(row["_already_natural"])
+
+    def test_nl_exact_requested_structure(self):
+        row = rewrite_row_from_message(self.message())
+        self.assertEqual(row["subject"], "Idee voor Voorbeeld Fysio")
+        self.assertEqual(
+            row["body"],
+            "Hallo,\n\n"
+            "Ik zag op jullie website dat Fysiotherapie in Utrecht.\n\n"
+            "Dit soort online werk pak ik op binnen mijn Groeiabonnement. Afhankelijk van wat voor jullie nuttig is, kan ik helpen met:\n\n"
+            "• website of webshop verbeteren of vernieuwen\n"
+            "• beter vindbaar worden\n"
+            "• passende social content maken\n"
+            "• terugkerende processen automatiseren waar dat zinvol is\n"
+            "• hosting beheren of overnemen waar nodig\n"
+            "• mij als vast aanspreekpunt\n\n"
+            "Het abonnement kost €250–€500 per maand, afhankelijk van wat jullie nodig hebben.\n\n"
+            "Zal ik vrijblijvend een voorbeeld design maken voor Voorbeeld Fysio? Dan kunnen jullie eerst bekijken of de richting interessant is.\n\n"
+            "Geen interesse? Laat het gerust weten.\n\n"
+            "Groet,\nAndrew",
+        )
 
     def test_en_draft_becomes_natural_without_changing_recipient_or_subject(self):
         row = rewrite_row_from_message(self.message(language="en"))
