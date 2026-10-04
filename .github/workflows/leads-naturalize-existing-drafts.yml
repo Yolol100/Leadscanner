@@ -107,7 +107,10 @@ jobs:
           MODE: ${{ steps.request.outputs.mode }}
         run: |
           set -euo pipefail
-          gh issue comment "$ISSUE_NUMBER" --body "mijn.host Growth drafts processed in $MODE mode with exact readback. Nothing was sent."
+          summary="$(cat naturalize-summary.txt)"
+          gh issue comment "$ISSUE_NUMBER" --body "$summary
+
+mijn.host Growth drafts processed in $MODE mode with exact readback. Nothing was sent."
           gh issue close "$ISSUE_NUMBER" --reason completed
 
       - name: Close failed request
