@@ -322,25 +322,71 @@ def naturalize_existing_opening(opening: str, language: str) -> str:
     return text
 
 
-def exact_nl_opening_from_existing(opening: str) -> str:
+def exact_nl_opening_from_existing(opening: str, company: str | None = None) -> str:
     text = re.sub(r"\s+", " ", str(opening or "")).strip()
-    patterns = (
-        r"^Ik zag op jullie website dat\s+(.+)$",
-        r"^Wat me opviel op jullie website:\s*(.+)$",
-        r"^Ik zag dat\s+(.+)$",
-    )
-    fact = ""
-    for pattern in patterns:
-        match = re.fullmatch(pattern, text, flags=re.IGNORECASE)
-        if match:
-            fact = match.group(1).strip()
-            break
-    if not fact:
+    if not text:
         raise ValueError("unsupported existing Dutch verified opening")
-    fact = re.sub(r"[.!?]+$", "", fact).strip()
-    if not fact:
-        raise ValueError("existing Dutch verified opening has no fact")
-    return f"Ik zag op jullie website dat {fact}."
+
+    direct = re.fullmatch(
+        r"Ik zag op jullie website dat\s+(.+)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if direct:
+        fact = direct.group(1).strip()
+        fact = re.split(r"\s+(?:Ik heb een idee|Mijn idee voor)\b", fact, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+        fact = re.sub(r"[.!?]+$", "", fact).strip()
+        if fact:
+            return f"Ik zag op jullie website dat {fact}."
+
+    quoted_patterns = (
+        r'Op jullie site viel me op:\s*[“"](.+?)[”"]',
+        r'Op jullie website zag ik\s*[“"](.+?)[”"]',
+        r'Op jullie website staat\s*[“"](.+?)[”"]',
+        r'Ik heb de website van .+? bekeken en zag\s*[“"](.+?)[”"]',
+        r'Eén detail dat opviel was\s*[“"](.+?)[”"]',
+    )
+    for pattern in quoted_patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            fact = re.sub(r"[.!?]+$", "", match.group(1).strip()).strip()
+            if fact:
+                return f"Ik zag op jullie website dat {fact}."
+
+    stood_out = re.fullmatch(
+        r"Wat me opviel op jullie website:\s*(.+)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if stood_out:
+        fact = stood_out.group(1).strip()
+        fact = re.split(r"\s+(?:Ik heb een idee|Mijn idee voor)\b", fact, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+        fact = re.sub(r"[.!?]+$", "", fact).strip()
+        if fact:
+            return f"Ik zag op jullie website dat {fact}."
+
+    focus = re.match(
+        r"Ik zag dat\s+(.+?)(?:\.\s+(?:Ik heb een idee|Mijn idee voor)\b|[.!?]*$)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if focus:
+        fact = re.sub(r"[.!?]+$", "", focus.group(1).strip()).strip()
+        if fact:
+            return f"Ik zag op jullie website dat {fact}."
+
+    site_focus = re.search(
+        r"Jullie site draait duidelijk om\s+(.+?)(?:\.\s+Mijn idee voor|[.!?]*$)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if site_focus and company:
+        focus_text = re.sub(r"[.!?]+$", "", site_focus.group(1).strip()).strip()
+        company_label = short_company_name(company)
+        if focus_text and company_label:
+            return f"Ik zag op jullie website dat {company_label} zich richt op {focus_text}."
+
+    raise ValueError("unsupported existing Dutch verified opening")
 
 
 def _copy_variant_index(key: str, count: int) -> int:
@@ -364,7 +410,7 @@ def build_template_from_opening(
     if not clean_opening:
         raise ValueError("opening is required")
     if language == "nl":
-        clean_opening = exact_nl_opening_from_existing(clean_opening)
+        clean_opening = exact_nl_opening_from_existing(clean_opening, company_label)
 
     # Keep variant_key for API compatibility; copy is intentionally fixed so every
     # Growth draft follows the same reviewed structure while the verified opening
