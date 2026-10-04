@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import imaplib
+import time
 from copy import deepcopy
 from email.message import EmailMessage
 
@@ -114,7 +115,7 @@ def replace_and_verify(client, folder: str, lead_id: str, old_id: bytes, expecte
     status, _ = client.append(
         folder,
         "(\\Draft)",
-        imaplib.Time2Internaldate(None),
+        imaplib.Time2Internaldate(time.time()),
         expected.as_bytes(),
     )
     if status != "OK":
