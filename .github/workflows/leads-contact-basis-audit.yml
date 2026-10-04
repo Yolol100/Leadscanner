@@ -1,0 +1,134 @@
+name: Leads Contact Basis Audit
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: leads-contact-basis-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    if: >-
+      github.event.issue.user.login == github.repository_owner &&
+      startsWith(github.event.issue.title, '[growth-contact-basis]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Resolve contact-basis request
+        id: request
+        env:
+          EVENT_PATH: ${{ github.event_path }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          event = json.loads(Path(os.environ["EVENT_PATH"]).read_text(encoding="utf-8"))
+          request = json.loads(event["issue"].get("body") or "{}")
+          if not isinstance(request, dict):
+              raise SystemExit("issue body must be a JSON object")
+          allowed = {"mode", "offset", "limit", "approved_hashes", "suppressed_hashes"}
+          unknown = set(request) - allowed
+          if unknown:
+              raise SystemExit(f"unsupported request fields: {sorted(unknown)}")
+
+          mode = str(request.get("mode") or "inventory")
+          if mode not in {"audit_slice", "inventory"}:
+              raise SystemExit("unsupported contact-basis mode")
+          offset = int(request.get("offset") or 0)
+          limit = int(request.get("limit") or 100)
+          if offset < 0 or not 1 <= limit <= 100:
+              raise SystemExit("offset/limit out of bounds")
+
+          def hashes(name):
+              raw = request.get(name) or []
+              if not isinstance(raw, list) or len(raw) > 200:
+                  raise SystemExit(f"{name} must be a list with <=200 entries")
+              out = []
+              for value in raw:
+                  value = str(value).strip().casefold()
+                  if not re.fullmatch(r"[0-9a-f]{64}", value):
+                      raise SystemExit(f"{name} contains invalid sha256")
+                  if value not in out:
+                      out.append(value)
+              return out
+
+          approved = hashes("approved_hashes")
+          suppressed = hashes("suppressed_hashes")
+          if set(approved) & set(suppressed):
+              raise SystemExit("approval/suppression evidence overlap")
+
+          Path("approved.txt").write_text("".join(f"{x}\n" for x in approved), encoding="utf-8")
+          Path("suppressed.txt").write_text("".join(f"{x}\n" for x in suppressed), encoding="utf-8")
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as out:
+              out.write(f"mode={mode}\n")
+              out.write(f"offset={offset}\n")
+              out.write(f"limit={limit}\n")
+          print(f"CONTACT_BASIS_REQUEST=green mode={mode} offset={offset} limit={limit} approved={len(approved)} suppressed={len(suppressed)}")
+          PY
+
+      - name: Audit existing Growth drafts against evidence hashes
+        env:
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
+          MODE: ${{ steps.request.outputs.mode }}
+          OFFSET: ${{ steps.request.outputs.offset }}
+          LIMIT: ${{ steps.request.outputs.limit }}
+        run: |
+          set -euo pipefail
+          args=()
+          while IFS= read -r h; do [ -z "$h" ] || args+=(--approved-hash "$h"); done < approved.txt
+          while IFS= read -r h; do [ -z "$h" ] || args+=(--suppressed-hash "$h"); done < suppressed.txt
+          PYTHONPATH=scripts python3 scripts/myhost_contact_basis_audit.py             --mode "$MODE" --offset "$OFFSET" --limit "$LIMIT" "${args[@]}" | tee contact-basis-summary.txt
+          grep -q '^MYHOST_CONTACT_BASIS=green ' contact-basis-summary.txt
+          grep -q 'created=0 smtp_send=not_available' contact-basis-summary.txt
+
+      - name: Close successful request
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          {
+            cat contact-basis-summary.txt
+            echo
+            echo "Contact-basis audit completed with exact IMAP readback. Nothing was sent."
+          } > issue-comment.txt
+          gh issue comment "$ISSUE_NUMBER" --body-file issue-comment.txt
+          gh issue close "$ISSUE_NUMBER" --reason completed
+
+      - name: Close failed request
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          gh issue comment "$ISSUE_NUMBER" --body "Contact-basis audit failed closed. No email was sent."
+          gh issue close "$ISSUE_NUMBER" --reason completed
+
+      - name: Remove request residue
+        if: always()
+        run: rm -f approved.txt suppressed.txt contact-basis-summary.txt issue-comment.txt
