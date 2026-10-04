@@ -173,7 +173,7 @@ def audit_rows(
             ):
                 if not re.search(pattern, body):
                     failures.append(f"{lead_id}: NL audited copy contract missing {label}")
-            if "Geen interesse? Laat het gerust weten" not in body:
+            if "Geen interesse? Antwoord gerust met ‘nee’, dan neem ik hierover geen contact meer op." not in body:
                 failures.append(f"{lead_id}: NL easy-no missing")
             if not body.endswith("Groet,\nAndrew"):
                 failures.append(f"{lead_id}: NL signature mismatch")
