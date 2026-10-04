@@ -82,11 +82,12 @@ def rewrite_row_from_message(msg: EmailMessage) -> dict:
     if normalize_text(msg.get("X-Webactueel-Review-Required", "")) != "contact-basis":
         raise RuntimeError("Existing draft is not a review_required growth draft")
 
-    subject = normalize_text(msg.get("Subject", ""))
+    original_subject = normalize_text(msg.get("Subject", ""))
     body = plain_body(msg)
-    language = detect_language(subject, body)
-    company = extract_company_label(subject, body, language)
+    language = detect_language(original_subject, body)
+    company = extract_company_label(original_subject, body, language)
     opening = extract_opening(body, language)
+    subject = f"Idee voor {company}" if language == "nl" else original_subject
     new_body = build_template_from_opening(
         company,
         language,
@@ -104,7 +105,10 @@ def rewrite_row_from_message(msg: EmailMessage) -> dict:
         "contact_basis_status": "review_required",
         "language": language,
         "company": company,
-        "_already_natural": normalize_text(new_body) == normalize_text(body),
+        "_already_natural": (
+            normalize_text(new_body) == normalize_text(body)
+            and normalize_text(subject) == normalize_text(original_subject)
+        ),
     }
 
 
