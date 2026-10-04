@@ -47,9 +47,9 @@ class GrowthBatchTests(unittest.TestCase):
         self.assertEqual(row["subject"], "Idee voor Voorbeeld Fysiotherapie")
         self.assertEqual(row["copy_company_label"], "Voorbeeld Fysiotherapie")
         self.assertTrue(row["body"].startswith("Hallo,\n\n"))
-        self.assertIn("Wat me opviel op jullie website: Fysiotherapie in Utrecht.", row["body"])
+        self.assertIn("Ik zag op jullie website dat Fysiotherapie in Utrecht.", row["body"])
         self.assertIn("Dit soort online werk pak ik op binnen mijn Groeiabonnement.", row["body"])
-        self.assertIn("Geen interesse? Antwoord gerust met ‘nee’, dan neem ik hierover geen contact meer op.", row["body"])
+        self.assertIn("Geen interesse? Laat het gerust weten.", row["body"])
         self.assertNotIn("Op jullie website staat", row["body"])
         self.assertEqual(row["verified_observation_source_type"], "official_site")
         bullets = [line for line in row["body"].splitlines() if line.startswith("• ")]
@@ -68,10 +68,10 @@ class GrowthBatchTests(unittest.TestCase):
         contact["name_hint"] = "030 Fietsen – Tweedehands Fietsen Utrecht"
         contact["verified_observation"] = "Home - 030 Fietsen"
         row = prepare_batch({"candidates": [contact]}, self.config(), draft_limit=1)["rows"][0]
-        self.assertIn("Ik zag dat 030 Fietsen zich richt op fietsen en fietsservice", row["body"])
+        self.assertIn("Ik zag op jullie website dat 030 Fietsen zich richt op fietsen en fietsservice.", row["body"])
         self.assertNotIn("op de site komt dat terug in", row["body"])
         self.assertEqual(row["subject"], "Idee voor 030 Fietsen")
-        self.assertIn("Ik zag dat 030 Fietsen zich richt op fietsen en fietsservice", row["body"])
+        self.assertIn("Ik zag op jullie website dat 030 Fietsen zich richt op fietsen en fietsservice.", row["body"])
         self.assertNotIn("Tweedehands Fietsen Utrecht elektrische fietsen", row["body"])
 
     def test_weak_observation_without_reliable_focus_blocks_copy(self):
@@ -87,7 +87,7 @@ class GrowthBatchTests(unittest.TestCase):
         contact["name_hint"] = "De Juwelier"
         contact["verified_observation"] = "À LA CARTE RESTAURANT"
         row = prepare_batch({"candidates": [contact]}, self.config(), draft_limit=1)["rows"][0]
-        self.assertIn("Wat me opviel op jullie website: À LA CARTE RESTAURANT.", row["body"])
+        self.assertIn("Ik zag op jullie website dat À LA CARTE RESTAURANT.", row["body"])
         self.assertNotIn("sieraden en juwelierswerk", row["body"])
 
     def test_pass_contact_becomes_draft_ready(self):
@@ -158,7 +158,7 @@ class GrowthBatchTests(unittest.TestCase):
         contact["verified_observation"] = "Welkom bij David Lloyd Amsterdam"
         contact["category_hint"] = "gym"
         row = prepare_batch({"candidates": [contact]}, self.config(), draft_limit=1)["rows"][0]
-        self.assertIn("zich richt op sport en fitness", row["body"])
+        self.assertIn("Ik zag op jullie website dat David Lloyd Amsterdam zich richt op sport en fitness.", row["body"])
         self.assertEqual(row["category_hint"], "gym")
 
     def test_subject_trims_connector_even_without_word_limit_truncation(self):
@@ -183,7 +183,7 @@ class GrowthBatchTests(unittest.TestCase):
         contact["category_hint"] = "restaurant"
         contact["verified_observation"] = "Welkom op de Camping!"
         row = prepare_batch({"candidates": [contact]}, self.config(), draft_limit=1)["rows"][0]
-        self.assertIn("zich richt op restaurant en gastvrijheid", row["body"])
+        self.assertIn("Ik zag op jullie website dat Camping Ganspoort zich richt op restaurant en gastvrijheid.", row["body"])
         self.assertNotIn("camping en recreatie", row["body"])
 
     def test_substring_false_positives_do_not_assign_business_focus(self):
