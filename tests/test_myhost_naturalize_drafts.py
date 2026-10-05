@@ -57,7 +57,10 @@ class MyHostNaturalizeDraftTests(unittest.TestCase):
         self.assertEqual(row["email"], "info@example.com")
         self.assertEqual(row["subject"], "Idee voor Voorbeeld Fysio")
         self.assertTrue(row["body"].startswith("Hallo,\n\n"))
-        self.assertIn("Ik zag op jullie website dat Fysiotherapie in Utrecht.", row["body"])
+        self.assertIn(
+            "Ik heb jullie website bekeken. Ik zag op jullie website dat Fysiotherapie in Utrecht.",
+            row["body"],
+        )
         self.assertIn("€250–€500 per maand", row["body"])
         self.assertIn("Geen interesse? Laat het gerust weten.", row["body"])
         self.assertEqual(len([line for line in row["body"].splitlines() if line.startswith("• ")]), 6)
@@ -74,7 +77,10 @@ class MyHostNaturalizeDraftTests(unittest.TestCase):
         row = rewrite_row_from_message(self.message(language="en"))
         self.assertEqual(row["email"], "info@example.com")
         self.assertEqual(row["subject"], "An idea for Example Gym")
-        self.assertIn("What stood out to me on your website: Personal training in Utrecht.", row["body"])
+        self.assertIn(
+            "I looked through your website. What stood out to me on your website: Personal training in Utrecht.",
+            row["body"],
+        )
         self.assertIn("€250–€500 per month", row["body"])
         self.assertEqual(len([line for line in row["body"].splitlines() if line.startswith("• ")]), 6)
 
@@ -119,6 +125,17 @@ class MyHostNaturalizeDraftTests(unittest.TestCase):
         with patch.object(sys, "argv", ["myhost_naturalize_drafts.py", "--mode", "inventory_slice", "--offset", "0", "--limit", "100"]):
             self.assertEqual(main(), 0)
         run_slice.assert_called_once_with(0, 100)
+
+    def test_new_generic_prefix_is_idempotent(self):
+        first = rewrite_row_from_message(self.message())
+        msg = self.message()
+        msg.set_content(first["body"])
+        second = rewrite_row_from_message(msg)
+        self.assertEqual(first["body"], second["body"])
+        self.assertEqual(
+            second["body"].count("Ik heb jullie website bekeken."),
+            1,
+        )
 
     def test_naturalization_is_idempotent(self):
         first = rewrite_row_from_message(self.message())
