@@ -277,10 +277,16 @@ def validate_online_evidence(
     page = _normalize_for_match(
         _visible_text(html)
     )
+    expected_email_term = (
+        str(change.get("email") or "").strip().casefold()
+        if require_email
+        else ""
+    )
     missing = [
         term
         for term in change.get("evidence_terms") or []
-        if _normalize_for_match(term) not in page
+        if str(term).strip().casefold() != expected_email_term
+        and _normalize_for_match(term) not in page
     ]
     if missing:
         raise RuntimeError(
