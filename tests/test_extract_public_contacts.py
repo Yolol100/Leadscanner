@@ -74,6 +74,8 @@ class PublicContactDiscoveryTests(unittest.TestCase):
         self.assertFalse(valid_email("dd0a55ccb8124b9c9d938e3acf41f8aa@sentry.wixpress.com"))
         self.assertFalse(valid_email("88170cb0c9d64f94b5821ca7fd2d55a4@sentry-next.wixpress.com"))
         self.assertFalse(valid_email("b357dce2cda744d5a1263db46c56a6f6@o478484.ingest.sentry.io"))
+        self.assertFalse(valid_email("icon-flag-uk@2x.png"))
+        self.assertFalse(valid_email("sprite@assets.svg"))
         self.assertFalse(valid_email("info@mysite.com"))
         self.assertFalse(valid_email("press@example.nl"))
         self.assertFalse(valid_email("press-emea@example.nl"))
