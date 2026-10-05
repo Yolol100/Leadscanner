@@ -241,6 +241,79 @@ class GrowthBatchTests(unittest.TestCase):
         self.assertEqual(subject_for_company("Bistro De Buik Van Parijs | Zwolle", "nl"), "Idee voor Bistro De Buik")
         self.assertEqual(subject_for_company("Busch & van der Worp", "nl"), "Idee voor Busch")
 
+
+    def test_canonical_nl_growth_template_bullets_are_fixed(self):
+        row = prepare_batch(
+            {"candidates": [self.contact(language="nl")]},
+            self.config(),
+            draft_limit=1,
+        )["rows"][0]
+        bullets = [
+            line
+            for line in row["body"].splitlines()
+            if line.startswith("• ")
+        ]
+        self.assertEqual(
+            bullets,
+            [
+                "• website of webshop verbeteren of vernieuwen",
+                "• beter vindbaar worden",
+                "• passende social content maken",
+                "• terugkerende processen automatiseren waar dat zinvol is",
+                "• hosting beheren of overnemen waar nodig",
+                "• mij als vast aanspreekpunt",
+            ],
+        )
+
+    def test_canonical_en_growth_template_bullets_are_fixed(self):
+        row = prepare_batch(
+            {"candidates": [self.contact(language="en")]},
+            self.config(),
+            draft_limit=1,
+        )["rows"][0]
+        bullets = [
+            line
+            for line in row["body"].splitlines()
+            if line.startswith("• ")
+        ]
+        self.assertEqual(
+            bullets,
+            [
+                "• improve or refresh your website or webshop",
+                "• improve online visibility",
+                "• create relevant social content",
+                "• automate recurring processes where useful",
+                "• manage or take over hosting where needed",
+                "• me as your fixed point of contact",
+            ],
+        )
+
+    def test_verified_fact_changes_opening_not_growth_offer(self):
+        first = self.contact(language="nl")
+        second = self.contact(language="nl")
+        first["verified_observation"] = "Fysiotherapie in Utrecht"
+        second["verified_observation"] = "Revalidatie en dry needling in Utrecht"
+        body_a = prepare_batch(
+            {"candidates": [first]},
+            self.config(),
+            draft_limit=1,
+        )["rows"][0]["body"]
+        body_b = prepare_batch(
+            {"candidates": [second]},
+            self.config(),
+            draft_limit=1,
+        )["rows"][0]["body"]
+        self.assertNotEqual(body_a, body_b)
+        offer_a = body_a.split(
+            "Dit soort online werk pak ik op binnen mijn Groeiabonnement.",
+            1,
+        )[1]
+        offer_b = body_b.split(
+            "Dit soort online werk pak ik op binnen mijn Groeiabonnement.",
+            1,
+        )[1]
+        self.assertEqual(offer_a, offer_b)
+
     def test_template_follows_growth_policy_order_and_single_offer(self):
         row = prepare_batch({"candidates": [self.contact()]}, self.config())["rows"][0]
         body = row["body"]
