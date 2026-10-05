@@ -75,7 +75,7 @@ class GrowthBatchTests(unittest.TestCase):
             row["body"],
         )
         self.assertIn(
-            "Daarom dacht ik dat mijn Groeiabonnement interessant kan zijn.",
+            "Met mijn Groeiabonnement kan ik meerdere onderdelen van jullie online aanpak oppakken:",
             row["body"],
         )
         self.assertIn("Geen interesse? Laat het gerust weten.", row["body"])
@@ -338,7 +338,7 @@ class GrowthBatchTests(unittest.TestCase):
         )["rows"][0]["body"]
         self.assertNotEqual(body_a, body_b)
         offer_a = body_a.split(
-            "Daarom dacht ik dat mijn Groeiabonnement interessant kan zijn.",
+            "Met mijn Groeiabonnement kan ik meerdere onderdelen van jullie online aanpak oppakken:",
             1,
         )[1]
         offer_b = body_b.split(
