@@ -11,46 +11,32 @@ class FinalAuditTests(unittest.TestCase):
         return {"monthly_price_eur": {"min": 250, "max": 500}}
 
     def row(self, company: str, email: str, domain: str, lead_id: str):
-        observation = f"{company} dienstverlening"
-        body = (
-            "Goedendag,\n\n"
-            f"Op jullie website staat “{observation}”. Met één compact Groeiabonnement help ik bedrijven hun online aanpak doorlopend verbeteren.\n\n"
-            "• Website/webshop verbeteren of nieuw maken waar nodig\n"
-            "• Zoekbaarheid verbeteren\n"
-            "• Social content verzorgen\n"
-            "• Geschikte terugkerende processen waar haalbaar deels automatiseren\n"
-            "• Hosting overnemen/beheren\n"
-            "• Ik als vast contactpersoon\n\n"
-            "€250–€500 per maand, afhankelijk van wat jullie nodig hebben.\n\n"
-            f"Zal ik vrijblijvend een voorbeeld design maken voor {company}? Dan kunnen jullie eerst bekijken of de richting interessant is.\n\n"
-            "Geen interesse? Laat het gerust weten, dan houd ik het hierbij.\n\n"
-            "Groet,\nAndrew"
-        )
-        return {
-            "lead_id": lead_id,
-            "company": company,
-            "website": f"https://{domain}/",
+        _ = lead_id
+        contact = {
+            "name_hint": company,
+            "website_hint": f"https://{domain}/",
             "official_domain_hint": domain,
-            "product_id": "growth_subscription",
-            "language": "nl",
-            "language_source": "html_lang",
-            "monthly_price_min_eur": 250,
-            "monthly_price_max_eur": 500,
-            "excluded_competitor": False,
-            "exclusion_reason": None,
-            "contact_basis_status": "review_required",
-            "contact_basis_hint": "public_email_review_required",
+            "category_hint": "legal_service",
+            "public_business_emails": [email],
             "email_source_urls": [f"https://{domain}/contact"],
             "email_source_types": ["official_site"],
             "email_source_refs": [f"https://{domain}/contact"],
-            "verified_observation": observation,
+            "verified_observation": (
+                f"{company} biedt advies en zakelijke dienstverlening aan klanten"
+            ),
             "verified_observation_source_url": f"https://{domain}/",
             "verified_observation_source_type": "official_site",
-            "status": "review_draft",
-            "email": email,
-            "subject": f"Idee voor {company}",
-            "body": body,
+            "language": "nl",
+            "language_source": "html_lang",
+            "excluded_competitor": False,
+            "contact_basis_status": "review_required",
+            "contact_basis_hint": "public_email_review_required",
         }
+        return prepare_batch(
+            {"candidates": [contact]},
+            self.config(),
+            draft_limit=1,
+        )["rows"][0]
 
     def test_shared_brand_name_is_allowed_when_domain_email_and_lead_are_unique(self):
         base = self.row("Voorbeeld BV", "a@example.nl", "a.nl", "growth-0123456789abcdefabcd")
