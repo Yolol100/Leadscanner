@@ -30,7 +30,7 @@ HTML_LANG_RE = re.compile(r"<html[^>]*\blang\s*=\s*['\"]?([a-zA-Z-]{2,12})", re.
 BLOCKED_LOCAL_PARTS = {"noreply", "no-reply", "donotreply", "do-not-reply", "example", "test"}
 PLACEHOLDER_LOCAL_PARTS = {"naam", "name", "yourname", "your.name", "email", "e-mail", "mail", "voorbeeld"}
 PLACEHOLDER_DOMAINS = {"voorbeeld.nl", "voorbeeld.com", "example.com", "example.org", "example.net", "jouwdomein.nl", "yourdomain.com", "mysite.com"}
-BLOCKED_TECHNICAL_EMAIL_DOMAIN_SUFFIXES = ("sentry.wixpress.com", "sentry-next.wixpress.com", "sentry.io")
+BLOCKED_TECHNICAL_EMAIL_DOMAIN_SUFFIXES = ("sentry.wixpress.com", "sentry-next.wixpress.com", "sentry.io")\nBLOCKED_ASSET_EMAIL_TLDS = {"png", "jpg", "jpeg", "gif", "webp", "svg", "avif", "ico", "css", "js"}
 UNSUITABLE_OUTREACH_LOCAL_PARTS = {
     "press", "pressemea", "pers", "media", "hr", "work", "job", "jobs", "career", "careers",
     "vacature", "vacatures", "recruit", "recruitment", "sollicitatie", "solliciteren", "privacy", "legal", "dpo",
@@ -245,6 +245,8 @@ def valid_email(value: str) -> bool:
     if normalized_local in UNSUITABLE_OUTREACH_LOCAL_PARTS:
         return False
     if domain in PLACEHOLDER_DOMAINS or domain.endswith((".example", ".test", ".invalid", ".localhost")):
+        return False
+    if domain.rsplit(".", 1)[-1] in BLOCKED_ASSET_EMAIL_TLDS:
         return False
     if any(
         domain == suffix or domain.endswith("." + suffix)
