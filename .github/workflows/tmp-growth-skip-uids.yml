@@ -73,7 +73,21 @@ jobs:
                   except ValueError as exc:
                       if str(exc) != "unsupported existing Dutch verified opening":
                           raise
-                      skipped_uids.append(message_id.decode("ascii"))
+                      status, uid_data = client.fetch(message_id, "(UID)")
+                      if status != "OK" or not uid_data:
+                          raise RuntimeError("Could not resolve IMAP UID for skipped draft")
+                      import re
+                      raw = b" ".join(
+                          bytes(item) if isinstance(item, (bytes, bytearray)) else bytes(item[0])
+                          for item in uid_data
+                          if isinstance(item, (bytes, bytearray)) or (
+                              isinstance(item, tuple) and item and isinstance(item[0], (bytes, bytearray))
+                          )
+                      )
+                      match = re.search(rb"UID\s+(\d+)", raw)
+                      if not match:
+                          raise RuntimeError("Skipped draft UID missing from IMAP fetch")
+                      skipped_uids.append(match.group(1).decode("ascii"))
               if len(indexed) != 1363:
                   raise RuntimeError(f"Expected 1363 Growth drafts, found {len(indexed)}")
               if len(skipped_uids) != 13:
