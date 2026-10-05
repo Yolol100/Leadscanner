@@ -126,7 +126,10 @@ class ContentRemediationTests(unittest.TestCase):
             "email": "sales.branch@example.nl",
             "observation": "Amsterdam Nissan",
             "source_url": "https://example.nl/branch",
-            "evidence_terms": ["Amsterdam Nissan"],
+            "evidence_terms": [
+                "Amsterdam Nissan",
+                "sales.branch@example.nl",
+            ],
         }
         result = __import__(
             "myhost_content_remediation"
