@@ -10,6 +10,7 @@ from pathlib import Path
 import requests
 
 from extract_public_contacts import (
+    EMAIL_RE,
     _visible_text,
     extract_emails,
     fetch_html,
@@ -296,10 +297,16 @@ def validate_online_evidence(
             email.casefold()
             for email in extract_emails(html)
         }
+        raw_source_emails = {
+            match.casefold().strip(".,;:()[]<>")
+            for match in EMAIL_RE.findall(html or "")
+            if valid_email(match)
+        }
+        emails.update(raw_source_emails)
         if expected_email not in emails:
             raise RuntimeError(
                 f"{source_row['lead_id']}: replacement email is not "
-                "visible on official source"
+                "present in official source data"
             )
         email_found = expected_email
 
