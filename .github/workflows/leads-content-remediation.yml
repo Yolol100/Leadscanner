@@ -68,6 +68,7 @@ jobs:
               "rewrites",
               "replacements",
               "holds",
+              "refresh_verified_source_rows",
           }
           unknown = set(request) - allowed
           if unknown:
@@ -128,7 +129,8 @@ jobs:
               "audited=100 "
               f"rewrites={len(request.get('rewrites') or {})} "
               f"replacements={len(request.get('replacements') or {})} "
-              f"holds={len(request.get('holds') or [])}"
+              f"holds={len(request.get('holds') or [])} "
+              f"refresh_verified_source_rows={str(bool(request.get('refresh_verified_source_rows', False))).lower()}"
           )
           PY
 
