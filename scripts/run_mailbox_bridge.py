@@ -33,6 +33,7 @@ ALLOWED_ACTIONS = {
     "reply_all",
     "forward",
     "send_draft",
+    "audit_growth_skips",
 }
 SEND_ACTIONS = {"send", "reply", "reply_all", "forward", "send_draft"}
 DESTRUCTIVE_ACTIONS = {"delete", "delete_folder", "replace_draft"}
@@ -61,12 +62,89 @@ def validate_request(request: dict) -> str:
     return action
 
 
+def audit_growth_skips() -> dict:
+    from myhost_naturalize_drafts import (
+        _bulk_fetch_messages,
+        _bulk_index_growth_headers,
+        connect_imap,
+        find_drafts_folder,
+        plain_body,
+        rewrite_row_from_message,
+        select_folder,
+        single_recipient,
+    )
+
+    client = connect_imap()
+    try:
+        folder = find_drafts_folder(client)
+        select_folder(client, folder, readonly=True)
+        status, data = client.search(
+            None,
+            "HEADER",
+            "X-Webactueel-Review-Required",
+            '"contact-basis"',
+        )
+        if status != "OK":
+            raise RuntimeError("Could not inventory mijn.host Growth review drafts")
+
+        indexed = _bulk_index_growth_headers(
+            client,
+            list((data[0] if data else b"").split()),
+        )
+        by_lead: dict[str, list[bytes]] = {}
+        for lead_id, message_id in indexed:
+            by_lead.setdefault(lead_id, []).append(message_id)
+        duplicates = [lead_id for lead_id, ids in by_lead.items() if len(ids) != 1]
+        if duplicates:
+            raise RuntimeError(f"Duplicate Growth draft detected for {duplicates[0]}")
+
+        indexed.sort(key=lambda item: item[0])
+        message_ids = [message_id for _, message_id in indexed]
+        originals = _bulk_fetch_messages(client, message_ids) if message_ids else {}
+
+        skipped: list[dict] = []
+        for lead_id, message_id in indexed:
+            msg = originals[message_id]
+            try:
+                rewrite_row_from_message(msg)
+            except ValueError as exc:
+                if str(exc) != "unsupported existing Dutch verified opening":
+                    raise
+                skipped.append(
+                    {
+                        "lead_id": lead_id,
+                        "to": single_recipient(msg),
+                        "subject": str(msg.get("Subject", "")).strip(),
+                        "body_text": plain_body(msg),
+                        "review_required": str(
+                            msg.get("X-Webactueel-Review-Required", "")
+                        ).strip(),
+                    }
+                )
+
+        return {
+            "draft_folder": folder,
+            "review_growth_total": len(indexed),
+            "skipped_count": len(skipped),
+            "skipped": skipped,
+            "read_only": True,
+            "smtp_send": "not_available",
+        }
+    finally:
+        try:
+            client.logout()
+        except Exception:
+            pass
+
+
 def execute_request(request: dict) -> dict:
     action = validate_request(request)
     try:
-        import myhost_mailbox
-
-        result = myhost_mailbox.execute(request)
+        if action == "audit_growth_skips":
+            result = audit_growth_skips()
+        else:
+            import myhost_mailbox
+            result = myhost_mailbox.execute(request)
         if not isinstance(result, dict):
             raise RuntimeError("mailbox engine returned an invalid result")
         return {"ok": True, "action": action, "result": result}
