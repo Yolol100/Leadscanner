@@ -71,11 +71,11 @@ class GrowthBatchTests(unittest.TestCase):
         self.assertEqual(row["copy_company_label"], "Voorbeeld Fysiotherapie")
         self.assertTrue(row["body"].startswith("Hallo,\n\n"))
         self.assertIn(
-            "Ik heb jullie website bekeken. Ik zag op jullie website dat Fysiotherapie in Utrecht.",
+            "Ik zag op jullie website dat Fysiotherapie in Utrecht.",
             row["body"],
         )
         self.assertIn(
-            "Daarom dacht ik dat mijn Groeiabonnement mogelijk interessant kan zijn.",
+            "Daarom dacht ik dat mijn Groeiabonnement interessant kan zijn.",
             row["body"],
         )
         self.assertIn("Geen interesse? Laat het gerust weten.", row["body"])
@@ -92,24 +92,34 @@ class GrowthBatchTests(unittest.TestCase):
         self.assertNotIn("30%", row["body"])
         self.assertNotIn("Webactueel B.V.", row["body"])
 
-    def test_low_signal_observation_stays_generic_instead_of_inventing_focus(self):
+    def test_low_signal_observation_blocks_instead_of_inventing_focus(self):
         contact = self.contact()
         contact["name_hint"] = "030 Fietsen – Tweedehands Fietsen Utrecht"
         contact["verified_observation"] = "Home - 030 Fietsen"
-        row = prepare_batch({"candidates": [contact]}, self.config(), draft_limit=1)["rows"][0]
-        self.assertIn("Ik heb jullie website bekeken.", row["body"])
-        self.assertNotIn("zich richt op fietsen en fietsservice", row["body"])
-        self.assertEqual(row["subject"], "Idee voor 030 Fietsen")
-        self.assertNotIn("Tweedehands Fietsen Utrecht elektrische fietsen", row["body"])
+        with self.assertRaisesRegex(
+            ValueError,
+            "No specific verified site detail",
+        ):
+            prepare_batch(
+                {"candidates": [contact]},
+                self.config(),
+                draft_limit=1,
+            )
 
-    def test_weak_observation_without_reliable_fact_uses_generic_site_opening(self):
+    def test_weak_observation_without_reliable_fact_blocks_copy(self):
         contact = self.contact()
         contact["name_hint"] = "Acme BV"
         contact["category_hint"] = None
         contact["verified_observation"] = "Nu tot 30% voordeel op geselecteerde producten"
-        row = prepare_batch({"candidates": [contact]}, self.config(), draft_limit=1)["rows"][0]
-        self.assertIn("Ik heb jullie website bekeken.", row["body"])
-        self.assertNotIn("30%", row["body"])
+        with self.assertRaisesRegex(
+            ValueError,
+            "No specific verified site detail",
+        ):
+            prepare_batch(
+                {"candidates": [contact]},
+                self.config(),
+                draft_limit=1,
+            )
 
     def test_observation_overrides_misleading_company_name_for_focus(self):
         contact = self.contact()
@@ -128,7 +138,7 @@ class GrowthBatchTests(unittest.TestCase):
         self.assertEqual(row["status"], "draft_ready")
         self.assertEqual(row["subject"], "An idea for Example Physiotherapy")
         self.assertIn(
-            "I looked through your website. What stood out to me on your website: Physical therapy in Utrecht.",
+            "What stood out to me on your website: Physical therapy in Utrecht.",
             row["body"],
         )
         self.assertIn("€250–€500 per month, depending on what you need", row["body"])
@@ -189,10 +199,15 @@ class GrowthBatchTests(unittest.TestCase):
         contact["name_hint"] = "David Lloyd Amsterdam"
         contact["verified_observation"] = "Welkom bij David Lloyd Amsterdam"
         contact["category_hint"] = "gym"
-        row = prepare_batch({"candidates": [contact]}, self.config(), draft_limit=1)["rows"][0]
-        self.assertIn("Ik heb jullie website bekeken.", row["body"])
-        self.assertNotIn("zich richt op sport en fitness", row["body"])
-        self.assertEqual(row["category_hint"], "gym")
+        with self.assertRaisesRegex(
+            ValueError,
+            "No specific verified site detail",
+        ):
+            prepare_batch(
+                {"candidates": [contact]},
+                self.config(),
+                draft_limit=1,
+            )
 
     def test_subject_trims_connector_even_without_word_limit_truncation(self):
         self.assertEqual(
@@ -204,7 +219,7 @@ class GrowthBatchTests(unittest.TestCase):
         contact = self.contact()
         contact["name_hint"] = "Steakhouse The Longhorn Rib and"
         contact["category_hint"] = "restaurant"
-        contact["verified_observation"] = "Welkom bij The Longhorn"
+        contact["verified_observation"] = "Steakhouse met grillgerechten in Utrecht"
         row = prepare_batch({"candidates": [contact]}, self.config(), draft_limit=1)["rows"][0]
         self.assertEqual(row["copy_company_label"], "Steakhouse The Longhorn Rib")
         self.assertIn("voorbeeld design maken voor Steakhouse The Longhorn Rib?", row["body"])
@@ -215,10 +230,15 @@ class GrowthBatchTests(unittest.TestCase):
         contact["name_hint"] = "Camping Ganspoort"
         contact["category_hint"] = "restaurant"
         contact["verified_observation"] = "Welkom op de Camping!"
-        row = prepare_batch({"candidates": [contact]}, self.config(), draft_limit=1)["rows"][0]
-        self.assertIn("Ik heb jullie website bekeken.", row["body"])
-        self.assertNotIn("restaurant en gastvrijheid", row["body"])
-        self.assertNotIn("camping en recreatie", row["body"])
+        with self.assertRaisesRegex(
+            ValueError,
+            "No specific verified site detail",
+        ):
+            prepare_batch(
+                {"candidates": [contact]},
+                self.config(),
+                draft_limit=1,
+            )
 
     def test_substring_false_positives_do_not_assign_business_focus(self):
         self.assertIsNone(infer_focus_from_observation("Hoogvliet Houten", "nl"))
@@ -237,15 +257,17 @@ class GrowthBatchTests(unittest.TestCase):
             "hengelsport en visbenodigdheden",
         )
 
-    def test_supermarket_category_fallback_is_personalized_correctly(self):
-        opening = build_opening(
-            "Hoogvliet Houten",
-            "nl",
-            "Welkom bij Hoogvliet Houten",
-            "supermarket",
-        )
-        self.assertIn("zich richt op dagelijkse boodschappen en retail", opening)
-        self.assertNotIn("optiek en oogzorg", opening)
+    def test_supermarket_category_hint_does_not_replace_verified_site_fact(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            "No specific verified site detail",
+        ):
+            build_opening(
+                "Hoogvliet Houten",
+                "nl",
+                "Welkom bij Hoogvliet Houten",
+                "supermarket",
+            )
 
     def test_subject_removes_decorative_emoji_and_avoids_dangling_connector(self):
         self.assertEqual(subject_for_company("Piccola Italia 🇮🇹", "nl"), "Idee voor Piccola Italia")
@@ -267,12 +289,12 @@ class GrowthBatchTests(unittest.TestCase):
         self.assertEqual(
             bullets,
             [
-                "• website of webshop verbeteren of vernieuwen",
-                "• beter vindbaar worden",
-                "• passende social content maken",
-                "• terugkerende processen automatiseren waar dat zinvol is",
-                "• hosting beheren of overnemen waar nodig",
-                "• mij als vast aanspreekpunt",
+                "• Website/webshop — verbeteren of nieuw maken waar nodig",
+                "• Zoekbaarheid — beter vindbaar worden",
+                "• Social content — passende content",
+                "• Automatisering — geschikte processen deels automatiseren waar haalbaar",
+                "• Hosting — beheren of overnemen waar passend",
+                "• Ik als vast contactpersoon",
             ],
         )
 
@@ -290,12 +312,12 @@ class GrowthBatchTests(unittest.TestCase):
         self.assertEqual(
             bullets,
             [
-                "• improve or refresh your website or webshop",
-                "• improve online visibility",
-                "• create relevant social content",
-                "• automate recurring processes where useful",
-                "• manage or take over hosting where needed",
-                "• me as your fixed point of contact",
+                "• Website/webshop — improve or build new where needed",
+                "• Search visibility — improve findability",
+                "• Social content — relevant content",
+                "• Automation — partially automate suitable processes where feasible",
+                "• Hosting — manage or take over where appropriate",
+                "• Me as your fixed point of contact",
             ],
         )
 
@@ -316,11 +338,11 @@ class GrowthBatchTests(unittest.TestCase):
         )["rows"][0]["body"]
         self.assertNotEqual(body_a, body_b)
         offer_a = body_a.split(
-            "Dit soort online werk pak ik op binnen mijn Groeiabonnement.",
+            "Daarom dacht ik dat mijn Groeiabonnement interessant kan zijn.",
             1,
         )[1]
         offer_b = body_b.split(
-            "Dit soort online werk pak ik op binnen mijn Groeiabonnement.",
+            "Daarom dacht ik dat mijn Groeiabonnement interessant kan zijn.",
             1,
         )[1]
         self.assertEqual(offer_a, offer_b)
@@ -376,12 +398,18 @@ class GrowthBatchTests(unittest.TestCase):
                 draft_limit=1,
             )
 
-    def test_weak_website_titles_are_not_quoted(self):
+    def test_weak_website_titles_block_copy(self):
         contact = self.contact()
         contact["name_hint"] = "KU Kitchen & Bar"
         contact["verified_observation"] = "🔒 Beveiligde Website"
-        row = prepare_batch({"candidates": [contact]}, self.config())["rows"][0]
-        self.assertNotIn("Beveiligde Website", row["body"])
+        with self.assertRaisesRegex(
+            ValueError,
+            "No specific verified site detail",
+        ):
+            prepare_batch(
+                {"candidates": [contact]},
+                self.config(),
+            )
 
 
 if __name__ == "__main__":
