@@ -325,6 +325,44 @@ class GrowthBatchTests(unittest.TestCase):
         self.assertNotIn("30%", body)
         self.assertNotIn("meeting", body.casefold())
 
+    def test_navigation_labels_are_low_signal(self):
+        for observation in (
+            "Contact",
+            "Openingstijden",
+            "Route en adres",
+            "Vacatures",
+            "Privacybeleid",
+        ):
+            contact = self.contact()
+            contact["name_hint"] = "Acme BV"
+            contact["category_hint"] = None
+            contact["verified_observation"] = observation
+            with self.subTest(observation=observation):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "No specific verified site detail",
+                ):
+                    prepare_batch(
+                        {"candidates": [contact]},
+                        self.config(),
+                        draft_limit=1,
+                    )
+
+    def test_temporary_campaign_heading_is_low_signal(self):
+        contact = self.contact()
+        contact["name_hint"] = "Acme BV"
+        contact["category_hint"] = None
+        contact["verified_observation"] = "Tijdelijk voordeel op geselecteerde producten"
+        with self.assertRaisesRegex(
+            ValueError,
+            "No specific verified site detail",
+        ):
+            prepare_batch(
+                {"candidates": [contact]},
+                self.config(),
+                draft_limit=1,
+            )
+
     def test_weak_website_titles_are_not_quoted(self):
         contact = self.contact()
         contact["name_hint"] = "KU Kitchen & Bar"
