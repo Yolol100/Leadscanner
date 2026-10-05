@@ -427,8 +427,7 @@ def build_template_from_opening(
         return (
             "Hello,\n\n"
             f"{clean_opening}\n\n"
-            "That made me think my Growth Subscription could be relevant. "
-            "It covers several parts of your online presence:\n\n"
+            "My Growth Subscription covers several parts of your online presence:\n\n"
             "• Website/webshop — improve or build new where needed\n"
             "• Search visibility — improve findability\n"
             "• Social content — relevant content\n"
@@ -445,8 +444,7 @@ def build_template_from_opening(
     return (
         "Hallo,\n\n"
         f"{clean_opening}\n\n"
-        "Daarom dacht ik dat mijn Groeiabonnement interessant kan zijn. "
-        "Daarmee kan ik meerdere onderdelen van jullie online aanpak oppakken:\n\n"
+        "Met mijn Groeiabonnement kan ik meerdere onderdelen van jullie online aanpak oppakken:\n\n"
         "• Website/webshop — verbeteren of nieuw maken waar nodig\n"
         "• Zoekbaarheid — beter vindbaar worden\n"
         "• Social content — passende content\n"
