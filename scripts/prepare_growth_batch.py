@@ -284,6 +284,7 @@ def build_opening(
         and not boilerplate_heading
         and not placeholder_observation
         and not weak_observation
+        and not low_signal
     ):
         punctuation = "" if observed.endswith((".", "!", "?")) else "."
         if language == "en":
@@ -427,7 +428,7 @@ def build_template_from_opening(
             "Hello,\n\n"
             f"{clean_opening}\n\n"
             "That made me think my Growth Subscription could be relevant. "
-            "It lets me support several parts of your online presence while staying your fixed point of contact:\n\n"
+            "It covers several parts of your online presence:\n\n"
             "• Website/webshop — improve or build new where needed\n"
             "• Search visibility — improve findability\n"
             "• Social content — relevant content\n"
@@ -445,7 +446,7 @@ def build_template_from_opening(
         "Hallo,\n\n"
         f"{clean_opening}\n\n"
         "Daarom dacht ik dat mijn Groeiabonnement interessant kan zijn. "
-        "Daarmee kan ik meerdere onderdelen van jullie online aanpak oppakken, met mij als vast contactpersoon:\n\n"
+        "Daarmee kan ik meerdere onderdelen van jullie online aanpak oppakken:\n\n"
         "• Website/webshop — verbeteren of nieuw maken waar nodig\n"
         "• Zoekbaarheid — beter vindbaar worden\n"
         "• Social content — passende content\n"
