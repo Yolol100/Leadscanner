@@ -172,6 +172,13 @@ def validate_request(request: dict) -> dict:
                 raise ValueError(
                     f"{lead_id}: evidence_terms must contain 1-8 terms"
                 )
+            language = str(
+                change.get("language") or ""
+            ).strip().casefold()
+            if language and language not in {"nl", "en"}:
+                raise ValueError(
+                    f"{lead_id}: language must be nl or en"
+                )
             if label == "replacements":
                 email = str(
                     change.get("email") or ""
@@ -317,13 +324,19 @@ def build_corrected_row(
     replacement: bool,
 ) -> dict:
     row = deepcopy(source_row)
-    language = str(
+    requested_language = str(
+        change.get("language") or ""
+    ).strip().casefold()
+    language = requested_language or str(
         row.get("language") or "nl"
     ).casefold()
     if language not in {"nl", "en"}:
         raise RuntimeError(
             f"{row.get('lead_id')}: unsupported language"
         )
+    if requested_language:
+        row["language"] = language
+        row["language_source"] = "official_site_manual_override"
     company = clean_company(
         row.get("company"), language
     )
