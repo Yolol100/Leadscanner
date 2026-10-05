@@ -342,7 +342,7 @@ class GrowthBatchTests(unittest.TestCase):
             1,
         )[1]
         offer_b = body_b.split(
-            "Daarom dacht ik dat mijn Groeiabonnement interessant kan zijn.",
+            "Met mijn Groeiabonnement kan ik meerdere onderdelen van jullie online aanpak oppakken:",
             1,
         )[1]
         self.assertEqual(offer_a, offer_b)
