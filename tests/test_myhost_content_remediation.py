@@ -101,6 +101,45 @@ class ContentRemediationTests(unittest.TestCase):
         )
 
     @patch(
+        "myhost_content_remediation.fetch_html",
+        return_value=(
+            '<html><body>Amsterdam Nissan<script>window.data={"email":"sales.branch@example.nl"}</script></body></html>',
+            "https://example.nl/branch",
+            200,
+        ),
+    )
+    @patch(
+        "myhost_content_remediation.normalize_domain",
+        return_value="example.nl",
+    )
+    def test_replacement_email_may_be_in_first_party_source_data(
+        self,
+        domain,
+        fetch,
+    ):
+        source = {
+            "lead_id": "growth-bbbbbbbbbbbbbbbbbbbb",
+            "website": "https://example.nl/",
+            "official_domain_hint": "example.nl",
+        }
+        change = {
+            "email": "sales.branch@example.nl",
+            "observation": "Amsterdam Nissan",
+            "source_url": "https://example.nl/branch",
+            "evidence_terms": ["Amsterdam Nissan"],
+        }
+        result = __import__(
+            "myhost_content_remediation"
+        ).validate_online_evidence(
+            source,
+            change,
+            require_email=True,
+        )
+        self.assertTrue(
+            result["replacement_email_verified"]
+        )
+
+    @patch(
         "myhost_content_remediation.valid_email",
         return_value=True,
     )
