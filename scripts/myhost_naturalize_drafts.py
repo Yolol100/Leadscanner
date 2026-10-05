@@ -424,6 +424,31 @@ def run_inventory() -> dict:
     }
 
 
+def run_inventory_slice(offset: int, limit: int) -> dict:
+    if offset < 0:
+        raise ValueError("offset must be >= 0")
+    if not 1 <= limit <= MAX_REWRITE:
+        raise ValueError(f"limit must be 1-{MAX_REWRITE}")
+
+    folder, total, rows = read_review_growth_rows_slice_all(offset, limit)
+    natural = sum(1 for row in rows if row["_already_natural"])
+    return {
+        "mode": "inventory_slice",
+        "draft_folder": folder,
+        "review_growth_total": total,
+        "naturalized_count": natural,
+        "pending_count": len(rows) - natural,
+        "offset": offset,
+        "limit": limit,
+        "selected_count": len(rows),
+        "replaced_count": 0,
+        "existing_count": natural,
+        "created_count": 0,
+        "smtp_send": "not_available",
+        "read_only": True,
+    }
+
+
 def run_rewrite(offset: int, limit: int) -> dict:
     if offset < 0:
         raise ValueError("offset must be >= 0")
@@ -931,6 +956,8 @@ def main() -> int:
         raise SystemExit("--since-imap is required for *_since modes")
     if args.mode == "inventory":
         result = run_inventory()
+    elif args.mode == "inventory_slice":
+        result = run_inventory_slice(args.offset, args.limit)
     elif args.mode == "count_all":
         result = run_count_all()
     elif args.mode == "rewrite_slice":

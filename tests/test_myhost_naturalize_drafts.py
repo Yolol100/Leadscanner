@@ -3,7 +3,9 @@ from __future__ import annotations
 import unittest
 from email.message import EmailMessage
 
-from myhost_naturalize_drafts import rewrite_row_from_message
+from unittest.mock import patch
+
+from myhost_naturalize_drafts import run_inventory_slice, rewrite_row_from_message
 
 
 class MyHostNaturalizeDraftTests(unittest.TestCase):
@@ -75,6 +77,29 @@ class MyHostNaturalizeDraftTests(unittest.TestCase):
         self.assertIn("What stood out to me on your website: Personal training in Utrecht.", row["body"])
         self.assertIn("€250–€500 per month", row["body"])
         self.assertEqual(len([line for line in row["body"].splitlines() if line.startswith("• ")]), 6)
+
+
+    @patch("myhost_naturalize_drafts.read_review_growth_rows_slice_all")
+    def test_inventory_slice_is_read_only_and_bounded(self, read_slice):
+        read_slice.return_value = (
+            "Drafts",
+            1350,
+            [
+                {"_already_natural": True},
+                {"_already_natural": False},
+            ],
+        )
+        result = run_inventory_slice(100, 2)
+        self.assertEqual(result["mode"], "inventory_slice")
+        self.assertEqual(result["review_growth_total"], 1350)
+        self.assertEqual(result["selected_count"], 2)
+        self.assertEqual(result["naturalized_count"], 1)
+        self.assertEqual(result["pending_count"], 1)
+        self.assertEqual(result["offset"], 100)
+        self.assertEqual(result["limit"], 2)
+        self.assertTrue(result["read_only"])
+        self.assertEqual(result["smtp_send"], "not_available")
+        read_slice.assert_called_once_with(100, 2)
 
     def test_naturalization_is_idempotent(self):
         first = rewrite_row_from_message(self.message())
