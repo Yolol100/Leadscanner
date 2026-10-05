@@ -1,0 +1,259 @@
+name: Leads Content Remediation
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+concurrency:
+  group: leads-content-remediation
+  cancel-in-progress: false
+
+jobs:
+  remediate:
+    if: >-
+      github.event.issue.user.login == github.repository_owner &&
+      startsWith(github.event.issue.title, '[growth-content-remediate]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Install runtime dependencies
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check -r requirements.txt
+
+      - name: Resolve bounded remediation request
+        id: request
+        env:
+          EVENT_PATH: ${{ github.event_path }}
+        run: |
+          set -euo pipefail
+          mkdir -p results/source
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          event = json.loads(
+              Path(os.environ["EVENT_PATH"]).read_text(
+                  encoding="utf-8"
+              )
+          )
+          request = json.loads(
+              event["issue"].get("body") or "{}"
+          )
+          if not isinstance(request, dict):
+              raise SystemExit(
+                  "issue body must be a JSON object"
+              )
+          allowed = {
+              "batch_id",
+              "source_archive_artifact_id",
+              "source_artifact_ids",
+              "audited_lead_ids",
+              "rewrites",
+              "replacements",
+              "holds",
+          }
+          unknown = set(request) - allowed
+          if unknown:
+              raise SystemExit(
+                  f"unsupported request fields: {sorted(unknown)}"
+              )
+          batch_id = str(
+              request.get("batch_id") or ""
+          ).strip()
+          if not re.fullmatch(
+              r"batch-[0-9]{3,6}",
+              batch_id,
+          ):
+              raise SystemExit("invalid batch_id")
+          source_archive = int(
+              request.get(
+                  "source_archive_artifact_id"
+              )
+              or 0
+          )
+          if source_archive <= 0:
+              raise SystemExit(
+                  "source archive artifact must be positive"
+              )
+          audited = (
+              request.get("audited_lead_ids")
+              or []
+          )
+          if (
+              not isinstance(audited, list)
+              or len(audited) != 100
+              or len(set(audited)) != 100
+          ):
+              raise SystemExit(
+                  "request must audit exactly 100 unique leads"
+              )
+          Path("results/request.json").write_text(
+              json.dumps(
+                  request,
+                  indent=2,
+                  ensure_ascii=False,
+              )
+              + "\n",
+              encoding="utf-8",
+          )
+          with Path(
+              os.environ["GITHUB_OUTPUT"]
+          ).open("a", encoding="utf-8") as out:
+              out.write(
+                  f"batch_id={batch_id}\n"
+              )
+              out.write(
+                  f"source_archive={source_archive}\n"
+              )
+          print(
+              "CONTENT_REMEDIATION_REQUEST=green "
+              f"batch={batch_id} "
+              "audited=100 "
+              f"rewrites={len(request.get('rewrites') or {})} "
+              f"replacements={len(request.get('replacements') or {})} "
+              f"holds={len(request.get('holds') or [])}"
+          )
+          PY
+
+      - name: Download audited source archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_ARCHIVE: ${{ steps.request.outputs.source_archive }}
+        run: |
+          set -euo pipefail
+          gh api -H "Accept: application/vnd.github+json"             "/repos/$GITHUB_REPOSITORY/actions/artifacts/$SOURCE_ARCHIVE/zip"             > results/source.zip
+          unzip -q results/source.zip -d results/source
+          test -d results/source/rewrite
+          echo "CONTENT_SOURCE_ARCHIVE=green artifact=$SOURCE_ARCHIVE"
+
+      - name: Verify official evidence and remediate exact current drafts
+        env:
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME || 'Andrew Baeten' }}
+          OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
+          OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH=scripts python3 scripts/myhost_content_remediation.py             --request results/request.json             --source-root results/source             --config config/growth-subscription.json             --report results/content-remediation-report.json             | tee results/content-remediation.txt
+          grep -q '^CONTENT_REMEDIATION=green ' results/content-remediation.txt
+          grep -q 'automatic_send=false send_capability=unavailable' results/content-remediation.txt
+
+      - name: Prove bounded exact result
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(
+              Path(
+                  "results/content-remediation-report.json"
+              ).read_text(encoding="utf-8")
+          )
+          if report.get("audited_count") != 100:
+              raise SystemExit(
+                  "remediation escaped the 100-lead boundary"
+              )
+          expected_changed = int(
+              report.get("rewrite_count") or 0
+          ) + int(
+              report.get("replacement_count") or 0
+          )
+          if (
+              report.get(
+                  "final_exact_changed_count"
+              )
+              != expected_changed
+          ):
+              raise SystemExit(
+                  "changed-draft exact readback is incomplete"
+              )
+          if (
+              report.get(
+                  "holds_readback_count"
+              )
+              != report.get("hold_count")
+          ):
+              raise SystemExit(
+                  "hold readback is incomplete"
+              )
+          if (
+              report.get("automatic_send")
+              is not False
+              or report.get("send_capability")
+              != "unavailable"
+          ):
+              raise SystemExit(
+                  "send boundary changed"
+              )
+          if report.get("readback") != "exact":
+              raise SystemExit(
+                  "exact readback marker missing"
+              )
+          print(
+              "CONTENT_REMEDIATION_BOUNDARY=green "
+              "audited=100 "
+              f"changed={expected_changed} "
+              f"holds={report.get('hold_count')} "
+              "automatic_send=false"
+          )
+          PY
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: content-remediation-${{ steps.request.outputs.batch_id }}
+          path: |
+            results/content-remediation-report.json
+            results/content-remediation.txt
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Close successful request
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          {
+            cat results/content-remediation.txt
+            echo
+            echo "Official-site content remediation completed with exact current mailbox readback. Nothing was sent."
+          } > results/issue-comment.txt
+          gh issue comment "$ISSUE_NUMBER" --body-file results/issue-comment.txt
+          gh issue close "$ISSUE_NUMBER" --reason completed
+
+      - name: Close failed request
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          gh issue comment "$ISSUE_NUMBER" --body "Content remediation failed closed. No email was sent."
+          gh issue close "$ISSUE_NUMBER" --reason completed
+
+      - name: Remove target-specific residue
+        if: always()
+        run: |
+          rm -rf             results/source             results/source.zip             results/request.json             results/issue-comment.txt
