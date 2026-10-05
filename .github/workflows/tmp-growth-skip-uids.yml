@@ -1,0 +1,91 @@
+name: Temporary Growth Skip UID Audit
+
+on:
+  push:
+    branches:
+      - audit-growth-skips-20261005-1124
+    paths:
+      - .github/workflows/tmp-growth-skip-uids.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+      OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+      OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+      OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+      OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+
+      - name: Identify unsupported Growth draft UIDs read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH="$GITHUB_WORKSPACE/scripts" python3 - <<'PY'
+          import json
+          from myhost_naturalize_drafts import (
+              _bulk_fetch_messages,
+              _bulk_index_growth_headers,
+              connect_imap,
+              find_drafts_folder,
+              rewrite_row_from_message,
+              select_folder,
+          )
+
+          client = connect_imap()
+          try:
+              folder = find_drafts_folder(client)
+              select_folder(client, folder, readonly=True)
+              status, data = client.search(
+                  None,
+                  "HEADER",
+                  "X-Webactueel-Review-Required",
+                  '"contact-basis"',
+              )
+              if status != "OK":
+                  raise RuntimeError("Could not inventory Growth review drafts")
+              indexed = _bulk_index_growth_headers(
+                  client,
+                  list((data[0] if data else b"").split()),
+              )
+              indexed.sort(key=lambda item: item[0])
+              messages = _bulk_fetch_messages(
+                  client,
+                  [message_id for _, message_id in indexed],
+              )
+              skipped_uids = []
+              for _, message_id in indexed:
+                  try:
+                      rewrite_row_from_message(messages[message_id])
+                  except ValueError as exc:
+                      if str(exc) != "unsupported existing Dutch verified opening":
+                          raise
+                      skipped_uids.append(message_id.decode("ascii"))
+              if len(indexed) != 1363:
+                  raise RuntimeError(f"Expected 1363 Growth drafts, found {len(indexed)}")
+              if len(skipped_uids) != 13:
+                  raise RuntimeError(f"Expected 13 skips, found {len(skipped_uids)}")
+              print("GROWTH_SKIP_UID_AUDIT=green")
+              print("growth_total=1363")
+              print("skip_count=13")
+              print("skip_uids=" + json.dumps(skipped_uids, separators=(",", ":")))
+              print("smtp_send=not_available")
+          finally:
+              try:
+                  client.logout()
+              except Exception:
+                  pass
+          PY
