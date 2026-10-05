@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import unicodedata
 from copy import deepcopy
 from email.utils import getaddresses
 from pathlib import Path
@@ -69,6 +70,7 @@ def validate_request(request: dict) -> dict:
         "rewrites",
         "replacements",
         "holds",
+        "refresh_verified_source_rows",
     }
     unknown = set(request) - allowed
     if unknown:
@@ -107,6 +109,13 @@ def validate_request(request: dict) -> dict:
 
     rewrites = request.get("rewrites") or {}
     replacements = request.get("replacements") or {}
+    refresh_verified = request.get(
+        "refresh_verified_source_rows", False
+    )
+    if not isinstance(refresh_verified, bool):
+        raise ValueError(
+            "refresh_verified_source_rows must be boolean"
+        )
     holds = [
         str(x).strip()
         for x in _as_list(request.get("holds") or [], "holds")
@@ -228,9 +237,113 @@ def load_source_rows(
 
 
 def _normalize_for_match(value: str) -> str:
+    text = unicodedata.normalize(
+        "NFKD", str(value or "")
+    )
+    text = "".join(
+        ch for ch in text
+        if not unicodedata.combining(ch)
+    )
     return re.sub(
-        r"\s+", " ", str(value or "")
+        r"\s+", " ", text
     ).strip().casefold()
+
+
+_REFRESH_STOPWORDS = {
+    "aan", "and", "bij", "de", "een", "en", "for", "het",
+    "in", "is", "met", "of", "on", "op", "the", "to", "van",
+    "voor", "with", "your", "jullie", "zijn",
+}
+
+
+def _derive_refresh_evidence_terms(
+    source_row: dict,
+) -> list[str]:
+    observation = _normalize_for_match(
+        source_row.get("verified_observation")
+    )
+    company = _normalize_for_match(
+        source_row.get("company")
+    )
+    observation_tokens = re.findall(
+        r"[a-z0-9]+", observation
+    )
+    company_tokens = set(
+        re.findall(r"[a-z0-9]+", company)
+    )
+
+    candidates: list[str] = []
+    for token in observation_tokens:
+        if (
+            len(token) < 4
+            or token in _REFRESH_STOPWORDS
+            or token in company_tokens
+            or token in candidates
+        ):
+            continue
+        candidates.append(token)
+
+    if not candidates:
+        for token in observation_tokens:
+            if (
+                len(token) >= 4
+                and token not in _REFRESH_STOPWORDS
+                and token not in candidates
+            ):
+                candidates.append(token)
+
+    if not candidates:
+        raise RuntimeError(
+            f"{source_row.get('lead_id')}: verified observation "
+            "has no usable current-site evidence term"
+        )
+    return candidates[:2]
+
+
+def _refresh_change_from_source(
+    source_row: dict,
+) -> dict:
+    if (
+        str(
+            source_row.get(
+                "verified_observation_source_type"
+            )
+            or ""
+        ).strip()
+        != "official_site"
+    ):
+        raise RuntimeError(
+            f"{source_row.get('lead_id')}: refresh requires "
+            "official_site observation provenance"
+        )
+    observation = str(
+        source_row.get("verified_observation") or ""
+    ).strip()
+    source_url = str(
+        source_row.get(
+            "verified_observation_source_url"
+        )
+        or ""
+    ).strip()
+    if (
+        not observation
+        or not source_url.startswith(
+            ("http://", "https://")
+        )
+    ):
+        raise RuntimeError(
+            f"{source_row.get('lead_id')}: refresh source "
+            "observation/provenance is incomplete"
+        )
+    return {
+        "observation": observation,
+        "source_url": source_url,
+        "evidence_terms": (
+            _derive_refresh_evidence_terms(
+                source_row
+            )
+        ),
+    }
 
 
 def validate_online_evidence(
@@ -485,13 +598,32 @@ def run(
             f"{missing_source[0]}"
         )
 
-    rewrites = request.get("rewrites") or {}
-    replacements = (
+    rewrites = dict(
+        request.get("rewrites") or {}
+    )
+    replacements = dict(
         request.get("replacements") or {}
     )
     holds = set(
         request.get("holds") or []
     )
+    auto_refreshed_count = 0
+    if request.get(
+        "refresh_verified_source_rows", False
+    ):
+        for lead_id in audited:
+            if (
+                lead_id in rewrites
+                or lead_id in replacements
+                or lead_id in holds
+            ):
+                continue
+            rewrites[lead_id] = (
+                _refresh_change_from_source(
+                    source_rows[lead_id]
+                )
+            )
+            auto_refreshed_count += 1
 
     online_evidence = {}
     evidence_failures: list[str] = []
@@ -824,6 +956,15 @@ def run(
         "audited_count": len(audited),
         "online_evidence_count": len(
             online_evidence
+        ),
+        "refresh_verified_source_rows": bool(
+            request.get(
+                "refresh_verified_source_rows",
+                False,
+            )
+        ),
+        "auto_refreshed_count": (
+            auto_refreshed_count
         ),
         "rewrite_count": len(rewrite_rows),
         "replacement_count": len(
