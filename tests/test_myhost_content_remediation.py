@@ -2,6 +2,8 @@ import unittest
 from unittest.mock import patch
 
 from myhost_content_remediation import (
+    _derive_refresh_evidence_terms,
+    _refresh_change_from_source,
     build_corrected_row,
     validate_request,
 )
@@ -56,6 +58,52 @@ class ContentRemediationTests(unittest.TestCase):
         }
         with self.assertRaises(ValueError):
             validate_request(request)
+
+    def test_refresh_verified_source_rows_must_be_boolean(self):
+        request = self.base_request()
+        request["refresh_verified_source_rows"] = "yes"
+        with self.assertRaises(ValueError):
+            validate_request(request)
+
+    def test_refresh_change_requires_official_site_provenance(self):
+        source = {
+            "lead_id": "growth-bbbbbbbbbbbbbbbbbbbb",
+            "company": "Voorbeeld BV",
+            "verified_observation": "Voorbeeld biedt interieuradvies in Utrecht",
+            "verified_observation_source_url": "https://example.nl/",
+            "verified_observation_source_type": "directory",
+        }
+        with self.assertRaises(RuntimeError):
+            _refresh_change_from_source(source)
+
+    def test_refresh_terms_avoid_company_only_tokens(self):
+        source = {
+            "lead_id": "growth-bbbbbbbbbbbbbbbbbbbb",
+            "company": "Voorbeeld BV",
+            "verified_observation": "Voorbeeld BV biedt interieuradvies in Utrecht",
+        }
+        terms = _derive_refresh_evidence_terms(source)
+        self.assertIn("interieuradvies", terms)
+        self.assertNotIn("voorbeeld", terms)
+
+    def test_refresh_change_reuses_verified_official_source(self):
+        source = {
+            "lead_id": "growth-bbbbbbbbbbbbbbbbbbbb",
+            "company": "Voorbeeld BV",
+            "verified_observation": "Voorbeeld BV biedt interieuradvies in Utrecht",
+            "verified_observation_source_url": "https://example.nl/diensten",
+            "verified_observation_source_type": "official_site",
+        }
+        change = _refresh_change_from_source(source)
+        self.assertEqual(
+            change["source_url"],
+            "https://example.nl/diensten",
+        )
+        self.assertEqual(
+            change["observation"],
+            source["verified_observation"],
+        )
+        self.assertTrue(change["evidence_terms"])
 
     @patch(
         "myhost_content_remediation.build_template",
