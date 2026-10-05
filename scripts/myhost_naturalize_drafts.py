@@ -946,7 +946,7 @@ def run_rewrite_all() -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=("inventory", "rewrite", "rewrite_all", "count_all", "rewrite_slice", "count_since", "inventory_since", "rewrite_since", "dedupe_same_id_since"), required=True)
+    parser.add_argument("--mode", choices=("inventory", "inventory_slice", "rewrite", "rewrite_all", "count_all", "rewrite_slice", "count_since", "inventory_since", "rewrite_since", "dedupe_same_id_since"), required=True)
     parser.add_argument("--offset", type=int, default=0)
     parser.add_argument("--limit", type=int, default=100)
     parser.add_argument("--since-imap")
