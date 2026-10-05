@@ -290,25 +290,13 @@ def build_opening(
             return f"What stood out to me on your website: {observed}{punctuation}"
         return f"Wat me opviel op jullie website: {observed}{punctuation}"
 
-    focus = infer_focus_from_observation(observed, language)
-    company_focus = infer_focus_from_observation(company_label, language)
-    category_focus = infer_focus_from_observation("", language, category_hint)
-    if low_signal and boilerplate_heading and not EXPLICIT_BUSINESS_MARKER.search(observed):
-        if company_focus and EXPLICIT_BUSINESS_MARKER.search(company_label):
-            focus = company_focus
-        else:
-            focus = category_focus or focus
-    elif focus is None:
-        focus = company_focus or category_focus
-
-    if focus:
-        if language == "en":
-            return f"I saw that {company_label} focuses on {focus}."
-        return f"Ik zag dat {company_label} zich richt op {focus}."
-
-    raise ValueError(
-        "No specific verified site detail or reliable business focus for outreach opening"
-    )
+    # Never turn a weak page title, company name or discovery category into
+    # a prospect claim. If the official-site observation is too weak, keep the
+    # email generic instead of inventing a business fact.
+    _ = category_hint
+    _ = company_label
+    _ = low_signal
+    return ""
 
 
 def naturalize_existing_opening(opening: str, language: str) -> str:
@@ -422,47 +410,55 @@ def build_template_from_opening(
 ) -> str:
     company_label = short_company_name(company)
     clean_opening = naturalize_existing_opening(opening, language)
-    if not clean_opening:
-        raise ValueError("opening is required")
-    if language == "nl":
+    if language == "nl" and clean_opening:
         clean_opening = exact_nl_opening_from_existing(clean_opening, company_label)
 
-    # Keep variant_key for API compatibility; copy is intentionally fixed so every
-    # Growth draft follows the same reviewed structure while the verified opening
-    # and company label remain prospect-specific.
+    # Keep variant_key for API compatibility; copy is intentionally fixed so
+    # every Growth draft follows the same reviewed structure. Only verified
+    # site context, language and company label may vary.
     _ = variant_key
 
     if language == "en":
+        site_context = (
+            f"I looked through your website. {clean_opening}"
+            if clean_opening
+            else "I looked through your website."
+        )
         return (
             "Hello,\n\n"
-            f"{clean_opening}\n\n"
-            "I handle this kind of online work through my Growth Subscription. "
-            "Depending on what is useful for you, I can help with:\n\n"
-            "• improve or refresh your website or webshop\n"
-            "• improve online visibility\n"
-            "• create relevant social content\n"
-            "• automate recurring processes where useful\n"
-            "• manage or take over hosting where needed\n"
-            "• me as your fixed point of contact\n\n"
-            f"The subscription costs €{price_min}–€{price_max} per month, depending on what you need.\n\n"
+            f"{site_context}\n\n"
+            "That made me think my Growth Subscription could be relevant. "
+            "It lets me support several parts of your online presence while staying your fixed point of contact:\n\n"
+            "• Website/webshop — improve or build new where needed\n"
+            "• Search visibility — improve findability\n"
+            "• Social content — relevant content\n"
+            "• Automation — partially automate suitable processes where feasible\n"
+            "• Hosting — manage or take over where appropriate\n"
+            "• Me as your fixed point of contact\n\n"
+            f"€{price_min}–€{price_max} per month, depending on what you need.\n\n"
             f"Would you like me to make a no-obligation example design for {company_label}, "
             "so you can first see whether the direction is relevant?\n\n"
             "Not interested? Just let me know.\n\n"
             "Regards,\nAndrew"
         )
 
+    site_context = (
+        f"Ik heb jullie website bekeken. {clean_opening}"
+        if clean_opening
+        else "Ik heb jullie website bekeken."
+    )
     return (
         "Hallo,\n\n"
-        f"{clean_opening}\n\n"
-        "Dit soort online werk pak ik op binnen mijn Groeiabonnement. "
-        "Afhankelijk van wat voor jullie nuttig is, kan ik helpen met:\n\n"
-        "• website of webshop verbeteren of vernieuwen\n"
-        "• beter vindbaar worden\n"
-        "• passende social content maken\n"
-        "• terugkerende processen automatiseren waar dat zinvol is\n"
-        "• hosting beheren of overnemen waar nodig\n"
-        "• mij als vast aanspreekpunt\n\n"
-        f"Het abonnement kost €{price_min}–€{price_max} per maand, afhankelijk van wat jullie nodig hebben.\n\n"
+        f"{site_context}\n\n"
+        "Daarom dacht ik dat mijn Groeiabonnement mogelijk interessant kan zijn. "
+        "Daarmee kan ik meerdere onderdelen van jullie online aanpak oppakken, met mij als vast contactpersoon:\n\n"
+        "• Website/webshop — verbeteren of nieuw maken waar nodig\n"
+        "• Zoekbaarheid — beter vindbaar worden\n"
+        "• Social content — passende content\n"
+        "• Automatisering — geschikte processen deels automatiseren waar haalbaar\n"
+        "• Hosting — beheren of overnemen waar passend\n"
+        "• Ik als vast contactpersoon\n\n"
+        f"€{price_min}–€{price_max} per maand, afhankelijk van wat jullie nodig hebben.\n\n"
         f"Zal ik vrijblijvend een voorbeeld design maken voor {company_label}? "
         "Dan kunnen jullie eerst bekijken of de richting interessant is.\n\n"
         "Geen interesse? Laat het gerust weten.\n\n"
