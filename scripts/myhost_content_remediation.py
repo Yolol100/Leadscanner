@@ -481,21 +481,38 @@ def run(
     )
 
     online_evidence = {}
+    evidence_failures: list[str] = []
     for lead_id, change in rewrites.items():
-        online_evidence[lead_id] = (
-            validate_online_evidence(
-                source_rows[lead_id],
-                change,
-                require_email=False,
+        try:
+            online_evidence[lead_id] = (
+                validate_online_evidence(
+                    source_rows[lead_id],
+                    change,
+                    require_email=False,
+                )
             )
-        )
+        except Exception as exc:
+            evidence_failures.append(
+                f"{lead_id}: {exc}"
+            )
     for lead_id, change in replacements.items():
-        online_evidence[lead_id] = (
-            validate_online_evidence(
-                source_rows[lead_id],
-                change,
-                require_email=True,
+        try:
+            online_evidence[lead_id] = (
+                validate_online_evidence(
+                    source_rows[lead_id],
+                    change,
+                    require_email=True,
+                )
             )
+        except Exception as exc:
+            evidence_failures.append(
+                f"{lead_id}: {exc}"
+            )
+    if evidence_failures:
+        raise RuntimeError(
+            "official evidence preflight failed for "
+            f"{len(evidence_failures)} lead(s): "
+            + " | ".join(evidence_failures)
         )
 
     config = json.loads(
