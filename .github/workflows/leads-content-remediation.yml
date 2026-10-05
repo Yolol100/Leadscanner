@@ -69,6 +69,7 @@ jobs:
               "replacements",
               "holds",
               "refresh_verified_source_rows",
+              "audit_only",
           }
           unknown = set(request) - allowed
           if unknown:
@@ -130,7 +131,8 @@ jobs:
               f"rewrites={len(request.get('rewrites') or {})} "
               f"replacements={len(request.get('replacements') or {})} "
               f"holds={len(request.get('holds') or [])} "
-              f"refresh_verified_source_rows={str(bool(request.get('refresh_verified_source_rows', False))).lower()}"
+              f"refresh_verified_source_rows={str(bool(request.get('refresh_verified_source_rows', False))).lower()} "
+              f"audit_only={str(bool(request.get('audit_only', False))).lower()}"
           )
           PY
 
@@ -176,28 +178,106 @@ jobs:
               raise SystemExit(
                   "remediation escaped the 100-lead boundary"
               )
-          expected_changed = int(
-              report.get("rewrite_count") or 0
-          ) + int(
-              report.get("replacement_count") or 0
+          audit_only = bool(
+              report.get("audit_only")
           )
-          if (
-              report.get(
-                  "final_exact_changed_count"
+          if audit_only:
+              if report.get("read_only") is not True:
+                  raise SystemExit(
+                      "audit-only report is not read-only"
+                  )
+              if int(
+                  report.get(
+                      "final_exact_changed_count"
+                  )
+                  or 0
+              ) != 0:
+                  raise SystemExit(
+                      "audit-only mode changed mailbox content"
+                  )
+              if (
+                  report.get("readback")
+                  != "not_applicable"
+              ):
+                  raise SystemExit(
+                      "audit-only readback marker mismatch"
+                  )
+              if report.get(
+                  "refresh_verified_source_rows"
+              ):
+                  assessed = (
+                      int(
+                          report.get(
+                              "canonical_ready_count"
+                          )
+                          or 0
+                      )
+                      + int(
+                          report.get(
+                              "needs_research_count"
+                          )
+                          or 0
+                      )
+                      + int(
+                          report.get("hold_count")
+                          or 0
+                      )
+                  )
+                  if assessed != 100:
+                      raise SystemExit(
+                          f"full audit assessed={assessed}, expected 100"
+                      )
+                  if int(
+                      report.get(
+                          "unassessed_count"
+                      )
+                      or 0
+                  ) != 0:
+                      raise SystemExit(
+                          "full audit left unassessed leads"
+                      )
+              print(
+                  "CONTENT_AUDIT_BOUNDARY=green "
+                  "audited=100 "
+                  f"ready={report.get('canonical_ready_count')} "
+                  f"research={report.get('needs_research_count')} "
+                  f"holds={report.get('hold_count')} "
+                  "read_only=true automatic_send=false"
               )
-              != expected_changed
-          ):
-              raise SystemExit(
-                  "changed-draft exact readback is incomplete"
+          else:
+              expected_changed = int(
+                  report.get("rewrite_count") or 0
+              ) + int(
+                  report.get("replacement_count") or 0
               )
-          if (
-              report.get(
-                  "holds_readback_count"
-              )
-              != report.get("hold_count")
-          ):
-              raise SystemExit(
-                  "hold readback is incomplete"
+              if (
+                  report.get(
+                      "final_exact_changed_count"
+                  )
+                  != expected_changed
+              ):
+                  raise SystemExit(
+                      "changed-draft exact readback is incomplete"
+                  )
+              if (
+                  report.get(
+                      "holds_readback_count"
+                  )
+                  != report.get("hold_count")
+              ):
+                  raise SystemExit(
+                      "hold readback is incomplete"
+                  )
+              if report.get("readback") != "exact":
+                  raise SystemExit(
+                      "exact readback marker missing"
+                  )
+              print(
+                  "CONTENT_REMEDIATION_BOUNDARY=green "
+                  "audited=100 "
+                  f"changed={expected_changed} "
+                  f"holds={report.get('hold_count')} "
+                  "automatic_send=false"
               )
           if (
               report.get("automatic_send")
@@ -208,17 +288,6 @@ jobs:
               raise SystemExit(
                   "send boundary changed"
               )
-          if report.get("readback") != "exact":
-              raise SystemExit(
-                  "exact readback marker missing"
-              )
-          print(
-              "CONTENT_REMEDIATION_BOUNDARY=green "
-              "audited=100 "
-              f"changed={expected_changed} "
-              f"holds={report.get('hold_count')} "
-              "automatic_send=false"
-          )
           PY
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -240,7 +309,7 @@ jobs:
           {
             cat results/content-remediation.txt
             echo
-            echo "Official-site content remediation completed with exact current mailbox readback. Nothing was sent."
+            echo "Official-site content audit/remediation completed. Nothing was sent."
           } > results/issue-comment.txt
           gh issue comment "$ISSUE_NUMBER" --body-file results/issue-comment.txt
           gh issue close "$ISSUE_NUMBER" --reason completed
