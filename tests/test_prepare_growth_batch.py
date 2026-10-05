@@ -70,8 +70,14 @@ class GrowthBatchTests(unittest.TestCase):
         self.assertEqual(row["subject"], "Idee voor Voorbeeld Fysiotherapie")
         self.assertEqual(row["copy_company_label"], "Voorbeeld Fysiotherapie")
         self.assertTrue(row["body"].startswith("Hallo,\n\n"))
-        self.assertIn("Ik zag op jullie website dat Fysiotherapie in Utrecht.", row["body"])
-        self.assertIn("Dit soort online werk pak ik op binnen mijn Groeiabonnement.", row["body"])
+        self.assertIn(
+            "Ik heb jullie website bekeken. Ik zag op jullie website dat Fysiotherapie in Utrecht.",
+            row["body"],
+        )
+        self.assertIn(
+            "Daarom dacht ik dat mijn Groeiabonnement mogelijk interessant kan zijn.",
+            row["body"],
+        )
         self.assertIn("Geen interesse? Laat het gerust weten.", row["body"])
         self.assertNotIn("Op jullie website staat", row["body"])
         self.assertEqual(row["verified_observation_source_type"], "official_site")
@@ -86,24 +92,24 @@ class GrowthBatchTests(unittest.TestCase):
         self.assertNotIn("30%", row["body"])
         self.assertNotIn("Webactueel B.V.", row["body"])
 
-    def test_low_signal_observation_uses_service_focus_without_fake_quote(self):
+    def test_low_signal_observation_stays_generic_instead_of_inventing_focus(self):
         contact = self.contact()
         contact["name_hint"] = "030 Fietsen – Tweedehands Fietsen Utrecht"
         contact["verified_observation"] = "Home - 030 Fietsen"
         row = prepare_batch({"candidates": [contact]}, self.config(), draft_limit=1)["rows"][0]
-        self.assertIn("Ik zag op jullie website dat 030 Fietsen zich richt op fietsen en fietsservice.", row["body"])
-        self.assertNotIn("op de site komt dat terug in", row["body"])
+        self.assertIn("Ik heb jullie website bekeken.", row["body"])
+        self.assertNotIn("zich richt op fietsen en fietsservice", row["body"])
         self.assertEqual(row["subject"], "Idee voor 030 Fietsen")
-        self.assertIn("Ik zag op jullie website dat 030 Fietsen zich richt op fietsen en fietsservice.", row["body"])
         self.assertNotIn("Tweedehands Fietsen Utrecht elektrische fietsen", row["body"])
 
-    def test_weak_observation_without_reliable_focus_blocks_copy(self):
+    def test_weak_observation_without_reliable_fact_uses_generic_site_opening(self):
         contact = self.contact()
         contact["name_hint"] = "Acme BV"
         contact["category_hint"] = None
         contact["verified_observation"] = "Nu tot 30% voordeel op geselecteerde producten"
-        with self.assertRaisesRegex(ValueError, "No specific verified site detail"):
-            prepare_batch({"candidates": [contact]}, self.config(), draft_limit=1)
+        row = prepare_batch({"candidates": [contact]}, self.config(), draft_limit=1)["rows"][0]
+        self.assertIn("Ik heb jullie website bekeken.", row["body"])
+        self.assertNotIn("30%", row["body"])
 
     def test_observation_overrides_misleading_company_name_for_focus(self):
         contact = self.contact()
@@ -121,7 +127,10 @@ class GrowthBatchTests(unittest.TestCase):
         )["rows"][0]
         self.assertEqual(row["status"], "draft_ready")
         self.assertEqual(row["subject"], "An idea for Example Physiotherapy")
-        self.assertIn("What stood out to me on your website: Physical therapy in Utrecht.", row["body"])
+        self.assertIn(
+            "I looked through your website. What stood out to me on your website: Physical therapy in Utrecht.",
+            row["body"],
+        )
         self.assertIn("€250–€500 per month, depending on what you need", row["body"])
         self.assertIn("no-obligation example design for Example Physiotherapy", row["body"])
         self.assertNotIn("30%", row["body"])
@@ -175,13 +184,14 @@ class GrowthBatchTests(unittest.TestCase):
         self.assertEqual(row["subject"], "Idee voor Kindergarden Voormalige Stadstimmertuin Amsterdam")
         self.assertNotIn("jullie online aanpak", row["subject"])
 
-    def test_low_signal_observation_uses_verified_discovery_category_hint(self):
+    def test_low_signal_observation_does_not_turn_category_hint_into_site_claim(self):
         contact = self.contact()
         contact["name_hint"] = "David Lloyd Amsterdam"
         contact["verified_observation"] = "Welkom bij David Lloyd Amsterdam"
         contact["category_hint"] = "gym"
         row = prepare_batch({"candidates": [contact]}, self.config(), draft_limit=1)["rows"][0]
-        self.assertIn("Ik zag op jullie website dat David Lloyd Amsterdam zich richt op sport en fitness.", row["body"])
+        self.assertIn("Ik heb jullie website bekeken.", row["body"])
+        self.assertNotIn("zich richt op sport en fitness", row["body"])
         self.assertEqual(row["category_hint"], "gym")
 
     def test_subject_trims_connector_even_without_word_limit_truncation(self):
@@ -200,13 +210,14 @@ class GrowthBatchTests(unittest.TestCase):
         self.assertIn("voorbeeld design maken voor Steakhouse The Longhorn Rib?", row["body"])
         self.assertNotIn("Rib and?", row["body"])
 
-    def test_verified_category_beats_ambiguous_camping_heading(self):
+    def test_ambiguous_heading_does_not_turn_category_into_site_claim(self):
         contact = self.contact()
         contact["name_hint"] = "Camping Ganspoort"
         contact["category_hint"] = "restaurant"
         contact["verified_observation"] = "Welkom op de Camping!"
         row = prepare_batch({"candidates": [contact]}, self.config(), draft_limit=1)["rows"][0]
-        self.assertIn("Ik zag op jullie website dat Camping Ganspoort zich richt op restaurant en gastvrijheid.", row["body"])
+        self.assertIn("Ik heb jullie website bekeken.", row["body"])
+        self.assertNotIn("restaurant en gastvrijheid", row["body"])
         self.assertNotIn("camping en recreatie", row["body"])
 
     def test_substring_false_positives_do_not_assign_business_focus(self):
@@ -320,6 +331,8 @@ class GrowthBatchTests(unittest.TestCase):
         bullets = [line for line in body.splitlines() if line.startswith("• ")]
         self.assertEqual(len(bullets), 6)
         self.assertLess(body.index(bullets[0]), body.index("€250–€500 per maand"))
+        self.assertIn("Website/webshop — verbeteren of nieuw maken waar nodig", body)
+        self.assertIn("Zoekbaarheid — beter vindbaar worden", body)
         self.assertIn("voorbeeld design maken voor Voorbeeld Fysiotherapie", body)
         self.assertIn("richting interessant is", body)
         self.assertNotIn("30%", body)
