@@ -13,6 +13,7 @@ import requests
 from extract_public_contacts import (
     EMAIL_RE,
     _visible_text,
+    detect_language,
     extract_emails,
     fetch_html,
     normalize_domain,
@@ -31,6 +32,7 @@ from myhost_remove_duplicate_draft import remove_growth_draft
 from prepare_growth_batch import (
     build_template,
     clean_company,
+    observation_is_low_signal,
     short_company_name,
     stable_lead_id,
     subject_for_company,
@@ -335,6 +337,14 @@ def _refresh_change_from_source(
             f"{source_row.get('lead_id')}: refresh source "
             "observation/provenance is incomplete"
         )
+    if observation_is_low_signal(
+        str(source_row.get("company") or ""),
+        observation,
+    ):
+        raise RuntimeError(
+            f"{source_row.get('lead_id')}: stored official-site "
+            "observation is low-signal and needs fresh research"
+        )
     return {
         "observation": observation,
         "source_url": source_url,
@@ -390,6 +400,15 @@ def validate_online_evidence(
     page = _normalize_for_match(
         _visible_text(html)
     )
+    source_language = str(
+        source_row.get("language") or "nl"
+    ).strip().casefold()
+    if source_language not in {"nl", "en"}:
+        source_language = "nl"
+    detected_language, language_source = detect_language(
+        html,
+        default=source_language,
+    )
     expected_email_term = (
         str(change.get("email") or "").strip().casefold()
         if require_email
@@ -438,6 +457,8 @@ def validate_online_evidence(
         "replacement_email_verified": bool(
             email_found
         ),
+        "language": detected_language,
+        "language_source": language_source,
     }
 
 
@@ -608,6 +629,7 @@ def run(
         request.get("holds") or []
     )
     auto_refreshed_count = 0
+    refresh_failures: list[str] = []
     if request.get(
         "refresh_verified_source_rows", False
     ):
@@ -618,12 +640,23 @@ def run(
                 or lead_id in holds
             ):
                 continue
-            rewrites[lead_id] = (
-                _refresh_change_from_source(
-                    source_rows[lead_id]
+            try:
+                rewrites[lead_id] = (
+                    _refresh_change_from_source(
+                        source_rows[lead_id]
+                    )
                 )
+                auto_refreshed_count += 1
+            except Exception as exc:
+                refresh_failures.append(
+                    f"{lead_id}: {exc}"
+                )
+        if refresh_failures:
+            raise RuntimeError(
+                "verified-source refresh preflight failed for "
+                f"{len(refresh_failures)} lead(s): "
+                + " | ".join(refresh_failures)
             )
-            auto_refreshed_count += 1
 
     online_evidence = {}
     evidence_failures: list[str] = []
@@ -659,6 +692,25 @@ def run(
             f"{len(evidence_failures)} lead(s): "
             + " | ".join(evidence_failures)
         )
+
+    for lead_id, change in rewrites.items():
+        if not str(
+            change.get("language") or ""
+        ).strip():
+            change["language"] = (
+                online_evidence[lead_id][
+                    "language"
+                ]
+            )
+    for lead_id, change in replacements.items():
+        if not str(
+            change.get("language") or ""
+        ).strip():
+            change["language"] = (
+                online_evidence[lead_id][
+                    "language"
+                ]
+            )
 
     config = json.loads(
         config_path.read_text(
