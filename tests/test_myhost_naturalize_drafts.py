@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import unittest
 from email.message import EmailMessage
-
 from unittest.mock import patch
+import sys
 
-from myhost_naturalize_drafts import run_inventory_slice, rewrite_row_from_message
+from myhost_naturalize_drafts import main, run_inventory_slice, rewrite_row_from_message
 
 
 class MyHostNaturalizeDraftTests(unittest.TestCase):
@@ -100,6 +100,25 @@ class MyHostNaturalizeDraftTests(unittest.TestCase):
         self.assertTrue(result["read_only"])
         self.assertEqual(result["smtp_send"], "not_available")
         read_slice.assert_called_once_with(100, 2)
+
+    @patch("myhost_naturalize_drafts.run_inventory_slice")
+    def test_cli_accepts_inventory_slice_mode(self, run_slice):
+        run_slice.return_value = {
+            "mode": "inventory_slice",
+            "draft_folder": "Drafts",
+            "review_growth_total": 1350,
+            "naturalized_count": 100,
+            "pending_count": 0,
+            "selected_count": 100,
+            "replaced_count": 0,
+            "existing_count": 100,
+            "created_count": 0,
+            "smtp_send": "not_available",
+            "read_only": True,
+        }
+        with patch.object(sys, "argv", ["myhost_naturalize_drafts.py", "--mode", "inventory_slice", "--offset", "0", "--limit", "100"]):
+            self.assertEqual(main(), 0)
+        run_slice.assert_called_once_with(0, 100)
 
     def test_naturalization_is_idempotent(self):
         first = rewrite_row_from_message(self.message())
