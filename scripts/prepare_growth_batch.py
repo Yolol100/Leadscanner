@@ -291,12 +291,14 @@ def build_opening(
         return f"Wat me opviel op jullie website: {observed}{punctuation}"
 
     # Never turn a weak page title, company name or discovery category into
-    # a prospect claim. If the official-site observation is too weak, keep the
-    # email generic instead of inventing a business fact.
+    # a prospect claim. A first touch requires one specific verified fact from
+    # the official site; otherwise content research must continue.
     _ = category_hint
     _ = company_label
     _ = low_signal
-    return ""
+    raise ValueError(
+        "No specific verified site detail for outreach opening"
+    )
 
 
 def naturalize_existing_opening(opening: str, language: str) -> str:
@@ -410,7 +412,9 @@ def build_template_from_opening(
 ) -> str:
     company_label = short_company_name(company)
     clean_opening = naturalize_existing_opening(opening, language)
-    if language == "nl" and clean_opening:
+    if not clean_opening:
+        raise ValueError("opening is required")
+    if language == "nl":
         clean_opening = exact_nl_opening_from_existing(clean_opening, company_label)
 
     # Keep variant_key for API compatibility; copy is intentionally fixed so
@@ -419,14 +423,9 @@ def build_template_from_opening(
     _ = variant_key
 
     if language == "en":
-        site_context = (
-            f"I looked through your website. {clean_opening}"
-            if clean_opening
-            else "I looked through your website."
-        )
         return (
             "Hello,\n\n"
-            f"{site_context}\n\n"
+            f"{clean_opening}\n\n"
             "That made me think my Growth Subscription could be relevant. "
             "It lets me support several parts of your online presence while staying your fixed point of contact:\n\n"
             "• Website/webshop — improve or build new where needed\n"
@@ -442,15 +441,10 @@ def build_template_from_opening(
             "Regards,\nAndrew"
         )
 
-    site_context = (
-        f"Ik heb jullie website bekeken. {clean_opening}"
-        if clean_opening
-        else "Ik heb jullie website bekeken."
-    )
     return (
         "Hallo,\n\n"
-        f"{site_context}\n\n"
-        "Daarom dacht ik dat mijn Groeiabonnement mogelijk interessant kan zijn. "
+        f"{clean_opening}\n\n"
+        "Daarom dacht ik dat mijn Groeiabonnement interessant kan zijn. "
         "Daarmee kan ik meerdere onderdelen van jullie online aanpak oppakken, met mij als vast contactpersoon:\n\n"
         "• Website/webshop — verbeteren of nieuw maken waar nodig\n"
         "• Zoekbaarheid — beter vindbaar worden\n"
