@@ -65,6 +65,20 @@ class ContentRemediationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_request(request)
 
+    def test_refresh_change_rejects_low_signal_observation(self):
+        source = {
+            "lead_id": "growth-bbbbbbbbbbbbbbbbbbbb",
+            "company": "Voorbeeld BV",
+            "verified_observation": "Welkom bij Voorbeeld BV",
+            "verified_observation_source_url": "https://example.nl/",
+            "verified_observation_source_type": "official_site",
+        }
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "low-signal",
+        ):
+            _refresh_change_from_source(source)
+
     def test_refresh_change_requires_official_site_provenance(self):
         source = {
             "lead_id": "growth-bbbbbbbbbbbbbbbbbbbb",
@@ -188,6 +202,13 @@ class ContentRemediationTests(unittest.TestCase):
         )
         self.assertTrue(
             result["replacement_email_verified"]
+        )
+        self.assertIn(
+            result["language"],
+            {"nl", "en"},
+        )
+        self.assertTrue(
+            result["language_source"]
         )
 
     @patch(
