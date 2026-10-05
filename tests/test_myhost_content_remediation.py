@@ -43,6 +43,63 @@ class ContentRemediationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_request(request)
 
+    def test_rejects_invalid_language_override(self):
+        request = self.base_request()
+        lead_id = request["audited_lead_ids"][0]
+        request["rewrites"] = {
+            lead_id: {
+                "observation": "Verified fact",
+                "source_url": "https://example.org/",
+                "evidence_terms": ["Verified"],
+                "language": "de",
+            }
+        }
+        with self.assertRaises(ValueError):
+            validate_request(request)
+
+    @patch(
+        "myhost_content_remediation.build_template",
+        return_value="body",
+    )
+    def test_verified_language_override_updates_copy_language(
+        self,
+        template,
+    ):
+        source = {
+            "lead_id": "growth-bbbbbbbbbbbbbbbbbbbb",
+            "company": "Voorbeeld BV",
+            "website": "https://example.nl/",
+            "official_domain_hint": "example.nl",
+            "email": "info@example.nl",
+            "language": "en",
+            "category_hint": "restaurant",
+            "status": "review_draft",
+            "contact_basis_status": "review_required",
+        }
+        change = {
+            "observation": "Voorbeeld is een restaurant.",
+            "source_url": "https://example.nl/",
+            "evidence_terms": ["restaurant"],
+            "language": "nl",
+        }
+        row = build_corrected_row(
+            source,
+            change,
+            price_min=250,
+            price_max=500,
+            replacement=False,
+        )
+        self.assertEqual(row["language"], "nl")
+        self.assertEqual(
+            row["language_source"],
+            "official_site_manual_override",
+        )
+        template.assert_called_once()
+        self.assertEqual(
+            template.call_args.args[1],
+            "nl",
+        )
+
     @patch(
         "myhost_content_remediation.valid_email",
         return_value=True,
