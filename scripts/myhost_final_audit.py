@@ -174,7 +174,7 @@ def audit_rows(
                 (r"(?im)^• .*social", "social content"),
                 (r"(?im)^• .*automat", "automatisering"),
                 (r"(?im)^• .*hosting", "hosting"),
-                (r"(?im)^• .*(aanspreekpunt|afstemming|direct contact)", "vast contact"),
+                (r"(?im)^• .*(aanspreekpunt|contactpersoon|afstemming|direct contact)", "vast contact"),
             ):
                 if not re.search(pattern, body):
                     failures.append(f"{lead_id}: NL audited copy contract missing {label}")
