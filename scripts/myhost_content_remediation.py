@@ -73,6 +73,7 @@ def validate_request(request: dict) -> dict:
         "replacements",
         "holds",
         "refresh_verified_source_rows",
+        "audit_only",
     }
     unknown = set(request) - allowed
     if unknown:
@@ -118,6 +119,9 @@ def validate_request(request: dict) -> dict:
         raise ValueError(
             "refresh_verified_source_rows must be boolean"
         )
+    audit_only = request.get("audit_only", False)
+    if not isinstance(audit_only, bool):
+        raise ValueError("audit_only must be boolean")
     holds = [
         str(x).strip()
         for x in _as_list(request.get("holds") or [], "holds")
@@ -628,6 +632,10 @@ def run(
     holds = set(
         request.get("holds") or []
     )
+    audit_only = bool(
+        request.get("audit_only", False)
+    )
+    needs_research: list[dict] = []
     auto_refreshed_count = 0
     refresh_failures: list[str] = []
     if request.get(
@@ -652,14 +660,26 @@ def run(
                     f"{lead_id}: {exc}"
                 )
         if refresh_failures:
-            raise RuntimeError(
-                "verified-source refresh preflight failed for "
-                f"{len(refresh_failures)} lead(s): "
-                + " | ".join(refresh_failures)
-            )
+            if audit_only:
+                for failure in refresh_failures:
+                    lead_id, _, reason = failure.partition(": ")
+                    needs_research.append(
+                        {
+                            "lead_id": lead_id,
+                            "stage": "refresh_source",
+                            "reason": reason,
+                        }
+                    )
+            else:
+                raise RuntimeError(
+                    "verified-source refresh preflight failed for "
+                    f"{len(refresh_failures)} lead(s): "
+                    + " | ".join(refresh_failures)
+                )
 
     online_evidence = {}
     evidence_failures: list[str] = []
+    failed_evidence_leads: set[str] = set()
     for lead_id, change in rewrites.items():
         try:
             online_evidence[lead_id] = (
@@ -670,6 +690,7 @@ def run(
                 )
             )
         except Exception as exc:
+            failed_evidence_leads.add(lead_id)
             evidence_failures.append(
                 f"{lead_id}: {exc}"
             )
@@ -683,29 +704,50 @@ def run(
                 )
             )
         except Exception as exc:
+            failed_evidence_leads.add(lead_id)
             evidence_failures.append(
                 f"{lead_id}: {exc}"
             )
     if evidence_failures:
-        raise RuntimeError(
-            "official evidence preflight failed for "
-            f"{len(evidence_failures)} lead(s): "
-            + " | ".join(evidence_failures)
-        )
+        if audit_only:
+            for failure in evidence_failures:
+                lead_id, _, reason = failure.partition(": ")
+                needs_research.append(
+                    {
+                        "lead_id": lead_id,
+                        "stage": "official_evidence",
+                        "reason": reason,
+                    }
+                )
+            for lead_id in failed_evidence_leads:
+                rewrites.pop(lead_id, None)
+                replacements.pop(lead_id, None)
+        else:
+            raise RuntimeError(
+                "official evidence preflight failed for "
+                f"{len(evidence_failures)} lead(s): "
+                + " | ".join(evidence_failures)
+            )
 
     for lead_id, change in rewrites.items():
-        if not str(
-            change.get("language") or ""
-        ).strip():
+        if (
+            lead_id in online_evidence
+            and not str(
+                change.get("language") or ""
+            ).strip()
+        ):
             change["language"] = (
                 online_evidence[lead_id][
                     "language"
                 ]
             )
     for lead_id, change in replacements.items():
-        if not str(
-            change.get("language") or ""
-        ).strip():
+        if (
+            lead_id in online_evidence
+            and not str(
+                change.get("language") or ""
+            ).strip()
+        ):
             change["language"] = (
                 online_evidence[lead_id][
                     "language"
@@ -721,26 +763,52 @@ def run(
     price_min = int(price["min"])
     price_max = int(price["max"])
 
-    rewrite_rows = {
-        lead_id: build_corrected_row(
-            source_rows[lead_id],
-            change,
-            price_min=price_min,
-            price_max=price_max,
-            replacement=False,
-        )
-        for lead_id, change in rewrites.items()
-    }
-    replacement_rows = {
-        lead_id: build_corrected_row(
-            source_rows[lead_id],
-            change,
-            price_min=price_min,
-            price_max=price_max,
-            replacement=True,
-        )
-        for lead_id, change in replacements.items()
-    }
+    rewrite_rows: dict[str, dict] = {}
+    replacement_rows: dict[str, dict] = {}
+    template_failures: list[str] = []
+
+    for lead_id, change in rewrites.items():
+        try:
+            rewrite_rows[lead_id] = build_corrected_row(
+                source_rows[lead_id],
+                change,
+                price_min=price_min,
+                price_max=price_max,
+                replacement=False,
+            )
+        except Exception as exc:
+            if not audit_only:
+                raise
+            template_failures.append(
+                f"{lead_id}: {exc}"
+            )
+
+    for lead_id, change in replacements.items():
+        try:
+            replacement_rows[lead_id] = build_corrected_row(
+                source_rows[lead_id],
+                change,
+                price_min=price_min,
+                price_max=price_max,
+                replacement=True,
+            )
+        except Exception as exc:
+            if not audit_only:
+                raise
+            template_failures.append(
+                f"{lead_id}: {exc}"
+            )
+
+    if template_failures:
+        for failure in template_failures:
+            lead_id, _, reason = failure.partition(": ")
+            needs_research.append(
+                {
+                    "lead_id": lead_id,
+                    "stage": "canonical_template",
+                    "reason": reason,
+                }
+            )
     replacement_new_ids = [
         row["lead_id"]
         for row in replacement_rows.values()
@@ -755,6 +823,69 @@ def run(
         raise RuntimeError(
             "replacement lead ID collides with audited source lead"
         )
+
+    if audit_only:
+        ready_ids = (
+            set(rewrite_rows)
+            | set(replacement_rows)
+        )
+        research_ids = {
+            str(item.get("lead_id") or "")
+            for item in needs_research
+        }
+        assessed_ids = (
+            ready_ids
+            | research_ids
+            | holds
+        )
+        unassessed = [
+            lead_id
+            for lead_id in audited
+            if lead_id not in assessed_ids
+        ]
+        return {
+            "schema_version": (
+                "webactueel-growth-content-remediation/1.1"
+            ),
+            "batch_id": request["batch_id"],
+            "audited_count": len(audited),
+            "audit_only": True,
+            "read_only": True,
+            "online_evidence_count": len(
+                online_evidence
+            ),
+            "refresh_verified_source_rows": bool(
+                request.get(
+                    "refresh_verified_source_rows",
+                    False,
+                )
+            ),
+            "auto_refreshed_count": (
+                auto_refreshed_count
+            ),
+            "rewrite_count": len(rewrite_rows),
+            "replacement_count": len(
+                replacement_rows
+            ),
+            "canonical_ready_count": len(
+                ready_ids
+            ),
+            "needs_research_count": len(
+                research_ids
+            ),
+            "needs_research": needs_research,
+            "hold_count": len(holds),
+            "hold_lead_ids": sorted(holds),
+            "unassessed_count": len(
+                unassessed
+            ),
+            "unassessed_lead_ids": unassessed,
+            "final_exact_changed_count": 0,
+            "holds_readback_count": 0,
+            "automatic_send": False,
+            "send_capability": "unavailable",
+            "readback": "not_applicable",
+        }
 
     client = connect_imap()
     try:
@@ -1006,6 +1137,8 @@ def run(
         ),
         "batch_id": request["batch_id"],
         "audited_count": len(audited),
+        "audit_only": False,
+        "read_only": False,
         "online_evidence_count": len(
             online_evidence
         ),
@@ -1105,6 +1238,7 @@ def main() -> int:
         f"replacements={result['replacement_count']} "
         f"holds={result['hold_count']} "
         f"exact={result['final_exact_changed_count']} "
+        f"audit_only={str(bool(result.get('audit_only'))).lower()} "
         "automatic_send=false "
         "send_capability=unavailable"
     )
