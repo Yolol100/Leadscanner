@@ -65,7 +65,18 @@ def extract_opening(body: str, language: str) -> str:
     expected_greetings = {"Hello,"} if language == "en" else {"Goedendag,", "Hallo,"}
     if len(paragraphs) < 2 or paragraphs[0] not in expected_greetings:
         raise RuntimeError("Existing growth draft has an unsupported greeting/layout")
-    return naturalize_existing_opening(paragraphs[1], language)
+
+    opening = naturalize_existing_opening(paragraphs[1], language)
+    generic_prefix = (
+        "I looked through your website."
+        if language == "en"
+        else "Ik heb jullie website bekeken."
+    )
+    if opening == generic_prefix:
+        return ""
+    if opening.startswith(generic_prefix + " "):
+        return opening[len(generic_prefix):].strip()
+    return opening
 
 
 def single_recipient(msg: EmailMessage) -> str:
