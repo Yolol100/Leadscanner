@@ -30,7 +30,8 @@ HTML_LANG_RE = re.compile(r"<html[^>]*\blang\s*=\s*['\"]?([a-zA-Z-]{2,12})", re.
 BLOCKED_LOCAL_PARTS = {"noreply", "no-reply", "donotreply", "do-not-reply", "example", "test"}
 PLACEHOLDER_LOCAL_PARTS = {"naam", "name", "yourname", "your.name", "email", "e-mail", "mail", "voorbeeld"}
 PLACEHOLDER_DOMAINS = {"voorbeeld.nl", "voorbeeld.com", "example.com", "example.org", "example.net", "jouwdomein.nl", "yourdomain.com", "mysite.com"}
-BLOCKED_TECHNICAL_EMAIL_DOMAIN_SUFFIXES = ("sentry.wixpress.com", "sentry-next.wixpress.com", "sentry.io")\nBLOCKED_ASSET_EMAIL_TLDS = {"png", "jpg", "jpeg", "gif", "webp", "svg", "avif", "ico", "css", "js"}
+BLOCKED_TECHNICAL_EMAIL_DOMAIN_SUFFIXES = ("sentry.wixpress.com", "sentry-next.wixpress.com", "sentry.io")
+BLOCKED_ASSET_EMAIL_TLDS = {"png", "jpg", "jpeg", "gif", "webp", "svg", "avif", "ico", "css", "js"}
 UNSUITABLE_OUTREACH_LOCAL_PARTS = {
     "press", "pressemea", "pers", "media", "hr", "work", "job", "jobs", "career", "careers",
     "vacature", "vacatures", "recruit", "recruitment", "sollicitatie", "solliciteren", "privacy", "legal", "dpo",
