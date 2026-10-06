@@ -27,6 +27,8 @@ from myhost_draft import (
     normalize_text,
     plain_body,
     select_folder,
+    imap_capability_tokens,
+    require_uidplus,
 )
 from myhost_fast_mailbox import (
     bulk_inventory_drafts,
@@ -272,6 +274,7 @@ def build_audit(offset: int, limit: int) -> tuple[dict, dict]:
     items = []
     try:
         folder = find_drafts_folder(client)
+        capability_tokens = imap_capability_tokens(client)
         pairs = growth_uid_index(client, folder)
         if len(pairs) < offset + limit:
             raise RuntimeError(
@@ -358,6 +361,7 @@ def build_audit(offset: int, limit: int) -> tuple[dict, dict]:
             "blocker_count": sum(blockers.values()),
             "blocker_reasons": dict(sorted(blockers.items())),
             "audit_eligible": not blockers,
+            "uidplus_available": "UIDPLUS" in capability_tokens,
             "read_only": True,
         }
         return state, summary
@@ -393,6 +397,8 @@ def verify_or_apply(state: dict, mode: str) -> dict:
     client = connect_imap()
     try:
         folder = find_drafts_folder(client)
+        if mode == "apply":
+            require_uidplus(client, "value-sentence remediation")
         inventory = bulk_inventory_drafts(client, folder, lead_ids)
         pending = []
         already_expected = 0

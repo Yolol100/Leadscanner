@@ -5,7 +5,7 @@ from email.parser import BytesParser
 from email.policy import default
 from unittest.mock import patch
 
-from myhost_draft import build_message, create_drafts, exact_message_matches
+from myhost_draft import build_message, create_drafts, exact_message_matches, imap_capability_tokens, require_uidplus
 
 
 class FakeIMAP:
@@ -13,8 +13,12 @@ class FakeIMAP:
         self.messages = []
         self.deleted = set()
         self.capabilities = (b"IMAP4REV1", b"UIDPLUS") if uidplus else (b"IMAP4REV1",)
+        self.live_capabilities = self.capabilities
         self.append_calls = 0
         self.tamper_new_uid_fetch = False
+
+    def capability(self):
+        return "OK", [b" ".join(self.live_capabilities)]
 
     def list(self):
         return "OK", [b'(\\HasNoChildren \\Drafts) "/" "Drafts"']
@@ -86,6 +90,12 @@ class DraftTests(unittest.TestCase):
             "status": status,
             "contact_basis_status": basis,
         }
+
+    def test_post_login_capability_refresh_detects_uidplus(self):
+        client = FakeIMAP(uidplus=False)
+        client.live_capabilities = (b"IMAP4REV1", b"UIDPLUS")
+        self.assertIn("UIDPLUS", imap_capability_tokens(client))
+        require_uidplus(client, "test refreshed capability")
 
     def test_review_draft_builds_message_with_review_header(self):
         _, msg = build_message(self.row())
@@ -223,6 +233,7 @@ class DraftTests(unittest.TestCase):
         updated = self.row()
         updated["body"] = "Nieuwe gecontroleerde versie."
         client.capabilities = (b"IMAP4REV1",)
+        client.live_capabilities = (b"IMAP4REV1",)
         with patch("myhost_draft.connect_imap", return_value=client):
             with self.assertRaisesRegex(RuntimeError, "UIDPLUS"):
                 create_drafts({"rows": [updated]})

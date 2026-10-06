@@ -23,11 +23,14 @@ def normalize_text(value: object) -> str:
 
 
 def imap_capability_tokens(client) -> set[str]:
-    raw = getattr(client, "capabilities", ()) or ()
-    if not raw and hasattr(client, "capability"):
+    # imaplib caches capabilities before/around authentication. Some servers
+    # advertise additional post-login capabilities, so always refresh when
+    # CAPABILITY is available and merge it with the cached greeting values.
+    raw = list(getattr(client, "capabilities", ()) or ())
+    if hasattr(client, "capability"):
         status, data = client.capability()
         if status == "OK":
-            raw = b" ".join(data or []).split()
+            raw.extend(b" ".join(data or []).split())
     tokens = set()
     for value in raw:
         if isinstance(value, bytes):
