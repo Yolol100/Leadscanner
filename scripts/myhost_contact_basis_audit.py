@@ -11,11 +11,15 @@ from myhost_draft import (
     LEAD_ID_RE,
     connect_imap,
     fetch_message,
+    fetch_message_uid,
     find_drafts_folder,
     find_message_ids,
     normalize_text,
     plain_body,
+    require_uidplus,
     select_folder,
+    uid_expunge_only,
+    uid_for_message_id,
 )
 from myhost_naturalize_drafts import _bulk_fetch_messages, _bulk_index_growth_headers, single_recipient
 
@@ -111,7 +115,13 @@ def message_matches(actual: EmailMessage, expected: EmailMessage) -> bool:
 
 
 def replace_and_verify(client, folder: str, lead_id: str, old_id: bytes, expected: EmailMessage) -> None:
-    select_folder(client, folder, readonly=False)
+    select_folder(client, folder, readonly=True)
+    require_uidplus(client, f"contact-basis replacement for {lead_id}")
+    old_uid = uid_for_message_id(client, old_id)
+    old_snapshot = fetch_message_uid(client, old_uid)
+    if normalize_text(old_snapshot.get("X-Webactueel-Lead-ID", "")) != lead_id:
+        raise RuntimeError(f"Old contact-basis draft identity mismatch for {lead_id}")
+
     status, _ = client.append(
         folder,
         "(\\Draft)",
@@ -121,34 +131,67 @@ def replace_and_verify(client, folder: str, lead_id: str, old_id: bytes, expecte
     if status != "OK":
         raise RuntimeError(f"IMAP APPEND failed for {lead_id}")
 
-    select_folder(client, folder, readonly=True)
-    ids = find_message_ids(client, folder, lead_id, ensure_selected=False)
-    new_ids = [message_id for message_id in ids if message_id != old_id]
-    if len(ids) != 2 or len(new_ids) != 1:
-        raise RuntimeError(f"Expected old+new draft for {lead_id}")
-    appended = fetch_message(client, new_ids[0])
-    if not message_matches(appended, expected):
-        raise RuntimeError(f"Appended contact-basis readback mismatch for {lead_id}")
+    new_uid = None
+    old_removed = False
+    try:
+        select_folder(client, folder, readonly=True)
+        ids = find_message_ids(client, folder, lead_id, ensure_selected=False)
+        new_ids = [message_id for message_id in ids if message_id != old_id]
+        if len(ids) != 2 or len(new_ids) != 1:
+            raise RuntimeError(f"Expected old+new draft for {lead_id}")
+        new_uid = uid_for_message_id(client, new_ids[0])
+        appended = fetch_message_uid(client, new_uid)
+        if not message_matches(appended, expected):
+            raise RuntimeError(f"Appended contact-basis readback mismatch for {lead_id}")
 
-    select_folder(client, folder, readonly=False)
-    status, _ = client.store(old_id, "+FLAGS", "(\\Deleted)")
-    if status != "OK" or client.expunge()[0] != "OK":
-        raise RuntimeError(f"Could not remove old draft for {lead_id}")
+        current_old = fetch_message_uid(client, old_uid)
+        if not message_matches(current_old, old_snapshot):
+            raise RuntimeError(f"Old contact-basis draft changed before replacement for {lead_id}")
 
-    select_folder(client, folder, readonly=True)
-    final_ids = find_message_ids(client, folder, lead_id, ensure_selected=False)
-    if len(final_ids) != 1:
-        raise RuntimeError(f"Expected one final draft for {lead_id}, found {len(final_ids)}")
-    final_msg = fetch_message(client, final_ids[0])
-    if not message_matches(final_msg, expected):
-        raise RuntimeError(f"Final contact-basis readback mismatch for {lead_id}")
+        uid_expunge_only(
+            client,
+            folder,
+            old_uid,
+            operation=f"contact-basis replacement for {lead_id}",
+        )
+        old_removed = True
+
+        select_folder(client, folder, readonly=True)
+        final_ids = find_message_ids(client, folder, lead_id, ensure_selected=False)
+        if len(final_ids) != 1:
+            raise RuntimeError(f"Expected one final draft for {lead_id}, found {len(final_ids)}")
+        final_msg = fetch_message(client, final_ids[0])
+        if not message_matches(final_msg, expected):
+            raise RuntimeError(f"Final contact-basis readback mismatch for {lead_id}")
+    except Exception as exc:
+        if new_uid is not None and not old_removed:
+            try:
+                uid_expunge_only(
+                    client,
+                    folder,
+                    new_uid,
+                    operation=f"rollback contact-basis replacement for {lead_id}",
+                )
+            except Exception as rollback_exc:
+                raise RuntimeError(
+                    f"{exc}; rollback of newly appended contact-basis draft failed: {rollback_exc}"
+                ) from exc
+        raise
 
 
 def remove_and_verify(client, folder: str, lead_id: str, message_id: bytes) -> None:
-    select_folder(client, folder, readonly=False)
-    status, _ = client.store(message_id, "+FLAGS", "(\\Deleted)")
-    if status != "OK" or client.expunge()[0] != "OK":
-        raise RuntimeError(f"Could not suppress draft for {lead_id}")
+    select_folder(client, folder, readonly=True)
+    require_uidplus(client, f"contact-basis suppression for {lead_id}")
+    target_uid = uid_for_message_id(client, message_id)
+    current = fetch_message_uid(client, target_uid)
+    if normalize_text(current.get("X-Webactueel-Lead-ID", "")) != lead_id:
+        raise RuntimeError(f"Contact-basis suppression identity mismatch for {lead_id}")
+    uid_expunge_only(
+        client,
+        folder,
+        target_uid,
+        operation=f"contact-basis suppression for {lead_id}",
+    )
     select_folder(client, folder, readonly=True)
     if find_message_ids(client, folder, lead_id, ensure_selected=False):
         raise RuntimeError(f"Suppressed draft still exists for {lead_id}")
