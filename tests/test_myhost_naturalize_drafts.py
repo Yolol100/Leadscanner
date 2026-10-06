@@ -59,7 +59,7 @@ class MyHostNaturalizeDraftTests(unittest.TestCase):
         self.assertTrue(row["body"].startswith("Hallo,\n\n"))
         self.assertIn("Jullie zijn actief in fysiotherapie en revalidatie.", row["body"])
         self.assertIn(
-            "Wat me opviel: op jullie website staat dat jullie fysiotherapie in Utrecht aanbieden.",
+            "Wat me opviel: jullie bieden fysiotherapie in Utrecht.",
             row["body"],
         )
         self.assertNotIn("€", row["body"])
@@ -133,7 +133,7 @@ class MyHostNaturalizeDraftTests(unittest.TestCase):
         self.assertEqual(first["body"], second["body"])
         self.assertEqual(
             second["body"].count(
-                "Wat me opviel: op jullie website staat dat jullie fysiotherapie in Utrecht aanbieden."
+                "Wat me opviel: jullie bieden fysiotherapie in Utrecht."
             ),
             1,
         )

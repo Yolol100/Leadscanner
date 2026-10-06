@@ -274,27 +274,91 @@ def observation_line_from_observation(observation: str, language: str) -> str:
     return f"Wat me opviel: {lowered}"
 
 
+def _finish_sentence(value: str) -> str:
+    text = " ".join(str(value or "").split()).strip()
+    if not text:
+        return text
+    return text if text.endswith((".", "!", "?")) else text + "."
+
+
+def _verified_opening_fragment(value: str, language: str) -> str:
+    text = " ".join(str(value or "").split()).strip()
+    if text.startswith(("“", '"')):
+        text = text[1:].strip()
+    if text.endswith(("”.", '".')):
+        text = text[:-2].strip() + "."
+    elif text.endswith(("”", '"')):
+        text = text[:-1].strip()
+
+    if language == "en" and text.startswith("We "):
+        text = "you " + text[3:]
+    elif language != "en":
+        if text.startswith("Wij "):
+            text = "jullie " + text[4:]
+        elif text.startswith("We "):
+            text = "jullie " + text[3:]
+    return _finish_sentence(text)
+
+
 def observation_line_from_opening(opening: str, language: str) -> str:
-    text = re.sub(r"\s+", " ", str(opening or "")).strip()
+    """Reuse an already-verified opening without reclassifying its evidence.
+
+    This path is only for migration/naturalization of existing Growth drafts.
+    New prospect copy still uses observation_line_from_observation(), which
+    applies the current observation-quality gate.
+    """
+    text = " ".join(str(opening or "").split()).strip()
     if not text:
         raise ValueError("opening is required")
+
     if language == "en":
-        match = re.fullmatch(r"I saw on your website that (.+)\.", text, flags=re.I)
-        if match:
-            clause = match.group(1).strip()
-            return f"What stood out: your website says that {clause}."
-        match = re.fullmatch(r"What stood out to me on your website:\s*(.+)", text, flags=re.I)
-        if match:
-            return f"What stood out: {match.group(1).strip()}"
-        return f"What stood out: {text[0].lower() + text[1:]}"
+        prefix = "I saw on your website that "
+        if text.casefold().startswith(prefix.casefold()):
+            fact = _verified_opening_fragment(text[len(prefix):], language)
+            return f"What stood out: your website says that {fact}"
 
-    canonical = exact_nl_opening_from_existing(text)
-    match = re.fullmatch(r"Ik zag op jullie website dat (.+)\.", canonical, flags=re.I)
-    if match:
-        clause = match.group(1).strip()
-        return f"Wat me opviel: op jullie website staat dat {clause}."
-    return f"Wat me opviel: {canonical[0].lower() + canonical[1:]}"
+        for candidate in (
+            "What stood out to me on your website:",
+            "I noticed this on your website:",
+        ):
+            if text.casefold().startswith(candidate.casefold()):
+                fact = _verified_opening_fragment(text[len(candidate):], language)
+                return f"What stood out: {fact}"
 
+        lowered = text[0].lower() + text[1:]
+        return f"What stood out: {_finish_sentence(lowered)}"
+
+    prefix = "Ik zag op jullie website dat "
+    if text.casefold().startswith(prefix.casefold()):
+        fact = _verified_opening_fragment(text[len(prefix):], language)
+        return f"Wat me opviel: op jullie website staat dat {fact}"
+
+    for candidate in (
+        "Op jullie site viel me op:",
+        "Op jullie website zag ik",
+        "Op jullie website las ik:",
+        "Eén detail dat opviel was",
+        "Wat me opviel op jullie website:",
+        "Ik zag dat ",
+    ):
+        if text.casefold().startswith(candidate.casefold()):
+            fact = _verified_opening_fragment(text[len(candidate):], language)
+            return f"Wat me opviel: {fact}"
+
+    marker = " bekeken en zag "
+    low = text.casefold()
+    pos = low.find(marker)
+    if pos >= 0:
+        fact = _verified_opening_fragment(text[pos + len(marker):], language)
+        return f"Wat me opviel: {fact}"
+
+    candidate = "Jullie site draait duidelijk om "
+    if text.casefold().startswith(candidate.casefold()):
+        fact = _verified_opening_fragment(text[len(candidate):], language)
+        return f"Wat me opviel: jullie site draait duidelijk om {fact}"
+
+    lowered = text[0].lower() + text[1:]
+    return f"Wat me opviel: {_finish_sentence(lowered)}"
 
 def validate_short_first_touch(
     subject: str,
@@ -868,4 +932,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
