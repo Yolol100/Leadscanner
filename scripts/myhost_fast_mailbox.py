@@ -12,6 +12,28 @@ HEADER_FETCH = "(BODY.PEEK[HEADER.FIELDS (X-Webactueel-Lead-ID)])"
 HEADER_CHUNK = 250
 
 
+def _capability_tokens(client) -> set[str]:
+    raw = getattr(client, "capabilities", ()) or ()
+    if not raw and hasattr(client, "capability"):
+        status, data = client.capability()
+        if status == "OK":
+            raw = b" ".join(data or []).split()
+    tokens = set()
+    for value in raw:
+        if isinstance(value, bytes):
+            value = value.decode("ascii", errors="ignore")
+        tokens.add(str(value).upper())
+    return tokens
+
+
+def _uid_expunge_only(client, uid: bytes) -> None:
+    if "UIDPLUS" not in _capability_tokens(client):
+        raise RuntimeError("IMAP UIDPLUS is required for target-only draft deletion")
+    status, _ = client.uid("EXPUNGE", uid.decode("ascii"))
+    if status != "OK":
+        raise RuntimeError(f"Could not UID-expunge draft {uid.decode('ascii', errors='replace')}")
+
+
 def snapshot_message(msg, lead_id: str) -> dict:
     return {
         "lead_id": lead_id,
@@ -143,12 +165,13 @@ def replace_known_draft_and_verify(client, folder: str, lead_id: str, existing_u
 
     old_actual = fetch_message_uid(client, existing_uid)
     _assert_expected_snapshot(old_actual, lead_id, expected_snapshot)
+    if "UIDPLUS" not in _capability_tokens(client):
+        raise RuntimeError("IMAP UIDPLUS is required for target-only draft replacement")
     select_folder(client, folder, readonly=False)
     status, _ = client.uid("store", existing_uid.decode("ascii"), "+FLAGS", "(\\Deleted)")
     if status != "OK":
         raise RuntimeError(f"Could not mark old draft UID deleted for {lead_id}")
-    if client.expunge()[0] != "OK":
-        raise RuntimeError(f"Could not expunge old draft for {lead_id}")
+    _uid_expunge_only(client, existing_uid)
 
     select_folder(client, folder, readonly=True)
     final_uids = search_lead_uids(client, folder, lead_id, ensure_selected=False)
@@ -173,12 +196,13 @@ def delete_known_draft_and_verify(client, folder: str, lead_id: str, existing_ui
 
     actual = fetch_message_uid(client, existing_uid)
     _assert_expected_snapshot(actual, lead_id, expected_snapshot)
+    if "UIDPLUS" not in _capability_tokens(client):
+        raise RuntimeError("IMAP UIDPLUS is required for target-only hold deletion")
     select_folder(client, folder, readonly=False)
     status, _ = client.uid("store", existing_uid.decode("ascii"), "+FLAGS", "(\\Deleted)")
     if status != "OK":
         raise RuntimeError(f"Could not mark hold draft UID deleted for {lead_id}")
-    if client.expunge()[0] != "OK":
-        raise RuntimeError(f"Could not expunge hold draft for {lead_id}")
+    _uid_expunge_only(client, existing_uid)
     select_folder(client, folder, readonly=True)
     if search_lead_uids(client, folder, lead_id, ensure_selected=False):
         raise RuntimeError(f"Hold draft still present after UID removal for {lead_id}")
