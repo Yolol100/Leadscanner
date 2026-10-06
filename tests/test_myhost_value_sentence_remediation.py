@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 from email.message import EmailMessage
 from email.parser import BytesParser
 from email.policy import default
@@ -9,6 +10,7 @@ from myhost_value_sentence_remediation import (
     EN_GENERAL,
     NL_GENERAL,
     analyze_body,
+    build_audit,
     decrypt_state,
     encrypt_state,
     full_snapshot,
@@ -163,6 +165,40 @@ class ValueSentenceRemediationTests(unittest.TestCase):
             ["x-webactueel-review-required", "contact-basis"],
             after_headers,
         )
+
+    def test_audit_bulk_fetches_selected_messages_and_reports_capabilities(self):
+        lead_id = "growth-" + "a" * 20
+        msg = self.message()
+
+        class AuditClient:
+            capabilities = (b"IMAP4REV1", b"UIDPLUS", b"MULTIAPPEND")
+            def logout(self):
+                return "BYE", []
+
+        client = AuditClient()
+        with patch(
+            "myhost_value_sentence_remediation.connect_imap",
+            return_value=client,
+        ), patch(
+            "myhost_value_sentence_remediation.find_drafts_folder",
+            return_value="Drafts",
+        ), patch(
+            "myhost_value_sentence_remediation.growth_uid_index",
+            return_value=[(lead_id, b"10")],
+        ), patch(
+            "myhost_value_sentence_remediation.bulk_fetch_uid_messages",
+            return_value={b"10": msg},
+        ) as bulk_fetch, patch(
+            "myhost_value_sentence_remediation.fetch_message_uid",
+            side_effect=AssertionError("audit must not fetch selected messages one by one"),
+        ):
+            state, summary = build_audit(0, 1)
+
+        bulk_fetch.assert_called_once_with(client, [b"10"])
+        self.assertEqual(len(state["items"]), 1)
+        self.assertTrue(summary["uidplus_available"])
+        self.assertTrue(summary["multiappend_available"])
+        self.assertEqual(summary["blocker_count"], 0)
 
     def test_encrypted_state_roundtrip_and_tamper_rejection(self):
         payload = {"items": [{"lead_id": "growth-" + "b" * 20}], "version": "x"}

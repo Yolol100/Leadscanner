@@ -23,7 +23,7 @@ def raw_message(lead_id, body="old"):
 
 
 class FakeUIDIMAP:
-    def __init__(self, lead_id, *, uidplus=True):
+    def __init__(self, lead_id, *, uidplus=True, appenduid=True):
         self.messages = {b"10": raw_message(lead_id)}
         self.capabilities = (b"IMAP4REV1", b"UIDPLUS") if uidplus else (b"IMAP4REV1",)
         self.deleted = set()
@@ -31,6 +31,7 @@ class FakeUIDIMAP:
         self.uid_searches = 0
         self.full_fetch_calls = 0
         self.append_calls = 0
+        self.appenduid = appenduid
         self.tamper_new_uid_fetch = False
         self.last_appended_uid = None
 
@@ -89,6 +90,8 @@ class FakeUIDIMAP:
         self.next_uid += 1
         self.last_appended_uid = uid
         self.messages[uid] = raw
+        if self.appenduid:
+            return "OK", [b"[APPENDUID 777 " + uid + b"]"]
         return "OK", [b""]
 
     def expunge(self):
@@ -134,6 +137,31 @@ class FastMailboxTests(unittest.TestCase):
         self.assertEqual(final_uid, b"11")
         self.assertEqual(list(client.messages), [b"11"])
         self.assertEqual(final_msg.get_content().strip(), "new")
+        self.assertEqual(client.uid_searches, 2)
+
+    def test_replacement_falls_back_to_search_without_appenduid_response(self):
+        lead_id = "growth-" + "9" * 20
+        client = FakeUIDIMAP(lead_id, appenduid=False)
+        inventory = bulk_inventory_drafts(client, "Drafts", [lead_id])
+        current = current_from_inventory(inventory, lead_id)
+
+        expected = EmailMessage(policy=default)
+        expected["To"] = "info@example.nl"
+        expected["Subject"] = "Idee"
+        expected["X-Webactueel-Lead-ID"] = lead_id
+        expected["X-Webactueel-Review-Required"] = "contact-basis"
+        expected.set_content("new")
+
+        outcome, final_uid, _final_msg = replace_known_draft_and_verify(
+            client,
+            "Drafts",
+            lead_id,
+            uid_from_inventory(inventory, lead_id),
+            expected,
+            current,
+        )
+        self.assertEqual(outcome, "replaced")
+        self.assertEqual(final_uid, b"11")
         self.assertEqual(client.uid_searches, 3)
 
     def test_replacement_readback_failure_rolls_back_new_uid(self):

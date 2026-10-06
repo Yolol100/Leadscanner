@@ -40,7 +40,7 @@ def _uid_from_meta(meta: bytes) -> bytes | None:
     return match.group(1) if match else None
 
 
-def _bulk_fetch_uid_messages(client, uids) -> dict[bytes, object]:
+def bulk_fetch_uid_messages(client, uids) -> dict[bytes, object]:
     ordered = list(dict.fromkeys(uids))
     messages = {}
     for start in range(0, len(ordered), HEADER_CHUNK):
@@ -69,6 +69,34 @@ def _bulk_fetch_uid_messages(client, uids) -> dict[bytes, object]:
             f"Bulk full-message readback missing {len(missing)} requested UID(s)"
         )
     return messages
+
+
+def _append_uid_from_response(client, append_data) -> bytes | None:
+    candidates = []
+    for value in append_data or []:
+        if isinstance(value, bytes):
+            candidates.append(value)
+        elif value is not None:
+            candidates.append(str(value).encode("ascii", errors="ignore"))
+    if hasattr(client, "response"):
+        try:
+            _code, values = client.response("APPENDUID")
+            for value in values or []:
+                if isinstance(value, bytes):
+                    candidates.append(value)
+                elif value is not None:
+                    candidates.append(str(value).encode("ascii", errors="ignore"))
+        except Exception:
+            pass
+
+    for raw in candidates:
+        match = re.search(rb"APPENDUID\s+\d+\s+(\d+)\b", raw, re.IGNORECASE)
+        if match:
+            return match.group(1)
+        match = re.fullmatch(rb"\s*\d+\s+(\d+)\s*", raw)
+        if match:
+            return match.group(1)
+    return None
 
 
 def search_lead_uids(client, folder: str, lead_id: str, *, ensure_selected: bool = True) -> list[bytes]:
@@ -118,7 +146,7 @@ def bulk_inventory_drafts(client, folder: str, lead_ids) -> dict[str, dict]:
         for lead_id in ordered
         for uid in matched[lead_id]
     ]
-    messages_by_uid = _bulk_fetch_uid_messages(client, matched_uids)
+    messages_by_uid = bulk_fetch_uid_messages(client, matched_uids)
 
     for lead_id in ordered:
         uids = matched[lead_id]
@@ -162,7 +190,7 @@ def replace_known_draft_and_verify(client, folder: str, lead_id: str, existing_u
     require_uidplus(client, "bounded draft replacement")
 
     raw = expected_msg.as_bytes(policy=default)
-    status, _ = client.append(
+    status, append_data = client.append(
         folder,
         "(\\Draft)",
         imaplib.Time2Internaldate(__import__("time").time()),
@@ -171,15 +199,16 @@ def replace_known_draft_and_verify(client, folder: str, lead_id: str, existing_u
     if status != "OK":
         raise RuntimeError(f"IMAP APPEND failed for {lead_id}")
 
-    new_uid = None
+    new_uid = _append_uid_from_response(client, append_data)
     old_removed = False
     try:
         select_folder(client, folder, readonly=True)
-        uids_after_append = search_lead_uids(client, folder, lead_id, ensure_selected=False)
-        new_uids = [uid for uid in uids_after_append if uid != existing_uid]
-        if len(new_uids) != 1 or existing_uid not in uids_after_append:
-            raise RuntimeError(f"Expected one old and one new draft UID after append for {lead_id}")
-        new_uid = new_uids[0]
+        if new_uid is None:
+            uids_after_append = search_lead_uids(client, folder, lead_id, ensure_selected=False)
+            new_uids = [uid for uid in uids_after_append if uid != existing_uid]
+            if len(new_uids) != 1 or existing_uid not in uids_after_append:
+                raise RuntimeError(f"Expected one old and one new draft UID after append for {lead_id}")
+            new_uid = new_uids[0]
         new_actual = fetch_message_uid(client, new_uid)
         if not exact_message_matches(new_actual, expected_msg):
             raise RuntimeError(f"Draft UID readback mismatch after append for {lead_id}")
