@@ -14,6 +14,7 @@ from extract_public_contacts import (
     EMAIL_RE,
     _visible_text,
     detect_language,
+    discover_contact_links,
     extract_emails,
     fetch_html,
     normalize_domain,
@@ -466,6 +467,110 @@ def validate_online_evidence(
     }
 
 
+
+def _emails_in_source(html: str) -> set[str]:
+    emails = {
+        email.casefold()
+        for email in extract_emails(html)
+    }
+    emails.update(
+        {
+            match.casefold().strip(".,;:()[]<>")
+            for match in EMAIL_RE.findall(html or "")
+            if valid_email(match)
+        }
+    )
+    return emails
+
+
+def verify_existing_email(source_row: dict) -> dict:
+    lead_id = str(source_row.get("lead_id") or "").strip()
+    expected_email = str(
+        source_row.get("email") or ""
+    ).strip().casefold()
+    if not valid_email(expected_email):
+        raise RuntimeError(
+            f"{lead_id}: current source email is invalid"
+        )
+
+    expected_domain = normalize_domain(
+        source_row.get("official_domain_hint")
+        or source_row.get("website")
+    )
+    if not expected_domain:
+        raise RuntimeError(
+            f"{lead_id}: official domain is missing for current email verification"
+        )
+
+    seed_urls: list[str] = []
+    for value in (
+        list(source_row.get("email_source_urls") or [])
+        + [
+            source_row.get(
+                "verified_observation_source_url"
+            ),
+            source_row.get("website"),
+        ]
+    ):
+        url = str(value or "").strip()
+        if (
+            url.startswith(("http://", "https://"))
+            and normalize_domain(url) == expected_domain
+            and url not in seed_urls
+        ):
+            seed_urls.append(url)
+
+    if not seed_urls:
+        raise RuntimeError(
+            f"{lead_id}: no first-party URL is available for current email verification"
+        )
+
+    session = requests.Session()
+    checked_urls: set[str] = set()
+    pending_urls = list(seed_urls)
+    checked_pages = 0
+    while pending_urls and checked_pages < 3:
+        source_url = pending_urls.pop(0)
+        if source_url in checked_urls:
+            continue
+        html, final_url, status = fetch_html(
+            session, source_url
+        )
+        checked_urls.add(source_url)
+        if (
+            not html
+            or not final_url
+            or not (status and 200 <= status < 400)
+            or normalize_domain(final_url)
+            != expected_domain
+        ):
+            continue
+
+        checked_pages += 1
+        checked_urls.add(final_url)
+        if expected_email in _emails_in_source(html):
+            return {
+                "email": expected_email,
+                "source_url": final_url,
+                "http_status": status,
+                "source_type": "official_site",
+            }
+
+        for link in discover_contact_links(
+            html,
+            final_url,
+            expected_domain,
+        ):
+            if (
+                link not in checked_urls
+                and link not in pending_urls
+            ):
+                pending_urls.append(link)
+
+    raise RuntimeError(
+        f"{lead_id}: current email is not verified on the current official site"
+    )
+
 def build_corrected_row(
     source_row: dict,
     change: dict,
@@ -729,6 +834,44 @@ def run(
                 + " | ".join(evidence_failures)
             )
 
+    existing_email_evidence = {}
+    email_failures: list[str] = []
+    failed_email_leads: set[str] = set()
+    for lead_id in list(rewrites):
+        try:
+            existing_email_evidence[lead_id] = (
+                verify_existing_email(
+                    source_rows[lead_id]
+                )
+            )
+        except Exception as exc:
+            failed_email_leads.add(lead_id)
+            email_failures.append(
+                f"{lead_id}: {exc}"
+            )
+    if email_failures:
+        if audit_only:
+            for failure in email_failures:
+                lead_id, _, reason = failure.partition(": ")
+                needs_research.append(
+                    {
+                        "lead_id": lead_id,
+                        "stage": "current_email",
+                        "reason": reason,
+                    }
+                )
+            for lead_id in failed_email_leads:
+                rewrites.pop(lead_id, None)
+                online_evidence.pop(
+                    lead_id, None
+                )
+        else:
+            raise RuntimeError(
+                "current email verification failed for "
+                f"{len(email_failures)} lead(s): "
+                + " | ".join(email_failures)
+            )
+
     for lead_id, change in rewrites.items():
         if (
             lead_id in online_evidence
@@ -853,6 +996,14 @@ def run(
             "read_only": True,
             "online_evidence_count": len(
                 online_evidence
+            ),
+        "current_email_verified_count": (
+            len(existing_email_evidence)
+            + len(replacement_rows)
+        ),
+            "current_email_verified_count": (
+                len(existing_email_evidence)
+                + len(replacement_rows)
             ),
             "refresh_verified_source_rows": bool(
                 request.get(
