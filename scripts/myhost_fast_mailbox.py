@@ -120,9 +120,6 @@ def replace_known_draft_and_verify(client, folder: str, lead_id: str, existing_u
     if exact_message_matches(actual, expected_msg):
         return "existing", existing_uid, actual
 
-    # Replacement must be provably target-only before any mailbox mutation.
-    # Without UIDPLUS we may not append a second draft that cannot be safely
-    # reduced back to exactly one.
     require_uidplus(client, "bounded draft replacement")
 
     raw = expected_msg.as_bytes(policy=default)
@@ -135,33 +132,51 @@ def replace_known_draft_and_verify(client, folder: str, lead_id: str, existing_u
     if status != "OK":
         raise RuntimeError(f"IMAP APPEND failed for {lead_id}")
 
-    select_folder(client, folder, readonly=True)
-    uids_after_append = search_lead_uids(client, folder, lead_id, ensure_selected=False)
-    new_uids = [uid for uid in uids_after_append if uid != existing_uid]
-    if len(new_uids) != 1 or existing_uid not in uids_after_append:
-        raise RuntimeError(f"Expected one old and one new draft UID after append for {lead_id}")
-    new_uid = new_uids[0]
-    new_actual = fetch_message_uid(client, new_uid)
-    if not exact_message_matches(new_actual, expected_msg):
-        raise RuntimeError(f"Draft UID readback mismatch after append for {lead_id}")
+    new_uid = None
+    old_removed = False
+    try:
+        select_folder(client, folder, readonly=True)
+        uids_after_append = search_lead_uids(client, folder, lead_id, ensure_selected=False)
+        new_uids = [uid for uid in uids_after_append if uid != existing_uid]
+        if len(new_uids) != 1 or existing_uid not in uids_after_append:
+            raise RuntimeError(f"Expected one old and one new draft UID after append for {lead_id}")
+        new_uid = new_uids[0]
+        new_actual = fetch_message_uid(client, new_uid)
+        if not exact_message_matches(new_actual, expected_msg):
+            raise RuntimeError(f"Draft UID readback mismatch after append for {lead_id}")
 
-    old_actual = fetch_message_uid(client, existing_uid)
-    _assert_expected_snapshot(old_actual, lead_id, expected_snapshot)
-    uid_expunge_only(
-        client,
-        folder,
-        existing_uid,
-        operation=f"bounded draft replacement for {lead_id}",
-    )
+        old_actual = fetch_message_uid(client, existing_uid)
+        _assert_expected_snapshot(old_actual, lead_id, expected_snapshot)
+        uid_expunge_only(
+            client,
+            folder,
+            existing_uid,
+            operation=f"bounded draft replacement for {lead_id}",
+        )
+        old_removed = True
 
-    select_folder(client, folder, readonly=True)
-    final_uids = search_lead_uids(client, folder, lead_id, ensure_selected=False)
-    if final_uids != [new_uid]:
-        raise RuntimeError(f"Expected one final draft UID after replacement for {lead_id}")
-    final_actual = fetch_message_uid(client, new_uid)
-    if not exact_message_matches(final_actual, expected_msg):
-        raise RuntimeError(f"Final UID replacement readback mismatch for {lead_id}")
-    return "replaced", new_uid, final_actual
+        select_folder(client, folder, readonly=True)
+        final_uids = search_lead_uids(client, folder, lead_id, ensure_selected=False)
+        if final_uids != [new_uid]:
+            raise RuntimeError(f"Expected one final draft UID after replacement for {lead_id}")
+        final_actual = fetch_message_uid(client, new_uid)
+        if not exact_message_matches(final_actual, expected_msg):
+            raise RuntimeError(f"Final UID replacement readback mismatch for {lead_id}")
+        return "replaced", new_uid, final_actual
+    except Exception as exc:
+        if new_uid is not None and not old_removed:
+            try:
+                uid_expunge_only(
+                    client,
+                    folder,
+                    new_uid,
+                    operation=f"rollback appended replacement for {lead_id}",
+                )
+            except Exception as rollback_exc:
+                raise RuntimeError(
+                    f"{exc}; rollback of newly appended draft failed: {rollback_exc}"
+                ) from exc
+        raise
 
 
 def delete_known_draft_and_verify(client, folder: str, lead_id: str, existing_uid: bytes, expected_snapshot: dict) -> int:
