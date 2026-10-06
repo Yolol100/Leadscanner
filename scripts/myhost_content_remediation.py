@@ -223,6 +223,15 @@ def validate_request(request: dict) -> dict:
                     raise ValueError(
                         f"{lead_id}: invalid replacement email"
                     )
+                website = str(
+                    change.get("website") or ""
+                ).strip()
+                if website and not website.startswith(
+                    ("http://", "https://")
+                ):
+                    raise ValueError(
+                        f"{lead_id}: replacement website must be http(s)"
+                    )
     return request
 
 
@@ -391,7 +400,8 @@ def validate_online_evidence(
     ).strip()
     source_domain = normalize_domain(source_url)
     expected_domain = normalize_domain(
-        source_row.get("official_domain_hint")
+        change.get("website")
+        or source_row.get("official_domain_hint")
         or source_row.get("website")
     )
     if (
@@ -1030,6 +1040,16 @@ def build_corrected_row(
         if not valid_email(email):
             raise RuntimeError(
                 f"{row.get('lead_id')}: invalid replacement email"
+            )
+        replacement_website = str(
+            change.get("website") or ""
+        ).strip()
+        if replacement_website:
+            row["website"] = replacement_website
+            row["official_domain_hint"] = (
+                normalize_domain(
+                    replacement_website
+                )
             )
         row["email"] = email
         row["lead_id"] = stable_lead_id(
