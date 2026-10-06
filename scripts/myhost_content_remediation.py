@@ -189,6 +189,15 @@ def validate_request(request: dict) -> dict:
                 raise ValueError(
                     f"{lead_id}: evidence_terms must contain 1-8 terms"
                 )
+            email_source_url = str(
+                change.get("email_source_url") or ""
+            ).strip()
+            if email_source_url and not email_source_url.startswith(
+                ("http://", "https://")
+            ):
+                raise ValueError(
+                    f"{lead_id}: email_source_url must be http(s)"
+                )
             language = str(
                 change.get("language") or ""
             ).strip().casefold()
@@ -483,7 +492,10 @@ def _emails_in_source(html: str) -> set[str]:
     return emails
 
 
-def verify_existing_email(source_row: dict) -> dict:
+def verify_existing_email(
+    source_row: dict,
+    change: dict | None = None,
+) -> dict:
     lead_id = str(source_row.get("lead_id") or "").strip()
     expected_email = str(
         source_row.get("email") or ""
@@ -503,8 +515,12 @@ def verify_existing_email(source_row: dict) -> dict:
         )
 
     seed_urls: list[str] = []
+    researched_email_source = str(
+        (change or {}).get("email_source_url") or ""
+    ).strip()
     for value in (
-        list(source_row.get("email_source_urls") or [])
+        [researched_email_source]
+        + list(source_row.get("email_source_urls") or [])
         + [
             source_row.get(
                 "verified_observation_source_url"
@@ -603,6 +619,21 @@ def build_corrected_row(
     source_url = str(
         change.get("source_url") or ""
     ).strip()
+
+    if not replacement:
+        email_source_url = str(
+            change.get("email_source_url") or ""
+        ).strip()
+        if email_source_url:
+            row["email_source_urls"] = [
+                email_source_url
+            ]
+            row["email_source_types"] = [
+                "official_site"
+            ]
+            row["email_source_refs"] = [
+                email_source_url
+            ]
 
     if replacement:
         email = str(
@@ -842,7 +873,8 @@ def run(
         try:
             existing_email_evidence[lead_id] = (
                 verify_existing_email(
-                    source_rows[lead_id]
+                    source_rows[lead_id],
+                    rewrites[lead_id],
                 )
             )
         except Exception as exc:
