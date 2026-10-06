@@ -8,8 +8,9 @@ from myhost_remove_hold_draft import remove_hold_draft
 
 
 class FakeIMAP:
-    def __init__(self, raw: bytes, count: int = 1):
+    def __init__(self, raw: bytes, count: int = 1, *, uidplus: bool = True):
         self.raw = raw
+        self.capabilities = (b"IMAP4REV1", b"UIDPLUS") if uidplus else (b"IMAP4REV1",)
         self.count = count
         self.deleted = False
         self.readonly = True
@@ -30,14 +31,26 @@ class FakeIMAP:
         )
 
     def fetch(self, message_id, query):
+        if query == "(UID)":
+            return "OK", [(b"1 (UID 10)", b"")]
         return "OK", [(b"1 (RFC822)", self.raw)]
 
+    def uid(self, command, *args):
+        command = command.casefold()
+        if command == "fetch":
+            return "OK", [(b"1 (UID 10 RFC822)", self.raw)]
+        if command == "store":
+            self.deleted = True
+            return "OK", [b""]
+        if command == "expunge":
+            return "OK", [b"10"]
+        raise AssertionError((command, args))
+
     def store(self, message_id, op, flags):
-        self.deleted = True
-        return "OK", [b""]
+        raise AssertionError("sequence STORE must not be used")
 
     def expunge(self):
-        return "OK", [b"1"]
+        raise AssertionError("global EXPUNGE must not be used")
 
     def logout(self):
         return "BYE", [b"logout"]
@@ -94,6 +107,14 @@ class RemoveHoldDraftTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "at most one"):
                 remove_hold_draft(lead_id)
 
+        self.assertFalse(client.deleted)
+
+    def test_uidplus_missing_blocks_before_hold_mutation(self):
+        lead_id = "growth-0123456789abcdefabcd"
+        client = FakeIMAP(self._message(lead_id).as_bytes(), uidplus=False)
+        with patch("myhost_remove_hold_draft.connect_imap", return_value=client):
+            with self.assertRaisesRegex(RuntimeError, "UIDPLUS"):
+                remove_hold_draft(lead_id)
         self.assertFalse(client.deleted)
 
     def test_non_review_draft_blocks_removal(self):
