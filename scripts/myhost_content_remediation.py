@@ -16,6 +16,7 @@ from extract_public_contacts import (
     detect_language,
     discover_contact_links,
     extract_emails,
+    extract_verified_observation,
     fetch_html,
     inspect_candidate,
     normalize_domain,
@@ -423,6 +424,13 @@ def validate_online_evidence(
     page = _normalize_for_match(
         _visible_text(html)
     )
+    extracted_observation = (
+        extract_verified_observation(html)
+        or ""
+    )
+    evidence_page = _normalize_for_match(
+        f"{page} {extracted_observation}"
+    )
     source_language = str(
         source_row.get("language") or "nl"
     ).strip().casefold()
@@ -441,7 +449,8 @@ def validate_online_evidence(
         term
         for term in change.get("evidence_terms") or []
         if str(term).strip().casefold() != expected_email_term
-        and _normalize_for_match(term) not in page
+        and _normalize_for_match(term)
+        not in evidence_page
     ]
     if missing:
         raise RuntimeError(
