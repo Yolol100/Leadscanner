@@ -275,24 +275,28 @@ def observation_line_from_observation(observation: str, language: str) -> str:
 
 
 def _finish_sentence(value: str) -> str:
-    text = re.sub(r"\\s+", " ", str(value or "")).strip()
+    text = " ".join(str(value or "").split()).strip()
     if not text:
         return text
     return text if text.endswith((".", "!", "?")) else text + "."
 
 
 def _verified_opening_fragment(value: str, language: str) -> str:
-    text = re.sub(r"\\s+", " ", str(value or "")).strip()
+    text = " ".join(str(value or "").split()).strip()
     if text.startswith(("“", '"')):
         text = text[1:].strip()
-    if text.endswith(("”", '"')):
-        text = text[:-1].strip()
     if text.endswith(("”.", '".')):
         text = text[:-2].strip() + "."
-    if language == "en":
-        text = re.sub(r"^We\\b", "you", text, count=1)
-    else:
-        text = re.sub(r"^(?:Wij|We)\\b", "jullie", text, count=1)
+    elif text.endswith(("”", '"')):
+        text = text[:-1].strip()
+
+    if language == "en" and text.startswith("We "):
+        text = "you " + text[3:]
+    elif language != "en":
+        if text.startswith("Wij "):
+            text = "jullie " + text[4:]
+        elif text.startswith("We "):
+            text = "jullie " + text[3:]
     return _finish_sentence(text)
 
 
@@ -303,7 +307,7 @@ def observation_line_from_opening(opening: str, language: str) -> str:
     New prospect copy still uses observation_line_from_observation(), which
     applies the current observation-quality gate.
     """
-    text = re.sub(r"\\s+", " ", str(opening or "")).strip()
+    text = " ".join(str(opening or "").split()).strip()
     if not text:
         raise ValueError("opening is required")
 
@@ -341,9 +345,12 @@ def observation_line_from_opening(opening: str, language: str) -> str:
             fact = _verified_opening_fragment(text[len(candidate):], language)
             return f"Wat me opviel: {fact}"
 
-    match = re.search(r"\\bbekeken en zag\\s+(.+)$", text, flags=re.I)
-    if match:
-        return f"Wat me opviel: {_verified_opening_fragment(match.group(1), language)}"
+    marker = " bekeken en zag "
+    low = text.casefold()
+    pos = low.find(marker)
+    if pos >= 0:
+        fact = _verified_opening_fragment(text[pos + len(marker):], language)
+        return f"Wat me opviel: {fact}"
 
     candidate = "Jullie site draait duidelijk om "
     if text.casefold().startswith(candidate.casefold()):
