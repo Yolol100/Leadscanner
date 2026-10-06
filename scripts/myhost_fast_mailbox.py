@@ -143,6 +143,12 @@ def replace_known_draft_and_verify(client, folder: str, lead_id: str, existing_u
     if exact_message_matches(actual, expected_msg):
         return "existing", existing_uid, actual
 
+    # Replacement must be provably target-only before any mailbox mutation.
+    # Without UIDPLUS we may not append a second draft that cannot be safely
+    # reduced back to exactly one.
+    if "UIDPLUS" not in _capability_tokens(client):
+        raise RuntimeError("IMAP UIDPLUS is required before bounded draft replacement")
+
     raw = expected_msg.as_bytes(policy=default)
     status, _ = client.append(
         folder,
@@ -165,8 +171,6 @@ def replace_known_draft_and_verify(client, folder: str, lead_id: str, existing_u
 
     old_actual = fetch_message_uid(client, existing_uid)
     _assert_expected_snapshot(old_actual, lead_id, expected_snapshot)
-    if "UIDPLUS" not in _capability_tokens(client):
-        raise RuntimeError("IMAP UIDPLUS is required for target-only draft replacement")
     select_folder(client, folder, readonly=False)
     status, _ = client.uid("store", existing_uid.decode("ascii"), "+FLAGS", "(\\Deleted)")
     if status != "OK":
