@@ -259,17 +259,34 @@ def require_existing_drafts(
             raise RuntimeError(f"Existing draft review status mismatch for {lead_id}")
 
 
+def _rollback_appended_uid(client, folder: str, uid: bytes, lead_id: str, cause: Exception) -> None:
+    try:
+        uid_expunge_only(
+            client,
+            folder,
+            uid,
+            operation=f"rollback appended draft for {lead_id}",
+        )
+    except Exception as rollback_exc:
+        raise RuntimeError(
+            f"{cause}; rollback of newly appended draft failed: {rollback_exc}"
+        ) from cause
+
+
 def append_and_verify(client, folder: str, lead_id: str, msg: EmailMessage) -> str:
     existing = find_message_ids(client, folder, lead_id)
     if len(existing) > 1:
         raise RuntimeError(f"Expected at most one existing draft for {lead_id}, found {len(existing)}")
+
+    # Every APPEND must have a target-only rollback path before the write starts.
+    require_uidplus(client, f"draft append for {lead_id}")
+
     existing_uid = None
     existing_snapshot = None
     if existing:
         actual = fetch_message(client, existing[0])
         if exact_message_matches(actual, msg):
             return "existing"
-        require_uidplus(client, "bounded draft replacement")
         existing_uid = uid_for_message_id(client, existing[0])
         existing_snapshot = actual
 
@@ -283,42 +300,51 @@ def append_and_verify(client, folder: str, lead_id: str, msg: EmailMessage) -> s
     if status != "OK":
         raise RuntimeError(f"IMAP APPEND failed for {lead_id}")
 
-    ids_after_append = find_message_ids(client, folder, lead_id)
-    new_ids = [message_id for message_id in ids_after_append if message_id not in existing]
-    if len(new_ids) != 1:
-        raise RuntimeError(
-            f"Expected one new draft after append for {lead_id}, found {len(new_ids)}"
-        )
-    new_actual = fetch_message(client, new_ids[0])
-    if not exact_message_matches(new_actual, msg):
-        raise RuntimeError(f"Draft readback mismatch for {lead_id}")
-
-    if existing:
-        current_old = fetch_message_uid(client, existing_uid)
-        if normalize_text(current_old.get("X-Webactueel-Lead-ID", "")) != lead_id:
-            raise RuntimeError(f"Existing draft identity changed before replacement for {lead_id}")
-        if not exact_message_matches(current_old, existing_snapshot):
-            raise RuntimeError(f"Existing draft changed before target-only replacement for {lead_id}")
-        uid_expunge_only(
-            client,
-            folder,
-            existing_uid,
-            operation=f"bounded draft replacement for {lead_id}",
-        )
-
-        final_ids = find_message_ids(client, folder, lead_id)
-        if len(final_ids) != 1:
+    new_uid = None
+    old_removed = False
+    try:
+        ids_after_append = find_message_ids(client, folder, lead_id)
+        new_ids = [message_id for message_id in ids_after_append if message_id not in existing]
+        if len(new_ids) != 1:
             raise RuntimeError(
-                f"Expected one final draft after replacement for {lead_id}, found {len(final_ids)}"
+                f"Expected one new draft after append for {lead_id}, found {len(new_ids)}"
             )
-        final_actual = fetch_message(client, final_ids[0])
-        if not exact_message_matches(final_actual, msg):
-            raise RuntimeError(f"Final replacement readback mismatch for {lead_id}")
-        return "replaced"
+        new_uid = uid_for_message_id(client, new_ids[0])
+        new_actual = fetch_message_uid(client, new_uid)
+        if not exact_message_matches(new_actual, msg):
+            raise RuntimeError(f"Draft UID readback mismatch for {lead_id}")
 
-    if len(ids_after_append) != 1:
-        raise RuntimeError(f"Expected one draft after append for {lead_id}, found {len(ids_after_append)}")
-    return "created"
+        if existing:
+            current_old = fetch_message_uid(client, existing_uid)
+            if normalize_text(current_old.get("X-Webactueel-Lead-ID", "")) != lead_id:
+                raise RuntimeError(f"Existing draft identity changed before replacement for {lead_id}")
+            if not exact_message_matches(current_old, existing_snapshot):
+                raise RuntimeError(f"Existing draft changed before target-only replacement for {lead_id}")
+            uid_expunge_only(
+                client,
+                folder,
+                existing_uid,
+                operation=f"bounded draft replacement for {lead_id}",
+            )
+            old_removed = True
+
+            final_ids = find_message_ids(client, folder, lead_id)
+            if len(final_ids) != 1:
+                raise RuntimeError(
+                    f"Expected one final draft after replacement for {lead_id}, found {len(final_ids)}"
+                )
+            final_actual = fetch_message(client, final_ids[0])
+            if not exact_message_matches(final_actual, msg):
+                raise RuntimeError(f"Final replacement readback mismatch for {lead_id}")
+            return "replaced"
+
+        if len(ids_after_append) != 1:
+            raise RuntimeError(f"Expected one draft after append for {lead_id}, found {len(ids_after_append)}")
+        return "created"
+    except Exception as exc:
+        if new_uid is not None and not old_removed:
+            _rollback_appended_uid(client, folder, new_uid, lead_id, exc)
+        raise
 
 
 def create_drafts(batch: dict, *, rewrite_existing_only: bool = False) -> dict:
