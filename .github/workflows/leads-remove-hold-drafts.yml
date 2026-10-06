@@ -1,0 +1,289 @@
+name: Leads Remove Hold Drafts
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+concurrency:
+  group: leads-remove-hold-drafts
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  remove:
+    if: >-
+      github.event.issue.user.login == github.repository_owner &&
+      startsWith(github.event.issue.title, '[growth-draft-remove-holds]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+
+      - name: Resolve bounded hold-removal request
+        id: request
+        env:
+          EVENT_PATH: ${{ github.event_path }}
+        run: |
+          set -euo pipefail
+          mkdir -p results/source results/expected results/removal
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          event = json.loads(Path(os.environ["EVENT_PATH"]).read_text(encoding="utf-8"))
+          request = json.loads(event["issue"].get("body") or "{}")
+          allowed = {
+              "source_archive_artifact_id",
+              "source_artifact_ids",
+              "remove_lead_ids",
+              "reason_code",
+              "confirm",
+          }
+          if set(request) != allowed:
+              raise SystemExit("request fields mismatch")
+          archive = int(request.get("source_archive_artifact_id") or 0)
+          artifact_ids = [int(x) for x in (request.get("source_artifact_ids") or [])]
+          lead_ids = [str(x or "").strip() for x in (request.get("remove_lead_ids") or [])]
+          if archive <= 0:
+              raise SystemExit("source_archive_artifact_id must be positive")
+          if not 1 <= len(artifact_ids) <= 20 or any(x <= 0 for x in artifact_ids):
+              raise SystemExit("source_artifact_ids must contain 1-20 positive IDs")
+          if len(set(artifact_ids)) != len(artifact_ids):
+              raise SystemExit("source_artifact_ids must be unique")
+          if not 1 <= len(lead_ids) <= 100 or len(set(lead_ids)) != len(lead_ids):
+              raise SystemExit("remove_lead_ids must contain 1-100 unique IDs")
+          lead_re = re.compile(r"^growth-[0-9a-f]{20}$")
+          if any(not lead_re.fullmatch(x) for x in lead_ids):
+              raise SystemExit("remove_lead_ids contains a non-canonical lead ID")
+          if request.get("reason_code") != "hold_unresolved_after_audit":
+              raise SystemExit("unsupported reason_code")
+          if request.get("confirm") is not True:
+              raise SystemExit("confirm=true is required for destructive draft removal")
+
+          Path("results/request.json").write_text(
+              json.dumps(request, indent=2, ensure_ascii=False) + "\n",
+              encoding="utf-8",
+          )
+          Path("results/artifact-ids.txt").write_text(
+              "".join(f"{x}\n" for x in artifact_ids),
+              encoding="utf-8",
+          )
+          Path("results/lead-ids.txt").write_text(
+              "".join(f"{x}\n" for x in lead_ids),
+              encoding="utf-8",
+          )
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as out:
+              out.write(f"archive={archive}\n")
+              out.write(f"requested={len(lead_ids)}\n")
+          print(
+              f"HOLD_DRAFT_REQUEST=green requested={len(lead_ids)} "
+              "automatic_send=false smtp_send=not_available"
+          )
+          PY
+
+      - name: Download audited source archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARCHIVE: ${{ steps.request.outputs.archive }}
+        run: |
+          set -euo pipefail
+          gh api -H "Accept: application/vnd.github+json"             "/repos/$GITHUB_REPOSITORY/actions/artifacts/$ARCHIVE/zip"             > results/source.zip
+          unzip -q results/source.zip -d results/source
+          test -d results/source/rewrite
+
+      - name: Build exact expected draft baselines
+        run: |
+          set -euo pipefail
+          PYTHONPATH=scripts python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          request = json.loads(Path("results/request.json").read_text(encoding="utf-8"))
+          target_ids = set(request["remove_lead_ids"])
+          artifact_ids = request["source_artifact_ids"]
+          found = {}
+
+          for artifact_id in artifact_ids:
+              root = Path(f"results/source/rewrite/{artifact_id}")
+              batch_path = root / "growth-batch.json"
+              report_path = root / "myhost-drafts.json"
+              if not batch_path.exists() or not report_path.exists():
+                  raise SystemExit(f"source artifact {artifact_id} is incomplete")
+              batch = json.loads(batch_path.read_text(encoding="utf-8"))
+              report = json.loads(report_path.read_text(encoding="utf-8"))
+              report_items = {
+                  str(item.get("lead_id") or ""): item
+                  for item in (report.get("items") or [])
+              }
+
+              for row in batch.get("rows") or []:
+                  lead_id = str(row.get("lead_id") or "")
+                  if lead_id not in target_ids:
+                      continue
+                  if lead_id in found:
+                      raise SystemExit(f"{lead_id}: duplicate source row across selected artifacts")
+                  if row.get("status") != "review_draft":
+                      raise SystemExit(f"{lead_id}: source is not review_draft")
+                  if row.get("contact_basis_status") != "review_required":
+                      raise SystemExit(f"{lead_id}: source is not review_required")
+                  item = report_items.get(lead_id)
+                  if not item or item.get("outcome") not in {"existing", "replaced"}:
+                      raise SystemExit(f"{lead_id}: exact successful mailbox readback is missing")
+                  if (
+                      str(item.get("to") or "").strip() != str(row.get("email") or "").strip()
+                      or str(item.get("subject") or "").strip() != str(row.get("subject") or "").strip()
+                      or str(item.get("body") or "").strip() != str(row.get("body") or "").strip()
+                  ):
+                      raise SystemExit(f"{lead_id}: source row and exact successful readback differ")
+                  expected = dict(row)
+                  Path(f"results/expected/{lead_id}.json").write_text(
+                      json.dumps(expected, indent=2, ensure_ascii=False) + "\n",
+                      encoding="utf-8",
+                  )
+                  found[lead_id] = artifact_id
+
+          missing = sorted(target_ids - set(found))
+          if missing:
+              raise SystemExit(f"target lead IDs missing from selected artifacts: {missing}")
+          Path("results/source-map.json").write_text(
+              json.dumps(found, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          print(
+              f"HOLD_DRAFT_BASELINE=green exact={len(found)} "
+              "review_required=true automatic_send=false"
+          )
+          PY
+
+      - name: Remove only exact hold drafts
+        env:
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
+        run: |
+          set -euo pipefail
+          total=0
+          while IFS= read -r lead_id; do
+            total=$((total + 1))
+            PYTHONPATH=scripts python3 scripts/myhost_remove_duplicate_draft.py               --lead-id "$lead_id"               --expected-file "results/expected/$lead_id.json"               --output "results/removal/$lead_id.json"               | tee "results/removal/$lead_id.txt"
+            grep -q '^MYHOST_DUPLICATE_REMOVAL=green ' "results/removal/$lead_id.txt"
+            grep -q 'automatic_send=false' "results/removal/$lead_id.txt"
+            grep -q 'smtp_send=not_available' "results/removal/$lead_id.txt"
+          done < results/lead-ids.txt
+          test "$total" -eq "${{ steps.request.outputs.requested }}"
+
+      - name: Prove final absence
+        env:
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH=scripts python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from myhost_draft import connect_imap, find_drafts_folder, find_message_ids
+
+          lead_ids = [
+              line.strip()
+              for line in Path("results/lead-ids.txt").read_text(encoding="utf-8").splitlines()
+              if line.strip()
+          ]
+          client = connect_imap()
+          try:
+              folder = find_drafts_folder(client)
+              remaining = {}
+              for lead_id in lead_ids:
+                  ids = find_message_ids(client, folder, lead_id)
+                  if ids:
+                      remaining[lead_id] = len(ids)
+              if remaining:
+                  raise SystemExit(f"hold drafts still present: {remaining}")
+          finally:
+              try:
+                  client.logout()
+              except Exception:
+                  pass
+
+          removed = 0
+          already_absent = 0
+          for lead_id in lead_ids:
+              result = json.loads(
+                  Path(f"results/removal/{lead_id}.json").read_text(encoding="utf-8")
+              )
+              removed += int(result.get("removed_count") or 0)
+              if int(result.get("removed_count") or 0) == 0:
+                  already_absent += 1
+
+          summary = {
+              "requested": len(lead_ids),
+              "removed": removed,
+              "already_absent": already_absent,
+              "final_count": 0,
+              "automatic_send": False,
+              "smtp_send": "not_available",
+          }
+          Path("results/summary.json").write_text(
+              json.dumps(summary, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          print(
+              "HOLD_DRAFT_REMOVAL_READBACK=green "
+              f"requested={summary['requested']} removed={removed} "
+              f"already_absent={already_absent} final=0 "
+              "automatic_send=false smtp_send=not_available"
+          )
+          PY
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: hold-draft-removal-${{ github.run_number }}
+          path: |
+            results/source-map.json
+            results/summary.json
+            results/removal/*.json
+            results/removal/*.txt
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Close owner request issue
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          summary=$(python3 -c 'import json; r=json.load(open("results/summary.json")); print(f"requested={r[\"requested\"]} removed={r[\"removed\"]} already_absent={r[\"already_absent\"]} final=0")')
+          gh issue comment "$ISSUE_NUMBER" --body "HOLD_DRAFT_REMOVAL=green $summary automatic_send=false smtp_send=not_available. Nothing was sent."
+          gh issue close "$ISSUE_NUMBER" --reason completed
+
+      - name: Close failed owner request issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --body "Hold-draft removal failed closed. Nothing was sent."
+          gh issue close "$ISSUE_NUMBER" --reason completed
+
+      - name: Remove target residue
+        if: always()
+        run: rm -rf results/source results/source.zip results/expected results/removal results/request.json results/artifact-ids.txt results/lead-ids.txt
