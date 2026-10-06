@@ -6,6 +6,7 @@ from email.policy import default
 from myhost_fast_mailbox import (
     bulk_inventory_drafts,
     current_from_inventory,
+    delete_known_draft_and_verify,
     replace_known_draft_and_verify,
     uid_from_inventory,
 )
@@ -22,8 +23,9 @@ def raw_message(lead_id, body="old"):
 
 
 class FakeUIDIMAP:
-    def __init__(self, lead_id):
+    def __init__(self, lead_id, *, uidplus=True):
         self.messages = {b"10": raw_message(lead_id)}
+        self.capabilities = (b"IMAP4REV1", b"UIDPLUS") if uidplus else (b"IMAP4REV1",)
         self.deleted = set()
         self.next_uid = 11
         self.uid_searches = 0
@@ -63,6 +65,12 @@ class FakeUIDIMAP:
         if command == "store":
             self.deleted.add(str(args[0]).encode())
             return "OK", [b""]
+        if command == "expunge":
+            uid = str(args[0]).encode()
+            if uid in self.deleted:
+                self.messages.pop(uid, None)
+                self.deleted.discard(uid)
+            return "OK", [b""]
         raise AssertionError((command, args))
 
     def append(self, folder, flags, date, raw):
@@ -72,10 +80,7 @@ class FakeUIDIMAP:
         return "OK", [b""]
 
     def expunge(self):
-        for uid in list(self.deleted):
-            self.messages.pop(uid, None)
-        self.deleted.clear()
-        return "OK", [b""]
+        raise AssertionError("global EXPUNGE must never be used")
 
 
 class FastMailboxTests(unittest.TestCase):
@@ -107,6 +112,41 @@ class FastMailboxTests(unittest.TestCase):
         self.assertEqual(list(client.messages), [b"11"])
         self.assertEqual(final_msg.get_content().strip(), "new")
         self.assertEqual(client.uid_searches, 3)
+    def test_delete_fails_closed_without_uidplus(self):
+        lead_id = "growth-" + "b" * 20
+        client = FakeUIDIMAP(lead_id, uidplus=False)
+        inventory = bulk_inventory_drafts(client, "Drafts", [lead_id])
+        current = current_from_inventory(inventory, lead_id)
+        with self.assertRaisesRegex(RuntimeError, "UIDPLUS"):
+            delete_known_draft_and_verify(
+                client,
+                "Drafts",
+                lead_id,
+                uid_from_inventory(inventory, lead_id),
+                current,
+            )
+        self.assertIn(b"10", client.messages)
+        self.assertFalse(client.deleted)
+
+    def test_uidplus_delete_removes_only_target_uid(self):
+        lead_id = "growth-" + "c" * 20
+        other_id = "growth-" + "d" * 20
+        client = FakeUIDIMAP(lead_id)
+        client.messages[b"20"] = raw_message(other_id)
+        client.deleted.add(b"20")
+        inventory = bulk_inventory_drafts(client, "Drafts", [lead_id])
+        current = current_from_inventory(inventory, lead_id)
+        removed = delete_known_draft_and_verify(
+            client,
+            "Drafts",
+            lead_id,
+            uid_from_inventory(inventory, lead_id),
+            current,
+        )
+        self.assertEqual(removed, 1)
+        self.assertNotIn(b"10", client.messages)
+        self.assertIn(b"20", client.messages)
+        self.assertIn(b"20", client.deleted)
 
 
 if __name__ == "__main__":
