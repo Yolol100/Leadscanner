@@ -458,9 +458,57 @@ class LinkParser(HTMLParser):
             self._active_text = []
 
 
+def _decode_cloudflare_email(token: str) -> str | None:
+    value = str(token or "").strip()
+    if (
+        len(value) < 4
+        or len(value) % 2
+        or not re.fullmatch(r"[0-9a-fA-F]+", value)
+    ):
+        return None
+    try:
+        data = bytes.fromhex(value)
+    except ValueError:
+        return None
+    if len(data) < 2:
+        return None
+    key = data[0]
+    try:
+        decoded = bytes(
+            byte ^ key
+            for byte in data[1:]
+        ).decode("utf-8")
+    except (UnicodeDecodeError, ValueError):
+        return None
+    return decoded.strip() or None
+
+
 def extract_emails(html: str) -> list[str]:
     cleaned = unescape(html or "")
     found: list[str] = []
+
+    cloudflare_tokens = re.findall(
+        r"""(?is)data-cfemail\s*=\s*["']([0-9a-f]+)["']""",
+        cleaned,
+    )
+    cloudflare_tokens.extend(
+        re.findall(
+            r"""(?is)/cdn-cgi/l/email-protection#([0-9a-f]+)""",
+            cleaned,
+        )
+    )
+    for token in cloudflare_tokens:
+        candidate = _decode_cloudflare_email(
+            token
+        )
+        if (
+            candidate
+            and valid_email(candidate)
+            and candidate.casefold() not in found
+        ):
+            found.append(
+                candidate.casefold()
+            )
 
     # Attribute values such as form placeholders are not contact evidence.
     parser = LinkParser()
