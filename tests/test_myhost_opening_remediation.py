@@ -23,7 +23,7 @@ class OpeningRemediationTests(unittest.TestCase):
         absent = {'lead_id': row['lead_id'], 'count': 0, 'duplicate': False}
         audit = {'lead_ids': [row['lead_id']], 'source_artifact_ids': [2], 'items': [{'lead_id': row['lead_id'], 'before': absent, 'website': {'status': 'hold'}}]}
         with patch.object(repair, 'source_selection', return_value=[row]), patch.object(repair, 'website_audit', return_value={'status': 'hold', 'reason': 'unavailable'}), patch.object(repair, 'connect_imap', return_value=MagicMock()), patch.object(repair, 'find_drafts_folder', return_value='Drafts'), patch.object(repair, 'read_current', return_value=absent), patch.object(repair, 'append_and_verify') as append, patch.object(repair, 'remove_hold_draft') as remove:
-            result = repair.run(self.request('apply'), Path('.'), audit)
+            result = repair.run({**self.request('apply'), 'holds': {row['lead_id']: 'unavailable official website'}}, Path('.'), audit)
             self.assertEqual(result['absent_count'], 1)
             append.assert_not_called(); remove.assert_not_called()
 
@@ -32,7 +32,7 @@ class OpeningRemediationTests(unittest.TestCase):
         before = {'lead_id': row['lead_id'], 'count': 1, 'body': 'old'}
         audit = {'lead_ids': [row['lead_id']], 'source_artifact_ids': [2], 'items': [{'lead_id': row['lead_id'], 'before': before}]}
         with patch.object(repair, 'source_selection', return_value=[row]), patch.object(repair, 'connect_imap', return_value=MagicMock()), patch.object(repair, 'find_drafts_folder', return_value='Drafts'), patch.object(repair, 'read_current', return_value={**before, 'body': 'changed'}), patch.object(repair, 'append_and_verify') as append, patch.object(repair, 'remove_hold_draft') as remove:
-            result = repair.run(self.request('apply'), Path('.'), audit)
+            result = repair.run({**self.request('apply'), 'holds': {row['lead_id']: 'official proof unavailable'}}, Path('.'), audit)
             self.assertEqual(result['hold_count'], 1)
             self.assertEqual(len(result['blockers']), 1)
             append.assert_not_called(); remove.assert_not_called()

@@ -57,7 +57,7 @@ def audit_websites(rows, proofs=None):
 
 
 def validate_request(req):
-    allowed = {"mode", "source_archive_artifact_id", "source_artifact_ids", "offset", "limit", "audit_artifact_id", "observations"}
+    allowed = {"mode", "source_archive_artifact_id", "source_artifact_ids", "offset", "limit", "audit_artifact_id", "observations", "holds"}
     if not isinstance(req, dict) or set(req) - allowed:
         raise ValueError("unsupported opening-remediation fields")
     if req.get("mode") not in {"audit", "apply", "final"}:
@@ -156,11 +156,12 @@ def website_audit(row, override=None):
             errors.append(f"{url}: {type(exc).__name__}: {exc}")
     if override:
         observation = str(override.get("observation") or "")
+        evidence_quote = str(override.get("evidence_quote") or observation)
         for page in pages:
-            if page["url"] == override.get("source_url") and any(observation in b for b in page["prose"]):
+            if page["url"] == override.get("source_url") and any(evidence_quote in b for b in page["prose"]):
                 try:
                     return {"status": "ready", "proof": {"observation": observation,
-                        "opening": natural_opening(observation, page["language"]),
+                        "opening": natural_opening(observation, page["language"]), "evidence_quote": evidence_quote,
                         "source_url": page["url"], "language": page["language"]}, "pages": pages, "errors": errors}
                 except ValueError as exc:
                     errors.append(str(exc))
@@ -183,28 +184,31 @@ def run(req, source_root, audit=None):
     req = validate_request(req)
     rows = source_selection(req, source_root)
     ids = [r["lead_id"] for r in rows]
+    if (set(req.get("observations") or {}) | set(req.get("holds") or {})) - set(ids):
+        raise ValueError("decision escaped source slice")
+    if set(req.get("observations") or {}) & set(req.get("holds") or {}):
+        raise ValueError("ambiguous ready/hold decision")
     if audit and (audit.get("lead_ids") != ids or audit.get("source_artifact_ids") != req["source_artifact_ids"]):
         raise ValueError("immutable audit/source scope mismatch")
     mode = req["mode"]
     report = {"mode": mode, "lead_ids": ids, "source_artifact_ids": req["source_artifact_ids"],
         "offset": req["offset"], "audited_count": len(rows), "automatic_send": False,
-        "send_capability": "unavailable", "read_only": mode != "apply", "items": [],
-        "website_workers": _website_workers(len(rows))}
+        "send_capability": "unavailable", "read_only": mode != "apply", "items": [], "website_workers": _website_workers(len(rows))}
     if mode == "audit":
         website_results = audit_websites(rows)
     else:
         proofs = []
-        overrides = req.get("observations") or {}
         for index, row in enumerate(rows):
+            lead_id = row["lead_id"]
             baseline = audit["items"][index]
-            if baseline["lead_id"] != row["lead_id"]:
+            if baseline["lead_id"] != lead_id:
                 raise ValueError("audit order mismatch")
-            proofs.append(
-                overrides.get(row["lead_id"])
-                or baseline.get("website", {}).get("proof")
-            )
-        # Revalidate all current first-party evidence before touching IMAP.
-        # Network I/O is independent and safe to parallelize; mailbox mutation is not.
+            proof = (req.get("observations") or {}).get(lead_id)
+            if mode == "final":
+                proof = baseline.get("website", {}).get("proof")
+            elif not proof and lead_id not in (req.get("holds") or {}):
+                raise ValueError("explicit researched ready or hold decision required")
+            proofs.append(proof)
         website_results = audit_websites(rows, proofs)
     client = connect_imap()
     try:
@@ -233,9 +237,19 @@ def run(req, source_root, audit=None):
                         raise ValueError("audit order mismatch")
                     if mode == "apply" and current != baseline["before"]:
                         raise ValueError("draft changed since read-only audit; no mutation allowed")
+                    proof = (req.get("observations") or {}).get(lead_id)
+                    if mode == "final":
+                        proof = baseline.get("website", {}).get("proof")
+                    elif not proof and lead_id not in (req.get("holds") or {}):
+                        raise ValueError("explicit researched ready or hold decision required")
                     item["website"] = website_results[index]
+                    hold_reason = (req.get("holds") or {}).get(lead_id)
+                    if hold_reason:
+                        item["website"].update(status="hold", reason=hold_reason)
                     if current["count"] == 0:
-                        item["status"] = "absent"
+                        item["status"] = "hold" if mode == "final" and baseline.get("status") == "hold" else "absent"
+                        if item["status"] == "hold":
+                            item["reason"] = baseline.get("reason") or baseline.get("website", {}).get("reason")
                     elif current["count"] != 1 or current.get("actual_lead_id") != lead_id or current.get("review_status") != "contact-basis" or current.get("to", "").casefold() != row["email"].casefold():
                         raise ValueError("ambiguous or mismatched draft identity; mutation blocked")
                     elif item["website"]["status"] == "hold":
@@ -293,7 +307,7 @@ def main():
     audit = json.loads(Path(args.audit).read_text()) if args.audit else None
     report = run(json.loads(Path(args.request).read_text()), Path(args.source_root), audit)
     Path(args.report).write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
-    print(f"OPENING_REMEDIATION=green mode={report['mode']} audited={report['audited_count']} ready={report['ready_count']} hold={report['hold_count']} absent={report['absent_count']} changed={report['changed_count']} website_workers={report['website_workers']} automatic_send=false send_capability=unavailable")
+    print(f"OPENING_REMEDIATION=green mode={report['mode']} audited={report['audited_count']} ready={report['ready_count']} hold={report['hold_count']} absent={report['absent_count']} changed={report['changed_count']} automatic_send=false send_capability=unavailable")
     return 1 if report["blockers"] else 0
 
 
