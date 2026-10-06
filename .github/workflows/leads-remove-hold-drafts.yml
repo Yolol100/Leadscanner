@@ -181,8 +181,8 @@ jobs:
           total=0
           while IFS= read -r lead_id; do
             total=$((total + 1))
-            PYTHONPATH=scripts python3 scripts/myhost_remove_duplicate_draft.py               --lead-id "$lead_id"               --expected-file "results/expected/$lead_id.json"               --output "results/removal/$lead_id.json"               | tee "results/removal/$lead_id.txt"
-            grep -q '^MYHOST_DUPLICATE_REMOVAL=green ' "results/removal/$lead_id.txt"
+            PYTHONPATH=scripts python3 scripts/myhost_remove_hold_draft.py               --lead-id "$lead_id"               --output "results/removal/$lead_id.json"               | tee "results/removal/$lead_id.txt"
+            grep -q '^MYHOST_HOLD_REMOVAL=green ' "results/removal/$lead_id.txt"
             grep -q 'automatic_send=false' "results/removal/$lead_id.txt"
             grep -q 'smtp_send=not_available' "results/removal/$lead_id.txt"
           done < results/lead-ids.txt
