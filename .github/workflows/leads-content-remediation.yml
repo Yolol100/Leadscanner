@@ -10,7 +10,8 @@ permissions:
   issues: write
 
 concurrency:
-  group: ${{ (contains(github.event.issue.body, '"audit_only":true') || contains(github.event.issue.body, '"audit_only": true')) && 'leads-content-remediation-audit' || 'leads-content-remediation-write' }}
+  group: >-
+    ${{ (contains(github.event.issue.body, '"audit_only":true') || contains(github.event.issue.body, '"audit_only": true')) && 'leads-content-remediation-audit' || 'leads-content-remediation-write' }}
   cancel-in-progress: false
 
 jobs:
