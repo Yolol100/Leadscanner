@@ -233,6 +233,7 @@ class DraftTests(unittest.TestCase):
         updated = self.row()
         updated["body"] = "Nieuwe gecontroleerde versie."
         client.capabilities = (b"IMAP4REV1",)
+        client.live_capabilities = (b"IMAP4REV1",)
         with patch("myhost_draft.connect_imap", return_value=client):
             with self.assertRaisesRegex(RuntimeError, "UIDPLUS"):
                 create_drafts({"rows": [updated]})
