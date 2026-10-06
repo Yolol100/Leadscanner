@@ -9,7 +9,7 @@ import time
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from html import unescape
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urldefrag, urljoin, urlparse
 
 import aiohttp
 
@@ -65,9 +65,16 @@ def _retry_after_seconds(value: str | None) -> float:
             return 0.0
 
 
-def _safety_key(url: str) -> tuple[str, str, int | None]:
-    parsed = urlparse(url)
-    return parsed.scheme.casefold(), (parsed.hostname or "").casefold(), parsed.port
+def _cache_key(url: str) -> str:
+    return urldefrag(str(url or "").strip())[0]
+
+
+def _cacheable_fetch(value) -> bool:
+    try:
+        html, final, status, _headers = value
+    except (TypeError, ValueError):
+        return False
+    return bool(html and final and status and 200 <= int(status) < 400)
 
 
 class AsyncWebsiteAuditor:
@@ -85,7 +92,6 @@ class AsyncWebsiteAuditor:
         self._cache: dict[str, tuple[str | None, str | None, int | None, dict[str, str]]] = {}
         self._inflight: dict[str, asyncio.Task] = {}
         self._cache_lock = asyncio.Lock()
-        self._safety_cache: dict[tuple[str, str, int | None], bool] = {}
         self._host_penalty_until: dict[str, float] = {}
 
     async def __aenter__(self):
@@ -114,12 +120,10 @@ class AsyncWebsiteAuditor:
             self._session = None
 
     async def _is_public(self, url: str) -> bool:
-        key = _safety_key(url)
-        if key in self._safety_cache:
-            return self._safety_cache[key]
-        allowed = await asyncio.to_thread(is_public_http_url, url)
-        self._safety_cache[key] = bool(allowed)
-        return bool(allowed)
+        # Re-resolve before every outbound attempt. Do not cache DNS safety
+        # decisions: a transient resolver failure must not poison the run and
+        # a prior public answer must not weaken redirect/retry SSRF checks.
+        return bool(await asyncio.to_thread(is_public_http_url, url))
 
     async def _respect_host_penalty(self, url: str) -> None:
         host = (urlparse(url).hostname or "").casefold()
@@ -143,9 +147,9 @@ class AsyncWebsiteAuditor:
         original_domain = normalize_domain(current_url)
         last_status: int | None = None
         for _ in range(MAX_REDIRECTS + 1):
-            if not await self._is_public(current_url):
-                return None, current_url or None, last_status, {}
             for attempt in range(MAX_RETRIES + 1):
+                if not await self._is_public(current_url):
+                    return None, current_url or None, last_status, {}
                 await self._respect_host_penalty(current_url)
                 try:
                     async with self._session.get(current_url, allow_redirects=False) as response:
@@ -176,7 +180,8 @@ class AsyncWebsiteAuditor:
                             break
 
                         content_type = headers.get("content-type", "").casefold()
-                        if not (200 <= status < 400) or "text/html" not in content_type:
+                        is_html = "text/html" in content_type or "application/xhtml+xml" in content_type
+                        if not (200 <= status < 400) or not is_html:
                             return None, response_url or current_url, status, headers
 
                         chunks: list[bytes] = []
@@ -204,7 +209,7 @@ class AsyncWebsiteAuditor:
         return None, current_url or None, last_status, {}
 
     async def fetch_cached(self, url: str):
-        key = str(url or "").strip()
+        key = _cache_key(url)
         async with self._cache_lock:
             if key in self._cache:
                 return self._cache[key]
@@ -214,14 +219,18 @@ class AsyncWebsiteAuditor:
                 self._inflight[key] = task
         try:
             value = await task
-        finally:
-            if task.done():
-                async with self._cache_lock:
-                    if task.cancelled():
-                        self._inflight.pop(key, None)
-                    elif task.exception() is None:
-                        self._cache[key] = task.result()
-                        self._inflight.pop(key, None)
+        except BaseException:
+            async with self._cache_lock:
+                if self._inflight.get(key) is task:
+                    self._inflight.pop(key, None)
+            raise
+        async with self._cache_lock:
+            if self._inflight.get(key) is task:
+                self._inflight.pop(key, None)
+            # Cache only proven readable HTML. 4xx/5xx/timeouts/DNS failures
+            # are not durable negative evidence and must be retryable.
+            if _cacheable_fetch(value):
+                self._cache[key] = value
         return value
 
     async def audit_row(self, row: dict, override: dict | None = None, *, shard_semaphore: asyncio.Semaphore | None = None):
@@ -240,6 +249,7 @@ class AsyncWebsiteAuditor:
         verified_at = _iso_now()
         while urls and len(pages) < MAX_PAGES_PER_SITE:
             url = urls.pop(0)
+            requested_override_source = bool(override and source_url and url == source_url)
             if url in checked:
                 continue
             checked.add(url)
@@ -264,7 +274,7 @@ class AsyncWebsiteAuditor:
                 sentences = business_sentences(html)
                 page_sha256 = hashlib.sha256(html.encode()).hexdigest()
                 retained_blocks = blocks[:100]
-                if override and final == source_url:
+                if requested_override_source:
                     quote = str(override.get("evidence_quote") or override.get("observation") or "")
                     retained_blocks += [b for b in blocks if quote and quote in b and b not in retained_blocks]
                 pages.append({
@@ -277,7 +287,7 @@ class AsyncWebsiteAuditor:
                     "prose": retained_blocks,
                 })
 
-                if override and final == source_url:
+                if requested_override_source:
                     observation = str(override.get("observation") or "")
                     evidence_quote = str(override.get("evidence_quote") or observation)
                     if evidence_quote and any(evidence_quote in block for block in retained_blocks):
