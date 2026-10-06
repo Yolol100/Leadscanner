@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
@@ -18,6 +19,41 @@ from myhost_draft import (build_message, connect_imap, exact_message_matches, fe
     append_and_verify, select_folder)
 from myhost_remove_hold_draft import remove_hold_draft
 from observation_quality import business_sentences, first_party_prose, natural_opening
+
+
+DEFAULT_WEBSITE_WORKERS = 20
+MAX_WEBSITE_WORKERS = 24
+
+
+def _website_workers(count: int) -> int:
+    if count <= 0:
+        return 1
+    raw = os.environ.get("LEADSCANNER_WEBSITE_WORKERS", str(DEFAULT_WEBSITE_WORKERS))
+    try:
+        requested = int(raw)
+    except (TypeError, ValueError):
+        requested = DEFAULT_WEBSITE_WORKERS
+    return max(1, min(count, MAX_WEBSITE_WORKERS, requested))
+
+
+def _website_audit_job(args):
+    row, proof = args
+    return website_audit(row, proof)
+
+
+def audit_websites(rows, proofs=None):
+    rows = list(rows)
+    if proofs is None:
+        proofs = [None] * len(rows)
+    else:
+        proofs = list(proofs)
+    if len(proofs) != len(rows):
+        raise ValueError("website proof count mismatch")
+    if not rows:
+        return []
+    workers = _website_workers(len(rows))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        return list(pool.map(_website_audit_job, zip(rows, proofs)))
 
 
 def validate_request(req):
@@ -152,12 +188,24 @@ def run(req, source_root, audit=None):
     mode = req["mode"]
     report = {"mode": mode, "lead_ids": ids, "source_artifact_ids": req["source_artifact_ids"],
         "offset": req["offset"], "audited_count": len(rows), "automatic_send": False,
-        "send_capability": "unavailable", "read_only": mode != "apply", "items": []}
+        "send_capability": "unavailable", "read_only": mode != "apply", "items": [],
+        "website_workers": _website_workers(len(rows))}
     if mode == "audit":
-        with ThreadPoolExecutor(max_workers=8) as pool:
-            website_results = list(pool.map(website_audit, rows))
+        website_results = audit_websites(rows)
     else:
-        website_results = [None] * len(rows)
+        proofs = []
+        overrides = req.get("observations") or {}
+        for index, row in enumerate(rows):
+            baseline = audit["items"][index]
+            if baseline["lead_id"] != row["lead_id"]:
+                raise ValueError("audit order mismatch")
+            proofs.append(
+                overrides.get(row["lead_id"])
+                or baseline.get("website", {}).get("proof")
+            )
+        # Revalidate all current first-party evidence before touching IMAP.
+        # Network I/O is independent and safe to parallelize; mailbox mutation is not.
+        website_results = audit_websites(rows, proofs)
     client = connect_imap()
     try:
         folder = find_drafts_folder(client)
@@ -185,8 +233,7 @@ def run(req, source_root, audit=None):
                         raise ValueError("audit order mismatch")
                     if mode == "apply" and current != baseline["before"]:
                         raise ValueError("draft changed since read-only audit; no mutation allowed")
-                    proof = (req.get("observations") or {}).get(lead_id) or baseline.get("website", {}).get("proof")
-                    item["website"] = website_audit(row, proof) if proof else website_audit(row)
+                    item["website"] = website_results[index]
                     if current["count"] == 0:
                         item["status"] = "absent"
                     elif current["count"] != 1 or current.get("actual_lead_id") != lead_id or current.get("review_status") != "contact-basis" or current.get("to", "").casefold() != row["email"].casefold():
@@ -246,7 +293,7 @@ def main():
     audit = json.loads(Path(args.audit).read_text()) if args.audit else None
     report = run(json.loads(Path(args.request).read_text()), Path(args.source_root), audit)
     Path(args.report).write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
-    print(f"OPENING_REMEDIATION=green mode={report['mode']} audited={report['audited_count']} ready={report['ready_count']} hold={report['hold_count']} absent={report['absent_count']} changed={report['changed_count']} automatic_send=false send_capability=unavailable")
+    print(f"OPENING_REMEDIATION=green mode={report['mode']} audited={report['audited_count']} ready={report['ready_count']} hold={report['hold_count']} absent={report['absent_count']} changed={report['changed_count']} website_workers={report['website_workers']} automatic_send=false send_capability=unavailable")
     return 1 if report["blockers"] else 0
 
 
