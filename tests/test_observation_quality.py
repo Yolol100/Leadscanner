@@ -1,9 +1,11 @@
+import os
 import unittest
+from unittest.mock import patch
 
 from extract_public_contacts import extract_verified_observation
 from observation_quality import business_sentences, natural_opening, observation_rejection
 from prepare_growth_batch import build_opening, exact_nl_opening_from_existing
-from myhost_opening_remediation import replace_opening, validate_request
+from myhost_opening_remediation import _website_workers, replace_opening, validate_request
 
 
 class ObservationQualityTests(unittest.TestCase):
@@ -37,6 +39,15 @@ class ObservationQualityTests(unittest.TestCase):
         old = 'Hallo,\n\nIk zag op jullie website dat metadata.' + tail
         new = replace_opening(old, 'Ik zag op jullie website dat jullie lunch aanbieden.')
         self.assertEqual(new, 'Hallo,\n\nIk zag op jullie website dat jullie lunch aanbieden.' + tail)
+
+    def test_parallel_website_worker_budget_is_fast_but_bounded(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(_website_workers(100), 20)
+            self.assertEqual(_website_workers(3), 3)
+        with patch.dict(os.environ, {"LEADSCANNER_WEBSITE_WORKERS": "999"}, clear=True):
+            self.assertEqual(_website_workers(100), 24)
+        with patch.dict(os.environ, {"LEADSCANNER_WEBSITE_WORKERS": "bad"}, clear=True):
+            self.assertEqual(_website_workers(100), 20)
 
     def test_writes_require_bounded_source_and_immutable_audit(self):
         req = {"mode": "audit", "source_archive_artifact_id": 1, "source_artifact_ids": [1], "offset": 0, "limit": 100}
