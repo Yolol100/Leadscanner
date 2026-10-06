@@ -161,7 +161,8 @@ jobs:
                   "unchanged_count", "tailored_expected_count",
                   "fallback_expected_count", "legacy_value_count", "blocker_count", "blocker_reasons",
                   "changed_count", "already_expected_count", "verified_count",
-                  "readback", "uidplus_available",
+                  "readback", "uidplus_available", "multiappend_available",
+                  "multiappend_used", "multiappend_shards", "multiappend_shard_size",
               )
               public = {k: r[k] for k in keys if k in r}
               print("VALUE_SENTENCE_REMEDIATION=" + ("green" if os.environ.get("CODE") == "0" else "failed_closed"))
