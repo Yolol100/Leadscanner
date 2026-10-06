@@ -10,8 +10,12 @@ from myhost_draft import (
     fetch_message,
     find_drafts_folder,
     find_message_ids,
+    fetch_message_uid,
     normalize_text,
+    require_uidplus,
     select_folder,
+    uid_expunge_only,
+    uid_for_message_id,
 )
 from myhost_invalid_draft_baselines import (
     load_expected_versions,
@@ -54,11 +58,19 @@ def remove_growth_draft(lead_id: str, expected_versions: list[dict]) -> dict:
         if not any(version_matches_message(actual, lead_id, version) for version in expected_versions):
             raise RuntimeError(f"Current exact draft version mismatch immediately before removal for {lead_id}")
 
-        status, _ = client.store(ids[0], "+FLAGS", "(\\Deleted)")
-        if status != "OK":
-            raise RuntimeError(f"Could not mark duplicate draft deleted for {lead_id}")
-        if client.expunge()[0] != "OK":
-            raise RuntimeError(f"Could not expunge duplicate draft for {lead_id}")
+        require_uidplus(client, f"duplicate draft removal for {lead_id}")
+        target_uid = uid_for_message_id(client, current_ids[0])
+        uid_actual = fetch_message_uid(client, target_uid)
+        if not any(version_matches_message(uid_actual, lead_id, version) for version in expected_versions):
+            raise RuntimeError(
+                f"Current UID draft version mismatch immediately before removal for {lead_id}"
+            )
+        uid_expunge_only(
+            client,
+            folder,
+            target_uid,
+            operation=f"duplicate draft removal for {lead_id}",
+        )
 
         final_ids = find_message_ids(client, folder, lead_id)
         if final_ids:
