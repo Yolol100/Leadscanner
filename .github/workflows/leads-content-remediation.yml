@@ -11,7 +11,7 @@ permissions:
 
 concurrency:
   group: leads-content-remediation
-  cancel-in-progress: false
+  cancel-in-progress: true
   queue: max
 
 jobs:
