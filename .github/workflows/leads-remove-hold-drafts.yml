@@ -271,7 +271,7 @@ jobs:
           ISSUE_NUMBER: ${{ github.event.issue.number }}
         run: |
           set -euo pipefail
-          summary=$(python3 -c 'import json; r=json.load(open("results/summary.json")); print(f"requested={r[\"requested\"]} removed={r[\"removed\"]} already_absent={r[\"already_absent\"]} final=0")')
+          summary=$(python3 -c 'import json; r=json.load(open("results/summary.json")); print("requested={requested} removed={removed} already_absent={already_absent} final=0".format(**r))')
           gh issue comment "$ISSUE_NUMBER" --body "HOLD_DRAFT_REMOVAL=green $summary automatic_send=false smtp_send=not_available. Nothing was sent."
           gh issue close "$ISSUE_NUMBER" --reason completed
 
