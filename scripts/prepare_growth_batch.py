@@ -205,6 +205,26 @@ def infer_focus_from_observation(
     return None
 
 
+def build_value_sentence(observation: str, language: str) -> str:
+    # Only the verified first-party observation may drive this relevance line.
+    # Directory/Maps category hints are not evidence for this sentence.
+    focus = infer_focus_from_observation(observation, language, None)
+    if language == "en":
+        if focus:
+            return (
+                f"For {focus}, my Growth Subscription brings website, search visibility, "
+                "content, automation and hosting together with one fixed point of contact:"
+            )
+        return "My Growth Subscription covers several parts of your online presence:"
+
+    if focus:
+        return (
+            f"Voor {focus} brengt mijn Groeiabonnement website, vindbaarheid, content, "
+            "automatisering en hosting samen met één vast aanspreekpunt:"
+        )
+    return "Met mijn Groeiabonnement kan ik meerdere onderdelen van jullie online aanpak oppakken:"
+
+
 def _word_set(value: str) -> set[str]:
     return set(re.findall(r"[a-z0-9]+", value.casefold()))
 
@@ -428,6 +448,7 @@ def build_template_from_opening(
     price_min: int,
     price_max: int,
     variant_key: str | None = None,
+    value_sentence: str | None = None,
 ) -> str:
     company_label = short_company_name(company)
     clean_opening = naturalize_existing_opening(opening, language)
@@ -442,10 +463,11 @@ def build_template_from_opening(
     _ = variant_key
 
     if language == "en":
+        value_line = value_sentence or "My Growth Subscription covers several parts of your online presence:"
         return (
             "Hello,\n\n"
             f"{clean_opening}\n\n"
-            "My Growth Subscription covers several parts of your online presence:\n\n"
+            f"{value_line}\n\n"
             "• Website/webshop — improve or build new where needed\n"
             "• Search visibility — improve findability\n"
             "• Social content — relevant content\n"
@@ -459,10 +481,11 @@ def build_template_from_opening(
             "Regards,\nAndrew"
         )
 
+    value_line = value_sentence or "Met mijn Groeiabonnement kan ik meerdere onderdelen van jullie online aanpak oppakken:"
     return (
         "Hallo,\n\n"
         f"{clean_opening}\n\n"
-        "Met mijn Groeiabonnement kan ik meerdere onderdelen van jullie online aanpak oppakken:\n\n"
+        f"{value_line}\n\n"
         "• Website/webshop — verbeteren of nieuw maken waar nodig\n"
         "• Zoekbaarheid — beter vindbaar worden\n"
         "• Social content — passende content\n"
@@ -486,12 +509,14 @@ def build_template(
     category_hint: str | None = None,
 ) -> str:
     opening = build_opening(company, language, observation, category_hint)
+    value_sentence = build_value_sentence(observation, language)
     return build_template_from_opening(
         company,
         language,
         opening,
         price_min=price_min,
         price_max=price_max,
+        value_sentence=value_sentence,
     )
 
 
