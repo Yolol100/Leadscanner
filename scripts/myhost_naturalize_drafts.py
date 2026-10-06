@@ -17,12 +17,17 @@ from myhost_draft import (
     create_drafts,
     exact_message_matches,
     fetch_message,
+    fetch_message_uid,
     find_drafts_folder,
     find_message_ids,
     normalize_text,
     plain_body,
+    require_uidplus,
     select_folder,
+    uid_expunge_only,
+    uid_for_message_id,
 )
+from myhost_fast_mailbox import search_lead_uids
 from prepare_growth_batch import build_template_from_opening, naturalize_existing_opening
 
 
@@ -232,19 +237,24 @@ def _collapse_same_lead_duplicate(client, folder: str, lead_id: str) -> int:
     ]
     keep_id = matching[-1] if matching else ids[-1]
 
-    select_folder(client, folder, readonly=False)
+    select_folder(client, folder, readonly=True)
     current_ids = find_message_ids(client, folder, lead_id, ensure_selected=False)
     if current_ids != ids:
         raise RuntimeError(f"Duplicate draft set changed during cleanup for {lead_id}")
 
-    for message_id in current_ids:
-        if message_id == keep_id:
-            continue
-        status, _ = client.store(message_id, "+FLAGS", "(\\Deleted)")
-        if status != "OK":
-            raise RuntimeError(f"Could not mark duplicate physical draft deleted for {lead_id}")
-    if client.expunge()[0] != "OK":
-        raise RuntimeError(f"Could not expunge duplicate physical drafts for {lead_id}")
+    require_uidplus(client, f"duplicate physical draft cleanup for {lead_id}")
+    remove_uids = [
+        uid_for_message_id(client, message_id)
+        for message_id in current_ids
+        if message_id != keep_id
+    ]
+    for target_uid in remove_uids:
+        uid_expunge_only(
+            client,
+            folder,
+            target_uid,
+            operation=f"duplicate physical draft cleanup for {lead_id}",
+        )
 
     final_ids = find_message_ids(client, folder, lead_id)
     if len(final_ids) != 1:
@@ -618,7 +628,16 @@ def run_rewrite_slice(offset: int, limit: int) -> dict:
                 prepared.append((lead_id, old_id, row, expected))
 
         appended_leads: list[str] = []
+        old_uid_by_lead: dict[str, bytes] = {}
+        new_uid_by_lead: dict[str, bytes] = {}
+        old_removed_leads: set[str] = set()
         try:
+            if prepared:
+                require_uidplus(client, "naturalize rewrite slice")
+                select_folder(client, folder, readonly=True)
+                for lead_id, old_id, _, _ in prepared:
+                    old_uid_by_lead[lead_id] = uid_for_message_id(client, old_id)
+
             for lead_id, _, _, expected in prepared:
                 status, _ = client.append(
                     folder,
@@ -630,90 +649,65 @@ def run_rewrite_slice(offset: int, limit: int) -> dict:
                     raise RuntimeError(f"IMAP APPEND failed for {lead_id}")
                 appended_leads.append(lead_id)
 
-            if prepared:
-                select_folder(client, folder, readonly=True)
-                status, data = client.search(
-                    None,
-                    "HEADER",
-                    "X-Webactueel-Review-Required",
-                    '"contact-basis"',
-                )
-                if status != "OK":
-                    raise RuntimeError("Could not inventory appended Growth drafts")
-                after_append = _bulk_index_growth_headers(
-                    client,
-                    list((data[0] if data else b"").split()),
-                )
-                append_map: dict[str, list[bytes]] = {}
-                for lead_id, message_id in after_append:
-                    append_map.setdefault(lead_id, []).append(message_id)
-
-                new_ids: list[bytes] = []
-                expected_by_new_id: dict[bytes, EmailMessage] = {}
-                for lead_id, old_id, _, expected in prepared:
-                    ids = append_map.get(lead_id) or []
-                    candidates = [message_id for message_id in ids if message_id != old_id]
-                    if len(ids) != 2 or len(candidates) != 1:
-                        raise RuntimeError(
-                            f"Expected old+new draft after append for {lead_id}, found {len(ids)}"
-                        )
-                    new_id = candidates[0]
-                    new_ids.append(new_id)
-                    expected_by_new_id[new_id] = expected
-
-                appended = _bulk_fetch_messages(client, new_ids)
-                for new_id, expected in expected_by_new_id.items():
-                    if not exact_message_matches(appended[new_id], expected):
-                        raise RuntimeError("Appended draft exact readback mismatch")
-
-                select_folder(client, folder, readonly=False)
-                old_ids = [old_id for _, old_id, _, _ in prepared]
-                status, _ = client.store(
-                    b",".join(old_ids),
-                    "+FLAGS",
-                    "(\\Deleted)",
-                )
-                if status != "OK":
-                    raise RuntimeError("Could not mark old Growth drafts deleted")
-                if client.expunge()[0] != "OK":
-                    raise RuntimeError("Could not expunge old Growth drafts")
-        except Exception:
-            if appended_leads:
-                try:
-                    select_folder(client, folder, readonly=True)
-                    status, data = client.search(
-                        None,
-                        "HEADER",
-                        "X-Webactueel-Review-Required",
-                        '"contact-basis"',
+            for lead_id, old_id, _, expected in prepared:
+                old_uid = old_uid_by_lead[lead_id]
+                uids = search_lead_uids(client, folder, lead_id)
+                candidates = [uid for uid in uids if uid != old_uid]
+                if len(uids) != 2 or len(candidates) != 1:
+                    raise RuntimeError(
+                        f"Expected old+new draft after append for {lead_id}, found {len(uids)}"
                     )
-                    if status == "OK":
-                        current = _bulk_index_growth_headers(
-                            client,
-                            list((data[0] if data else b"").split()),
-                        )
-                        current_map: dict[str, list[bytes]] = {}
-                        for lead_id, message_id in current:
-                            current_map.setdefault(lead_id, []).append(message_id)
-                        old_by_lead = {lead_id: old_id for lead_id, old_id, _, _ in prepared}
-                        rollback_ids: list[bytes] = []
-                        for lead_id in appended_leads:
-                            old_id = old_by_lead[lead_id]
-                            rollback_ids.extend(
-                                message_id
-                                for message_id in current_map.get(lead_id, [])
-                                if message_id != old_id
-                            )
-                        if rollback_ids:
-                            select_folder(client, folder, readonly=False)
-                            client.store(
-                                b",".join(rollback_ids),
-                                "+FLAGS",
-                                "(\\Deleted)",
-                            )
-                            client.expunge()
-                except Exception:
-                    pass
+                new_uid = candidates[0]
+                new_uid_by_lead[lead_id] = new_uid
+                appended = fetch_message_uid(client, new_uid)
+                if not exact_message_matches(appended, expected):
+                    raise RuntimeError(f"Appended draft exact readback mismatch for {lead_id}")
+
+                current_old = fetch_message_uid(client, old_uid)
+                if not exact_message_matches(current_old, originals[old_id]):
+                    raise RuntimeError(f"Old draft changed before rewrite replacement for {lead_id}")
+
+            for lead_id, _, _, _ in prepared:
+                uid_expunge_only(
+                    client,
+                    folder,
+                    old_uid_by_lead[lead_id],
+                    operation=f"naturalize rewrite replacement for {lead_id}",
+                )
+                old_removed_leads.add(lead_id)
+        except Exception as exc:
+            rollback_errors: list[str] = []
+            for lead_id in appended_leads:
+                if lead_id in old_removed_leads:
+                    continue
+                new_uid = new_uid_by_lead.get(lead_id)
+                if new_uid is None:
+                    try:
+                        old_uid = old_uid_by_lead.get(lead_id)
+                        if old_uid is not None:
+                            uids = search_lead_uids(client, folder, lead_id)
+                            candidates = [uid for uid in uids if uid != old_uid]
+                            if len(candidates) == 1:
+                                new_uid = candidates[0]
+                    except Exception as locate_exc:
+                        rollback_errors.append(f"{lead_id}: locate rollback UID failed: {locate_exc}")
+                        continue
+                if new_uid is None:
+                    rollback_errors.append(f"{lead_id}: rollback UID unavailable")
+                    continue
+                try:
+                    uid_expunge_only(
+                        client,
+                        folder,
+                        new_uid,
+                        operation=f"rollback naturalize rewrite for {lead_id}",
+                    )
+                except Exception as rollback_exc:
+                    rollback_errors.append(f"{lead_id}: {rollback_exc}")
+            if rollback_errors:
+                raise RuntimeError(
+                    f"{exc}; rollback failures: {'; '.join(rollback_errors)}"
+                ) from exc
             raise
 
         # Final exact readback after the old copies are gone. This verifies all
