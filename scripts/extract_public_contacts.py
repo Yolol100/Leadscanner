@@ -570,7 +570,18 @@ def fetch_html(session, url: str, *, timeout: int = DEFAULT_TIMEOUT) -> tuple[st
                 current_url,
                 timeout=timeout,
                 allow_redirects=False,
-                headers={"User-Agent": "WebactueelLeadContactDiscovery/1.0 (+https://andrewbaeten.nl)"},
+                headers={
+                    "User-Agent": (
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/154.0.0.0 Safari/537.36"
+                    ),
+                    "Accept": (
+                        "text/html,application/xhtml+xml,"
+                        "application/xml;q=0.9,*/*;q=0.8"
+                    ),
+                    "Accept-Language": "nl-NL,nl;q=0.9,en;q=0.8",
+                },
                 stream=True,
             )
         except requests.RequestException:
