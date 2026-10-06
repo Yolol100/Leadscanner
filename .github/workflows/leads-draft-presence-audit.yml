@@ -1,0 +1,178 @@
+name: Leads Draft Presence Audit
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+concurrency:
+  group: draft-presence-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    if: >-
+      github.event.issue.user.login == github.repository_owner &&
+      startsWith(github.event.issue.title, '[growth-draft-presence-audit]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+
+      - name: Install runtime dependencies
+        run: python3 -m pip install --disable-pip-version-check -r requirements.txt
+
+      - name: Resolve bounded read-only request
+        id: request
+        env:
+          EVENT_PATH: ${{ github.event_path }}
+        run: |
+          set -euo pipefail
+          mkdir -p results/source
+          python3 - <<'PY'
+          import json, os, re
+          from pathlib import Path
+
+          event=json.loads(Path(os.environ["EVENT_PATH"]).read_text(encoding="utf-8"))
+          request=json.loads(event["issue"].get("body") or "{}")
+          allowed={"source_archive_artifact_id","source_artifact_ids","audited_lead_ids","audit_only"}
+          if not isinstance(request,dict) or set(request) != allowed:
+              raise SystemExit("request fields mismatch")
+          archive=int(request.get("source_archive_artifact_id") or 0)
+          aids=[int(x) for x in (request.get("source_artifact_ids") or [])]
+          leads=[str(x or "").strip() for x in (request.get("audited_lead_ids") or [])]
+          lead_re=re.compile(r"^growth-[0-9a-f]{20}$")
+          if archive <= 0:
+              raise SystemExit("invalid source archive")
+          if not 1 <= len(aids) <= 20 or len(set(aids)) != len(aids) or any(x <= 0 for x in aids):
+              raise SystemExit("invalid source_artifact_ids")
+          if not 1 <= len(leads) <= 100 or len(set(leads)) != len(leads) or any(not lead_re.fullmatch(x) for x in leads):
+              raise SystemExit("invalid audited_lead_ids")
+          if request.get("audit_only") is not True:
+              raise SystemExit("audit_only=true required")
+          Path("results/request.json").write_text(json.dumps(request,indent=2)+"\n",encoding="utf-8")
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a",encoding="utf-8") as out:
+              out.write(f"archive={archive}\n")
+          print(f"DRAFT_PRESENCE_REQUEST=green audited={len(leads)} read_only=true automatic_send=false")
+          PY
+
+      - name: Download audited source archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARCHIVE: ${{ steps.request.outputs.archive }}
+        run: |
+          set -euo pipefail
+          gh api -H "Accept: application/vnd.github+json" "/repos/$GITHUB_REPOSITORY/actions/artifacts/$ARCHIVE/zip" > results/source.zip
+          unzip -q results/source.zip -d results/source
+          test -d results/source/rewrite
+
+      - name: Audit current draft presence read-only
+        env:
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH=scripts python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from myhost_draft import connect_imap, fetch_message, find_drafts_folder, find_message_ids, normalize_text, select_folder
+
+          req=json.loads(Path("results/request.json").read_text(encoding="utf-8"))
+          source_ids=set()
+          for aid in req["source_artifact_ids"]:
+              p=Path(f"results/source/rewrite/{aid}/growth-batch.json")
+              if not p.is_file():
+                  raise SystemExit(f"source batch missing for artifact {aid}")
+              payload=json.loads(p.read_text(encoding="utf-8"))
+              source_ids.update(str(r.get("lead_id") or "") for r in (payload.get("rows") or []))
+          missing_source=[x for x in req["audited_lead_ids"] if x not in source_ids]
+          if missing_source:
+              raise SystemExit(f"lead missing from source archive: {missing_source[0]}")
+
+          present=[]
+          absent=[]
+          duplicate=[]
+          wrong_review=[]
+          client=connect_imap()
+          try:
+              folder=find_drafts_folder(client)
+              select_folder(client, folder, readonly=True)
+              for lead_id in req["audited_lead_ids"]:
+                  ids=find_message_ids(client, folder, lead_id, ensure_selected=False)
+                  if not ids:
+                      absent.append(lead_id)
+                      continue
+                  if len(ids) != 1:
+                      duplicate.append({"lead_id":lead_id,"count":len(ids)})
+                      continue
+                  msg=fetch_message(client, ids[0])
+                  review=normalize_text(msg.get("X-Webactueel-Review-Required",""))
+                  if review != "contact-basis":
+                      wrong_review.append(lead_id)
+                      continue
+                  present.append(lead_id)
+          finally:
+              try: client.logout()
+              except Exception: pass
+
+          report={
+              "audited":len(req["audited_lead_ids"]),
+              "present":len(present),
+              "present_lead_ids":present,
+              "absent":len(absent),
+              "absent_lead_ids":absent,
+              "duplicate":len(duplicate),
+              "duplicate_leads":duplicate,
+              "wrong_review":len(wrong_review),
+              "wrong_review_lead_ids":wrong_review,
+              "read_only":True,
+              "automatic_send":False,
+              "smtp_send":"not_available",
+          }
+          Path("results/report.json").write_text(json.dumps(report,indent=2)+"\n",encoding="utf-8")
+          print("DRAFT_PRESENCE_AUDIT=green "+json.dumps({k:report[k] for k in ("audited","present","absent","duplicate","wrong_review")},separators=(",",":"))+" read_only=true automatic_send=false")
+          PY
+
+      - name: Report exact result
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > results/comment.txt
+          import json
+          r=json.load(open("results/report.json",encoding="utf-8"))
+          print("DRAFT_PRESENCE_AUDIT=green")
+          print("DRAFT_PRESENCE_DETAIL="+json.dumps(r,separators=(",",":")))
+          print("Nothing was changed or sent.")
+          PY
+          gh issue comment "$ISSUE_NUMBER" --body-file results/comment.txt
+          gh issue close "$ISSUE_NUMBER" --reason completed
+
+      - name: Close failed request
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --body "Draft presence audit failed closed. Nothing was changed or sent."
+          gh issue close "$ISSUE_NUMBER" --reason completed
+
+      - name: Remove residue
+        if: always()
+        run: rm -rf results/source results/source.zip results/request.json results/report.json results/comment.txt
