@@ -253,6 +253,26 @@ def observation_is_low_signal(company: str, observation: str) -> bool:
         and re.search(r"\b(prima|mensen|temp|locatie)\b", low)
     ):
         return True
+    if any(
+        marker in low
+        for marker in (
+            "window.",
+            "document.",
+            "newsletter",
+            "nieuwsbrief",
+            "schrijf je in",
+            "meer lezen na deze video",
+            "vacature",
+            "solliciteer",
+            "werken bij",
+            "teamleider",
+            "bouwvak",
+            "tijdelijk gesloten",
+        )
+    ):
+        return True
+    if "©" in text:
+        return True
     if low in {"gelieve te wachten", "mysite", "wij zijn verhuisd..", "wij zijn verhuisd", "wie zijn wij?", "wie zijn wij", "🔒 beveiligde website", "beveiligde website", "staff member carousel"}:
         return True
     if re.search(r"reserved domain|under construction|coming soon|domainorder|geparkeerd|crypto casino|bitcoin casino|tempat main|window \d+|without code", low):
