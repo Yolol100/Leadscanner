@@ -57,8 +57,8 @@ jobs:
           if mode not in {"audit", "apply", "final"}:
               raise SystemExit("mode must be audit, apply or final")
           offset = int(request.get("offset") or 0)
-          limit = int(request.get("limit") or 450)
-          if offset < 0 or not 1 <= limit <= 450:
+          limit = int(request.get("limit") or 0)
+          if offset < 0 or not 0 <= limit <= 1500:
               raise SystemExit("offset/limit out of bounds")
 
           artifact = int(request.get("audit_artifact_id") or 0)
@@ -166,7 +166,7 @@ jobs:
               )
               public = {k: r[k] for k in keys if k in r}
               print("SHORT_FIRST_TOUCH_REMEDIATION=" + ("green" if os.environ.get("CODE") == "0" else "failed_closed"))
-              print("VALUE_SENTENCE_DETAIL=" + json.dumps(public, separators=(",", ":"), ensure_ascii=False))
+              print("SHORT_FIRST_TOUCH_DETAIL=" + json.dumps(public, separators=(",", ":"), ensure_ascii=False))
               if os.environ.get("MODE") == "audit" and os.environ.get("AUDIT_ARTIFACT_ID"):
                   print("AUDIT_ARTIFACT_ID=" + os.environ["AUDIT_ARTIFACT_ID"])
               print("Review-required status was preserved. Nothing was sent.")
