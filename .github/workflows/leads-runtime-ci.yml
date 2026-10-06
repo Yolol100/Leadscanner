@@ -103,11 +103,11 @@ jobs:
           assert analyze_body(body, subject)["already_short"] is True
 
           subject2, body2 = build_short_first_touch(
-              "Voorbeeld Showroom",
+              "Voorbeeld Verhuur",
               "nl",
-              "Wij hebben een showroom van 500 m2.",
+              "Wij verhuren 500 fietsen.",
           )
-          assert "500 m2" in body2
+          assert "500 fietsen" in body2
           assert analyze_body(body2, subject2)["already_short"] is True
           assert MAX_REMEDIATION >= 1128
           PY
