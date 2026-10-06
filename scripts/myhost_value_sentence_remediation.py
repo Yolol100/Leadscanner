@@ -175,8 +175,8 @@ def analyze_body(body: str) -> dict:
     rest = match.group("rest")
     language = "en" if greeting == "Hello," else "nl"
 
-    if not _valid_value_line(value, language):
-        raise ValueError("unsupported_value_sentence")
+    if not 3 <= len(value) <= 500:
+        raise ValueError("invalid_value_sentence_slot")
 
     lines = rest.splitlines()
     bullets = [line for line in lines if line.startswith("• ")]
@@ -282,6 +282,7 @@ def build_audit(offset: int, limit: int) -> tuple[dict, dict]:
         unchanged_count = 0
         tailored_count = 0
         fallback_count = 0
+        legacy_value_count = 0
 
         for lead_id, uid in selected:
             msg = fetch_message_uid(client, uid)
@@ -319,6 +320,9 @@ def build_audit(offset: int, limit: int) -> tuple[dict, dict]:
             unchanged_count += int(action == "unchanged")
             tailored_count += int(analysis["tailored"])
             fallback_count += int(not analysis["tailored"])
+            legacy_value_count += int(
+                not _valid_value_line(analysis["current_value"], analysis["language"])
+            )
             items.append(
                 {
                     "lead_id": lead_id,
@@ -350,6 +354,7 @@ def build_audit(offset: int, limit: int) -> tuple[dict, dict]:
             "unchanged_count": unchanged_count,
             "tailored_expected_count": tailored_count,
             "fallback_expected_count": fallback_count,
+            "legacy_value_count": legacy_value_count,
             "blocker_count": sum(blockers.values()),
             "blocker_reasons": dict(sorted(blockers.items())),
             "audit_eligible": not blockers,
