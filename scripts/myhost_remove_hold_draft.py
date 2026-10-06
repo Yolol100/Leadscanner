@@ -10,8 +10,12 @@ from myhost_draft import (
     fetch_message,
     find_drafts_folder,
     find_message_ids,
+    fetch_message_uid,
     normalize_text,
+    require_uidplus,
     select_folder,
+    uid_expunge_only,
+    uid_for_message_id,
 )
 
 
@@ -93,19 +97,36 @@ def remove_hold_draft(lead_id: str, *, expected_snapshot: dict | None = None) ->
             if current != expected_snapshot:
                 raise RuntimeError(f"Current hold draft changed since exact audit for {lead_id}")
 
-        status, _ = client.store(
-            current_ids[0],
-            "+FLAGS",
-            "(\\Deleted)",
+        require_uidplus(client, f"hold removal for {lead_id}")
+        target_uid = uid_for_message_id(client, current_ids[0])
+        uid_actual = fetch_message_uid(client, target_uid)
+        if normalize_text(uid_actual.get("X-Webactueel-Lead-ID", "")) != lead_id:
+            raise RuntimeError(
+                f"Current draft UID identity changed before hold removal for {lead_id}"
+            )
+        if normalize_text(uid_actual.get("X-Webactueel-Review-Required", "")) != "contact-basis":
+            raise RuntimeError(
+                f"Current draft UID review status changed before hold removal for {lead_id}"
+            )
+        if expected_snapshot is not None:
+            from myhost_draft import plain_body
+            uid_current = {
+                "lead_id": lead_id,
+                "to": normalize_text(uid_actual.get("To", "")),
+                "subject": normalize_text(uid_actual.get("Subject", "")),
+                "body": plain_body(uid_actual),
+                "review_status": normalize_text(uid_actual.get("X-Webactueel-Review-Required", "")),
+                "actual_lead_id": normalize_text(uid_actual.get("X-Webactueel-Lead-ID", "")),
+                "count": 1, "duplicate": False,
+            }
+            if uid_current != expected_snapshot:
+                raise RuntimeError(f"Current hold draft UID changed since exact audit for {lead_id}")
+        uid_expunge_only(
+            client,
+            folder,
+            target_uid,
+            operation=f"hold removal for {lead_id}",
         )
-        if status != "OK":
-            raise RuntimeError(
-                f"Could not mark hold draft deleted for {lead_id}"
-            )
-        if client.expunge()[0] != "OK":
-            raise RuntimeError(
-                f"Could not expunge hold draft for {lead_id}"
-            )
 
         final_ids = find_message_ids(client, folder, lead_id)
         if final_ids:
