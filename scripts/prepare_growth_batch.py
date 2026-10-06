@@ -233,6 +233,26 @@ def observation_is_low_signal(company: str, observation: str) -> bool:
         low,
     ):
         return True
+    if re.search(
+        r"\b(product toegevoegd|offertepagina|offerte aan te vragen|"
+        r"toegevoegd aan jouw offerte|winkelmand|shopping cart|checkout)\b",
+        low,
+    ):
+        return True
+    if (
+        len(_word_set(text)) <= 9
+        and re.match(
+            r"^(samen werken aan|samen bouwen aan|jouw talent|"
+            r"your talent|your journey)\b",
+            low,
+        )
+    ):
+        return True
+    if (
+        re.search(r"\b(dank|klantgericht|te klein)\b", low)
+        and re.search(r"\b(prima|mensen|temp|locatie)\b", low)
+    ):
+        return True
     if low in {"gelieve te wachten", "mysite", "wij zijn verhuisd..", "wij zijn verhuisd", "wie zijn wij?", "wie zijn wij", "🔒 beveiligde website", "beveiligde website", "staff member carousel"}:
         return True
     if re.search(r"reserved domain|under construction|coming soon|domainorder|geparkeerd|crypto casino|bitcoin casino|tempat main|window \d+|without code", low):
