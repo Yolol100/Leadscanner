@@ -311,7 +311,11 @@ def validate_short_first_touch(
         raise ValueError("subject_must_be_lowercase_without_exclamation")
     if len(body.split()) > 100:
         raise ValueError("body_must_be_max_100_words")
-    if "€" in body or re.search(r"\b(?:250|500)\b", body):
+    if (
+        "€" in body
+        or re.search(r"\b\d+(?:[.,]\d+)?\s*(?:euro|eur)\b", body, re.I)
+        or re.search(r"\b(?:per\s+maand|per\s+month|p/m|pm)\b", body, re.I)
+    ):
         raise ValueError("price_not_allowed_in_first_touch")
     if "• " in body:
         raise ValueError("feature_dump_not_allowed_in_first_touch")
