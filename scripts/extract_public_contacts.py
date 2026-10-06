@@ -162,6 +162,41 @@ def _clean_observation_candidate(raw: str) -> str | None:
         )
     ):
         return None
+    if re.search(
+        r"\b(function\s*\(|window\.|document\.|listeners\b|"
+        r"newsletter|nieuwsbrief|schrijf je in|subscribe|"
+        r"klik hier|meer lezen na deze video|"
+        r"vacatures?|solliciteer|werken bij|teamleider|"
+        r"bouwvak|tijdelijk gesloten|closed from|"
+        r"product toegevoegd|offertepagina|winkelmand|checkout)\b",
+        lowered,
+    ):
+        return None
+    if "©" in text or "all rights reserved" in lowered:
+        return None
+    if re.search(
+        r"\b(ik|persoonlijk|mijn)\b",
+        lowered,
+    ) and re.search(
+        r"\b(goed|beste|vriendelijk|geholpen|eten|restaurant|"
+        r"behandeling|dikke 10|terug kom)\b",
+        lowered,
+    ):
+        return None
+    if re.search(
+        r"\b(dank|klantgericht|te klein)\b",
+        lowered,
+    ) and re.search(
+        r"\b(prima|mensen|temp|locatie)\b",
+        lowered,
+    ):
+        return None
+    if re.match(
+        r"^(informatie over .*(adres|openingstijden)|"
+        r"meer lezen na|voor vragen of reserveringen)\b",
+        lowered,
+    ):
+        return None
     words = text.split()
     if not 4 <= len(words) <= 36:
         return None
