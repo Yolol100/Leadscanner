@@ -348,6 +348,30 @@ class ContentRemediationTests(unittest.TestCase):
         ):
             verify_existing_email(source)
 
+    def test_existing_email_accepts_verified_overture_fallback(self):
+        source = {
+            "lead_id": "growth-bbbbbbbbbbbbbbbbbbbb",
+            "website": "https://example.nl/",
+            "official_domain_hint": "example.nl",
+            "email": "info@example.nl",
+            "email_source_urls": [],
+        }
+        result = verify_existing_email(
+            source,
+            {
+                "email_source_type": "overture",
+                "email_source_ref": "ov-123",
+            },
+        )
+        self.assertEqual(
+            result["source_type"],
+            "overture",
+        )
+        self.assertEqual(
+            result["source_ref"],
+            "ov-123",
+        )
+
     @patch(
         "myhost_content_remediation.valid_email",
         return_value=True,
