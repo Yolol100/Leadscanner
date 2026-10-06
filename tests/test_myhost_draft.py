@@ -9,9 +9,11 @@ from myhost_draft import build_message, create_drafts, exact_message_matches
 
 
 class FakeIMAP:
-    def __init__(self):
+    def __init__(self, *, uidplus=True):
         self.messages = []
         self.deleted = set()
+        self.capabilities = (b"IMAP4REV1", b"UIDPLUS") if uidplus else (b"IMAP4REV1",)
+        self.append_calls = 0
 
     def list(self):
         return "OK", [b'(\\HasNoChildren \\Drafts) "/" "Drafts"']
@@ -31,22 +33,36 @@ class FakeIMAP:
         return "OK", [b" ".join(found)]
 
     def fetch(self, message_id, query):
+        if query == "(UID)":
+            return "OK", [(b"1 (UID " + bytes(message_id) + b")", b"")]
         return "OK", [(b"1 (RFC822)", self.messages[int(message_id) - 1])]
 
+    def uid(self, command, *args):
+        command = command.casefold()
+        uid = int(str(args[0]))
+        if command == "fetch":
+            return "OK", [(b"1 (UID " + str(uid).encode() + b" RFC822)", self.messages[uid - 1])]
+        if command == "store":
+            self.deleted.add(uid - 1)
+            return "OK", [b"STORE completed"]
+        if command == "expunge":
+            index = uid - 1
+            if index in self.deleted and 0 <= index < len(self.messages):
+                self.messages.pop(index)
+                self.deleted.clear()
+            return "OK", [b"UID EXPUNGE completed"]
+        raise AssertionError((command, args))
+
     def append(self, folder, flags, date_time, raw):
+        self.append_calls += 1
         self.messages.append(raw)
         return "OK", [b"APPEND completed"]
 
     def store(self, message_id, command, flags):
-        self.deleted.add(int(message_id) - 1)
-        return "OK", [b"STORE completed"]
+        raise AssertionError("sequence STORE must not be used")
 
     def expunge(self):
-        self.messages = [
-            raw for index, raw in enumerate(self.messages) if index not in self.deleted
-        ]
-        self.deleted.clear()
-        return "OK", [b"EXPUNGE completed"]
+        raise AssertionError("global EXPUNGE must not be used")
 
     def logout(self):
         return "BYE", [b"logout"]
@@ -166,6 +182,21 @@ class DraftTests(unittest.TestCase):
         _, expected = build_message(self.row())
         actual = BytesParser(policy=default).parsebytes(client.messages[0])
         self.assertTrue(exact_message_matches(actual, expected))
+
+    def test_changed_existing_draft_without_uidplus_blocks_before_append(self):
+        client = FakeIMAP()
+        with patch("myhost_draft.connect_imap", return_value=client):
+            create_drafts({"rows": [self.row()]})
+        baseline_calls = client.append_calls
+
+        updated = self.row()
+        updated["body"] = "Nieuwe gecontroleerde versie."
+        client.capabilities = (b"IMAP4REV1",)
+        with patch("myhost_draft.connect_imap", return_value=client):
+            with self.assertRaisesRegex(RuntimeError, "UIDPLUS"):
+                create_drafts({"rows": [updated]})
+        self.assertEqual(client.append_calls, baseline_calls)
+        self.assertEqual(len(client.messages), 1)
 
     def test_changed_existing_draft_is_safely_replaced(self):
         client = FakeIMAP()
