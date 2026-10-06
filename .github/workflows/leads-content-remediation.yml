@@ -10,7 +10,7 @@ permissions:
   issues: write
 
 concurrency:
-  group: leads-content-remediation
+  group: ${{ (contains(github.event.issue.body, '"audit_only":true') || contains(github.event.issue.body, '"audit_only": true')) && 'leads-content-remediation-audit' || 'leads-content-remediation-write' }}
   cancel-in-progress: false
   queue: max
 
