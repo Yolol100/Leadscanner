@@ -30,6 +30,7 @@ class FakeUIDIMAP:
         self.next_uid = 11
         self.uid_searches = 0
         self.append_calls = 0
+        self.tamper_new_uid_fetch = False
 
     def select(self, folder, readonly=True):
         return "OK", [str(len(self.messages)).encode()]
@@ -61,6 +62,10 @@ class FakeUIDIMAP:
                     payload = header.as_bytes(policy=default)
                 else:
                     payload = self.messages[uid]
+                    if self.tamper_new_uid_fetch and uid == str(self.next_uid - 1).encode():
+                        tampered = BytesParser(policy=default).parsebytes(payload)
+                        tampered.set_content("tampered")
+                        payload = tampered.as_bytes(policy=default)
                 rows.append((b"1 (UID " + uid + b" RFC822 {1}", payload))
             return "OK", rows
         if command == "store":
@@ -114,6 +119,32 @@ class FastMailboxTests(unittest.TestCase):
         self.assertEqual(list(client.messages), [b"11"])
         self.assertEqual(final_msg.get_content().strip(), "new")
         self.assertEqual(client.uid_searches, 3)
+
+    def test_replacement_readback_failure_rolls_back_new_uid(self):
+        lead_id = "growth-" + "f" * 20
+        client = FakeUIDIMAP(lead_id)
+        inventory = bulk_inventory_drafts(client, "Drafts", [lead_id])
+        current = current_from_inventory(inventory, lead_id)
+
+        expected = EmailMessage(policy=default)
+        expected["To"] = "info@example.nl"
+        expected["Subject"] = "Idee"
+        expected["X-Webactueel-Lead-ID"] = lead_id
+        expected["X-Webactueel-Review-Required"] = "contact-basis"
+        expected.set_content("new")
+
+        client.tamper_new_uid_fetch = True
+        with self.assertRaisesRegex(RuntimeError, "readback mismatch"):
+            replace_known_draft_and_verify(
+                client,
+                "Drafts",
+                lead_id,
+                uid_from_inventory(inventory, lead_id),
+                expected,
+                current,
+            )
+        self.assertEqual(list(client.messages), [b"10"])
+        self.assertFalse(client.deleted)
 
     def test_replacement_fails_before_append_without_uidplus(self):
         lead_id = "growth-" + "e" * 20
