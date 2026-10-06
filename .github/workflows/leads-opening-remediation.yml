@@ -11,7 +11,7 @@ permissions:
 
 concurrency:
   group: >-
-    ${{ contains(github.event.issue.body, '"mode":"apply"') && 'leads-content-remediation-write' || format('opening-audit-{0}', github.event.issue.number) }}
+    ${{ contains(github.event.issue.body, '"operation":"apply"') && 'leads-content-remediation-write' || format('opening-audit-{0}', github.event.issue.number) }}
   cancel-in-progress: false
   queue: max
 
@@ -30,22 +30,19 @@ jobs:
         with:
           python-version: '3.12'
       - run: python3 -m pip install --disable-pip-version-check -r requirements.txt
-      - name: Resolve bounded request
+      - name: Resolve encrypted bounded request
+        id: request
         env:
           EVENT_PATH: ${{ github.event_path }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
         run: |
           mkdir -p results/source results/audit
-          PYTHONPATH=scripts python3 - <<'PY'
-          import json, os
-          from pathlib import Path
-          from myhost_opening_remediation import validate_request
-          event = json.loads(Path(os.environ['EVENT_PATH']).read_text())
-          req = validate_request(json.loads(event['issue']['body']))
-          Path('results/request.json').write_text(json.dumps(req, ensure_ascii=False))
-          PY
+          PYTHONPATH=scripts python3 scripts/opening_transport.py resolve
       - name: Download immutable source and audit
+        if: steps.request.outputs.is_key == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
         run: |
           set -euo pipefail
           archive=$(python3 -c 'import json; print(json.load(open("results/request.json"))["source_archive_artifact_id"])')
@@ -55,9 +52,11 @@ jobs:
           if [ "$audit" != 0 ]; then
             gh api "/repos/$GITHUB_REPOSITORY/actions/artifacts/$audit/zip" > results/audit.zip
             unzip -q results/audit.zip -d results/audit
+            PYTHONPATH=scripts python3 scripts/opening_transport.py decode-audit
             test -f results/audit/opening-report.json
           fi
       - name: Bounded official-site audit or opening-only repair
+        if: steps.request.outputs.is_key == 'false'
         env:
           OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
           OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
@@ -70,30 +69,32 @@ jobs:
           set -euo pipefail
           args=()
           if test -f results/audit/opening-report.json; then args+=(--audit results/audit/opening-report.json); fi
-          PYTHONPATH=scripts python3 scripts/myhost_opening_remediation.py --request results/request.json --source-root results/source "${args[@]}" --report results/opening-report.json | tee results/opening-result.txt
+          PYTHONPATH=scripts python3 scripts/myhost_opening_remediation.py --request results/request.json --source-root results/source "${args[@]}" --report results/opening-report.json > results/private-result.txt
+      - name: Encrypt exact readback evidence
+        if: always() && steps.request.outputs.is_key == 'false'
+        env:
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+        run: PYTHONPATH=scripts python3 scripts/opening_transport.py publish
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
           name: opening-remediation-${{ github.event.issue.number }}
           path: |
-            results/opening-report.json
-            results/opening-result.txt
+            results/public-key.json
+            results/opening-report.enc.json
+            results/summary.json
           if-no-files-found: error
           retention-days: 7
-      - name: Close request with exact summary
+      - name: Close request with aggregate summary
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
         run: |
-          if test -f results/opening-report.json; then
-            python3 - <<'PY' > results/comment.txt
-          import json
-          r=json.load(open('results/opening-report.json'))
-          keys=['mode','audited_count','ready_count','hold_count','absent_count','changed_count','already_correct_count','removed_count','blockers','automatic_send','send_capability']
-          print('OPENING_RESULT=' + json.dumps({k:r.get(k) for k in keys},ensure_ascii=False))
-          print('Full exact mailbox snapshots and first-party evidence are in the run artifact. Nothing was sent.')
-          PY
+          if test -f results/summary.json; then
+            python3 -c 'import json; print("OPENING_RESULT=" + json.dumps(json.load(open("results/summary.json"))))' > results/comment.txt
+          elif test -f results/public-key.json; then
+            echo 'Encrypted transport public key available in run artifact. No mailbox operation performed.' > results/comment.txt
           else
             echo 'Opening remediation blocked before a complete report. Nothing was sent.' > results/comment.txt
           fi
