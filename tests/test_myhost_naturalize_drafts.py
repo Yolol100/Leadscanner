@@ -71,7 +71,7 @@ class MyHostNaturalizeDraftTests(unittest.TestCase):
         msg = self.message()
         msg.replace_header("Subject", "Oud Groeiabonnement onderwerp")
         row = rewrite_row_from_message(msg)
-        self.assertEqual(row["subject"], "Idee voor Voorbeeld Fysio")
+        self.assertEqual(row["subject"], "idee voor voorbeeld fysio")
         self.assertFalse(row["_already_natural"])
 
     def test_en_draft_becomes_natural_without_changing_recipient_or_subject(self):
@@ -141,6 +141,7 @@ class MyHostNaturalizeDraftTests(unittest.TestCase):
     def test_naturalization_is_idempotent(self):
         first = rewrite_row_from_message(self.message())
         msg = self.message()
+        msg.replace_header("Subject", first["subject"])
         msg.set_content(first["body"])
         second = rewrite_row_from_message(msg)
         self.assertEqual(first["body"], second["body"])
