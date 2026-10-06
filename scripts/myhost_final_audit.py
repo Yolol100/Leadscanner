@@ -18,7 +18,7 @@ from myhost_draft import (
     plain_body,
     select_folder,
 )
-from prepare_growth_batch import prepare_batch, short_company_name, subject_label_for_company
+from prepare_growth_batch import prepare_batch, short_company_name, subject_for_company, subject_label_for_company, validate_short_first_touch
 
 
 def norm(value: object) -> str:
@@ -140,63 +140,54 @@ def audit_rows(
 
         body = str(row.get("body") or "")
         subject = str(row.get("subject") or "")
-        bullets = [line for line in body.splitlines() if line.startswith("• ")]
-        if len(bullets) != 6:
-            failures.append(f"{lead_id}: expected six bullets, found {len(bullets)}")
-        if body.count("€250–€500") != 1:
-            failures.append(f"{lead_id}: price text count mismatch")
-        if re.search(r"\b\d+\s*%", body):
-            failures.append(f"{lead_id}: automation percentage found")
-        company_label = str(row.get("copy_company_label") or short_company_name(str(row.get("company") or ""))).strip()
+        proof_text = str(row.get("verified_social_proof") or "").strip() or None
+        proof_source_url = str(row.get("verified_social_proof_source_url") or "").strip() or None
+        try:
+            validate_short_first_touch(
+                subject,
+                body,
+                proof_text=proof_text,
+                proof_source_url=proof_source_url,
+            )
+        except ValueError as exc:
+            failures.append(f"{lead_id}: short first-touch validation failed: {exc}")
+
+        company_label = str(
+            row.get("copy_company_label")
+            or short_company_name(str(row.get("company") or ""))
+        ).strip()
         subject_label = str(
             row.get("copy_subject_label")
             or subject_label_for_company(str(row.get("company") or ""), language)
         ).strip()
-        if not company_label or company_label not in body:
-            failures.append(f"{lead_id}: personalized company label missing from body")
-        if not subject_label or subject_label not in subject:
+        if not subject_label or subject_label.casefold() not in subject.casefold():
             failures.append(f"{lead_id}: personalized company label missing from subject")
-        if "Op jullie website staat" in body or "Your website highlights" in body:
-            failures.append(f"{lead_id}: old vague opening survived")
+        expected_subject = subject_for_company(str(row.get("company") or ""), language)
+        if subject != expected_subject:
+            failures.append(f"{lead_id}: subject mismatch")
+
         if language == "nl":
-            expected_subject = f"Idee voor {company_label}"
-            if subject != expected_subject:
-                failures.append(f"{lead_id}: NL subject mismatch")
-            if not body.startswith("Hallo,\n\nIk zag op jullie website dat "):
-                failures.append(f"{lead_id}: NL verified-fact opening mismatch")
-            if body.count("Zal ik vrijblijvend een voorbeeld design maken voor ") != 1:
+            if not body.startswith("Hallo,\n\n") and not re.match(r"^Hallo [^\n]+,\n\n", body):
+                failures.append(f"{lead_id}: NL greeting mismatch")
+            if "Wat me opviel:" not in body:
+                failures.append(f"{lead_id}: NL verified observation line missing")
+            if body.count(
+                "Zal ik vrijblijvend een voorbeeld laten zien hoe dit er voor jullie uit kan zien?"
+            ) != 1:
                 failures.append(f"{lead_id}: NL CTA count mismatch")
-            if "Dan kunnen jullie eerst bekijken of de richting interessant is." not in body:
-                failures.append(f"{lead_id}: NL CTA wording mismatch")
-            for pattern, label in (
-                (r"(?im)^• .*website", "website/webshop"),
-                (r"(?im)^• .*(vindbaar|zoekbaarheid)", "zoekbaarheid"),
-                (r"(?im)^• .*social", "social content"),
-                (r"(?im)^• .*automat", "automatisering"),
-                (r"(?im)^• .*hosting", "hosting"),
-                (r"(?im)^• .*(aanspreekpunt|contactpersoon|afstemming|direct contact)", "vast contact"),
-            ):
-                if not re.search(pattern, body):
-                    failures.append(f"{lead_id}: NL audited copy contract missing {label}")
             if "Geen interesse? Laat het gerust weten." not in body:
                 failures.append(f"{lead_id}: NL easy-no missing")
             if not body.endswith("Groet,\nAndrew"):
                 failures.append(f"{lead_id}: NL signature mismatch")
         elif language == "en":
-            if body.count("Would you like me to make a no-obligation example design for ") != 1:
+            if not body.startswith("Hello,\n\n") and not re.match(r"^Hello [^\n]+,\n\n", body):
+                failures.append(f"{lead_id}: EN greeting mismatch")
+            if "What stood out:" not in body:
+                failures.append(f"{lead_id}: EN verified observation line missing")
+            if body.count(
+                "Would you like me to show you a no-obligation example of what this could look like for you?"
+            ) != 1:
                 failures.append(f"{lead_id}: EN CTA count mismatch")
-            if "so you can first see whether the direction is relevant?" not in body:
-                failures.append(f"{lead_id}: EN CTA wording mismatch")
-            for pattern, label in (
-                (r"(?im)^• .*website", "website/webshop"),
-                (r"(?im)^• .*(find|search visibility)", "search visibility"),
-                (r"(?im)^• .*social", "social content"),
-                (r"(?im)^• .*automat", "automation"),
-                (r"(?im)^• .*hosting", "hosting"),
-                (r"(?im)^• .*(point of contact|coordination|direct contact)", "fixed contact"),
-            ):
-                if not re.search(pattern, body):
-                    failures.append(f"{lead_id}: EN audited copy contract missing {label}")
             if "Not interested? Just let me know." not in body:
                 failures.append(f"{lead_id}: EN easy-no missing")
             if not body.endswith("Regards,\nAndrew"):
