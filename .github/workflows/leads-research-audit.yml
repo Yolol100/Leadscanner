@@ -1,0 +1,248 @@
+name: Leads Research Audit
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+concurrency:
+  group: leads-research-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  research:
+    if: >-
+      github.event.issue.user.login == github.repository_owner &&
+      startsWith(github.event.issue.title, '[growth-research-audit]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+
+      - name: Install runtime dependencies
+        run: python3 -m pip install --disable-pip-version-check -r requirements.txt
+
+      - name: Resolve bounded research request
+        id: request
+        env:
+          EVENT_PATH: ${{ github.event_path }}
+        run: |
+          set -euo pipefail
+          mkdir -p results/source
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          event = json.loads(
+              Path(os.environ["EVENT_PATH"]).read_text(
+                  encoding="utf-8"
+              )
+          )
+          request = json.loads(
+              event["issue"].get("body") or "{}"
+          )
+          audited = request.get(
+              "audited_lead_ids"
+          ) or []
+          if not isinstance(request, dict):
+              raise SystemExit(
+                  "request must be object"
+              )
+          if (
+              not 1 <= len(audited) <= 100
+              or len(set(audited)) != len(audited)
+          ):
+              raise SystemExit(
+                  "audited_lead_ids must contain 1-100 unique leads"
+              )
+          if (
+              request.get("audit_only") is not True
+              or request.get(
+                  "research_unresolved"
+              ) is not True
+          ):
+              raise SystemExit(
+                  "research audit requires audit_only=true and research_unresolved=true"
+              )
+          if (
+              request.get("rewrites")
+              or request.get("replacements")
+              or request.get("holds")
+          ):
+              raise SystemExit(
+                  "research audit accepts unresolved leads only"
+              )
+          archive = int(
+              request.get(
+                  "source_archive_artifact_id"
+              )
+              or 0
+          )
+          if archive <= 0:
+              raise SystemExit(
+                  "invalid source archive"
+              )
+          Path(
+              "results/request.json"
+          ).write_text(
+              json.dumps(
+                  request,
+                  indent=2,
+                  ensure_ascii=False,
+              )
+              + "\n",
+              encoding="utf-8",
+          )
+          with Path(
+              os.environ["GITHUB_OUTPUT"]
+          ).open("a", encoding="utf-8") as out:
+              out.write(
+                  f"archive={archive}\n"
+              )
+          PY
+
+      - name: Download source archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARCHIVE: ${{ steps.request.outputs.archive }}
+        run: |
+          set -euo pipefail
+          gh api -H "Accept: application/vnd.github+json" "/repos/$GITHUB_REPOSITORY/actions/artifacts/$ARCHIVE/zip" > results/source.zip
+          unzip -q results/source.zip -d results/source
+          test -d results/source/rewrite
+
+      - name: Research unresolved leads read-only
+        run: |
+          set -euo pipefail
+          PYTHONPATH=scripts python3 scripts/myhost_content_remediation.py             --request results/request.json             --source-root results/source             --config config/growth-subscription.json             --report results/report.json             | tee results/result.txt
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r = json.loads(
+              Path(
+                  "results/report.json"
+              ).read_text(encoding="utf-8")
+          )
+          if (
+              r.get("read_only") is not True
+              or int(
+                  r.get(
+                      "final_exact_changed_count"
+                  )
+                  or 0
+              )
+              != 0
+          ):
+              raise SystemExit(
+                  "read-only boundary failed"
+              )
+          if (
+              r.get("automatic_send") is not False
+              or r.get("send_capability")
+              != "unavailable"
+          ):
+              raise SystemExit(
+                  "send boundary failed"
+              )
+          if int(
+              r.get("unassessed_count")
+              or 0
+          ) != 0:
+              raise SystemExit(
+                  "unassessed leads remain"
+              )
+          print(
+              "RESEARCH_AUDIT_BOUNDARY=green"
+          )
+          PY
+
+      - name: Report exact result
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          python3 - <<'PY' > results/comment.txt
+          import json
+          from pathlib import Path
+          r = json.loads(
+              Path(
+                  "results/report.json"
+              ).read_text(encoding="utf-8")
+          )
+          detail = {
+              "audited": r.get(
+                  "audited_count"
+              ),
+              "ready": r.get(
+                  "canonical_ready_count"
+              ),
+              "email_verified": r.get(
+                  "current_email_verified_count"
+              ),
+              "research": r.get(
+                  "needs_research_count"
+              ),
+              "needs_research": r.get(
+                  "needs_research"
+              ),
+              "holds": r.get(
+                  "hold_count"
+              ),
+              "hold_lead_ids": r.get(
+                  "hold_lead_ids"
+              ),
+              "auto_researched": r.get(
+                  "auto_researched_count"
+              ),
+              "auto_research_holds": r.get(
+                  "auto_research_hold_count"
+              ),
+              "auto_research_outcomes": r.get(
+                  "auto_research_outcomes"
+              ),
+              "unassessed": r.get(
+                  "unassessed_count"
+              ),
+              "automatic_send": False,
+          }
+          print("RESEARCH_AUDIT=green")
+          print(
+              "RESEARCH_AUDIT_DETAIL="
+              + json.dumps(
+                  detail,
+                  ensure_ascii=False,
+                  separators=(",", ":"),
+              )
+          )
+          print(
+              "Nothing was changed or sent."
+          )
+          PY
+          gh issue comment "$ISSUE_NUMBER" --body-file results/comment.txt
+          gh issue close "$ISSUE_NUMBER" --reason completed
+
+      - name: Close failed request
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --body "Research audit failed closed. Nothing was changed or sent."
+          gh issue close "$ISSUE_NUMBER" --reason completed
+
+      - name: Remove research residue
+        if: always()
+        run: rm -rf results/source results/source.zip results/request.json results/comment.txt
