@@ -26,11 +26,33 @@ class ContentRemediationTests(unittest.TestCase):
             "holds": [],
         }
 
-    def test_requires_exactly_100_unique_ids(self):
+    def test_allows_partial_batch_up_to_100_unique_ids(self):
         request = self.base_request()
         request["audited_lead_ids"] = (
-            request["audited_lead_ids"][:-1]
+            request["audited_lead_ids"][:52]
         )
+        validate_request(request)
+
+    def test_rejects_empty_batch(self):
+        request = self.base_request()
+        request["audited_lead_ids"] = []
+        with self.assertRaises(ValueError):
+            validate_request(request)
+
+    def test_rejects_more_than_100_ids(self):
+        request = self.base_request()
+        request["audited_lead_ids"].append(
+            "growth-ffffffffffffffffffff"
+        )
+        with self.assertRaises(ValueError):
+            validate_request(request)
+
+    def test_rejects_duplicate_ids(self):
+        request = self.base_request()
+        request["audited_lead_ids"] = [
+            request["audited_lead_ids"][0],
+            request["audited_lead_ids"][0],
+        ]
         with self.assertRaises(ValueError):
             validate_request(request)
 
