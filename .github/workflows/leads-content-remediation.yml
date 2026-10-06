@@ -70,6 +70,7 @@ jobs:
               "replacements",
               "holds",
               "refresh_verified_source_rows",
+              "research_unresolved",
               "audit_only",
           }
           unknown = set(request) - allowed
@@ -133,6 +134,7 @@ jobs:
               f"replacements={len(request.get('replacements') or {})} "
               f"holds={len(request.get('holds') or [])} "
               f"refresh_verified_source_rows={str(bool(request.get('refresh_verified_source_rows', False))).lower()} "
+              f"research_unresolved={str(bool(request.get('research_unresolved', False))).lower()} "
               f"audit_only={str(bool(request.get('audit_only', False))).lower()}"
           )
           PY
@@ -323,7 +325,7 @@ jobs:
             cat results/content-remediation.txt
             if python3 -c 'import json,sys; r=json.load(open("results/content-remediation-report.json", encoding="utf-8")); sys.exit(0 if r.get("audit_only") else 1)'; then
               echo
-              python3 -c 'import json; r=json.load(open("results/content-remediation-report.json", encoding="utf-8")); print("CONTENT_AUDIT_DETAIL=" + json.dumps({"ready": r.get("canonical_ready_count"), "email_verified": r.get("current_email_verified_count"), "research": r.get("needs_research_count"), "needs_research": r.get("needs_research"), "holds": r.get("hold_count"), "hold_lead_ids": r.get("hold_lead_ids"), "unassessed": r.get("unassessed_count")}, ensure_ascii=False, separators=(",", ":")))'
+              python3 -c 'import json; r=json.load(open("results/content-remediation-report.json", encoding="utf-8")); print("CONTENT_AUDIT_DETAIL=" + json.dumps({"ready": r.get("canonical_ready_count"), "email_verified": r.get("current_email_verified_count"), "research": r.get("needs_research_count"), "needs_research": r.get("needs_research"), "holds": r.get("hold_count"), "hold_lead_ids": r.get("hold_lead_ids"), "auto_researched": r.get("auto_researched_count"), "auto_research_holds": r.get("auto_research_hold_count"), "auto_research_outcomes": r.get("auto_research_outcomes"), "unassessed": r.get("unassessed_count")}, ensure_ascii=False, separators=(",", ":")))'
             fi
             echo
             echo "Official-site content audit/remediation completed. Nothing was sent."
