@@ -145,27 +145,124 @@ def _visible_text(html: str) -> str:
     return f" {_normalize_text(unescape(text))} "
 
 
-def extract_verified_observation(html: str) -> str | None:
-    candidates: list[str] = []
-    for pattern in (
-        r"(?is)<h1\b[^>]*>(.*?)</h1>",
-        r"(?is)<title\b[^>]*>(.*?)</title>",
+def _clean_observation_candidate(raw: str) -> str | None:
+    text = re.sub(r"(?s)<[^>]+>", " ", raw or "")
+    text = re.sub(r"\s+", " ", unescape(text)).strip(" \t\r\n-|")
+    lowered = text.casefold()
+    if not text:
+        return None
+    if any(
+        term in lowered
+        for term in (
+            "cookie",
+            "privacy policy",
+            "privacybeleid",
+            "algemene voorwaarden",
+            "terms and conditions",
+        )
     ):
-        match = re.search(pattern, html or "")
-        if match:
-            candidates.append(match.group(1))
+        return None
+    words = text.split()
+    if not 4 <= len(words) <= 36:
+        return None
+    if not 18 <= len(text) <= 240:
+        return None
+    return text
 
-    for raw in candidates:
-        text = re.sub(r"(?s)<[^>]+>", " ", raw)
-        text = re.sub(r"\s+", " ", unescape(text)).strip(" \t\r\n-|")
+
+def extract_verified_observation(html: str) -> str | None:
+    candidates: list[tuple[int, str]] = []
+
+    for tag in re.findall(r"(?is)<meta\b[^>]*>", html or ""):
+        kind = re.search(
+            r"""(?is)(?:name|property)\s*=\s*["']([^"']+)["']""",
+            tag,
+        )
+        content = re.search(
+            r"""(?is)content\s*=\s*["']([^"']+)["']""",
+            tag,
+        )
+        if not kind or not content:
+            continue
+        label = kind.group(1).strip().casefold()
+        if label not in {"description", "og:description"}:
+            continue
+        cleaned = _clean_observation_candidate(content.group(1))
+        if cleaned:
+            candidates.append((40, cleaned))
+
+    for raw in re.findall(
+        r"(?is)<p\b[^>]*>(.*?)</p>",
+        html or "",
+    )[:40]:
+        cleaned = _clean_observation_candidate(raw)
+        if cleaned:
+            candidates.append((30, cleaned))
+
+    for priority, pattern in (
+        (20, r"(?is)<h1\b[^>]*>(.*?)</h1>"),
+        (10, r"(?is)<title\b[^>]*>(.*?)</title>"),
+    ):
+        for match in re.finditer(pattern, html or ""):
+            cleaned = _clean_observation_candidate(
+                match.group(1)
+            )
+            if cleaned:
+                candidates.append(
+                    (priority, cleaned)
+                )
+
+    if not candidates:
+        return None
+
+    def score(item: tuple[int, str]) -> tuple[int, int, int]:
+        priority, text = item
+        word_count = len(text.split())
+        specificity = 0
         lowered = text.casefold()
-        if (
-            3 <= len(text.split()) <= 24
-            and 8 <= len(text) <= 160
-            and not any(term in lowered for term in ("cookie", "privacy policy", "privacybeleid"))
+        if 7 <= word_count <= 28:
+            specificity += 8
+        if 40 <= len(text) <= 200:
+            specificity += 6
+        if any(
+            marker in lowered
+            for marker in (
+                " biedt ",
+                " verkoopt ",
+                " gespecialiseerd ",
+                " restaurant ",
+                " winkel ",
+                " service ",
+                " diensten ",
+                " sinds ",
+                " gevestigd ",
+                " locatie ",
+                " assortiment ",
+                " catering ",
+                " webshop ",
+                " offers ",
+                " serves ",
+                " specializes ",
+                " located ",
+            )
         ):
-            return text
-    return None
+            specificity += 8
+        if lowered.startswith(
+            (
+                "welkom bij ",
+                "welkom op ",
+                "welcome to ",
+                "home ",
+            )
+        ):
+            specificity -= 10
+        return (
+            priority + specificity,
+            min(len(text), 200),
+            word_count,
+        )
+
+    return max(candidates, key=score)[1]
 
 
 def normalize_domain(value: object) -> str | None:
