@@ -18,6 +18,7 @@ from myhost_draft import (
 )
 
 HEADER_FETCH = "(BODY.PEEK[HEADER.FIELDS (X-Webactueel-Lead-ID)])"
+FULL_FETCH = "(UID RFC822)"
 HEADER_CHUNK = 250
 
 
@@ -37,6 +38,37 @@ def snapshot_message(msg, lead_id: str) -> dict:
 def _uid_from_meta(meta: bytes) -> bytes | None:
     match = re.search(rb"\bUID\s+(\d+)\b", meta or b"")
     return match.group(1) if match else None
+
+
+def _bulk_fetch_uid_messages(client, uids) -> dict[bytes, object]:
+    ordered = list(dict.fromkeys(uids))
+    messages = {}
+    for start in range(0, len(ordered), HEADER_CHUNK):
+        chunk = ordered[start:start + HEADER_CHUNK]
+        if not chunk:
+            continue
+        uid_set = b",".join(chunk).decode("ascii")
+        status, rows = client.uid("fetch", uid_set, FULL_FETCH)
+        if status != "OK":
+            raise RuntimeError("Could not bulk-fetch growth draft messages")
+        for item in rows or []:
+            if not (
+                isinstance(item, tuple)
+                and len(item) >= 2
+                and isinstance(item[1], (bytes, bytearray))
+            ):
+                continue
+            meta = bytes(item[0]) if isinstance(item[0], (bytes, bytearray)) else str(item[0]).encode()
+            uid = _uid_from_meta(meta)
+            if uid is None:
+                raise RuntimeError("Bulk full-message readback omitted UID metadata")
+            messages[uid] = BytesParser(policy=default).parsebytes(bytes(item[1]))
+    missing = [uid for uid in ordered if uid not in messages]
+    if missing:
+        raise RuntimeError(
+            f"Bulk full-message readback missing {len(missing)} requested UID(s)"
+        )
+    return messages
 
 
 def search_lead_uids(client, folder: str, lead_id: str, *, ensure_selected: bool = True) -> list[bytes]:
@@ -81,10 +113,17 @@ def bulk_inventory_drafts(client, folder: str, lead_ids) -> dict[str, dict]:
             if lead_id in targets:
                 matched[lead_id].append(uid)
 
+    matched_uids = [
+        uid
+        for lead_id in ordered
+        for uid in matched[lead_id]
+    ]
+    messages_by_uid = _bulk_fetch_uid_messages(client, matched_uids)
+
     for lead_id in ordered:
         uids = matched[lead_id]
         inventory[lead_id]["uids"] = list(uids)
-        inventory[lead_id]["messages"] = [fetch_message_uid(client, uid) for uid in uids]
+        inventory[lead_id]["messages"] = [messages_by_uid[uid] for uid in uids]
     return inventory
 
 
