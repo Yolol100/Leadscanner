@@ -44,7 +44,18 @@ class PublicContactDiscoveryTests(unittest.TestCase):
             "Ambachtelijke bakkerij voor Den Haag",
         )
 
-    def test_prefers_meta_description_over_generic_heading(self):\n        html = (\n            '<html><head><meta name="description" '\n            'content="Voorbeeld verkoopt fietsen en biedt onderhoud in Delft."></head>'\n            '<body><h1>Welkom bij Voorbeeld</h1></body></html>'\n        )\n        self.assertEqual(\n            extract_verified_observation(html),\n            "Voorbeeld verkoopt fietsen en biedt onderhoud in Delft.",\n        )\n\n    def test_extracts_visible_or_mailto_emails_and_drops_placeholders(self):
+    def test_prefers_meta_description_over_generic_heading(self):
+        html = (
+            '<html><head><meta name="description" '
+            'content="Voorbeeld verkoopt fietsen en biedt onderhoud in Delft."></head>'
+            '<body><h1>Welkom bij Voorbeeld</h1></body></html>'
+        )
+        self.assertEqual(
+            extract_verified_observation(html),
+            "Voorbeeld verkoopt fietsen en biedt onderhoud in Delft.",
+        )
+
+    def test_extracts_visible_or_mailto_emails_and_drops_placeholders(self):
         html = (
             '<input value="naam@voorbeeld.nl">'
             '<span>info@example.nl</span>'
