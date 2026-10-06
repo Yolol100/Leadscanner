@@ -145,6 +145,26 @@ class GrowthBatchTests(unittest.TestCase):
         )
         self.assertIn("Wat me opviel: Maatwerk voor zakelijke klanten.", body)
 
+    def test_existing_price_observation_migrates_without_price(self):
+        subject, body = build_short_first_touch_from_opening(
+            "Idee voor Voorbeeld Abonnement",
+            "Ik zag op jullie website dat een abonnement €49 per maand kost.",
+            "nl",
+        )
+        self.assertEqual(subject, "idee voor voorbeeld abonnement")
+        self.assertIn(
+            "Wat me opviel: op jullie website staat informatie over jullie tarieven.",
+            body,
+        )
+        self.assertNotIn("€", body)
+        self.assertNotIn("49", body)
+        self.assertNotIn("per maand", body.casefold())
+
+    def test_subject_exclamation_is_removed(self):
+        subject = subject_for_company("WOW! Fysio", "nl")
+        self.assertEqual(subject, "idee voor wow fysio")
+        self.assertNotIn("!", subject)
+
     def test_existing_opening_migrates_without_price_or_features(self):
         subject, body = build_short_first_touch_from_opening(
             "Idee voor Voorbeeld Fysiotherapie",
