@@ -90,7 +90,7 @@ def main():
         r = json.loads(report.read_text())
         transport = json.loads((root/'transport.json').read_text())
         (root/'opening-report.enc.json').write_text(json.dumps(seal(r,private,transport['sender'],repo,'report')))
-        safe = {k:r.get(k) for k in ('mode','audited_count','ready_count','hold_count','absent_count','changed_count','already_correct_count','removed_count','automatic_send','send_capability')}
+        safe = {k:r.get(k) for k in ('mode','orchestrated','shard_count','audited_count','ready_count','hold_count','absent_count','changed_count','already_correct_count','removed_count','website_network_rows','website_reused_rows','final_mailbox_only','automatic_send','send_capability')}
         safe['blocker_count'] = len(r.get('blockers',[]))
         (root/'summary.json').write_text(json.dumps(safe))
 
