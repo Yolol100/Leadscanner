@@ -389,6 +389,34 @@ def validate_online_evidence(
         change["source_url"]
     ).strip()
     source_domain = normalize_domain(source_url)
+    provider_type = str(
+        (change or {}).get(
+            "email_source_type"
+        )
+        or ""
+    ).strip()
+    provider_ref = str(
+        (change or {}).get(
+            "email_source_ref"
+        )
+        or ""
+    ).strip()
+    if (
+        provider_type
+        in {
+            "overture",
+            "google_maps",
+            "google_maps_targeted_fallback",
+        }
+        and provider_ref
+    ):
+        return {
+            "email": expected_email,
+            "source_url": None,
+            "source_ref": provider_ref,
+            "source_type": provider_type,
+        }
+
     expected_domain = normalize_domain(
         source_row.get("official_domain_hint")
         or source_row.get("website")
@@ -633,6 +661,45 @@ def _research_unresolved_source(
     lead_id = str(
         source_row.get("lead_id") or ""
     ).strip()
+    current_email = str(
+        source_row.get("email") or ""
+    ).strip().casefold()
+    source_types = list(
+        source_row.get("email_source_types")
+        or []
+    )
+    source_refs = list(
+        source_row.get("email_source_refs")
+        or []
+    )
+    fallback_candidates = []
+    fallback_type = (
+        str(source_types[0] or "").strip()
+        if source_types
+        else ""
+    )
+    fallback_ref = (
+        str(source_refs[0] or "").strip()
+        if source_refs
+        else ""
+    )
+    if (
+        valid_email(current_email)
+        and fallback_type
+        in {
+            "overture",
+            "google_maps",
+            "google_maps_targeted_fallback",
+        }
+        and fallback_ref
+    ):
+        fallback_candidates.append(
+            {
+                "email": current_email,
+                "source": fallback_type,
+            }
+        )
+
     result = inspect_candidate(
         {
             "website_hint": (
@@ -647,7 +714,21 @@ def _research_unresolved_source(
             "category_hint": source_row.get(
                 "category_hint"
             ),
-            "discovery_email_candidates": [],
+            "discovery_email_candidates": (
+                fallback_candidates
+            ),
+            "overture_id": (
+                fallback_ref
+                if fallback_type == "overture"
+                else None
+            ),
+            "maps_link_hint": (
+                fallback_ref
+                if fallback_type.startswith(
+                    "google_maps"
+                )
+                else None
+            ),
         }
     )
     if result.get("excluded_competitor"):
@@ -721,7 +802,14 @@ def _research_unresolved_source(
             or []
         )
     ]
-    official_email_rows = []
+    source_refs = [
+        str(value or "").strip()
+        for value in (
+            result.get("email_source_refs")
+            or []
+        )
+    ]
+    verified_email_rows = []
     for index, email in enumerate(emails):
         source_type = (
             source_types[index]
@@ -733,6 +821,11 @@ def _research_unresolved_source(
             if index < len(source_urls)
             else ""
         )
+        source_ref = (
+            source_refs[index]
+            if index < len(source_refs)
+            else ""
+        )
         if (
             source_type == "official_site"
             and source_url.startswith(
@@ -740,15 +833,36 @@ def _research_unresolved_source(
             )
             and valid_email(email)
         ):
-            official_email_rows.append(
-                (email, source_url)
+            verified_email_rows.append(
+                (
+                    email,
+                    source_type,
+                    source_url,
+                )
             )
-    if not official_email_rows:
+        elif (
+            source_type
+            in {
+                "overture",
+                "google_maps",
+                "google_maps_targeted_fallback",
+            }
+            and source_ref
+            and valid_email(email)
+        ):
+            verified_email_rows.append(
+                (
+                    email,
+                    source_type,
+                    source_ref,
+                )
+            )
+    if not verified_email_rows:
         return {
             "status": "hold",
             "reason": (
-                "no current first-party public "
-                "business email could be verified"
+                "no verified public business "
+                "email could be resolved"
             ),
         }
 
@@ -771,45 +885,61 @@ def _research_unresolved_source(
     if language not in {"nl", "en"}:
         language = "nl"
 
-    current_email = str(
-        source_row.get("email") or ""
-    ).strip().casefold()
-    for email, email_source_url in (
-        official_email_rows
-    ):
+    for (
+        email,
+        email_source_type,
+        email_source_ref,
+    ) in verified_email_rows:
         if email == current_email:
+            change = {
+                "observation": observation,
+                "source_url": observation_url,
+                "evidence_terms": terms,
+                "language": language,
+                "email_source_type": (
+                    email_source_type
+                ),
+                "email_source_ref": (
+                    email_source_ref
+                ),
+            }
+            if (
+                email_source_type
+                == "official_site"
+            ):
+                change["email_source_url"] = (
+                    email_source_ref
+                )
             return {
                 "status": "rewrite",
-                "change": {
-                    "observation": (
-                        observation
-                    ),
-                    "source_url": (
-                        observation_url
-                    ),
-                    "email_source_url": (
-                        email_source_url
-                    ),
-                    "evidence_terms": terms,
-                    "language": language,
-                },
+                "change": change,
             }
 
-    replacement_email, email_source_url = (
-        official_email_rows[0]
-    )
+    (
+        replacement_email,
+        email_source_type,
+        email_source_ref,
+    ) = verified_email_rows[0]
+    change = {
+        "email": replacement_email,
+        "observation": observation,
+        "source_url": observation_url,
+        "evidence_terms": terms,
+        "language": language,
+        "email_source_type": (
+            email_source_type
+        ),
+        "email_source_ref": (
+            email_source_ref
+        ),
+    }
+    if email_source_type == "official_site":
+        change["email_source_url"] = (
+            email_source_ref
+        )
     return {
         "status": "replacement",
-        "change": {
-            "email": replacement_email,
-            "observation": observation,
-            "source_url": observation_url,
-            "email_source_url": (
-                email_source_url
-            ),
-            "evidence_terms": terms,
-            "language": language,
-        },
+        "change": change,
     }
 
 
@@ -849,6 +979,14 @@ def build_corrected_row(
         email_source_url = str(
             change.get("email_source_url") or ""
         ).strip()
+        email_source_type = str(
+            change.get("email_source_type")
+            or ""
+        ).strip()
+        email_source_ref = str(
+            change.get("email_source_ref")
+            or ""
+        ).strip()
         if email_source_url:
             row["email_source_urls"] = [
                 email_source_url
@@ -858,6 +996,22 @@ def build_corrected_row(
             ]
             row["email_source_refs"] = [
                 email_source_url
+            ]
+        elif (
+            email_source_type
+            in {
+                "overture",
+                "google_maps",
+                "google_maps_targeted_fallback",
+            }
+            and email_source_ref
+        ):
+            row["email_source_urls"] = []
+            row["email_source_types"] = [
+                email_source_type
+            ]
+            row["email_source_refs"] = [
+                email_source_ref
             ]
 
     if replacement:
