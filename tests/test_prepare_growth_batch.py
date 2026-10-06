@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from prepare_growth_batch import build_opening, exact_nl_opening_from_existing, infer_focus_from_observation, prepare_batch, subject_for_company
+from prepare_growth_batch import build_opening, exact_nl_opening_from_existing, infer_focus_from_observation, observation_is_low_signal, prepare_batch, subject_for_company
 
 
 class GrowthBatchTests(unittest.TestCase):
