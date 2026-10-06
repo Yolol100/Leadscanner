@@ -29,6 +29,7 @@ class FakeUIDIMAP:
         self.deleted = set()
         self.next_uid = 11
         self.uid_searches = 0
+        self.full_fetch_calls = 0
         self.append_calls = 0
         self.tamper_new_uid_fetch = False
         self.last_appended_uid = None
@@ -54,6 +55,8 @@ class FakeUIDIMAP:
         if command == "fetch":
             uid_values = str(args[0]).encode().split(b",")
             query = str(args[1])
+            if "HEADER.FIELDS" not in query:
+                self.full_fetch_calls += 1
             rows = []
             for uid in uid_values:
                 msg = BytesParser(policy=default).parsebytes(self.messages[uid])
@@ -93,6 +96,17 @@ class FakeUIDIMAP:
 
 
 class FastMailboxTests(unittest.TestCase):
+    def test_bulk_inventory_fetches_full_messages_in_one_uid_batch(self):
+        lead_a = "growth-" + "a" * 20
+        lead_b = "growth-" + "b" * 20
+        client = FakeUIDIMAP(lead_a)
+        client.messages[b"20"] = raw_message(lead_b, body="other")
+        inventory = bulk_inventory_drafts(client, "Drafts", [lead_a, lead_b])
+        self.assertEqual(current_from_inventory(inventory, lead_a)["body"], "old")
+        self.assertEqual(current_from_inventory(inventory, lead_b)["body"], "other")
+        self.assertEqual(client.uid_searches, 1)
+        self.assertEqual(client.full_fetch_calls, 1)
+
     def test_one_bulk_inventory_then_uid_replacement(self):
         lead_id = "growth-" + "a" * 20
         client = FakeUIDIMAP(lead_id)

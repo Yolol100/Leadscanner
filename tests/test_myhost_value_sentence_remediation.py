@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 from email.message import EmailMessage
+from email.parser import BytesParser
 from email.policy import default
 
 from myhost_value_sentence_remediation import (
@@ -145,6 +146,23 @@ class ValueSentenceRemediationTests(unittest.TestCase):
             snapshot["x_headers"],
         )
         self.assertIn(result["expected_value"], snapshot["body"])
+
+    def test_folded_metadata_header_is_unfolded_and_preserved(self):
+        current = self.message()
+        current.replace_header(
+            "X-Webactueel-Test-Metadata",
+            "metadata-" + ("x" * 220),
+        )
+        parsed = BytesParser(policy=default).parsebytes(current.as_bytes(policy=default))
+        result = analyze_body(NL_BODY)
+        expected = message_with_body(parsed, result["expected_body"])
+        before_headers = full_snapshot(parsed)["x_headers"]
+        after_headers = full_snapshot(expected)["x_headers"]
+        self.assertEqual(after_headers, before_headers)
+        self.assertIn(
+            ["x-webactueel-review-required", "contact-basis"],
+            after_headers,
+        )
 
     def test_encrypted_state_roundtrip_and_tamper_rejection(self):
         payload = {"items": [{"lead_id": "growth-" + "b" * 20}], "version": "x"}

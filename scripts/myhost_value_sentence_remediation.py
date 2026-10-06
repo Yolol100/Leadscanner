@@ -205,22 +205,31 @@ def analyze_body(body: str) -> dict:
     }
 
 
+def _header_text(value: object) -> str:
+    return (
+        re.sub(r"\\r?\\n[ \\t]*", " ", str(value or ""))
+        .replace("\\r", " ")
+        .replace("\\n", " ")
+        .strip()
+    )
+
+
 def _x_headers(msg: EmailMessage) -> list[list[str]]:
     rows = []
-    for key, value in msg.raw_items():
+    for key, value in msg.items():
         if key.casefold().startswith("x-webactueel-"):
-            rows.append([key.casefold(), normalize_text(value)])
+            rows.append([key.casefold(), _header_text(value)])
     rows.sort()
     return rows
 
 
 def full_snapshot(msg: EmailMessage) -> dict:
     return {
-        "from": normalize_text(msg.get("From", "")),
-        "to": normalize_text(msg.get("To", "")),
-        "subject": normalize_text(msg.get("Subject", "")),
-        "lead_id": normalize_text(msg.get("X-Webactueel-Lead-ID", "")),
-        "review_status": normalize_text(msg.get("X-Webactueel-Review-Required", "")),
+        "from": _header_text(msg.get("From", "")),
+        "to": _header_text(msg.get("To", "")),
+        "subject": _header_text(msg.get("Subject", "")),
+        "lead_id": _header_text(msg.get("X-Webactueel-Lead-ID", "")),
+        "review_status": _header_text(msg.get("X-Webactueel-Review-Required", "")),
         "body": plain_body(msg),
         "x_headers": _x_headers(msg),
     }
@@ -241,9 +250,9 @@ def message_with_body(current: EmailMessage, body: str) -> EmailMessage:
         "date",
         "message-id",
     }
-    for key, value in current.raw_items():
+    for key, value in current.items():
         if key.casefold() not in skip:
-            expected[key] = value
+            expected[key] = _header_text(value)
 
     from_value = normalize_text(expected.get("From", ""))
     domain = "andrewbaeten.nl"
