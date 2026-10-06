@@ -75,17 +75,19 @@ jobs:
         run: |
           set -euo pipefail
           if [ -s cancel-result.txt ]; then
-            body="STALE_CONTENT_RUN_CANCEL=processed
-```
-$(cat cancel-result.txt)
-```
-No mailbox content was changed by this cancellation workflow."
+            {
+              echo "STALE_CONTENT_RUN_CANCEL=processed"
+              echo '~~~'
+              cat cancel-result.txt
+              echo '~~~'
+              echo "No mailbox content was changed by this cancellation workflow."
+            } > comment.txt
           else
-            body="STALE_CONTENT_RUN_CANCEL=failed_closed. No mailbox content was changed."
+            echo "STALE_CONTENT_RUN_CANCEL=failed_closed. No mailbox content was changed." > comment.txt
           fi
-          gh issue comment "$ISSUE_NUMBER" --body "$body"
+          gh issue comment "$ISSUE_NUMBER" --body-file comment.txt
           gh issue close "$ISSUE_NUMBER" --reason completed
 
       - name: Remove residue
         if: always()
-        run: rm -f run-ids.txt cancel-result.txt
+        run: rm -f run-ids.txt cancel-result.txt comment.txt
