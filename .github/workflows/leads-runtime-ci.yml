@@ -65,25 +65,28 @@ jobs:
           ! grep -R --line-number --include='*.yml' -E 'smtp|SMTP' .github/workflows
           echo 'ONE_RUN_GROWTH_DRAFT_CORE=green'
 
-      - name: Prove bounded value-sentence remediation boundary
+      - name: Prove bounded short first-touch remediation boundary
         run: |
           set -euo pipefail
           test -f .github/workflows/leads-value-sentence-remediation.yml
-          test -f scripts/myhost_value_sentence_remediation.py
-          test -f tests/test_myhost_value_sentence_remediation.py
+          test -f scripts/myhost_short_first_touch_remediation.py
           grep -q "github.event.issue.user.login == github.repository_owner" .github/workflows/leads-value-sentence-remediation.yml
-          grep -F -q "startsWith(github.event.issue.title, '[growth-value-remediate]')" .github/workflows/leads-value-sentence-remediation.yml
-          grep -q 'myhost_value_sentence_remediation.py' .github/workflows/leads-value-sentence-remediation.yml
+          grep -F -q "startsWith(github.event.issue.title, '[growth-short-remediate]')" .github/workflows/leads-value-sentence-remediation.yml
+          grep -q 'myhost_short_first_touch_remediation.py' .github/workflows/leads-value-sentence-remediation.yml
           grep -q 'audit_artifact_id' .github/workflows/leads-value-sentence-remediation.yml
-          grep -q 'review_required_preserved' scripts/myhost_value_sentence_remediation.py
-          grep -q 'automatic_send.*False' scripts/myhost_value_sentence_remediation.py
-          grep -q 'MULTIAPPEND_SHARD_SIZE = 50' scripts/myhost_value_sentence_remediation.py
-          grep -q 'replace_known_drafts_multiappend_and_verify' scripts/myhost_value_sentence_remediation.py
+          grep -q 'review_required_preserved' scripts/myhost_short_first_touch_remediation.py
+          grep -q 'automatic_send.*False' scripts/myhost_short_first_touch_remediation.py
+          grep -q 'MULTIAPPEND_SHARD_SIZE = 50' scripts/myhost_short_first_touch_remediation.py
+          grep -q 'replace_known_drafts_multiappend_and_verify' scripts/myhost_short_first_touch_remediation.py
           grep -q 'multiappend_used' .github/workflows/leads-value-sentence-remediation.yml
+          grep -q 'build_short_first_touch' scripts/prepare_growth_batch.py
+          grep -q 'body_must_be_max_100_words' scripts/prepare_growth_batch.py
+          grep -q 'price_not_allowed_in_first_touch' scripts/prepare_growth_batch.py
+          grep -q 'social_proof_requires_verified_source' scripts/prepare_growth_batch.py
           grep -q 'IMAPClient' requirements.txt
-          ! grep -E -q 'smtplib|sendmail\(|SMTP\(' scripts/myhost_value_sentence_remediation.py
-          ! grep -E -q 'client\.expunge\(|client\.store\(' scripts/myhost_value_sentence_remediation.py
-          echo 'VALUE_SENTENCE_REMEDIATION_BOUNDARY=green'
+          ! grep -E -q 'smtplib|sendmail\(|SMTP\(' scripts/myhost_short_first_touch_remediation.py
+          ! grep -E -q 'client\.expunge\(|client\.store\(' scripts/myhost_short_first_touch_remediation.py
+          echo 'SHORT_FIRST_TOUCH_REMEDIATION_BOUNDARY=green'
 
       - name: Prove isolated discovery-only phase boundary
         run: |
