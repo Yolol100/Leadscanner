@@ -1,0 +1,197 @@
+name: Leads Value Sentence Remediation
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+concurrency:
+  group: leads-value-sentence-remediation
+  cancel-in-progress: false
+
+jobs:
+  remediate:
+    if: >-
+      github.event.issue.user.login == github.repository_owner &&
+      startsWith(github.event.issue.title, '[growth-value-remediate]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+
+      - name: Install runtime dependencies
+        run: python3 -m pip install --disable-pip-version-check -r requirements.txt
+
+      - name: Resolve bounded request
+        id: request
+        env:
+          EVENT_PATH: ${{ github.event_path }}
+        run: |
+          set -euo pipefail
+          mkdir -p results
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          event = json.loads(Path(os.environ["EVENT_PATH"]).read_text(encoding="utf-8"))
+          request = json.loads(event["issue"].get("body") or "{}")
+          if not isinstance(request, dict):
+              raise SystemExit("issue body must be a JSON object")
+          allowed = {"mode", "offset", "limit", "audit_artifact_id"}
+          unknown = set(request) - allowed
+          if unknown:
+              raise SystemExit(f"unsupported request fields: {sorted(unknown)}")
+
+          mode = str(request.get("mode") or "").strip()
+          if mode not in {"audit", "apply", "final"}:
+              raise SystemExit("mode must be audit, apply or final")
+          offset = int(request.get("offset") or 0)
+          limit = int(request.get("limit") or 450)
+          if offset < 0 or not 1 <= limit <= 450:
+              raise SystemExit("offset/limit out of bounds")
+
+          artifact = int(request.get("audit_artifact_id") or 0)
+          if mode == "audit" and artifact:
+              raise SystemExit("audit_artifact_id is not allowed for audit")
+          if mode in {"apply", "final"} and artifact <= 0:
+              raise SystemExit("audit_artifact_id is required for apply/final")
+
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as out:
+              out.write(f"mode={mode}\n")
+              out.write(f"offset={offset}\n")
+              out.write(f"limit={limit}\n")
+              out.write(f"artifact={artifact}\n")
+          print(
+              f"VALUE_REQUEST=green mode={mode} offset={offset} limit={limit} "
+              "automatic_send=false"
+          )
+          PY
+
+      - name: Download immutable encrypted audit state
+        if: steps.request.outputs.mode != 'audit'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.request.outputs.artifact }}
+        run: |
+          set -euo pipefail
+          mkdir -p results/audit
+          gh api -H "Accept: application/vnd.github+json"             "/repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip"             > results/audit.zip
+          unzip -q results/audit.zip -d results/audit
+          state="$(find results/audit -type f -name 'state.enc.json' -print -quit)"
+          test -n "$state"
+          cp "$state" results/audit-state.enc.json
+
+      - name: Run exact mailbox remediation phase
+        id: execute
+        env:
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          MODE: ${{ steps.request.outputs.mode }}
+          OFFSET: ${{ steps.request.outputs.offset }}
+          LIMIT: ${{ steps.request.outputs.limit }}
+        run: |
+          set -uo pipefail
+          args=(
+            --mode "$MODE"
+            --offset "$OFFSET"
+            --limit "$LIMIT"
+            --report results/report.json
+          )
+          if [ "$MODE" = "audit" ]; then
+            args+=(--state-output results/state.enc.json)
+          else
+            args+=(--audit-state results/audit-state.enc.json)
+          fi
+          set +e
+          PYTHONPATH=scripts python3 scripts/myhost_value_sentence_remediation.py "${args[@]}"             | tee results/summary.txt
+          code=${PIPESTATUS[0]}
+          set -e
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Upload encrypted immutable audit
+        id: upload
+        if: steps.request.outputs.mode == 'audit' && hashFiles('results/state.enc.json') != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: value-sentence-audit-${{ github.event.issue.number }}
+          path: |
+            results/state.enc.json
+            results/report.json
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Report aggregate result
+        if: always() && steps.execute.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          MODE: ${{ steps.request.outputs.mode }}
+          CODE: ${{ steps.execute.outputs.code }}
+          AUDIT_ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > results/comment.txt
+          import json, os
+          from pathlib import Path
+
+          path = Path("results/report.json")
+          if not path.is_file():
+              print("VALUE_SENTENCE_REMEDIATION=failed_closed")
+              print("No aggregate report was produced. Nothing was sent.")
+          else:
+              r = json.loads(path.read_text(encoding="utf-8"))
+              keys = (
+                  "mode", "selected_count", "growth_total", "replace_count",
+                  "unchanged_count", "tailored_expected_count",
+                  "fallback_expected_count", "blocker_count", "blocker_reasons",
+                  "changed_count", "already_expected_count", "verified_count",
+                  "readback",
+              )
+              public = {k: r[k] for k in keys if k in r}
+              print("VALUE_SENTENCE_REMEDIATION=" + ("green" if os.environ.get("CODE") == "0" else "failed_closed"))
+              print("VALUE_SENTENCE_DETAIL=" + json.dumps(public, separators=(",", ":"), ensure_ascii=False))
+              if os.environ.get("MODE") == "audit" and os.environ.get("AUDIT_ARTIFACT_ID"):
+                  print("AUDIT_ARTIFACT_ID=" + os.environ["AUDIT_ARTIFACT_ID"])
+              print("Review-required status was preserved. Nothing was sent.")
+          PY
+          gh issue comment "$ISSUE_NUMBER" --body-file results/comment.txt
+          if [ "$CODE" = "0" ]; then
+            gh issue close "$ISSUE_NUMBER" --reason completed
+          else
+            gh issue close "$ISSUE_NUMBER" --reason completed
+          fi
+
+      - name: Fail closed on unsuccessful remediation
+        if: always() && steps.execute.outcome == 'success' && steps.execute.outputs.code != '0'
+        run: |
+          echo "Value-sentence remediation failed closed. No email was sent."
+          exit 1
+
+      - name: Close setup/runtime failure
+        if: failure() && steps.execute.outcome != 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --body "Value-sentence remediation failed closed before a valid result was produced. No email was sent."
+          gh issue close "$ISSUE_NUMBER" --reason completed
+
+      - name: Remove runtime residue
+        if: always()
+        run: rm -rf results
