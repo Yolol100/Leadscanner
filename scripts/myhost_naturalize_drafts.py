@@ -28,7 +28,7 @@ from myhost_draft import (
     uid_for_message_id,
 )
 from myhost_fast_mailbox import search_lead_uids
-from prepare_growth_batch import build_template_from_opening, naturalize_existing_opening
+from prepare_growth_batch import build_template_from_opening, naturalize_existing_opening, subject_for_company, validate_short_first_touch
 
 
 PRICE_MIN = 250
@@ -37,7 +37,7 @@ MAX_REWRITE = 100
 
 
 def detect_language(subject: str, body: str) -> str:
-    if subject.startswith("An idea for ") or body.lstrip().startswith("Hello,"):
+    if subject.casefold().startswith("an idea for ") or body.lstrip().startswith("Hello,"):
         return "en"
     return "nl"
 
@@ -50,14 +50,14 @@ def extract_company_label(subject: str, body: str, language: str) -> str:
         )
         if match:
             return match.group(1).strip()
-        if subject.startswith("An idea for "):
-            return subject[len("An idea for "):].strip()
+        if subject.casefold().startswith("an idea for "):
+            return subject[len("an idea for "):].strip()
     else:
         match = re.search(r"Zal ik vrijblijvend een voorbeeld design maken voor (.+?)\?", body)
         if match:
             return match.group(1).strip()
-        if subject.startswith("Idee voor "):
-            return subject[len("Idee voor "):].strip()
+        if subject.casefold().startswith("idee voor "):
+            return subject[len("idee voor "):].strip()
     raise RuntimeError("Could not recover company label from existing growth draft")
 
 
@@ -101,9 +101,29 @@ def rewrite_row_from_message(msg: EmailMessage) -> dict:
     original_subject = normalize_text(msg.get("Subject", ""))
     body = plain_body(msg)
     language = detect_language(original_subject, body)
+
+    short_subject = original_subject.casefold()
+    try:
+        validate_short_first_touch(short_subject, body)
+    except ValueError:
+        pass
+    else:
+        company = extract_company_label(original_subject, body, language)
+        return {
+            "lead_id": lead_id,
+            "email": single_recipient(msg),
+            "subject": short_subject,
+            "body": body,
+            "status": "review_draft",
+            "contact_basis_status": "review_required",
+            "language": language,
+            "company": company,
+            "_already_natural": normalize_text(original_subject) == short_subject,
+        }
+
     company = extract_company_label(original_subject, body, language)
     opening = extract_opening(body, language)
-    subject = f"Idee voor {company}" if language == "nl" else original_subject
+    subject = subject_for_company(company, language)
     new_body = build_template_from_opening(
         company,
         language,
