@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from prepare_growth_batch import build_opening, exact_nl_opening_from_existing, infer_focus_from_observation, observation_is_low_signal, prepare_batch, subject_for_company
+from prepare_growth_batch import build_opening, build_value_sentence, exact_nl_opening_from_existing, infer_focus_from_observation, observation_is_low_signal, prepare_batch, subject_for_company
 
 
 class GrowthBatchTests(unittest.TestCase):
@@ -73,7 +73,7 @@ class GrowthBatchTests(unittest.TestCase):
             row["body"],
         )
         self.assertIn(
-            "Met mijn Groeiabonnement kan ik meerdere onderdelen van jullie online aanpak oppakken:",
+            "Voor fysiotherapie en revalidatie brengt mijn Groeiabonnement website, vindbaarheid, content, automatisering en hosting samen met één vast aanspreekpunt:",
             row["body"],
         )
         self.assertIn("Geen interesse? Laat het gerust weten.", row["body"])
@@ -335,15 +335,45 @@ class GrowthBatchTests(unittest.TestCase):
             draft_limit=1,
         )["rows"][0]["body"]
         self.assertNotEqual(body_a, body_b)
-        offer_a = body_a.split(
-            "Met mijn Groeiabonnement kan ik meerdere onderdelen van jullie online aanpak oppakken:",
-            1,
-        )[1]
-        offer_b = body_b.split(
-            "Met mijn Groeiabonnement kan ik meerdere onderdelen van jullie online aanpak oppakken:",
-            1,
-        )[1]
+        self.assertIn(
+            "Voor fysiotherapie en revalidatie brengt mijn Groeiabonnement website, vindbaarheid, content, automatisering en hosting samen met één vast aanspreekpunt:",
+            body_a,
+        )
+        self.assertIn(
+            "Voor fysiotherapie en revalidatie brengt mijn Groeiabonnement website, vindbaarheid, content, automatisering en hosting samen met één vast aanspreekpunt:",
+            body_b,
+        )
+        offer_a = body_a.split("• Website/webshop — verbeteren of nieuw maken waar nodig", 1)[1]
+        offer_b = body_b.split("• Website/webshop — verbeteren of nieuw maken waar nodig", 1)[1]
         self.assertEqual(offer_a, offer_b)
+
+    def test_value_sentence_uses_verified_observation_focus_only(self):
+        self.assertEqual(
+            build_value_sentence("Wij bieden fysiotherapie in Utrecht.", "nl"),
+            "Voor fysiotherapie en revalidatie brengt mijn Groeiabonnement website, vindbaarheid, content, automatisering en hosting samen met één vast aanspreekpunt:",
+        )
+        self.assertEqual(
+            build_value_sentence("We provide physical therapy in Utrecht.", "en"),
+            "For physical therapy and rehabilitation, my Growth Subscription brings website, search visibility, content, automation and hosting together with one fixed point of contact:",
+        )
+
+    def test_value_sentence_falls_back_when_verified_observation_has_no_reliable_focus(self):
+        self.assertEqual(
+            build_value_sentence("Wij leveren industriële componenten.", "nl"),
+            "Met mijn Groeiabonnement kan ik meerdere onderdelen van jullie online aanpak oppakken:",
+        )
+
+    def test_category_hint_never_creates_relevance_sentence(self):
+        contact = self.contact()
+        contact["name_hint"] = "Voorbeeld BV"
+        contact["category_hint"] = "restaurant"
+        contact["verified_observation"] = "Wij leveren industriële componenten."
+        row = prepare_batch({"candidates": [contact]}, self.config(), draft_limit=1)["rows"][0]
+        self.assertIn(
+            "Met mijn Groeiabonnement kan ik meerdere onderdelen van jullie online aanpak oppakken:",
+            row["body"],
+        )
+        self.assertNotIn("restaurant en gastvrijheid", row["body"])
 
     def test_template_follows_growth_policy_order_and_single_offer(self):
         row = prepare_batch({"candidates": [self.contact()]}, self.config())["rows"][0]
