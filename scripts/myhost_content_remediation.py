@@ -104,9 +104,9 @@ def validate_request(request: dict) -> dict:
         str(x).strip()
         for x in _as_list(request.get("audited_lead_ids"), "audited_lead_ids")
     ]
-    if len(audited) != MAX_BATCH or len(set(audited)) != MAX_BATCH:
+    if not 1 <= len(audited) <= MAX_BATCH or len(set(audited)) != len(audited):
         raise ValueError(
-            f"audited_lead_ids must contain exactly {MAX_BATCH} unique lead IDs"
+            f"audited_lead_ids must contain 1-{MAX_BATCH} unique lead IDs"
         )
     if any(not LEAD_RE.fullmatch(x) for x in audited):
         raise ValueError("audited_lead_ids contains an invalid lead ID")
