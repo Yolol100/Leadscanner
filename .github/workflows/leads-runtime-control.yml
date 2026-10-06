@@ -15,12 +15,11 @@ jobs:
       - name: Cancel bounded unstarted opening runs only
         env:
           GH_TOKEN: ${{ github.token }}
-          EVENT_PATH: ${{ github.event_path }}
         run: |
           python3 - <<'PY'
           import json, os, subprocess
           from pathlib import Path
-          event=json.loads(Path(os.environ['EVENT_PATH']).read_text())
+          event=json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
           req=json.loads(event['issue']['body'])
           ids=req.get('run_ids')
           if set(req)!={'operation','run_ids'} or req['operation']!='cancel_pending_opening' or not isinstance(ids,list) or not 1<=len(ids)<=20 or len(set(ids))!=len(ids) or any(type(i) is not int or i<=0 for i in ids):
