@@ -274,26 +274,3519 @@ def observation_line_from_observation(observation: str, language: str) -> str:
     return f"Wat me opviel: {lowered}"
 
 
+def _finish_sentence(value: str) -> str:
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    if not text:
+        return text
+    return text if text.endswith((".", "!", "?")) else text + "."
+
+
 def observation_line_from_opening(opening: str, language: str) -> str:
+    """Reuse an already-verified opening without reclassifying its evidence.
+
+    This path is only for migration/naturalization of existing Growth drafts.
+    New prospect copy still uses observation_line_from_observation(), which
+    applies the current observation-quality gate.
+    """
     text = re.sub(r"\s+", " ", str(opening or "")).strip()
     if not text:
         raise ValueError("opening is required")
-    if language == "en":
-        match = re.fullmatch(r"I saw on your website that (.+)\.", text, flags=re.I)
-        if match:
-            clause = match.group(1).strip()
-            return f"What stood out: your website says that {clause}."
-        match = re.fullmatch(r"What stood out to me on your website:\s*(.+)", text, flags=re.I)
-        if match:
-            return f"What stood out: {match.group(1).strip()}"
-        return f"What stood out: {text[0].lower() + text[1:]}"
 
-    canonical = exact_nl_opening_from_existing(text)
-    match = re.fullmatch(r"Ik zag op jullie website dat (.+)\.", canonical, flags=re.I)
+    if language == "en":
+        patterns = (
+            (r"I saw on your website that\s+(.+)", "your website says that "),
+            (r"What stood out to me on your website:\s*(.+)", ""),
+            (r'I noticed this on your website:\s*[“"]?(.+?)[”"]?\.?
+
+def validate_short_first_touch(
+    subject: str,
+    body: str,
+    *,
+    proof_text: str | None = None,
+    proof_source_url: str | None = None,
+) -> None:
+    subject = str(subject or "").strip()
+    body = str(body or "").strip()
+    if not subject or len(subject.split()) > 8:
+        raise ValueError("subject_must_be_max_8_words")
+    if subject != subject.casefold() or "!" in subject:
+        raise ValueError("subject_must_be_lowercase_without_exclamation")
+    if len(body.split()) > 100:
+        raise ValueError("body_must_be_max_100_words")
+    if (
+        "€" in body
+        or re.search(r"\b\d+(?:[.,]\d+)?\s*(?:euro|eur)\b", body, re.I)
+        or re.search(r"\b(?:per\s+maand|per\s+month|p/m|pm)\b", body, re.I)
+    ):
+        raise ValueError("price_not_allowed_in_first_touch")
+    if "• " in body:
+        raise ValueError("feature_dump_not_allowed_in_first_touch")
+    cta_count = body.count("Zal ik vrijblijvend een voorbeeld laten zien hoe dit er voor jullie uit kan zien?") + body.count(
+        "Would you like me to show you a no-obligation example of what this could look like for you?"
+    )
+    if cta_count != 1:
+        raise ValueError("exactly_one_example_cta_required")
+    if bool(proof_text) != bool(proof_source_url):
+        raise ValueError("social_proof_requires_verified_source")
+    if not proof_text and re.search(r"\b\d+(?:[.,]\d+)?%\b", body):
+        raise ValueError("unverified_percentage_not_allowed")
+
+
+def build_short_first_touch(
+    company: str,
+    language: str,
+    observation: str,
+    *,
+    observation_detail: str | None = None,
+    contact_name: str | None = None,
+    contact_source_url: str | None = None,
+    proof_text: str | None = None,
+    proof_source_url: str | None = None,
+) -> tuple[str, str]:
+    if contact_name and not contact_source_url:
+        raise ValueError("contact_name_requires_verified_source")
+    if proof_text and not proof_source_url:
+        raise ValueError("social_proof_requires_verified_source")
+
+    subject = subject_for_company(company, language)
+    summary = business_summary_from_observation(observation, language)
+    detail = observation_detail or observation
+    observation_line = observation_line_from_observation(detail, language)
+
+    if language == "en":
+        greeting = f"Hello {contact_name}," if contact_name else "Hello,"
+        parts = [greeting, ""]
+        if summary:
+            parts.extend([summary, ""])
+        parts.extend([observation_line, ""])
+        if proof_text:
+            parts.extend([proof_text.strip(), ""])
+        parts.extend([
+            "Would you like me to show you a no-obligation example of what this could look like for you?",
+            "",
+            "Not interested? Just let me know.",
+            "",
+            "Regards,",
+            "Andrew",
+        ])
+    else:
+        greeting = f"Hallo {contact_name}," if contact_name else "Hallo,"
+        parts = [greeting, ""]
+        if summary:
+            parts.extend([summary, ""])
+        parts.extend([observation_line, ""])
+        if proof_text:
+            parts.extend([proof_text.strip(), ""])
+        parts.extend([
+            "Zal ik vrijblijvend een voorbeeld laten zien hoe dit er voor jullie uit kan zien?",
+            "",
+            "Geen interesse? Laat het gerust weten.",
+            "",
+            "Groet,",
+            "Andrew",
+        ])
+
+    body = "\n".join(parts)
+    validate_short_first_touch(
+        subject,
+        body,
+        proof_text=proof_text,
+        proof_source_url=proof_source_url,
+    )
+    return subject, body
+
+
+def build_short_first_touch_from_opening(
+    subject: str,
+    opening: str,
+    language: str,
+) -> tuple[str, str]:
+    short_subject = str(subject or "").strip().casefold()
+    focus = infer_focus_from_observation(opening, language, None)
+    observation_line = observation_line_from_opening(opening, language)
+    if language == "en":
+        summary = f"You operate in {focus}." if focus else None
+        parts = ["Hello,", ""]
+        if summary:
+            parts.extend([summary, ""])
+        parts.extend([
+            observation_line,
+            "",
+            "Would you like me to show you a no-obligation example of what this could look like for you?",
+            "",
+            "Not interested? Just let me know.",
+            "",
+            "Regards,",
+            "Andrew",
+        ])
+    else:
+        summary = f"Jullie zijn actief in {focus}." if focus else None
+        parts = ["Hallo,", ""]
+        if summary:
+            parts.extend([summary, ""])
+        parts.extend([
+            observation_line,
+            "",
+            "Zal ik vrijblijvend een voorbeeld laten zien hoe dit er voor jullie uit kan zien?",
+            "",
+            "Geen interesse? Laat het gerust weten.",
+            "",
+            "Groet,",
+            "Andrew",
+        ])
+    body = "\n".join(parts)
+    validate_short_first_touch(short_subject, body)
+    return short_subject, body
+
+
+def _word_set(value: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9]+", value.casefold()))
+
+
+def observation_is_low_signal(company: str, observation: str) -> bool:
+    from observation_quality import observation_rejection
+    if observation_rejection(observation):
+        return True
+    text = re.sub(r"\s+", " ", str(observation or "")).strip()
+    low = text.casefold()
+    if not text:
+        return True
+    if re.search(r"\b\d+\s*%", text):
+        return True
+    if re.match(r"^(home|homepage|welkom|welcome)\b", low):
+        return True
+    if (
+        re.match(
+            r"^(contact(?:gegevens)?|contact us|openingstijden|opening hours|"
+            r"route|adres|address|privacy|privacybeleid|vacatures?|jobs?|"
+            r"werken bij|careers?)\b",
+            low,
+        )
+        and len(_word_set(text)) <= 10
+    ):
+        return True
+    if re.match(
+        r"^(actie|sale|nu |tijdelijk|deze week|special offer|limited offer)\b",
+        low,
+    ):
+        return True
+    if re.search(
+        r"\b(product toegevoegd|offertepagina|offerte aan te vragen|"
+        r"toegevoegd aan jouw offerte|winkelmand|shopping cart|checkout)\b",
+        low,
+    ):
+        return True
+    if (
+        len(_word_set(text)) <= 9
+        and re.match(
+            r"^(samen werken aan|samen bouwen aan|jouw talent|"
+            r"your talent|your journey)\b",
+            low,
+        )
+    ):
+        return True
+    if (
+        re.search(r"\b(dank|klantgericht|te klein)\b", low)
+        and re.search(r"\b(prima|mensen|temp|locatie)\b", low)
+    ):
+        return True
+    if any(
+        marker in low
+        for marker in (
+            "window.",
+            "document.",
+            "newsletter",
+            "nieuwsbrief",
+            "schrijf je in",
+            "meer lezen na deze video",
+            "vacature",
+            "solliciteer",
+            "werken bij",
+            "teamleider",
+            "bouwvak",
+            "tijdelijk gesloten",
+        )
+    ):
+        return True
+    if "©" in text:
+        return True
+    if low in {"gelieve te wachten", "mysite", "wij zijn verhuisd..", "wij zijn verhuisd", "wie zijn wij?", "wie zijn wij", "🔒 beveiligde website", "beveiligde website", "staff member carousel"}:
+        return True
+    if re.search(r"reserved domain|under construction|coming soon|domainorder|geparkeerd|crypto casino|bitcoin casino|tempat main|window \d+|without code", low):
+        return True
+    company_words = _word_set(company)
+    observation_words = _word_set(text)
+    if company_words and observation_words:
+        extra = observation_words - company_words
+        if len(extra) <= 1 and len(observation_words) <= len(company_words) + 1:
+            return True
+    return False
+
+
+def build_opening(company: str, language: str, observation: str, category_hint: str | None = None) -> str:
+    from observation_quality import natural_opening
+    if observation_is_low_signal(company, observation):
+        raise ValueError("No specific verified site detail for outreach opening")
+    return natural_opening(observation, language)
+
+
+def naturalize_existing_opening(opening: str, language: str) -> str:
+    text = re.sub(r"\s+", " ", str(opening or "")).strip()
+    if language == "en":
+        match = re.fullmatch(
+            r'I noticed this on your website:\s*[“"](.+?)[”"]\.?',
+            text,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            observed = match.group(1).strip()
+            punctuation = "" if observed.endswith((".", "!", "?")) else "."
+            return f"What stood out to me on your website: {observed}{punctuation}"
+        return text
+
+    match = re.fullmatch(
+        r'Op jullie site viel me op:\s*[“"](.+?)[”"]\.?',
+        text,
+        flags=re.IGNORECASE,
+    )
     if match:
-        clause = match.group(1).strip()
-        return f"Wat me opviel: op jullie website staat dat {clause}."
-    return f"Wat me opviel: {canonical[0].lower() + canonical[1:]}"
+        observed = match.group(1).strip()
+        punctuation = "" if observed.endswith((".", "!", "?")) else "."
+        return f"Wat me opviel op jullie website: {observed}{punctuation}"
+    return text
+
+
+def _legacy_exact_nl_opening_from_existing(opening: str, company: str | None = None) -> str:
+    text = re.sub(r"\s+", " ", str(opening or "")).strip()
+    if not text:
+        raise ValueError("unsupported existing Dutch verified opening")
+
+    direct = re.fullmatch(
+        r"Ik zag op jullie website dat\s+(.+)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if direct:
+        fact = direct.group(1).strip()
+        fact = re.split(r"\s+(?:Ik heb een idee|Mijn idee voor)\b", fact, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+        fact = re.sub(r"[.!?]+$", "", fact).strip()
+        if fact:
+            return f"Ik zag op jullie website dat {fact}."
+
+    quoted_patterns = (
+        r'Op jullie site viel me op:\s*[“"](.+?)[”"]',
+        r'Op jullie website zag ik\s*[“"](.+?)[”"]',
+        r'Op jullie website staat\s*[“"](.+?)[”"]',
+        r'Ik heb de website van .+? bekeken en zag\s*[“"](.+?)[”"]',
+        r'Eén detail dat opviel was\s*[“"](.+?)[”"]',
+    )
+    for pattern in quoted_patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            fact = re.sub(r"[.!?]+$", "", match.group(1).strip()).strip()
+            if fact:
+                return f"Ik zag op jullie website dat {fact}."
+
+    stood_out = re.fullmatch(
+        r"Wat me opviel op jullie website:\s*(.+)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if stood_out:
+        fact = stood_out.group(1).strip()
+        fact = re.split(r"\s+(?:Ik heb een idee|Mijn idee voor)\b", fact, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+        fact = re.sub(r"[.!?]+$", "", fact).strip()
+        if fact:
+            return f"Ik zag op jullie website dat {fact}."
+
+    focus = re.match(
+        r"Ik zag dat\s+(.+?)(?:\.\s+(?:Ik heb een idee|Mijn idee voor)\b|[.!?]*$)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if focus:
+        fact = re.sub(r"[.!?]+$", "", focus.group(1).strip()).strip()
+        if fact:
+            return f"Ik zag op jullie website dat {fact}."
+
+    site_focus = re.search(
+        r"Jullie site draait duidelijk om\s+(.+?)(?:\.\s+Mijn idee voor|[.!?]*$)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if site_focus and company:
+        focus_text = re.sub(r"[.!?]+$", "", site_focus.group(1).strip()).strip()
+        company_label = short_company_name(company)
+        if focus_text and company_label:
+            return f"Ik zag op jullie website dat {company_label} zich richt op {focus_text}."
+
+    raise ValueError("unsupported existing Dutch verified opening")
+
+
+def exact_nl_opening_from_existing(opening: str, company: str | None = None) -> str:
+    from observation_quality import observation_rejection, natural_opening
+    text = str(opening or "").strip()
+    if text.startswith("Op jullie website las ik: “"):
+        fact = text.removeprefix("Op jullie website las ik: “").removesuffix("”")
+        return natural_opening(fact, "nl")
+    direct = re.fullmatch(r"Ik zag op jullie website dat (jullie .+)\.", text)
+    if direct:
+        fact = direct[1]
+        verbs = r"zijn|bieden|aanbieden|verkopen|maken|serveren|leveren|produceren|verhuren|organiseren|hebben"
+        m = re.fullmatch(r"jullie (.+) (" + verbs + r")", fact)
+        if m:
+            verb = {"aanbieden": "bieden"}.get(m[2], m[2])
+            if not observation_rejection("Wij " + verb + " " + m[1]):
+                return text
+    legacy = _legacy_exact_nl_opening_from_existing(text, company)
+    fact = legacy.removeprefix("Ik zag op jullie website dat ").removesuffix(".")
+    # Legacy wrappers contain hints, never a fresh verification. They may only
+    # preserve grammatical business prose; metadata/category focus fails closed.
+    if observation_rejection(fact):
+        raise ValueError("unsupported existing Dutch verified opening: invalid business sentence")
+    return natural_opening(fact, "nl")
+
+
+def _copy_variant_index(key: str, count: int) -> int:
+    if count <= 0:
+        raise ValueError("count must be positive")
+    digest = hashlib.sha256(str(key).encode("utf-8")).digest()
+    return digest[0] % count
+
+
+def build_template_from_opening(
+    company: str,
+    language: str,
+    opening: str,
+    *,
+    price_min: int,
+    price_max: int,
+    variant_key: str | None = None,
+    value_sentence: str | None = None,
+) -> str:
+    # Backward-compatible entrypoint for verified existing openings.
+    _ = (price_min, price_max, variant_key, value_sentence)
+    subject = subject_for_company(company, language)
+    _subject, body = build_short_first_touch_from_opening(subject, opening, language)
+    return body
+
+
+def build_template(
+    company: str,
+    language: str,
+    observation: str,
+    *,
+    price_min: int,
+    price_max: int,
+    category_hint: str | None = None,
+    observation_detail: str | None = None,
+    contact_name: str | None = None,
+    contact_source_url: str | None = None,
+    proof_text: str | None = None,
+    proof_source_url: str | None = None,
+) -> str:
+    _ = (price_min, price_max, category_hint)
+    _subject, body = build_short_first_touch(
+        company,
+        language,
+        observation,
+        observation_detail=observation_detail,
+        contact_name=contact_name,
+        contact_source_url=contact_source_url,
+        proof_text=proof_text,
+        proof_source_url=proof_source_url,
+    )
+    return body
+
+def prepare_batch(contacts_payload: dict, config: dict, *, draft_limit: int = 1) -> dict:
+    if not 1 <= draft_limit <= 100:
+        raise ValueError("draft_limit must be 1-100")
+    price = config["monthly_price_eur"]
+    price_min, price_max = int(price["min"]), int(price["max"])
+    rows = []
+    selected = 0
+
+    for candidate in contacts_payload.get("candidates") or []:
+        language = str(candidate.get("language") or "nl").casefold()
+        if language not in {"nl", "en"}:
+            language = "nl"
+        company = clean_company(candidate.get("name_hint"), language)
+        emails = candidate.get("public_business_emails") or []
+        excluded = bool(candidate.get("excluded_competitor"))
+        observation = str(candidate.get("verified_observation") or "").strip()
+        observation_source_url = str(candidate.get("verified_observation_source_url") or "").strip()
+        observation_source_type = str(candidate.get("verified_observation_source_type") or "").strip()
+        category_hint = str(candidate.get("category_hint") or "").strip() or None
+        has_verified_observation = bool(
+            observation
+            and observation_source_url
+            and observation_source_type == "official_site"
+        )
+        observation_detail = str(candidate.get("verified_problem_observation") or "").strip() or None
+        observation_detail_source_url = str(candidate.get("verified_problem_observation_source_url") or "").strip()
+        observation_detail_source_type = str(candidate.get("verified_problem_observation_source_type") or "").strip()
+        if observation_detail and not (
+            observation_detail_source_url
+            and observation_detail_source_type == "official_site"
+        ):
+            raise ValueError("verified_problem_observation_requires_official_site_source")
+        contact_name = str(candidate.get("verified_contact_name") or "").strip() or None
+        contact_source_url = str(candidate.get("verified_contact_name_source_url") or "").strip() or None
+        proof_text = str(candidate.get("verified_social_proof") or "").strip() or None
+        proof_source_url = str(candidate.get("verified_social_proof_source_url") or "").strip() or None
+        preview = (
+            build_template(
+                company,
+                language,
+                observation,
+                price_min=price_min,
+                price_max=price_max,
+                category_hint=category_hint,
+                observation_detail=observation_detail,
+                contact_name=contact_name,
+                contact_source_url=contact_source_url,
+                proof_text=proof_text,
+                proof_source_url=proof_source_url,
+            )
+            if has_verified_observation
+            else None
+        )
+        subject_preview = subject_for_company(company, language) if has_verified_observation else None
+        basis = str(candidate.get("contact_basis_status") or "unverified")
+        base = {
+            "lead_id": None,
+            "company": candidate.get("name_hint"),
+            "copy_company_label": short_company_name(company),
+            "copy_subject_label": subject_label_for_company(company, language),
+            "website": candidate.get("website_hint"),
+            "official_domain_hint": candidate.get("official_domain_hint"),
+            "product_id": "growth_subscription",
+            "language": language,
+            "language_source": candidate.get("language_source"),
+            "category_hint": category_hint,
+            "monthly_price_min_eur": price_min,
+            "monthly_price_max_eur": price_max,
+            "excluded_competitor": excluded,
+            "exclusion_reason": candidate.get("exclusion_reason"),
+            "contact_basis_status": basis,
+            "contact_basis_hint": candidate.get("contact_basis_hint"),
+            "email_source_urls": candidate.get("email_source_urls") or [],
+            "email_source_types": candidate.get("email_source_types") or [],
+            "email_source_refs": candidate.get("email_source_refs") or [],
+            "verified_observation": observation or None,
+            "verified_observation_source_url": observation_source_url or None,
+            "verified_observation_source_type": observation_source_type or None,
+            "status": "excluded_competitor" if excluded else "no_public_email",
+            "email": None,
+            "subject": None,
+            "body": None,
+            "subject_preview": None if excluded else subject_preview,
+            "concept_preview": None if excluded else preview,
+        }
+        if excluded:
+            rows.append(base)
+            continue
+        if emails:
+            base["email"] = emails[0]
+            base["lead_id"] = stable_lead_id(base["email"], base["website"])
+            if not has_verified_observation:
+                base["status"] = "blocked_missing_verified_observation"
+            elif selected < draft_limit:
+                selected += 1
+                base["status"] = "draft_ready" if basis == "pass" else "review_draft"
+                base["subject"] = subject_preview
+                base["body"] = preview
+            else:
+                base["status"] = "email_found_not_selected"
+        rows.append(base)
+
+    return {
+        "schema_version": "webactueel-growth-batch/4.2",
+        "product": config,
+        "row_count": len(rows),
+        "excluded_competitor_count": sum(1 for row in rows if row["status"] == "excluded_competitor"),
+        "email_found_count": sum(1 for row in rows if row["email"]),
+        "draft_candidate_count": sum(1 for row in rows if row["status"] in {"draft_ready", "review_draft"}),
+        "review_draft_count": sum(1 for row in rows if row["status"] == "review_draft"),
+        "rows": rows,
+        "safety": {
+            "one_product": True,
+            "one_offer": True,
+            "short_first_touch_max_100_words": True,
+            "no_price_in_first_touch": True,
+            "no_feature_dump": True,
+            "social_proof_requires_verified_source": True,
+            "language_matched_copy": True,
+            "verified_official_site_observation_required": True,
+            "contact_basis_review_required_before_send": True,
+            "review_draft_storage_allowed": True,
+            "automatic_send": False,
+        },
+    }
+
+
+def write_csv(payload: dict, path: Path) -> None:
+    fields = [
+        "lead_id", "company", "website", "email", "language", "status",
+        "excluded_competitor", "exclusion_reason", "contact_basis_status",
+        "contact_basis_hint", "email_source_types", "product_id",
+        "verified_observation", "verified_observation_source_url", "verified_observation_source_type",
+        "monthly_price_min_eur", "monthly_price_max_eur",
+        "subject_preview", "concept_preview",
+    ]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        for row in payload["rows"]:
+            writer.writerow({field: row.get(field) for field in fields})
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--contacts", required=True)
+    parser.add_argument("--config", required=True)
+    parser.add_argument("--output-json", required=True)
+    parser.add_argument("--output-csv", required=True)
+    parser.add_argument("--draft-limit", type=int, default=1)
+    args = parser.parse_args()
+    result = prepare_batch(
+        load_json(Path(args.contacts)),
+        load_json(Path(args.config)),
+        draft_limit=args.draft_limit,
+    )
+    output_json = Path(args.output_json)
+    output_json.parent.mkdir(parents=True, exist_ok=True)
+    output_json.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    write_csv(result, Path(args.output_csv))
+    print(
+        "GROWTH_BATCH=green "
+        f"rows={result['row_count']} emails={result['email_found_count']} "
+        f"excluded_competitors={result['excluded_competitor_count']} "
+        f"draft_candidates={result['draft_candidate_count']} email_send=false"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+, ""),
+        )
+        for pattern, prefix in patterns:
+            match = re.fullmatch(pattern, text, flags=re.I)
+            if match:
+                fact = _finish_sentence(match.group(1).strip().strip('“”"'))
+                return f"What stood out: {prefix}{fact}"
+        return f"What stood out: {_finish_sentence(text[0].lower() + text[1:])}"
+
+    direct = re.fullmatch(r"Ik zag op jullie website dat\s+(.+)", text, flags=re.I)
+    if direct:
+        fact = _finish_sentence(direct.group(1).strip())
+        return f"Wat me opviel: op jullie website staat dat {fact}"
+
+    patterns = (
+        r'Op jullie site viel me op:\s*[“"]?(.+?)[”"]?\.?
+
+def validate_short_first_touch(
+    subject: str,
+    body: str,
+    *,
+    proof_text: str | None = None,
+    proof_source_url: str | None = None,
+) -> None:
+    subject = str(subject or "").strip()
+    body = str(body or "").strip()
+    if not subject or len(subject.split()) > 8:
+        raise ValueError("subject_must_be_max_8_words")
+    if subject != subject.casefold() or "!" in subject:
+        raise ValueError("subject_must_be_lowercase_without_exclamation")
+    if len(body.split()) > 100:
+        raise ValueError("body_must_be_max_100_words")
+    if (
+        "€" in body
+        or re.search(r"\b\d+(?:[.,]\d+)?\s*(?:euro|eur)\b", body, re.I)
+        or re.search(r"\b(?:per\s+maand|per\s+month|p/m|pm)\b", body, re.I)
+    ):
+        raise ValueError("price_not_allowed_in_first_touch")
+    if "• " in body:
+        raise ValueError("feature_dump_not_allowed_in_first_touch")
+    cta_count = body.count("Zal ik vrijblijvend een voorbeeld laten zien hoe dit er voor jullie uit kan zien?") + body.count(
+        "Would you like me to show you a no-obligation example of what this could look like for you?"
+    )
+    if cta_count != 1:
+        raise ValueError("exactly_one_example_cta_required")
+    if bool(proof_text) != bool(proof_source_url):
+        raise ValueError("social_proof_requires_verified_source")
+    if not proof_text and re.search(r"\b\d+(?:[.,]\d+)?%\b", body):
+        raise ValueError("unverified_percentage_not_allowed")
+
+
+def build_short_first_touch(
+    company: str,
+    language: str,
+    observation: str,
+    *,
+    observation_detail: str | None = None,
+    contact_name: str | None = None,
+    contact_source_url: str | None = None,
+    proof_text: str | None = None,
+    proof_source_url: str | None = None,
+) -> tuple[str, str]:
+    if contact_name and not contact_source_url:
+        raise ValueError("contact_name_requires_verified_source")
+    if proof_text and not proof_source_url:
+        raise ValueError("social_proof_requires_verified_source")
+
+    subject = subject_for_company(company, language)
+    summary = business_summary_from_observation(observation, language)
+    detail = observation_detail or observation
+    observation_line = observation_line_from_observation(detail, language)
+
+    if language == "en":
+        greeting = f"Hello {contact_name}," if contact_name else "Hello,"
+        parts = [greeting, ""]
+        if summary:
+            parts.extend([summary, ""])
+        parts.extend([observation_line, ""])
+        if proof_text:
+            parts.extend([proof_text.strip(), ""])
+        parts.extend([
+            "Would you like me to show you a no-obligation example of what this could look like for you?",
+            "",
+            "Not interested? Just let me know.",
+            "",
+            "Regards,",
+            "Andrew",
+        ])
+    else:
+        greeting = f"Hallo {contact_name}," if contact_name else "Hallo,"
+        parts = [greeting, ""]
+        if summary:
+            parts.extend([summary, ""])
+        parts.extend([observation_line, ""])
+        if proof_text:
+            parts.extend([proof_text.strip(), ""])
+        parts.extend([
+            "Zal ik vrijblijvend een voorbeeld laten zien hoe dit er voor jullie uit kan zien?",
+            "",
+            "Geen interesse? Laat het gerust weten.",
+            "",
+            "Groet,",
+            "Andrew",
+        ])
+
+    body = "\n".join(parts)
+    validate_short_first_touch(
+        subject,
+        body,
+        proof_text=proof_text,
+        proof_source_url=proof_source_url,
+    )
+    return subject, body
+
+
+def build_short_first_touch_from_opening(
+    subject: str,
+    opening: str,
+    language: str,
+) -> tuple[str, str]:
+    short_subject = str(subject or "").strip().casefold()
+    focus = infer_focus_from_observation(opening, language, None)
+    observation_line = observation_line_from_opening(opening, language)
+    if language == "en":
+        summary = f"You operate in {focus}." if focus else None
+        parts = ["Hello,", ""]
+        if summary:
+            parts.extend([summary, ""])
+        parts.extend([
+            observation_line,
+            "",
+            "Would you like me to show you a no-obligation example of what this could look like for you?",
+            "",
+            "Not interested? Just let me know.",
+            "",
+            "Regards,",
+            "Andrew",
+        ])
+    else:
+        summary = f"Jullie zijn actief in {focus}." if focus else None
+        parts = ["Hallo,", ""]
+        if summary:
+            parts.extend([summary, ""])
+        parts.extend([
+            observation_line,
+            "",
+            "Zal ik vrijblijvend een voorbeeld laten zien hoe dit er voor jullie uit kan zien?",
+            "",
+            "Geen interesse? Laat het gerust weten.",
+            "",
+            "Groet,",
+            "Andrew",
+        ])
+    body = "\n".join(parts)
+    validate_short_first_touch(short_subject, body)
+    return short_subject, body
+
+
+def _word_set(value: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9]+", value.casefold()))
+
+
+def observation_is_low_signal(company: str, observation: str) -> bool:
+    from observation_quality import observation_rejection
+    if observation_rejection(observation):
+        return True
+    text = re.sub(r"\s+", " ", str(observation or "")).strip()
+    low = text.casefold()
+    if not text:
+        return True
+    if re.search(r"\b\d+\s*%", text):
+        return True
+    if re.match(r"^(home|homepage|welkom|welcome)\b", low):
+        return True
+    if (
+        re.match(
+            r"^(contact(?:gegevens)?|contact us|openingstijden|opening hours|"
+            r"route|adres|address|privacy|privacybeleid|vacatures?|jobs?|"
+            r"werken bij|careers?)\b",
+            low,
+        )
+        and len(_word_set(text)) <= 10
+    ):
+        return True
+    if re.match(
+        r"^(actie|sale|nu |tijdelijk|deze week|special offer|limited offer)\b",
+        low,
+    ):
+        return True
+    if re.search(
+        r"\b(product toegevoegd|offertepagina|offerte aan te vragen|"
+        r"toegevoegd aan jouw offerte|winkelmand|shopping cart|checkout)\b",
+        low,
+    ):
+        return True
+    if (
+        len(_word_set(text)) <= 9
+        and re.match(
+            r"^(samen werken aan|samen bouwen aan|jouw talent|"
+            r"your talent|your journey)\b",
+            low,
+        )
+    ):
+        return True
+    if (
+        re.search(r"\b(dank|klantgericht|te klein)\b", low)
+        and re.search(r"\b(prima|mensen|temp|locatie)\b", low)
+    ):
+        return True
+    if any(
+        marker in low
+        for marker in (
+            "window.",
+            "document.",
+            "newsletter",
+            "nieuwsbrief",
+            "schrijf je in",
+            "meer lezen na deze video",
+            "vacature",
+            "solliciteer",
+            "werken bij",
+            "teamleider",
+            "bouwvak",
+            "tijdelijk gesloten",
+        )
+    ):
+        return True
+    if "©" in text:
+        return True
+    if low in {"gelieve te wachten", "mysite", "wij zijn verhuisd..", "wij zijn verhuisd", "wie zijn wij?", "wie zijn wij", "🔒 beveiligde website", "beveiligde website", "staff member carousel"}:
+        return True
+    if re.search(r"reserved domain|under construction|coming soon|domainorder|geparkeerd|crypto casino|bitcoin casino|tempat main|window \d+|without code", low):
+        return True
+    company_words = _word_set(company)
+    observation_words = _word_set(text)
+    if company_words and observation_words:
+        extra = observation_words - company_words
+        if len(extra) <= 1 and len(observation_words) <= len(company_words) + 1:
+            return True
+    return False
+
+
+def build_opening(company: str, language: str, observation: str, category_hint: str | None = None) -> str:
+    from observation_quality import natural_opening
+    if observation_is_low_signal(company, observation):
+        raise ValueError("No specific verified site detail for outreach opening")
+    return natural_opening(observation, language)
+
+
+def naturalize_existing_opening(opening: str, language: str) -> str:
+    text = re.sub(r"\s+", " ", str(opening or "")).strip()
+    if language == "en":
+        match = re.fullmatch(
+            r'I noticed this on your website:\s*[“"](.+?)[”"]\.?',
+            text,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            observed = match.group(1).strip()
+            punctuation = "" if observed.endswith((".", "!", "?")) else "."
+            return f"What stood out to me on your website: {observed}{punctuation}"
+        return text
+
+    match = re.fullmatch(
+        r'Op jullie site viel me op:\s*[“"](.+?)[”"]\.?',
+        text,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        observed = match.group(1).strip()
+        punctuation = "" if observed.endswith((".", "!", "?")) else "."
+        return f"Wat me opviel op jullie website: {observed}{punctuation}"
+    return text
+
+
+def _legacy_exact_nl_opening_from_existing(opening: str, company: str | None = None) -> str:
+    text = re.sub(r"\s+", " ", str(opening or "")).strip()
+    if not text:
+        raise ValueError("unsupported existing Dutch verified opening")
+
+    direct = re.fullmatch(
+        r"Ik zag op jullie website dat\s+(.+)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if direct:
+        fact = direct.group(1).strip()
+        fact = re.split(r"\s+(?:Ik heb een idee|Mijn idee voor)\b", fact, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+        fact = re.sub(r"[.!?]+$", "", fact).strip()
+        if fact:
+            return f"Ik zag op jullie website dat {fact}."
+
+    quoted_patterns = (
+        r'Op jullie site viel me op:\s*[“"](.+?)[”"]',
+        r'Op jullie website zag ik\s*[“"](.+?)[”"]',
+        r'Op jullie website staat\s*[“"](.+?)[”"]',
+        r'Ik heb de website van .+? bekeken en zag\s*[“"](.+?)[”"]',
+        r'Eén detail dat opviel was\s*[“"](.+?)[”"]',
+    )
+    for pattern in quoted_patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            fact = re.sub(r"[.!?]+$", "", match.group(1).strip()).strip()
+            if fact:
+                return f"Ik zag op jullie website dat {fact}."
+
+    stood_out = re.fullmatch(
+        r"Wat me opviel op jullie website:\s*(.+)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if stood_out:
+        fact = stood_out.group(1).strip()
+        fact = re.split(r"\s+(?:Ik heb een idee|Mijn idee voor)\b", fact, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+        fact = re.sub(r"[.!?]+$", "", fact).strip()
+        if fact:
+            return f"Ik zag op jullie website dat {fact}."
+
+    focus = re.match(
+        r"Ik zag dat\s+(.+?)(?:\.\s+(?:Ik heb een idee|Mijn idee voor)\b|[.!?]*$)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if focus:
+        fact = re.sub(r"[.!?]+$", "", focus.group(1).strip()).strip()
+        if fact:
+            return f"Ik zag op jullie website dat {fact}."
+
+    site_focus = re.search(
+        r"Jullie site draait duidelijk om\s+(.+?)(?:\.\s+Mijn idee voor|[.!?]*$)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if site_focus and company:
+        focus_text = re.sub(r"[.!?]+$", "", site_focus.group(1).strip()).strip()
+        company_label = short_company_name(company)
+        if focus_text and company_label:
+            return f"Ik zag op jullie website dat {company_label} zich richt op {focus_text}."
+
+    raise ValueError("unsupported existing Dutch verified opening")
+
+
+def exact_nl_opening_from_existing(opening: str, company: str | None = None) -> str:
+    from observation_quality import observation_rejection, natural_opening
+    text = str(opening or "").strip()
+    if text.startswith("Op jullie website las ik: “"):
+        fact = text.removeprefix("Op jullie website las ik: “").removesuffix("”")
+        return natural_opening(fact, "nl")
+    direct = re.fullmatch(r"Ik zag op jullie website dat (jullie .+)\.", text)
+    if direct:
+        fact = direct[1]
+        verbs = r"zijn|bieden|aanbieden|verkopen|maken|serveren|leveren|produceren|verhuren|organiseren|hebben"
+        m = re.fullmatch(r"jullie (.+) (" + verbs + r")", fact)
+        if m:
+            verb = {"aanbieden": "bieden"}.get(m[2], m[2])
+            if not observation_rejection("Wij " + verb + " " + m[1]):
+                return text
+    legacy = _legacy_exact_nl_opening_from_existing(text, company)
+    fact = legacy.removeprefix("Ik zag op jullie website dat ").removesuffix(".")
+    # Legacy wrappers contain hints, never a fresh verification. They may only
+    # preserve grammatical business prose; metadata/category focus fails closed.
+    if observation_rejection(fact):
+        raise ValueError("unsupported existing Dutch verified opening: invalid business sentence")
+    return natural_opening(fact, "nl")
+
+
+def _copy_variant_index(key: str, count: int) -> int:
+    if count <= 0:
+        raise ValueError("count must be positive")
+    digest = hashlib.sha256(str(key).encode("utf-8")).digest()
+    return digest[0] % count
+
+
+def build_template_from_opening(
+    company: str,
+    language: str,
+    opening: str,
+    *,
+    price_min: int,
+    price_max: int,
+    variant_key: str | None = None,
+    value_sentence: str | None = None,
+) -> str:
+    # Backward-compatible entrypoint for verified existing openings.
+    _ = (price_min, price_max, variant_key, value_sentence)
+    subject = subject_for_company(company, language)
+    _subject, body = build_short_first_touch_from_opening(subject, opening, language)
+    return body
+
+
+def build_template(
+    company: str,
+    language: str,
+    observation: str,
+    *,
+    price_min: int,
+    price_max: int,
+    category_hint: str | None = None,
+    observation_detail: str | None = None,
+    contact_name: str | None = None,
+    contact_source_url: str | None = None,
+    proof_text: str | None = None,
+    proof_source_url: str | None = None,
+) -> str:
+    _ = (price_min, price_max, category_hint)
+    _subject, body = build_short_first_touch(
+        company,
+        language,
+        observation,
+        observation_detail=observation_detail,
+        contact_name=contact_name,
+        contact_source_url=contact_source_url,
+        proof_text=proof_text,
+        proof_source_url=proof_source_url,
+    )
+    return body
+
+def prepare_batch(contacts_payload: dict, config: dict, *, draft_limit: int = 1) -> dict:
+    if not 1 <= draft_limit <= 100:
+        raise ValueError("draft_limit must be 1-100")
+    price = config["monthly_price_eur"]
+    price_min, price_max = int(price["min"]), int(price["max"])
+    rows = []
+    selected = 0
+
+    for candidate in contacts_payload.get("candidates") or []:
+        language = str(candidate.get("language") or "nl").casefold()
+        if language not in {"nl", "en"}:
+            language = "nl"
+        company = clean_company(candidate.get("name_hint"), language)
+        emails = candidate.get("public_business_emails") or []
+        excluded = bool(candidate.get("excluded_competitor"))
+        observation = str(candidate.get("verified_observation") or "").strip()
+        observation_source_url = str(candidate.get("verified_observation_source_url") or "").strip()
+        observation_source_type = str(candidate.get("verified_observation_source_type") or "").strip()
+        category_hint = str(candidate.get("category_hint") or "").strip() or None
+        has_verified_observation = bool(
+            observation
+            and observation_source_url
+            and observation_source_type == "official_site"
+        )
+        observation_detail = str(candidate.get("verified_problem_observation") or "").strip() or None
+        observation_detail_source_url = str(candidate.get("verified_problem_observation_source_url") or "").strip()
+        observation_detail_source_type = str(candidate.get("verified_problem_observation_source_type") or "").strip()
+        if observation_detail and not (
+            observation_detail_source_url
+            and observation_detail_source_type == "official_site"
+        ):
+            raise ValueError("verified_problem_observation_requires_official_site_source")
+        contact_name = str(candidate.get("verified_contact_name") or "").strip() or None
+        contact_source_url = str(candidate.get("verified_contact_name_source_url") or "").strip() or None
+        proof_text = str(candidate.get("verified_social_proof") or "").strip() or None
+        proof_source_url = str(candidate.get("verified_social_proof_source_url") or "").strip() or None
+        preview = (
+            build_template(
+                company,
+                language,
+                observation,
+                price_min=price_min,
+                price_max=price_max,
+                category_hint=category_hint,
+                observation_detail=observation_detail,
+                contact_name=contact_name,
+                contact_source_url=contact_source_url,
+                proof_text=proof_text,
+                proof_source_url=proof_source_url,
+            )
+            if has_verified_observation
+            else None
+        )
+        subject_preview = subject_for_company(company, language) if has_verified_observation else None
+        basis = str(candidate.get("contact_basis_status") or "unverified")
+        base = {
+            "lead_id": None,
+            "company": candidate.get("name_hint"),
+            "copy_company_label": short_company_name(company),
+            "copy_subject_label": subject_label_for_company(company, language),
+            "website": candidate.get("website_hint"),
+            "official_domain_hint": candidate.get("official_domain_hint"),
+            "product_id": "growth_subscription",
+            "language": language,
+            "language_source": candidate.get("language_source"),
+            "category_hint": category_hint,
+            "monthly_price_min_eur": price_min,
+            "monthly_price_max_eur": price_max,
+            "excluded_competitor": excluded,
+            "exclusion_reason": candidate.get("exclusion_reason"),
+            "contact_basis_status": basis,
+            "contact_basis_hint": candidate.get("contact_basis_hint"),
+            "email_source_urls": candidate.get("email_source_urls") or [],
+            "email_source_types": candidate.get("email_source_types") or [],
+            "email_source_refs": candidate.get("email_source_refs") or [],
+            "verified_observation": observation or None,
+            "verified_observation_source_url": observation_source_url or None,
+            "verified_observation_source_type": observation_source_type or None,
+            "status": "excluded_competitor" if excluded else "no_public_email",
+            "email": None,
+            "subject": None,
+            "body": None,
+            "subject_preview": None if excluded else subject_preview,
+            "concept_preview": None if excluded else preview,
+        }
+        if excluded:
+            rows.append(base)
+            continue
+        if emails:
+            base["email"] = emails[0]
+            base["lead_id"] = stable_lead_id(base["email"], base["website"])
+            if not has_verified_observation:
+                base["status"] = "blocked_missing_verified_observation"
+            elif selected < draft_limit:
+                selected += 1
+                base["status"] = "draft_ready" if basis == "pass" else "review_draft"
+                base["subject"] = subject_preview
+                base["body"] = preview
+            else:
+                base["status"] = "email_found_not_selected"
+        rows.append(base)
+
+    return {
+        "schema_version": "webactueel-growth-batch/4.2",
+        "product": config,
+        "row_count": len(rows),
+        "excluded_competitor_count": sum(1 for row in rows if row["status"] == "excluded_competitor"),
+        "email_found_count": sum(1 for row in rows if row["email"]),
+        "draft_candidate_count": sum(1 for row in rows if row["status"] in {"draft_ready", "review_draft"}),
+        "review_draft_count": sum(1 for row in rows if row["status"] == "review_draft"),
+        "rows": rows,
+        "safety": {
+            "one_product": True,
+            "one_offer": True,
+            "short_first_touch_max_100_words": True,
+            "no_price_in_first_touch": True,
+            "no_feature_dump": True,
+            "social_proof_requires_verified_source": True,
+            "language_matched_copy": True,
+            "verified_official_site_observation_required": True,
+            "contact_basis_review_required_before_send": True,
+            "review_draft_storage_allowed": True,
+            "automatic_send": False,
+        },
+    }
+
+
+def write_csv(payload: dict, path: Path) -> None:
+    fields = [
+        "lead_id", "company", "website", "email", "language", "status",
+        "excluded_competitor", "exclusion_reason", "contact_basis_status",
+        "contact_basis_hint", "email_source_types", "product_id",
+        "verified_observation", "verified_observation_source_url", "verified_observation_source_type",
+        "monthly_price_min_eur", "monthly_price_max_eur",
+        "subject_preview", "concept_preview",
+    ]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        for row in payload["rows"]:
+            writer.writerow({field: row.get(field) for field in fields})
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--contacts", required=True)
+    parser.add_argument("--config", required=True)
+    parser.add_argument("--output-json", required=True)
+    parser.add_argument("--output-csv", required=True)
+    parser.add_argument("--draft-limit", type=int, default=1)
+    args = parser.parse_args()
+    result = prepare_batch(
+        load_json(Path(args.contacts)),
+        load_json(Path(args.config)),
+        draft_limit=args.draft_limit,
+    )
+    output_json = Path(args.output_json)
+    output_json.parent.mkdir(parents=True, exist_ok=True)
+    output_json.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    write_csv(result, Path(args.output_csv))
+    print(
+        "GROWTH_BATCH=green "
+        f"rows={result['row_count']} emails={result['email_found_count']} "
+        f"excluded_competitors={result['excluded_competitor_count']} "
+        f"draft_candidates={result['draft_candidate_count']} email_send=false"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+,
+        r'Op jullie website zag ik\s*[“"]?(.+?)[”"]?\.?
+
+def validate_short_first_touch(
+    subject: str,
+    body: str,
+    *,
+    proof_text: str | None = None,
+    proof_source_url: str | None = None,
+) -> None:
+    subject = str(subject or "").strip()
+    body = str(body or "").strip()
+    if not subject or len(subject.split()) > 8:
+        raise ValueError("subject_must_be_max_8_words")
+    if subject != subject.casefold() or "!" in subject:
+        raise ValueError("subject_must_be_lowercase_without_exclamation")
+    if len(body.split()) > 100:
+        raise ValueError("body_must_be_max_100_words")
+    if (
+        "€" in body
+        or re.search(r"\b\d+(?:[.,]\d+)?\s*(?:euro|eur)\b", body, re.I)
+        or re.search(r"\b(?:per\s+maand|per\s+month|p/m|pm)\b", body, re.I)
+    ):
+        raise ValueError("price_not_allowed_in_first_touch")
+    if "• " in body:
+        raise ValueError("feature_dump_not_allowed_in_first_touch")
+    cta_count = body.count("Zal ik vrijblijvend een voorbeeld laten zien hoe dit er voor jullie uit kan zien?") + body.count(
+        "Would you like me to show you a no-obligation example of what this could look like for you?"
+    )
+    if cta_count != 1:
+        raise ValueError("exactly_one_example_cta_required")
+    if bool(proof_text) != bool(proof_source_url):
+        raise ValueError("social_proof_requires_verified_source")
+    if not proof_text and re.search(r"\b\d+(?:[.,]\d+)?%\b", body):
+        raise ValueError("unverified_percentage_not_allowed")
+
+
+def build_short_first_touch(
+    company: str,
+    language: str,
+    observation: str,
+    *,
+    observation_detail: str | None = None,
+    contact_name: str | None = None,
+    contact_source_url: str | None = None,
+    proof_text: str | None = None,
+    proof_source_url: str | None = None,
+) -> tuple[str, str]:
+    if contact_name and not contact_source_url:
+        raise ValueError("contact_name_requires_verified_source")
+    if proof_text and not proof_source_url:
+        raise ValueError("social_proof_requires_verified_source")
+
+    subject = subject_for_company(company, language)
+    summary = business_summary_from_observation(observation, language)
+    detail = observation_detail or observation
+    observation_line = observation_line_from_observation(detail, language)
+
+    if language == "en":
+        greeting = f"Hello {contact_name}," if contact_name else "Hello,"
+        parts = [greeting, ""]
+        if summary:
+            parts.extend([summary, ""])
+        parts.extend([observation_line, ""])
+        if proof_text:
+            parts.extend([proof_text.strip(), ""])
+        parts.extend([
+            "Would you like me to show you a no-obligation example of what this could look like for you?",
+            "",
+            "Not interested? Just let me know.",
+            "",
+            "Regards,",
+            "Andrew",
+        ])
+    else:
+        greeting = f"Hallo {contact_name}," if contact_name else "Hallo,"
+        parts = [greeting, ""]
+        if summary:
+            parts.extend([summary, ""])
+        parts.extend([observation_line, ""])
+        if proof_text:
+            parts.extend([proof_text.strip(), ""])
+        parts.extend([
+            "Zal ik vrijblijvend een voorbeeld laten zien hoe dit er voor jullie uit kan zien?",
+            "",
+            "Geen interesse? Laat het gerust weten.",
+            "",
+            "Groet,",
+            "Andrew",
+        ])
+
+    body = "\n".join(parts)
+    validate_short_first_touch(
+        subject,
+        body,
+        proof_text=proof_text,
+        proof_source_url=proof_source_url,
+    )
+    return subject, body
+
+
+def build_short_first_touch_from_opening(
+    subject: str,
+    opening: str,
+    language: str,
+) -> tuple[str, str]:
+    short_subject = str(subject or "").strip().casefold()
+    focus = infer_focus_from_observation(opening, language, None)
+    observation_line = observation_line_from_opening(opening, language)
+    if language == "en":
+        summary = f"You operate in {focus}." if focus else None
+        parts = ["Hello,", ""]
+        if summary:
+            parts.extend([summary, ""])
+        parts.extend([
+            observation_line,
+            "",
+            "Would you like me to show you a no-obligation example of what this could look like for you?",
+            "",
+            "Not interested? Just let me know.",
+            "",
+            "Regards,",
+            "Andrew",
+        ])
+    else:
+        summary = f"Jullie zijn actief in {focus}." if focus else None
+        parts = ["Hallo,", ""]
+        if summary:
+            parts.extend([summary, ""])
+        parts.extend([
+            observation_line,
+            "",
+            "Zal ik vrijblijvend een voorbeeld laten zien hoe dit er voor jullie uit kan zien?",
+            "",
+            "Geen interesse? Laat het gerust weten.",
+            "",
+            "Groet,",
+            "Andrew",
+        ])
+    body = "\n".join(parts)
+    validate_short_first_touch(short_subject, body)
+    return short_subject, body
+
+
+def _word_set(value: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9]+", value.casefold()))
+
+
+def observation_is_low_signal(company: str, observation: str) -> bool:
+    from observation_quality import observation_rejection
+    if observation_rejection(observation):
+        return True
+    text = re.sub(r"\s+", " ", str(observation or "")).strip()
+    low = text.casefold()
+    if not text:
+        return True
+    if re.search(r"\b\d+\s*%", text):
+        return True
+    if re.match(r"^(home|homepage|welkom|welcome)\b", low):
+        return True
+    if (
+        re.match(
+            r"^(contact(?:gegevens)?|contact us|openingstijden|opening hours|"
+            r"route|adres|address|privacy|privacybeleid|vacatures?|jobs?|"
+            r"werken bij|careers?)\b",
+            low,
+        )
+        and len(_word_set(text)) <= 10
+    ):
+        return True
+    if re.match(
+        r"^(actie|sale|nu |tijdelijk|deze week|special offer|limited offer)\b",
+        low,
+    ):
+        return True
+    if re.search(
+        r"\b(product toegevoegd|offertepagina|offerte aan te vragen|"
+        r"toegevoegd aan jouw offerte|winkelmand|shopping cart|checkout)\b",
+        low,
+    ):
+        return True
+    if (
+        len(_word_set(text)) <= 9
+        and re.match(
+            r"^(samen werken aan|samen bouwen aan|jouw talent|"
+            r"your talent|your journey)\b",
+            low,
+        )
+    ):
+        return True
+    if (
+        re.search(r"\b(dank|klantgericht|te klein)\b", low)
+        and re.search(r"\b(prima|mensen|temp|locatie)\b", low)
+    ):
+        return True
+    if any(
+        marker in low
+        for marker in (
+            "window.",
+            "document.",
+            "newsletter",
+            "nieuwsbrief",
+            "schrijf je in",
+            "meer lezen na deze video",
+            "vacature",
+            "solliciteer",
+            "werken bij",
+            "teamleider",
+            "bouwvak",
+            "tijdelijk gesloten",
+        )
+    ):
+        return True
+    if "©" in text:
+        return True
+    if low in {"gelieve te wachten", "mysite", "wij zijn verhuisd..", "wij zijn verhuisd", "wie zijn wij?", "wie zijn wij", "🔒 beveiligde website", "beveiligde website", "staff member carousel"}:
+        return True
+    if re.search(r"reserved domain|under construction|coming soon|domainorder|geparkeerd|crypto casino|bitcoin casino|tempat main|window \d+|without code", low):
+        return True
+    company_words = _word_set(company)
+    observation_words = _word_set(text)
+    if company_words and observation_words:
+        extra = observation_words - company_words
+        if len(extra) <= 1 and len(observation_words) <= len(company_words) + 1:
+            return True
+    return False
+
+
+def build_opening(company: str, language: str, observation: str, category_hint: str | None = None) -> str:
+    from observation_quality import natural_opening
+    if observation_is_low_signal(company, observation):
+        raise ValueError("No specific verified site detail for outreach opening")
+    return natural_opening(observation, language)
+
+
+def naturalize_existing_opening(opening: str, language: str) -> str:
+    text = re.sub(r"\s+", " ", str(opening or "")).strip()
+    if language == "en":
+        match = re.fullmatch(
+            r'I noticed this on your website:\s*[“"](.+?)[”"]\.?',
+            text,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            observed = match.group(1).strip()
+            punctuation = "" if observed.endswith((".", "!", "?")) else "."
+            return f"What stood out to me on your website: {observed}{punctuation}"
+        return text
+
+    match = re.fullmatch(
+        r'Op jullie site viel me op:\s*[“"](.+?)[”"]\.?',
+        text,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        observed = match.group(1).strip()
+        punctuation = "" if observed.endswith((".", "!", "?")) else "."
+        return f"Wat me opviel op jullie website: {observed}{punctuation}"
+    return text
+
+
+def _legacy_exact_nl_opening_from_existing(opening: str, company: str | None = None) -> str:
+    text = re.sub(r"\s+", " ", str(opening or "")).strip()
+    if not text:
+        raise ValueError("unsupported existing Dutch verified opening")
+
+    direct = re.fullmatch(
+        r"Ik zag op jullie website dat\s+(.+)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if direct:
+        fact = direct.group(1).strip()
+        fact = re.split(r"\s+(?:Ik heb een idee|Mijn idee voor)\b", fact, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+        fact = re.sub(r"[.!?]+$", "", fact).strip()
+        if fact:
+            return f"Ik zag op jullie website dat {fact}."
+
+    quoted_patterns = (
+        r'Op jullie site viel me op:\s*[“"](.+?)[”"]',
+        r'Op jullie website zag ik\s*[“"](.+?)[”"]',
+        r'Op jullie website staat\s*[“"](.+?)[”"]',
+        r'Ik heb de website van .+? bekeken en zag\s*[“"](.+?)[”"]',
+        r'Eén detail dat opviel was\s*[“"](.+?)[”"]',
+    )
+    for pattern in quoted_patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            fact = re.sub(r"[.!?]+$", "", match.group(1).strip()).strip()
+            if fact:
+                return f"Ik zag op jullie website dat {fact}."
+
+    stood_out = re.fullmatch(
+        r"Wat me opviel op jullie website:\s*(.+)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if stood_out:
+        fact = stood_out.group(1).strip()
+        fact = re.split(r"\s+(?:Ik heb een idee|Mijn idee voor)\b", fact, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+        fact = re.sub(r"[.!?]+$", "", fact).strip()
+        if fact:
+            return f"Ik zag op jullie website dat {fact}."
+
+    focus = re.match(
+        r"Ik zag dat\s+(.+?)(?:\.\s+(?:Ik heb een idee|Mijn idee voor)\b|[.!?]*$)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if focus:
+        fact = re.sub(r"[.!?]+$", "", focus.group(1).strip()).strip()
+        if fact:
+            return f"Ik zag op jullie website dat {fact}."
+
+    site_focus = re.search(
+        r"Jullie site draait duidelijk om\s+(.+?)(?:\.\s+Mijn idee voor|[.!?]*$)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if site_focus and company:
+        focus_text = re.sub(r"[.!?]+$", "", site_focus.group(1).strip()).strip()
+        company_label = short_company_name(company)
+        if focus_text and company_label:
+            return f"Ik zag op jullie website dat {company_label} zich richt op {focus_text}."
+
+    raise ValueError("unsupported existing Dutch verified opening")
+
+
+def exact_nl_opening_from_existing(opening: str, company: str | None = None) -> str:
+    from observation_quality import observation_rejection, natural_opening
+    text = str(opening or "").strip()
+    if text.startswith("Op jullie website las ik: “"):
+        fact = text.removeprefix("Op jullie website las ik: “").removesuffix("”")
+        return natural_opening(fact, "nl")
+    direct = re.fullmatch(r"Ik zag op jullie website dat (jullie .+)\.", text)
+    if direct:
+        fact = direct[1]
+        verbs = r"zijn|bieden|aanbieden|verkopen|maken|serveren|leveren|produceren|verhuren|organiseren|hebben"
+        m = re.fullmatch(r"jullie (.+) (" + verbs + r")", fact)
+        if m:
+            verb = {"aanbieden": "bieden"}.get(m[2], m[2])
+            if not observation_rejection("Wij " + verb + " " + m[1]):
+                return text
+    legacy = _legacy_exact_nl_opening_from_existing(text, company)
+    fact = legacy.removeprefix("Ik zag op jullie website dat ").removesuffix(".")
+    # Legacy wrappers contain hints, never a fresh verification. They may only
+    # preserve grammatical business prose; metadata/category focus fails closed.
+    if observation_rejection(fact):
+        raise ValueError("unsupported existing Dutch verified opening: invalid business sentence")
+    return natural_opening(fact, "nl")
+
+
+def _copy_variant_index(key: str, count: int) -> int:
+    if count <= 0:
+        raise ValueError("count must be positive")
+    digest = hashlib.sha256(str(key).encode("utf-8")).digest()
+    return digest[0] % count
+
+
+def build_template_from_opening(
+    company: str,
+    language: str,
+    opening: str,
+    *,
+    price_min: int,
+    price_max: int,
+    variant_key: str | None = None,
+    value_sentence: str | None = None,
+) -> str:
+    # Backward-compatible entrypoint for verified existing openings.
+    _ = (price_min, price_max, variant_key, value_sentence)
+    subject = subject_for_company(company, language)
+    _subject, body = build_short_first_touch_from_opening(subject, opening, language)
+    return body
+
+
+def build_template(
+    company: str,
+    language: str,
+    observation: str,
+    *,
+    price_min: int,
+    price_max: int,
+    category_hint: str | None = None,
+    observation_detail: str | None = None,
+    contact_name: str | None = None,
+    contact_source_url: str | None = None,
+    proof_text: str | None = None,
+    proof_source_url: str | None = None,
+) -> str:
+    _ = (price_min, price_max, category_hint)
+    _subject, body = build_short_first_touch(
+        company,
+        language,
+        observation,
+        observation_detail=observation_detail,
+        contact_name=contact_name,
+        contact_source_url=contact_source_url,
+        proof_text=proof_text,
+        proof_source_url=proof_source_url,
+    )
+    return body
+
+def prepare_batch(contacts_payload: dict, config: dict, *, draft_limit: int = 1) -> dict:
+    if not 1 <= draft_limit <= 100:
+        raise ValueError("draft_limit must be 1-100")
+    price = config["monthly_price_eur"]
+    price_min, price_max = int(price["min"]), int(price["max"])
+    rows = []
+    selected = 0
+
+    for candidate in contacts_payload.get("candidates") or []:
+        language = str(candidate.get("language") or "nl").casefold()
+        if language not in {"nl", "en"}:
+            language = "nl"
+        company = clean_company(candidate.get("name_hint"), language)
+        emails = candidate.get("public_business_emails") or []
+        excluded = bool(candidate.get("excluded_competitor"))
+        observation = str(candidate.get("verified_observation") or "").strip()
+        observation_source_url = str(candidate.get("verified_observation_source_url") or "").strip()
+        observation_source_type = str(candidate.get("verified_observation_source_type") or "").strip()
+        category_hint = str(candidate.get("category_hint") or "").strip() or None
+        has_verified_observation = bool(
+            observation
+            and observation_source_url
+            and observation_source_type == "official_site"
+        )
+        observation_detail = str(candidate.get("verified_problem_observation") or "").strip() or None
+        observation_detail_source_url = str(candidate.get("verified_problem_observation_source_url") or "").strip()
+        observation_detail_source_type = str(candidate.get("verified_problem_observation_source_type") or "").strip()
+        if observation_detail and not (
+            observation_detail_source_url
+            and observation_detail_source_type == "official_site"
+        ):
+            raise ValueError("verified_problem_observation_requires_official_site_source")
+        contact_name = str(candidate.get("verified_contact_name") or "").strip() or None
+        contact_source_url = str(candidate.get("verified_contact_name_source_url") or "").strip() or None
+        proof_text = str(candidate.get("verified_social_proof") or "").strip() or None
+        proof_source_url = str(candidate.get("verified_social_proof_source_url") or "").strip() or None
+        preview = (
+            build_template(
+                company,
+                language,
+                observation,
+                price_min=price_min,
+                price_max=price_max,
+                category_hint=category_hint,
+                observation_detail=observation_detail,
+                contact_name=contact_name,
+                contact_source_url=contact_source_url,
+                proof_text=proof_text,
+                proof_source_url=proof_source_url,
+            )
+            if has_verified_observation
+            else None
+        )
+        subject_preview = subject_for_company(company, language) if has_verified_observation else None
+        basis = str(candidate.get("contact_basis_status") or "unverified")
+        base = {
+            "lead_id": None,
+            "company": candidate.get("name_hint"),
+            "copy_company_label": short_company_name(company),
+            "copy_subject_label": subject_label_for_company(company, language),
+            "website": candidate.get("website_hint"),
+            "official_domain_hint": candidate.get("official_domain_hint"),
+            "product_id": "growth_subscription",
+            "language": language,
+            "language_source": candidate.get("language_source"),
+            "category_hint": category_hint,
+            "monthly_price_min_eur": price_min,
+            "monthly_price_max_eur": price_max,
+            "excluded_competitor": excluded,
+            "exclusion_reason": candidate.get("exclusion_reason"),
+            "contact_basis_status": basis,
+            "contact_basis_hint": candidate.get("contact_basis_hint"),
+            "email_source_urls": candidate.get("email_source_urls") or [],
+            "email_source_types": candidate.get("email_source_types") or [],
+            "email_source_refs": candidate.get("email_source_refs") or [],
+            "verified_observation": observation or None,
+            "verified_observation_source_url": observation_source_url or None,
+            "verified_observation_source_type": observation_source_type or None,
+            "status": "excluded_competitor" if excluded else "no_public_email",
+            "email": None,
+            "subject": None,
+            "body": None,
+            "subject_preview": None if excluded else subject_preview,
+            "concept_preview": None if excluded else preview,
+        }
+        if excluded:
+            rows.append(base)
+            continue
+        if emails:
+            base["email"] = emails[0]
+            base["lead_id"] = stable_lead_id(base["email"], base["website"])
+            if not has_verified_observation:
+                base["status"] = "blocked_missing_verified_observation"
+            elif selected < draft_limit:
+                selected += 1
+                base["status"] = "draft_ready" if basis == "pass" else "review_draft"
+                base["subject"] = subject_preview
+                base["body"] = preview
+            else:
+                base["status"] = "email_found_not_selected"
+        rows.append(base)
+
+    return {
+        "schema_version": "webactueel-growth-batch/4.2",
+        "product": config,
+        "row_count": len(rows),
+        "excluded_competitor_count": sum(1 for row in rows if row["status"] == "excluded_competitor"),
+        "email_found_count": sum(1 for row in rows if row["email"]),
+        "draft_candidate_count": sum(1 for row in rows if row["status"] in {"draft_ready", "review_draft"}),
+        "review_draft_count": sum(1 for row in rows if row["status"] == "review_draft"),
+        "rows": rows,
+        "safety": {
+            "one_product": True,
+            "one_offer": True,
+            "short_first_touch_max_100_words": True,
+            "no_price_in_first_touch": True,
+            "no_feature_dump": True,
+            "social_proof_requires_verified_source": True,
+            "language_matched_copy": True,
+            "verified_official_site_observation_required": True,
+            "contact_basis_review_required_before_send": True,
+            "review_draft_storage_allowed": True,
+            "automatic_send": False,
+        },
+    }
+
+
+def write_csv(payload: dict, path: Path) -> None:
+    fields = [
+        "lead_id", "company", "website", "email", "language", "status",
+        "excluded_competitor", "exclusion_reason", "contact_basis_status",
+        "contact_basis_hint", "email_source_types", "product_id",
+        "verified_observation", "verified_observation_source_url", "verified_observation_source_type",
+        "monthly_price_min_eur", "monthly_price_max_eur",
+        "subject_preview", "concept_preview",
+    ]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        for row in payload["rows"]:
+            writer.writerow({field: row.get(field) for field in fields})
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--contacts", required=True)
+    parser.add_argument("--config", required=True)
+    parser.add_argument("--output-json", required=True)
+    parser.add_argument("--output-csv", required=True)
+    parser.add_argument("--draft-limit", type=int, default=1)
+    args = parser.parse_args()
+    result = prepare_batch(
+        load_json(Path(args.contacts)),
+        load_json(Path(args.config)),
+        draft_limit=args.draft_limit,
+    )
+    output_json = Path(args.output_json)
+    output_json.parent.mkdir(parents=True, exist_ok=True)
+    output_json.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    write_csv(result, Path(args.output_csv))
+    print(
+        "GROWTH_BATCH=green "
+        f"rows={result['row_count']} emails={result['email_found_count']} "
+        f"excluded_competitors={result['excluded_competitor_count']} "
+        f"draft_candidates={result['draft_candidate_count']} email_send=false"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+,
+        r'Op jullie website las ik:\s*[“"]?(.+?)[”"]?\.?
+
+def validate_short_first_touch(
+    subject: str,
+    body: str,
+    *,
+    proof_text: str | None = None,
+    proof_source_url: str | None = None,
+) -> None:
+    subject = str(subject or "").strip()
+    body = str(body or "").strip()
+    if not subject or len(subject.split()) > 8:
+        raise ValueError("subject_must_be_max_8_words")
+    if subject != subject.casefold() or "!" in subject:
+        raise ValueError("subject_must_be_lowercase_without_exclamation")
+    if len(body.split()) > 100:
+        raise ValueError("body_must_be_max_100_words")
+    if (
+        "€" in body
+        or re.search(r"\b\d+(?:[.,]\d+)?\s*(?:euro|eur)\b", body, re.I)
+        or re.search(r"\b(?:per\s+maand|per\s+month|p/m|pm)\b", body, re.I)
+    ):
+        raise ValueError("price_not_allowed_in_first_touch")
+    if "• " in body:
+        raise ValueError("feature_dump_not_allowed_in_first_touch")
+    cta_count = body.count("Zal ik vrijblijvend een voorbeeld laten zien hoe dit er voor jullie uit kan zien?") + body.count(
+        "Would you like me to show you a no-obligation example of what this could look like for you?"
+    )
+    if cta_count != 1:
+        raise ValueError("exactly_one_example_cta_required")
+    if bool(proof_text) != bool(proof_source_url):
+        raise ValueError("social_proof_requires_verified_source")
+    if not proof_text and re.search(r"\b\d+(?:[.,]\d+)?%\b", body):
+        raise ValueError("unverified_percentage_not_allowed")
+
+
+def build_short_first_touch(
+    company: str,
+    language: str,
+    observation: str,
+    *,
+    observation_detail: str | None = None,
+    contact_name: str | None = None,
+    contact_source_url: str | None = None,
+    proof_text: str | None = None,
+    proof_source_url: str | None = None,
+) -> tuple[str, str]:
+    if contact_name and not contact_source_url:
+        raise ValueError("contact_name_requires_verified_source")
+    if proof_text and not proof_source_url:
+        raise ValueError("social_proof_requires_verified_source")
+
+    subject = subject_for_company(company, language)
+    summary = business_summary_from_observation(observation, language)
+    detail = observation_detail or observation
+    observation_line = observation_line_from_observation(detail, language)
+
+    if language == "en":
+        greeting = f"Hello {contact_name}," if contact_name else "Hello,"
+        parts = [greeting, ""]
+        if summary:
+            parts.extend([summary, ""])
+        parts.extend([observation_line, ""])
+        if proof_text:
+            parts.extend([proof_text.strip(), ""])
+        parts.extend([
+            "Would you like me to show you a no-obligation example of what this could look like for you?",
+            "",
+            "Not interested? Just let me know.",
+            "",
+            "Regards,",
+            "Andrew",
+        ])
+    else:
+        greeting = f"Hallo {contact_name}," if contact_name else "Hallo,"
+        parts = [greeting, ""]
+        if summary:
+            parts.extend([summary, ""])
+        parts.extend([observation_line, ""])
+        if proof_text:
+            parts.extend([proof_text.strip(), ""])
+        parts.extend([
+            "Zal ik vrijblijvend een voorbeeld laten zien hoe dit er voor jullie uit kan zien?",
+            "",
+            "Geen interesse? Laat het gerust weten.",
+            "",
+            "Groet,",
+            "Andrew",
+        ])
+
+    body = "\n".join(parts)
+    validate_short_first_touch(
+        subject,
+        body,
+        proof_text=proof_text,
+        proof_source_url=proof_source_url,
+    )
+    return subject, body
+
+
+def build_short_first_touch_from_opening(
+    subject: str,
+    opening: str,
+    language: str,
+) -> tuple[str, str]:
+    short_subject = str(subject or "").strip().casefold()
+    focus = infer_focus_from_observation(opening, language, None)
+    observation_line = observation_line_from_opening(opening, language)
+    if language == "en":
+        summary = f"You operate in {focus}." if focus else None
+        parts = ["Hello,", ""]
+        if summary:
+            parts.extend([summary, ""])
+        parts.extend([
+            observation_line,
+            "",
+            "Would you like me to show you a no-obligation example of what this could look like for you?",
+            "",
+            "Not interested? Just let me know.",
+            "",
+            "Regards,",
+            "Andrew",
+        ])
+    else:
+        summary = f"Jullie zijn actief in {focus}." if focus else None
+        parts = ["Hallo,", ""]
+        if summary:
+            parts.extend([summary, ""])
+        parts.extend([
+            observation_line,
+            "",
+            "Zal ik vrijblijvend een voorbeeld laten zien hoe dit er voor jullie uit kan zien?",
+            "",
+            "Geen interesse? Laat het gerust weten.",
+            "",
+            "Groet,",
+            "Andrew",
+        ])
+    body = "\n".join(parts)
+    validate_short_first_touch(short_subject, body)
+    return short_subject, body
+
+
+def _word_set(value: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9]+", value.casefold()))
+
+
+def observation_is_low_signal(company: str, observation: str) -> bool:
+    from observation_quality import observation_rejection
+    if observation_rejection(observation):
+        return True
+    text = re.sub(r"\s+", " ", str(observation or "")).strip()
+    low = text.casefold()
+    if not text:
+        return True
+    if re.search(r"\b\d+\s*%", text):
+        return True
+    if re.match(r"^(home|homepage|welkom|welcome)\b", low):
+        return True
+    if (
+        re.match(
+            r"^(contact(?:gegevens)?|contact us|openingstijden|opening hours|"
+            r"route|adres|address|privacy|privacybeleid|vacatures?|jobs?|"
+            r"werken bij|careers?)\b",
+            low,
+        )
+        and len(_word_set(text)) <= 10
+    ):
+        return True
+    if re.match(
+        r"^(actie|sale|nu |tijdelijk|deze week|special offer|limited offer)\b",
+        low,
+    ):
+        return True
+    if re.search(
+        r"\b(product toegevoegd|offertepagina|offerte aan te vragen|"
+        r"toegevoegd aan jouw offerte|winkelmand|shopping cart|checkout)\b",
+        low,
+    ):
+        return True
+    if (
+        len(_word_set(text)) <= 9
+        and re.match(
+            r"^(samen werken aan|samen bouwen aan|jouw talent|"
+            r"your talent|your journey)\b",
+            low,
+        )
+    ):
+        return True
+    if (
+        re.search(r"\b(dank|klantgericht|te klein)\b", low)
+        and re.search(r"\b(prima|mensen|temp|locatie)\b", low)
+    ):
+        return True
+    if any(
+        marker in low
+        for marker in (
+            "window.",
+            "document.",
+            "newsletter",
+            "nieuwsbrief",
+            "schrijf je in",
+            "meer lezen na deze video",
+            "vacature",
+            "solliciteer",
+            "werken bij",
+            "teamleider",
+            "bouwvak",
+            "tijdelijk gesloten",
+        )
+    ):
+        return True
+    if "©" in text:
+        return True
+    if low in {"gelieve te wachten", "mysite", "wij zijn verhuisd..", "wij zijn verhuisd", "wie zijn wij?", "wie zijn wij", "🔒 beveiligde website", "beveiligde website", "staff member carousel"}:
+        return True
+    if re.search(r"reserved domain|under construction|coming soon|domainorder|geparkeerd|crypto casino|bitcoin casino|tempat main|window \d+|without code", low):
+        return True
+    company_words = _word_set(company)
+    observation_words = _word_set(text)
+    if company_words and observation_words:
+        extra = observation_words - company_words
+        if len(extra) <= 1 and len(observation_words) <= len(company_words) + 1:
+            return True
+    return False
+
+
+def build_opening(company: str, language: str, observation: str, category_hint: str | None = None) -> str:
+    from observation_quality import natural_opening
+    if observation_is_low_signal(company, observation):
+        raise ValueError("No specific verified site detail for outreach opening")
+    return natural_opening(observation, language)
+
+
+def naturalize_existing_opening(opening: str, language: str) -> str:
+    text = re.sub(r"\s+", " ", str(opening or "")).strip()
+    if language == "en":
+        match = re.fullmatch(
+            r'I noticed this on your website:\s*[“"](.+?)[”"]\.?',
+            text,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            observed = match.group(1).strip()
+            punctuation = "" if observed.endswith((".", "!", "?")) else "."
+            return f"What stood out to me on your website: {observed}{punctuation}"
+        return text
+
+    match = re.fullmatch(
+        r'Op jullie site viel me op:\s*[“"](.+?)[”"]\.?',
+        text,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        observed = match.group(1).strip()
+        punctuation = "" if observed.endswith((".", "!", "?")) else "."
+        return f"Wat me opviel op jullie website: {observed}{punctuation}"
+    return text
+
+
+def _legacy_exact_nl_opening_from_existing(opening: str, company: str | None = None) -> str:
+    text = re.sub(r"\s+", " ", str(opening or "")).strip()
+    if not text:
+        raise ValueError("unsupported existing Dutch verified opening")
+
+    direct = re.fullmatch(
+        r"Ik zag op jullie website dat\s+(.+)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if direct:
+        fact = direct.group(1).strip()
+        fact = re.split(r"\s+(?:Ik heb een idee|Mijn idee voor)\b", fact, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+        fact = re.sub(r"[.!?]+$", "", fact).strip()
+        if fact:
+            return f"Ik zag op jullie website dat {fact}."
+
+    quoted_patterns = (
+        r'Op jullie site viel me op:\s*[“"](.+?)[”"]',
+        r'Op jullie website zag ik\s*[“"](.+?)[”"]',
+        r'Op jullie website staat\s*[“"](.+?)[”"]',
+        r'Ik heb de website van .+? bekeken en zag\s*[“"](.+?)[”"]',
+        r'Eén detail dat opviel was\s*[“"](.+?)[”"]',
+    )
+    for pattern in quoted_patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            fact = re.sub(r"[.!?]+$", "", match.group(1).strip()).strip()
+            if fact:
+                return f"Ik zag op jullie website dat {fact}."
+
+    stood_out = re.fullmatch(
+        r"Wat me opviel op jullie website:\s*(.+)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if stood_out:
+        fact = stood_out.group(1).strip()
+        fact = re.split(r"\s+(?:Ik heb een idee|Mijn idee voor)\b", fact, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+        fact = re.sub(r"[.!?]+$", "", fact).strip()
+        if fact:
+            return f"Ik zag op jullie website dat {fact}."
+
+    focus = re.match(
+        r"Ik zag dat\s+(.+?)(?:\.\s+(?:Ik heb een idee|Mijn idee voor)\b|[.!?]*$)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if focus:
+        fact = re.sub(r"[.!?]+$", "", focus.group(1).strip()).strip()
+        if fact:
+            return f"Ik zag op jullie website dat {fact}."
+
+    site_focus = re.search(
+        r"Jullie site draait duidelijk om\s+(.+?)(?:\.\s+Mijn idee voor|[.!?]*$)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if site_focus and company:
+        focus_text = re.sub(r"[.!?]+$", "", site_focus.group(1).strip()).strip()
+        company_label = short_company_name(company)
+        if focus_text and company_label:
+            return f"Ik zag op jullie website dat {company_label} zich richt op {focus_text}."
+
+    raise ValueError("unsupported existing Dutch verified opening")
+
+
+def exact_nl_opening_from_existing(opening: str, company: str | None = None) -> str:
+    from observation_quality import observation_rejection, natural_opening
+    text = str(opening or "").strip()
+    if text.startswith("Op jullie website las ik: “"):
+        fact = text.removeprefix("Op jullie website las ik: “").removesuffix("”")
+        return natural_opening(fact, "nl")
+    direct = re.fullmatch(r"Ik zag op jullie website dat (jullie .+)\.", text)
+    if direct:
+        fact = direct[1]
+        verbs = r"zijn|bieden|aanbieden|verkopen|maken|serveren|leveren|produceren|verhuren|organiseren|hebben"
+        m = re.fullmatch(r"jullie (.+) (" + verbs + r")", fact)
+        if m:
+            verb = {"aanbieden": "bieden"}.get(m[2], m[2])
+            if not observation_rejection("Wij " + verb + " " + m[1]):
+                return text
+    legacy = _legacy_exact_nl_opening_from_existing(text, company)
+    fact = legacy.removeprefix("Ik zag op jullie website dat ").removesuffix(".")
+    # Legacy wrappers contain hints, never a fresh verification. They may only
+    # preserve grammatical business prose; metadata/category focus fails closed.
+    if observation_rejection(fact):
+        raise ValueError("unsupported existing Dutch verified opening: invalid business sentence")
+    return natural_opening(fact, "nl")
+
+
+def _copy_variant_index(key: str, count: int) -> int:
+    if count <= 0:
+        raise ValueError("count must be positive")
+    digest = hashlib.sha256(str(key).encode("utf-8")).digest()
+    return digest[0] % count
+
+
+def build_template_from_opening(
+    company: str,
+    language: str,
+    opening: str,
+    *,
+    price_min: int,
+    price_max: int,
+    variant_key: str | None = None,
+    value_sentence: str | None = None,
+) -> str:
+    # Backward-compatible entrypoint for verified existing openings.
+    _ = (price_min, price_max, variant_key, value_sentence)
+    subject = subject_for_company(company, language)
+    _subject, body = build_short_first_touch_from_opening(subject, opening, language)
+    return body
+
+
+def build_template(
+    company: str,
+    language: str,
+    observation: str,
+    *,
+    price_min: int,
+    price_max: int,
+    category_hint: str | None = None,
+    observation_detail: str | None = None,
+    contact_name: str | None = None,
+    contact_source_url: str | None = None,
+    proof_text: str | None = None,
+    proof_source_url: str | None = None,
+) -> str:
+    _ = (price_min, price_max, category_hint)
+    _subject, body = build_short_first_touch(
+        company,
+        language,
+        observation,
+        observation_detail=observation_detail,
+        contact_name=contact_name,
+        contact_source_url=contact_source_url,
+        proof_text=proof_text,
+        proof_source_url=proof_source_url,
+    )
+    return body
+
+def prepare_batch(contacts_payload: dict, config: dict, *, draft_limit: int = 1) -> dict:
+    if not 1 <= draft_limit <= 100:
+        raise ValueError("draft_limit must be 1-100")
+    price = config["monthly_price_eur"]
+    price_min, price_max = int(price["min"]), int(price["max"])
+    rows = []
+    selected = 0
+
+    for candidate in contacts_payload.get("candidates") or []:
+        language = str(candidate.get("language") or "nl").casefold()
+        if language not in {"nl", "en"}:
+            language = "nl"
+        company = clean_company(candidate.get("name_hint"), language)
+        emails = candidate.get("public_business_emails") or []
+        excluded = bool(candidate.get("excluded_competitor"))
+        observation = str(candidate.get("verified_observation") or "").strip()
+        observation_source_url = str(candidate.get("verified_observation_source_url") or "").strip()
+        observation_source_type = str(candidate.get("verified_observation_source_type") or "").strip()
+        category_hint = str(candidate.get("category_hint") or "").strip() or None
+        has_verified_observation = bool(
+            observation
+            and observation_source_url
+            and observation_source_type == "official_site"
+        )
+        observation_detail = str(candidate.get("verified_problem_observation") or "").strip() or None
+        observation_detail_source_url = str(candidate.get("verified_problem_observation_source_url") or "").strip()
+        observation_detail_source_type = str(candidate.get("verified_problem_observation_source_type") or "").strip()
+        if observation_detail and not (
+            observation_detail_source_url
+            and observation_detail_source_type == "official_site"
+        ):
+            raise ValueError("verified_problem_observation_requires_official_site_source")
+        contact_name = str(candidate.get("verified_contact_name") or "").strip() or None
+        contact_source_url = str(candidate.get("verified_contact_name_source_url") or "").strip() or None
+        proof_text = str(candidate.get("verified_social_proof") or "").strip() or None
+        proof_source_url = str(candidate.get("verified_social_proof_source_url") or "").strip() or None
+        preview = (
+            build_template(
+                company,
+                language,
+                observation,
+                price_min=price_min,
+                price_max=price_max,
+                category_hint=category_hint,
+                observation_detail=observation_detail,
+                contact_name=contact_name,
+                contact_source_url=contact_source_url,
+                proof_text=proof_text,
+                proof_source_url=proof_source_url,
+            )
+            if has_verified_observation
+            else None
+        )
+        subject_preview = subject_for_company(company, language) if has_verified_observation else None
+        basis = str(candidate.get("contact_basis_status") or "unverified")
+        base = {
+            "lead_id": None,
+            "company": candidate.get("name_hint"),
+            "copy_company_label": short_company_name(company),
+            "copy_subject_label": subject_label_for_company(company, language),
+            "website": candidate.get("website_hint"),
+            "official_domain_hint": candidate.get("official_domain_hint"),
+            "product_id": "growth_subscription",
+            "language": language,
+            "language_source": candidate.get("language_source"),
+            "category_hint": category_hint,
+            "monthly_price_min_eur": price_min,
+            "monthly_price_max_eur": price_max,
+            "excluded_competitor": excluded,
+            "exclusion_reason": candidate.get("exclusion_reason"),
+            "contact_basis_status": basis,
+            "contact_basis_hint": candidate.get("contact_basis_hint"),
+            "email_source_urls": candidate.get("email_source_urls") or [],
+            "email_source_types": candidate.get("email_source_types") or [],
+            "email_source_refs": candidate.get("email_source_refs") or [],
+            "verified_observation": observation or None,
+            "verified_observation_source_url": observation_source_url or None,
+            "verified_observation_source_type": observation_source_type or None,
+            "status": "excluded_competitor" if excluded else "no_public_email",
+            "email": None,
+            "subject": None,
+            "body": None,
+            "subject_preview": None if excluded else subject_preview,
+            "concept_preview": None if excluded else preview,
+        }
+        if excluded:
+            rows.append(base)
+            continue
+        if emails:
+            base["email"] = emails[0]
+            base["lead_id"] = stable_lead_id(base["email"], base["website"])
+            if not has_verified_observation:
+                base["status"] = "blocked_missing_verified_observation"
+            elif selected < draft_limit:
+                selected += 1
+                base["status"] = "draft_ready" if basis == "pass" else "review_draft"
+                base["subject"] = subject_preview
+                base["body"] = preview
+            else:
+                base["status"] = "email_found_not_selected"
+        rows.append(base)
+
+    return {
+        "schema_version": "webactueel-growth-batch/4.2",
+        "product": config,
+        "row_count": len(rows),
+        "excluded_competitor_count": sum(1 for row in rows if row["status"] == "excluded_competitor"),
+        "email_found_count": sum(1 for row in rows if row["email"]),
+        "draft_candidate_count": sum(1 for row in rows if row["status"] in {"draft_ready", "review_draft"}),
+        "review_draft_count": sum(1 for row in rows if row["status"] == "review_draft"),
+        "rows": rows,
+        "safety": {
+            "one_product": True,
+            "one_offer": True,
+            "short_first_touch_max_100_words": True,
+            "no_price_in_first_touch": True,
+            "no_feature_dump": True,
+            "social_proof_requires_verified_source": True,
+            "language_matched_copy": True,
+            "verified_official_site_observation_required": True,
+            "contact_basis_review_required_before_send": True,
+            "review_draft_storage_allowed": True,
+            "automatic_send": False,
+        },
+    }
+
+
+def write_csv(payload: dict, path: Path) -> None:
+    fields = [
+        "lead_id", "company", "website", "email", "language", "status",
+        "excluded_competitor", "exclusion_reason", "contact_basis_status",
+        "contact_basis_hint", "email_source_types", "product_id",
+        "verified_observation", "verified_observation_source_url", "verified_observation_source_type",
+        "monthly_price_min_eur", "monthly_price_max_eur",
+        "subject_preview", "concept_preview",
+    ]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        for row in payload["rows"]:
+            writer.writerow({field: row.get(field) for field in fields})
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--contacts", required=True)
+    parser.add_argument("--config", required=True)
+    parser.add_argument("--output-json", required=True)
+    parser.add_argument("--output-csv", required=True)
+    parser.add_argument("--draft-limit", type=int, default=1)
+    args = parser.parse_args()
+    result = prepare_batch(
+        load_json(Path(args.contacts)),
+        load_json(Path(args.config)),
+        draft_limit=args.draft_limit,
+    )
+    output_json = Path(args.output_json)
+    output_json.parent.mkdir(parents=True, exist_ok=True)
+    output_json.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    write_csv(result, Path(args.output_csv))
+    print(
+        "GROWTH_BATCH=green "
+        f"rows={result['row_count']} emails={result['email_found_count']} "
+        f"excluded_competitors={result['excluded_competitor_count']} "
+        f"draft_candidates={result['draft_candidate_count']} email_send=false"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+,
+        r'Ik heb de website van .+? bekeken en zag\s*[“"]?(.+?)[”"]?\.?
+
+def validate_short_first_touch(
+    subject: str,
+    body: str,
+    *,
+    proof_text: str | None = None,
+    proof_source_url: str | None = None,
+) -> None:
+    subject = str(subject or "").strip()
+    body = str(body or "").strip()
+    if not subject or len(subject.split()) > 8:
+        raise ValueError("subject_must_be_max_8_words")
+    if subject != subject.casefold() or "!" in subject:
+        raise ValueError("subject_must_be_lowercase_without_exclamation")
+    if len(body.split()) > 100:
+        raise ValueError("body_must_be_max_100_words")
+    if (
+        "€" in body
+        or re.search(r"\b\d+(?:[.,]\d+)?\s*(?:euro|eur)\b", body, re.I)
+        or re.search(r"\b(?:per\s+maand|per\s+month|p/m|pm)\b", body, re.I)
+    ):
+        raise ValueError("price_not_allowed_in_first_touch")
+    if "• " in body:
+        raise ValueError("feature_dump_not_allowed_in_first_touch")
+    cta_count = body.count("Zal ik vrijblijvend een voorbeeld laten zien hoe dit er voor jullie uit kan zien?") + body.count(
+        "Would you like me to show you a no-obligation example of what this could look like for you?"
+    )
+    if cta_count != 1:
+        raise ValueError("exactly_one_example_cta_required")
+    if bool(proof_text) != bool(proof_source_url):
+        raise ValueError("social_proof_requires_verified_source")
+    if not proof_text and re.search(r"\b\d+(?:[.,]\d+)?%\b", body):
+        raise ValueError("unverified_percentage_not_allowed")
+
+
+def build_short_first_touch(
+    company: str,
+    language: str,
+    observation: str,
+    *,
+    observation_detail: str | None = None,
+    contact_name: str | None = None,
+    contact_source_url: str | None = None,
+    proof_text: str | None = None,
+    proof_source_url: str | None = None,
+) -> tuple[str, str]:
+    if contact_name and not contact_source_url:
+        raise ValueError("contact_name_requires_verified_source")
+    if proof_text and not proof_source_url:
+        raise ValueError("social_proof_requires_verified_source")
+
+    subject = subject_for_company(company, language)
+    summary = business_summary_from_observation(observation, language)
+    detail = observation_detail or observation
+    observation_line = observation_line_from_observation(detail, language)
+
+    if language == "en":
+        greeting = f"Hello {contact_name}," if contact_name else "Hello,"
+        parts = [greeting, ""]
+        if summary:
+            parts.extend([summary, ""])
+        parts.extend([observation_line, ""])
+        if proof_text:
+            parts.extend([proof_text.strip(), ""])
+        parts.extend([
+            "Would you like me to show you a no-obligation example of what this could look like for you?",
+            "",
+            "Not interested? Just let me know.",
+            "",
+            "Regards,",
+            "Andrew",
+        ])
+    else:
+        greeting = f"Hallo {contact_name}," if contact_name else "Hallo,"
+        parts = [greeting, ""]
+        if summary:
+            parts.extend([summary, ""])
+        parts.extend([observation_line, ""])
+        if proof_text:
+            parts.extend([proof_text.strip(), ""])
+        parts.extend([
+            "Zal ik vrijblijvend een voorbeeld laten zien hoe dit er voor jullie uit kan zien?",
+            "",
+            "Geen interesse? Laat het gerust weten.",
+            "",
+            "Groet,",
+            "Andrew",
+        ])
+
+    body = "\n".join(parts)
+    validate_short_first_touch(
+        subject,
+        body,
+        proof_text=proof_text,
+        proof_source_url=proof_source_url,
+    )
+    return subject, body
+
+
+def build_short_first_touch_from_opening(
+    subject: str,
+    opening: str,
+    language: str,
+) -> tuple[str, str]:
+    short_subject = str(subject or "").strip().casefold()
+    focus = infer_focus_from_observation(opening, language, None)
+    observation_line = observation_line_from_opening(opening, language)
+    if language == "en":
+        summary = f"You operate in {focus}." if focus else None
+        parts = ["Hello,", ""]
+        if summary:
+            parts.extend([summary, ""])
+        parts.extend([
+            observation_line,
+            "",
+            "Would you like me to show you a no-obligation example of what this could look like for you?",
+            "",
+            "Not interested? Just let me know.",
+            "",
+            "Regards,",
+            "Andrew",
+        ])
+    else:
+        summary = f"Jullie zijn actief in {focus}." if focus else None
+        parts = ["Hallo,", ""]
+        if summary:
+            parts.extend([summary, ""])
+        parts.extend([
+            observation_line,
+            "",
+            "Zal ik vrijblijvend een voorbeeld laten zien hoe dit er voor jullie uit kan zien?",
+            "",
+            "Geen interesse? Laat het gerust weten.",
+            "",
+            "Groet,",
+            "Andrew",
+        ])
+    body = "\n".join(parts)
+    validate_short_first_touch(short_subject, body)
+    return short_subject, body
+
+
+def _word_set(value: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9]+", value.casefold()))
+
+
+def observation_is_low_signal(company: str, observation: str) -> bool:
+    from observation_quality import observation_rejection
+    if observation_rejection(observation):
+        return True
+    text = re.sub(r"\s+", " ", str(observation or "")).strip()
+    low = text.casefold()
+    if not text:
+        return True
+    if re.search(r"\b\d+\s*%", text):
+        return True
+    if re.match(r"^(home|homepage|welkom|welcome)\b", low):
+        return True
+    if (
+        re.match(
+            r"^(contact(?:gegevens)?|contact us|openingstijden|opening hours|"
+            r"route|adres|address|privacy|privacybeleid|vacatures?|jobs?|"
+            r"werken bij|careers?)\b",
+            low,
+        )
+        and len(_word_set(text)) <= 10
+    ):
+        return True
+    if re.match(
+        r"^(actie|sale|nu |tijdelijk|deze week|special offer|limited offer)\b",
+        low,
+    ):
+        return True
+    if re.search(
+        r"\b(product toegevoegd|offertepagina|offerte aan te vragen|"
+        r"toegevoegd aan jouw offerte|winkelmand|shopping cart|checkout)\b",
+        low,
+    ):
+        return True
+    if (
+        len(_word_set(text)) <= 9
+        and re.match(
+            r"^(samen werken aan|samen bouwen aan|jouw talent|"
+            r"your talent|your journey)\b",
+            low,
+        )
+    ):
+        return True
+    if (
+        re.search(r"\b(dank|klantgericht|te klein)\b", low)
+        and re.search(r"\b(prima|mensen|temp|locatie)\b", low)
+    ):
+        return True
+    if any(
+        marker in low
+        for marker in (
+            "window.",
+            "document.",
+            "newsletter",
+            "nieuwsbrief",
+            "schrijf je in",
+            "meer lezen na deze video",
+            "vacature",
+            "solliciteer",
+            "werken bij",
+            "teamleider",
+            "bouwvak",
+            "tijdelijk gesloten",
+        )
+    ):
+        return True
+    if "©" in text:
+        return True
+    if low in {"gelieve te wachten", "mysite", "wij zijn verhuisd..", "wij zijn verhuisd", "wie zijn wij?", "wie zijn wij", "🔒 beveiligde website", "beveiligde website", "staff member carousel"}:
+        return True
+    if re.search(r"reserved domain|under construction|coming soon|domainorder|geparkeerd|crypto casino|bitcoin casino|tempat main|window \d+|without code", low):
+        return True
+    company_words = _word_set(company)
+    observation_words = _word_set(text)
+    if company_words and observation_words:
+        extra = observation_words - company_words
+        if len(extra) <= 1 and len(observation_words) <= len(company_words) + 1:
+            return True
+    return False
+
+
+def build_opening(company: str, language: str, observation: str, category_hint: str | None = None) -> str:
+    from observation_quality import natural_opening
+    if observation_is_low_signal(company, observation):
+        raise ValueError("No specific verified site detail for outreach opening")
+    return natural_opening(observation, language)
+
+
+def naturalize_existing_opening(opening: str, language: str) -> str:
+    text = re.sub(r"\s+", " ", str(opening or "")).strip()
+    if language == "en":
+        match = re.fullmatch(
+            r'I noticed this on your website:\s*[“"](.+?)[”"]\.?',
+            text,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            observed = match.group(1).strip()
+            punctuation = "" if observed.endswith((".", "!", "?")) else "."
+            return f"What stood out to me on your website: {observed}{punctuation}"
+        return text
+
+    match = re.fullmatch(
+        r'Op jullie site viel me op:\s*[“"](.+?)[”"]\.?',
+        text,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        observed = match.group(1).strip()
+        punctuation = "" if observed.endswith((".", "!", "?")) else "."
+        return f"Wat me opviel op jullie website: {observed}{punctuation}"
+    return text
+
+
+def _legacy_exact_nl_opening_from_existing(opening: str, company: str | None = None) -> str:
+    text = re.sub(r"\s+", " ", str(opening or "")).strip()
+    if not text:
+        raise ValueError("unsupported existing Dutch verified opening")
+
+    direct = re.fullmatch(
+        r"Ik zag op jullie website dat\s+(.+)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if direct:
+        fact = direct.group(1).strip()
+        fact = re.split(r"\s+(?:Ik heb een idee|Mijn idee voor)\b", fact, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+        fact = re.sub(r"[.!?]+$", "", fact).strip()
+        if fact:
+            return f"Ik zag op jullie website dat {fact}."
+
+    quoted_patterns = (
+        r'Op jullie site viel me op:\s*[“"](.+?)[”"]',
+        r'Op jullie website zag ik\s*[“"](.+?)[”"]',
+        r'Op jullie website staat\s*[“"](.+?)[”"]',
+        r'Ik heb de website van .+? bekeken en zag\s*[“"](.+?)[”"]',
+        r'Eén detail dat opviel was\s*[“"](.+?)[”"]',
+    )
+    for pattern in quoted_patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            fact = re.sub(r"[.!?]+$", "", match.group(1).strip()).strip()
+            if fact:
+                return f"Ik zag op jullie website dat {fact}."
+
+    stood_out = re.fullmatch(
+        r"Wat me opviel op jullie website:\s*(.+)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if stood_out:
+        fact = stood_out.group(1).strip()
+        fact = re.split(r"\s+(?:Ik heb een idee|Mijn idee voor)\b", fact, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+        fact = re.sub(r"[.!?]+$", "", fact).strip()
+        if fact:
+            return f"Ik zag op jullie website dat {fact}."
+
+    focus = re.match(
+        r"Ik zag dat\s+(.+?)(?:\.\s+(?:Ik heb een idee|Mijn idee voor)\b|[.!?]*$)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if focus:
+        fact = re.sub(r"[.!?]+$", "", focus.group(1).strip()).strip()
+        if fact:
+            return f"Ik zag op jullie website dat {fact}."
+
+    site_focus = re.search(
+        r"Jullie site draait duidelijk om\s+(.+?)(?:\.\s+Mijn idee voor|[.!?]*$)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if site_focus and company:
+        focus_text = re.sub(r"[.!?]+$", "", site_focus.group(1).strip()).strip()
+        company_label = short_company_name(company)
+        if focus_text and company_label:
+            return f"Ik zag op jullie website dat {company_label} zich richt op {focus_text}."
+
+    raise ValueError("unsupported existing Dutch verified opening")
+
+
+def exact_nl_opening_from_existing(opening: str, company: str | None = None) -> str:
+    from observation_quality import observation_rejection, natural_opening
+    text = str(opening or "").strip()
+    if text.startswith("Op jullie website las ik: “"):
+        fact = text.removeprefix("Op jullie website las ik: “").removesuffix("”")
+        return natural_opening(fact, "nl")
+    direct = re.fullmatch(r"Ik zag op jullie website dat (jullie .+)\.", text)
+    if direct:
+        fact = direct[1]
+        verbs = r"zijn|bieden|aanbieden|verkopen|maken|serveren|leveren|produceren|verhuren|organiseren|hebben"
+        m = re.fullmatch(r"jullie (.+) (" + verbs + r")", fact)
+        if m:
+            verb = {"aanbieden": "bieden"}.get(m[2], m[2])
+            if not observation_rejection("Wij " + verb + " " + m[1]):
+                return text
+    legacy = _legacy_exact_nl_opening_from_existing(text, company)
+    fact = legacy.removeprefix("Ik zag op jullie website dat ").removesuffix(".")
+    # Legacy wrappers contain hints, never a fresh verification. They may only
+    # preserve grammatical business prose; metadata/category focus fails closed.
+    if observation_rejection(fact):
+        raise ValueError("unsupported existing Dutch verified opening: invalid business sentence")
+    return natural_opening(fact, "nl")
+
+
+def _copy_variant_index(key: str, count: int) -> int:
+    if count <= 0:
+        raise ValueError("count must be positive")
+    digest = hashlib.sha256(str(key).encode("utf-8")).digest()
+    return digest[0] % count
+
+
+def build_template_from_opening(
+    company: str,
+    language: str,
+    opening: str,
+    *,
+    price_min: int,
+    price_max: int,
+    variant_key: str | None = None,
+    value_sentence: str | None = None,
+) -> str:
+    # Backward-compatible entrypoint for verified existing openings.
+    _ = (price_min, price_max, variant_key, value_sentence)
+    subject = subject_for_company(company, language)
+    _subject, body = build_short_first_touch_from_opening(subject, opening, language)
+    return body
+
+
+def build_template(
+    company: str,
+    language: str,
+    observation: str,
+    *,
+    price_min: int,
+    price_max: int,
+    category_hint: str | None = None,
+    observation_detail: str | None = None,
+    contact_name: str | None = None,
+    contact_source_url: str | None = None,
+    proof_text: str | None = None,
+    proof_source_url: str | None = None,
+) -> str:
+    _ = (price_min, price_max, category_hint)
+    _subject, body = build_short_first_touch(
+        company,
+        language,
+        observation,
+        observation_detail=observation_detail,
+        contact_name=contact_name,
+        contact_source_url=contact_source_url,
+        proof_text=proof_text,
+        proof_source_url=proof_source_url,
+    )
+    return body
+
+def prepare_batch(contacts_payload: dict, config: dict, *, draft_limit: int = 1) -> dict:
+    if not 1 <= draft_limit <= 100:
+        raise ValueError("draft_limit must be 1-100")
+    price = config["monthly_price_eur"]
+    price_min, price_max = int(price["min"]), int(price["max"])
+    rows = []
+    selected = 0
+
+    for candidate in contacts_payload.get("candidates") or []:
+        language = str(candidate.get("language") or "nl").casefold()
+        if language not in {"nl", "en"}:
+            language = "nl"
+        company = clean_company(candidate.get("name_hint"), language)
+        emails = candidate.get("public_business_emails") or []
+        excluded = bool(candidate.get("excluded_competitor"))
+        observation = str(candidate.get("verified_observation") or "").strip()
+        observation_source_url = str(candidate.get("verified_observation_source_url") or "").strip()
+        observation_source_type = str(candidate.get("verified_observation_source_type") or "").strip()
+        category_hint = str(candidate.get("category_hint") or "").strip() or None
+        has_verified_observation = bool(
+            observation
+            and observation_source_url
+            and observation_source_type == "official_site"
+        )
+        observation_detail = str(candidate.get("verified_problem_observation") or "").strip() or None
+        observation_detail_source_url = str(candidate.get("verified_problem_observation_source_url") or "").strip()
+        observation_detail_source_type = str(candidate.get("verified_problem_observation_source_type") or "").strip()
+        if observation_detail and not (
+            observation_detail_source_url
+            and observation_detail_source_type == "official_site"
+        ):
+            raise ValueError("verified_problem_observation_requires_official_site_source")
+        contact_name = str(candidate.get("verified_contact_name") or "").strip() or None
+        contact_source_url = str(candidate.get("verified_contact_name_source_url") or "").strip() or None
+        proof_text = str(candidate.get("verified_social_proof") or "").strip() or None
+        proof_source_url = str(candidate.get("verified_social_proof_source_url") or "").strip() or None
+        preview = (
+            build_template(
+                company,
+                language,
+                observation,
+                price_min=price_min,
+                price_max=price_max,
+                category_hint=category_hint,
+                observation_detail=observation_detail,
+                contact_name=contact_name,
+                contact_source_url=contact_source_url,
+                proof_text=proof_text,
+                proof_source_url=proof_source_url,
+            )
+            if has_verified_observation
+            else None
+        )
+        subject_preview = subject_for_company(company, language) if has_verified_observation else None
+        basis = str(candidate.get("contact_basis_status") or "unverified")
+        base = {
+            "lead_id": None,
+            "company": candidate.get("name_hint"),
+            "copy_company_label": short_company_name(company),
+            "copy_subject_label": subject_label_for_company(company, language),
+            "website": candidate.get("website_hint"),
+            "official_domain_hint": candidate.get("official_domain_hint"),
+            "product_id": "growth_subscription",
+            "language": language,
+            "language_source": candidate.get("language_source"),
+            "category_hint": category_hint,
+            "monthly_price_min_eur": price_min,
+            "monthly_price_max_eur": price_max,
+            "excluded_competitor": excluded,
+            "exclusion_reason": candidate.get("exclusion_reason"),
+            "contact_basis_status": basis,
+            "contact_basis_hint": candidate.get("contact_basis_hint"),
+            "email_source_urls": candidate.get("email_source_urls") or [],
+            "email_source_types": candidate.get("email_source_types") or [],
+            "email_source_refs": candidate.get("email_source_refs") or [],
+            "verified_observation": observation or None,
+            "verified_observation_source_url": observation_source_url or None,
+            "verified_observation_source_type": observation_source_type or None,
+            "status": "excluded_competitor" if excluded else "no_public_email",
+            "email": None,
+            "subject": None,
+            "body": None,
+            "subject_preview": None if excluded else subject_preview,
+            "concept_preview": None if excluded else preview,
+        }
+        if excluded:
+            rows.append(base)
+            continue
+        if emails:
+            base["email"] = emails[0]
+            base["lead_id"] = stable_lead_id(base["email"], base["website"])
+            if not has_verified_observation:
+                base["status"] = "blocked_missing_verified_observation"
+            elif selected < draft_limit:
+                selected += 1
+                base["status"] = "draft_ready" if basis == "pass" else "review_draft"
+                base["subject"] = subject_preview
+                base["body"] = preview
+            else:
+                base["status"] = "email_found_not_selected"
+        rows.append(base)
+
+    return {
+        "schema_version": "webactueel-growth-batch/4.2",
+        "product": config,
+        "row_count": len(rows),
+        "excluded_competitor_count": sum(1 for row in rows if row["status"] == "excluded_competitor"),
+        "email_found_count": sum(1 for row in rows if row["email"]),
+        "draft_candidate_count": sum(1 for row in rows if row["status"] in {"draft_ready", "review_draft"}),
+        "review_draft_count": sum(1 for row in rows if row["status"] == "review_draft"),
+        "rows": rows,
+        "safety": {
+            "one_product": True,
+            "one_offer": True,
+            "short_first_touch_max_100_words": True,
+            "no_price_in_first_touch": True,
+            "no_feature_dump": True,
+            "social_proof_requires_verified_source": True,
+            "language_matched_copy": True,
+            "verified_official_site_observation_required": True,
+            "contact_basis_review_required_before_send": True,
+            "review_draft_storage_allowed": True,
+            "automatic_send": False,
+        },
+    }
+
+
+def write_csv(payload: dict, path: Path) -> None:
+    fields = [
+        "lead_id", "company", "website", "email", "language", "status",
+        "excluded_competitor", "exclusion_reason", "contact_basis_status",
+        "contact_basis_hint", "email_source_types", "product_id",
+        "verified_observation", "verified_observation_source_url", "verified_observation_source_type",
+        "monthly_price_min_eur", "monthly_price_max_eur",
+        "subject_preview", "concept_preview",
+    ]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        for row in payload["rows"]:
+            writer.writerow({field: row.get(field) for field in fields})
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--contacts", required=True)
+    parser.add_argument("--config", required=True)
+    parser.add_argument("--output-json", required=True)
+    parser.add_argument("--output-csv", required=True)
+    parser.add_argument("--draft-limit", type=int, default=1)
+    args = parser.parse_args()
+    result = prepare_batch(
+        load_json(Path(args.contacts)),
+        load_json(Path(args.config)),
+        draft_limit=args.draft_limit,
+    )
+    output_json = Path(args.output_json)
+    output_json.parent.mkdir(parents=True, exist_ok=True)
+    output_json.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    write_csv(result, Path(args.output_csv))
+    print(
+        "GROWTH_BATCH=green "
+        f"rows={result['row_count']} emails={result['email_found_count']} "
+        f"excluded_competitors={result['excluded_competitor_count']} "
+        f"draft_candidates={result['draft_candidate_count']} email_send=false"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+,
+        r'Eén detail dat opviel was\s*[“"]?(.+?)[”"]?\.?
+
+def validate_short_first_touch(
+    subject: str,
+    body: str,
+    *,
+    proof_text: str | None = None,
+    proof_source_url: str | None = None,
+) -> None:
+    subject = str(subject or "").strip()
+    body = str(body or "").strip()
+    if not subject or len(subject.split()) > 8:
+        raise ValueError("subject_must_be_max_8_words")
+    if subject != subject.casefold() or "!" in subject:
+        raise ValueError("subject_must_be_lowercase_without_exclamation")
+    if len(body.split()) > 100:
+        raise ValueError("body_must_be_max_100_words")
+    if (
+        "€" in body
+        or re.search(r"\b\d+(?:[.,]\d+)?\s*(?:euro|eur)\b", body, re.I)
+        or re.search(r"\b(?:per\s+maand|per\s+month|p/m|pm)\b", body, re.I)
+    ):
+        raise ValueError("price_not_allowed_in_first_touch")
+    if "• " in body:
+        raise ValueError("feature_dump_not_allowed_in_first_touch")
+    cta_count = body.count("Zal ik vrijblijvend een voorbeeld laten zien hoe dit er voor jullie uit kan zien?") + body.count(
+        "Would you like me to show you a no-obligation example of what this could look like for you?"
+    )
+    if cta_count != 1:
+        raise ValueError("exactly_one_example_cta_required")
+    if bool(proof_text) != bool(proof_source_url):
+        raise ValueError("social_proof_requires_verified_source")
+    if not proof_text and re.search(r"\b\d+(?:[.,]\d+)?%\b", body):
+        raise ValueError("unverified_percentage_not_allowed")
+
+
+def build_short_first_touch(
+    company: str,
+    language: str,
+    observation: str,
+    *,
+    observation_detail: str | None = None,
+    contact_name: str | None = None,
+    contact_source_url: str | None = None,
+    proof_text: str | None = None,
+    proof_source_url: str | None = None,
+) -> tuple[str, str]:
+    if contact_name and not contact_source_url:
+        raise ValueError("contact_name_requires_verified_source")
+    if proof_text and not proof_source_url:
+        raise ValueError("social_proof_requires_verified_source")
+
+    subject = subject_for_company(company, language)
+    summary = business_summary_from_observation(observation, language)
+    detail = observation_detail or observation
+    observation_line = observation_line_from_observation(detail, language)
+
+    if language == "en":
+        greeting = f"Hello {contact_name}," if contact_name else "Hello,"
+        parts = [greeting, ""]
+        if summary:
+            parts.extend([summary, ""])
+        parts.extend([observation_line, ""])
+        if proof_text:
+            parts.extend([proof_text.strip(), ""])
+        parts.extend([
+            "Would you like me to show you a no-obligation example of what this could look like for you?",
+            "",
+            "Not interested? Just let me know.",
+            "",
+            "Regards,",
+            "Andrew",
+        ])
+    else:
+        greeting = f"Hallo {contact_name}," if contact_name else "Hallo,"
+        parts = [greeting, ""]
+        if summary:
+            parts.extend([summary, ""])
+        parts.extend([observation_line, ""])
+        if proof_text:
+            parts.extend([proof_text.strip(), ""])
+        parts.extend([
+            "Zal ik vrijblijvend een voorbeeld laten zien hoe dit er voor jullie uit kan zien?",
+            "",
+            "Geen interesse? Laat het gerust weten.",
+            "",
+            "Groet,",
+            "Andrew",
+        ])
+
+    body = "\n".join(parts)
+    validate_short_first_touch(
+        subject,
+        body,
+        proof_text=proof_text,
+        proof_source_url=proof_source_url,
+    )
+    return subject, body
+
+
+def build_short_first_touch_from_opening(
+    subject: str,
+    opening: str,
+    language: str,
+) -> tuple[str, str]:
+    short_subject = str(subject or "").strip().casefold()
+    focus = infer_focus_from_observation(opening, language, None)
+    observation_line = observation_line_from_opening(opening, language)
+    if language == "en":
+        summary = f"You operate in {focus}." if focus else None
+        parts = ["Hello,", ""]
+        if summary:
+            parts.extend([summary, ""])
+        parts.extend([
+            observation_line,
+            "",
+            "Would you like me to show you a no-obligation example of what this could look like for you?",
+            "",
+            "Not interested? Just let me know.",
+            "",
+            "Regards,",
+            "Andrew",
+        ])
+    else:
+        summary = f"Jullie zijn actief in {focus}." if focus else None
+        parts = ["Hallo,", ""]
+        if summary:
+            parts.extend([summary, ""])
+        parts.extend([
+            observation_line,
+            "",
+            "Zal ik vrijblijvend een voorbeeld laten zien hoe dit er voor jullie uit kan zien?",
+            "",
+            "Geen interesse? Laat het gerust weten.",
+            "",
+            "Groet,",
+            "Andrew",
+        ])
+    body = "\n".join(parts)
+    validate_short_first_touch(short_subject, body)
+    return short_subject, body
+
+
+def _word_set(value: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9]+", value.casefold()))
+
+
+def observation_is_low_signal(company: str, observation: str) -> bool:
+    from observation_quality import observation_rejection
+    if observation_rejection(observation):
+        return True
+    text = re.sub(r"\s+", " ", str(observation or "")).strip()
+    low = text.casefold()
+    if not text:
+        return True
+    if re.search(r"\b\d+\s*%", text):
+        return True
+    if re.match(r"^(home|homepage|welkom|welcome)\b", low):
+        return True
+    if (
+        re.match(
+            r"^(contact(?:gegevens)?|contact us|openingstijden|opening hours|"
+            r"route|adres|address|privacy|privacybeleid|vacatures?|jobs?|"
+            r"werken bij|careers?)\b",
+            low,
+        )
+        and len(_word_set(text)) <= 10
+    ):
+        return True
+    if re.match(
+        r"^(actie|sale|nu |tijdelijk|deze week|special offer|limited offer)\b",
+        low,
+    ):
+        return True
+    if re.search(
+        r"\b(product toegevoegd|offertepagina|offerte aan te vragen|"
+        r"toegevoegd aan jouw offerte|winkelmand|shopping cart|checkout)\b",
+        low,
+    ):
+        return True
+    if (
+        len(_word_set(text)) <= 9
+        and re.match(
+            r"^(samen werken aan|samen bouwen aan|jouw talent|"
+            r"your talent|your journey)\b",
+            low,
+        )
+    ):
+        return True
+    if (
+        re.search(r"\b(dank|klantgericht|te klein)\b", low)
+        and re.search(r"\b(prima|mensen|temp|locatie)\b", low)
+    ):
+        return True
+    if any(
+        marker in low
+        for marker in (
+            "window.",
+            "document.",
+            "newsletter",
+            "nieuwsbrief",
+            "schrijf je in",
+            "meer lezen na deze video",
+            "vacature",
+            "solliciteer",
+            "werken bij",
+            "teamleider",
+            "bouwvak",
+            "tijdelijk gesloten",
+        )
+    ):
+        return True
+    if "©" in text:
+        return True
+    if low in {"gelieve te wachten", "mysite", "wij zijn verhuisd..", "wij zijn verhuisd", "wie zijn wij?", "wie zijn wij", "🔒 beveiligde website", "beveiligde website", "staff member carousel"}:
+        return True
+    if re.search(r"reserved domain|under construction|coming soon|domainorder|geparkeerd|crypto casino|bitcoin casino|tempat main|window \d+|without code", low):
+        return True
+    company_words = _word_set(company)
+    observation_words = _word_set(text)
+    if company_words and observation_words:
+        extra = observation_words - company_words
+        if len(extra) <= 1 and len(observation_words) <= len(company_words) + 1:
+            return True
+    return False
+
+
+def build_opening(company: str, language: str, observation: str, category_hint: str | None = None) -> str:
+    from observation_quality import natural_opening
+    if observation_is_low_signal(company, observation):
+        raise ValueError("No specific verified site detail for outreach opening")
+    return natural_opening(observation, language)
+
+
+def naturalize_existing_opening(opening: str, language: str) -> str:
+    text = re.sub(r"\s+", " ", str(opening or "")).strip()
+    if language == "en":
+        match = re.fullmatch(
+            r'I noticed this on your website:\s*[“"](.+?)[”"]\.?',
+            text,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            observed = match.group(1).strip()
+            punctuation = "" if observed.endswith((".", "!", "?")) else "."
+            return f"What stood out to me on your website: {observed}{punctuation}"
+        return text
+
+    match = re.fullmatch(
+        r'Op jullie site viel me op:\s*[“"](.+?)[”"]\.?',
+        text,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        observed = match.group(1).strip()
+        punctuation = "" if observed.endswith((".", "!", "?")) else "."
+        return f"Wat me opviel op jullie website: {observed}{punctuation}"
+    return text
+
+
+def _legacy_exact_nl_opening_from_existing(opening: str, company: str | None = None) -> str:
+    text = re.sub(r"\s+", " ", str(opening or "")).strip()
+    if not text:
+        raise ValueError("unsupported existing Dutch verified opening")
+
+    direct = re.fullmatch(
+        r"Ik zag op jullie website dat\s+(.+)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if direct:
+        fact = direct.group(1).strip()
+        fact = re.split(r"\s+(?:Ik heb een idee|Mijn idee voor)\b", fact, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+        fact = re.sub(r"[.!?]+$", "", fact).strip()
+        if fact:
+            return f"Ik zag op jullie website dat {fact}."
+
+    quoted_patterns = (
+        r'Op jullie site viel me op:\s*[“"](.+?)[”"]',
+        r'Op jullie website zag ik\s*[“"](.+?)[”"]',
+        r'Op jullie website staat\s*[“"](.+?)[”"]',
+        r'Ik heb de website van .+? bekeken en zag\s*[“"](.+?)[”"]',
+        r'Eén detail dat opviel was\s*[“"](.+?)[”"]',
+    )
+    for pattern in quoted_patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            fact = re.sub(r"[.!?]+$", "", match.group(1).strip()).strip()
+            if fact:
+                return f"Ik zag op jullie website dat {fact}."
+
+    stood_out = re.fullmatch(
+        r"Wat me opviel op jullie website:\s*(.+)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if stood_out:
+        fact = stood_out.group(1).strip()
+        fact = re.split(r"\s+(?:Ik heb een idee|Mijn idee voor)\b", fact, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+        fact = re.sub(r"[.!?]+$", "", fact).strip()
+        if fact:
+            return f"Ik zag op jullie website dat {fact}."
+
+    focus = re.match(
+        r"Ik zag dat\s+(.+?)(?:\.\s+(?:Ik heb een idee|Mijn idee voor)\b|[.!?]*$)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if focus:
+        fact = re.sub(r"[.!?]+$", "", focus.group(1).strip()).strip()
+        if fact:
+            return f"Ik zag op jullie website dat {fact}."
+
+    site_focus = re.search(
+        r"Jullie site draait duidelijk om\s+(.+?)(?:\.\s+Mijn idee voor|[.!?]*$)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if site_focus and company:
+        focus_text = re.sub(r"[.!?]+$", "", site_focus.group(1).strip()).strip()
+        company_label = short_company_name(company)
+        if focus_text and company_label:
+            return f"Ik zag op jullie website dat {company_label} zich richt op {focus_text}."
+
+    raise ValueError("unsupported existing Dutch verified opening")
+
+
+def exact_nl_opening_from_existing(opening: str, company: str | None = None) -> str:
+    from observation_quality import observation_rejection, natural_opening
+    text = str(opening or "").strip()
+    if text.startswith("Op jullie website las ik: “"):
+        fact = text.removeprefix("Op jullie website las ik: “").removesuffix("”")
+        return natural_opening(fact, "nl")
+    direct = re.fullmatch(r"Ik zag op jullie website dat (jullie .+)\.", text)
+    if direct:
+        fact = direct[1]
+        verbs = r"zijn|bieden|aanbieden|verkopen|maken|serveren|leveren|produceren|verhuren|organiseren|hebben"
+        m = re.fullmatch(r"jullie (.+) (" + verbs + r")", fact)
+        if m:
+            verb = {"aanbieden": "bieden"}.get(m[2], m[2])
+            if not observation_rejection("Wij " + verb + " " + m[1]):
+                return text
+    legacy = _legacy_exact_nl_opening_from_existing(text, company)
+    fact = legacy.removeprefix("Ik zag op jullie website dat ").removesuffix(".")
+    # Legacy wrappers contain hints, never a fresh verification. They may only
+    # preserve grammatical business prose; metadata/category focus fails closed.
+    if observation_rejection(fact):
+        raise ValueError("unsupported existing Dutch verified opening: invalid business sentence")
+    return natural_opening(fact, "nl")
+
+
+def _copy_variant_index(key: str, count: int) -> int:
+    if count <= 0:
+        raise ValueError("count must be positive")
+    digest = hashlib.sha256(str(key).encode("utf-8")).digest()
+    return digest[0] % count
+
+
+def build_template_from_opening(
+    company: str,
+    language: str,
+    opening: str,
+    *,
+    price_min: int,
+    price_max: int,
+    variant_key: str | None = None,
+    value_sentence: str | None = None,
+) -> str:
+    # Backward-compatible entrypoint for verified existing openings.
+    _ = (price_min, price_max, variant_key, value_sentence)
+    subject = subject_for_company(company, language)
+    _subject, body = build_short_first_touch_from_opening(subject, opening, language)
+    return body
+
+
+def build_template(
+    company: str,
+    language: str,
+    observation: str,
+    *,
+    price_min: int,
+    price_max: int,
+    category_hint: str | None = None,
+    observation_detail: str | None = None,
+    contact_name: str | None = None,
+    contact_source_url: str | None = None,
+    proof_text: str | None = None,
+    proof_source_url: str | None = None,
+) -> str:
+    _ = (price_min, price_max, category_hint)
+    _subject, body = build_short_first_touch(
+        company,
+        language,
+        observation,
+        observation_detail=observation_detail,
+        contact_name=contact_name,
+        contact_source_url=contact_source_url,
+        proof_text=proof_text,
+        proof_source_url=proof_source_url,
+    )
+    return body
+
+def prepare_batch(contacts_payload: dict, config: dict, *, draft_limit: int = 1) -> dict:
+    if not 1 <= draft_limit <= 100:
+        raise ValueError("draft_limit must be 1-100")
+    price = config["monthly_price_eur"]
+    price_min, price_max = int(price["min"]), int(price["max"])
+    rows = []
+    selected = 0
+
+    for candidate in contacts_payload.get("candidates") or []:
+        language = str(candidate.get("language") or "nl").casefold()
+        if language not in {"nl", "en"}:
+            language = "nl"
+        company = clean_company(candidate.get("name_hint"), language)
+        emails = candidate.get("public_business_emails") or []
+        excluded = bool(candidate.get("excluded_competitor"))
+        observation = str(candidate.get("verified_observation") or "").strip()
+        observation_source_url = str(candidate.get("verified_observation_source_url") or "").strip()
+        observation_source_type = str(candidate.get("verified_observation_source_type") or "").strip()
+        category_hint = str(candidate.get("category_hint") or "").strip() or None
+        has_verified_observation = bool(
+            observation
+            and observation_source_url
+            and observation_source_type == "official_site"
+        )
+        observation_detail = str(candidate.get("verified_problem_observation") or "").strip() or None
+        observation_detail_source_url = str(candidate.get("verified_problem_observation_source_url") or "").strip()
+        observation_detail_source_type = str(candidate.get("verified_problem_observation_source_type") or "").strip()
+        if observation_detail and not (
+            observation_detail_source_url
+            and observation_detail_source_type == "official_site"
+        ):
+            raise ValueError("verified_problem_observation_requires_official_site_source")
+        contact_name = str(candidate.get("verified_contact_name") or "").strip() or None
+        contact_source_url = str(candidate.get("verified_contact_name_source_url") or "").strip() or None
+        proof_text = str(candidate.get("verified_social_proof") or "").strip() or None
+        proof_source_url = str(candidate.get("verified_social_proof_source_url") or "").strip() or None
+        preview = (
+            build_template(
+                company,
+                language,
+                observation,
+                price_min=price_min,
+                price_max=price_max,
+                category_hint=category_hint,
+                observation_detail=observation_detail,
+                contact_name=contact_name,
+                contact_source_url=contact_source_url,
+                proof_text=proof_text,
+                proof_source_url=proof_source_url,
+            )
+            if has_verified_observation
+            else None
+        )
+        subject_preview = subject_for_company(company, language) if has_verified_observation else None
+        basis = str(candidate.get("contact_basis_status") or "unverified")
+        base = {
+            "lead_id": None,
+            "company": candidate.get("name_hint"),
+            "copy_company_label": short_company_name(company),
+            "copy_subject_label": subject_label_for_company(company, language),
+            "website": candidate.get("website_hint"),
+            "official_domain_hint": candidate.get("official_domain_hint"),
+            "product_id": "growth_subscription",
+            "language": language,
+            "language_source": candidate.get("language_source"),
+            "category_hint": category_hint,
+            "monthly_price_min_eur": price_min,
+            "monthly_price_max_eur": price_max,
+            "excluded_competitor": excluded,
+            "exclusion_reason": candidate.get("exclusion_reason"),
+            "contact_basis_status": basis,
+            "contact_basis_hint": candidate.get("contact_basis_hint"),
+            "email_source_urls": candidate.get("email_source_urls") or [],
+            "email_source_types": candidate.get("email_source_types") or [],
+            "email_source_refs": candidate.get("email_source_refs") or [],
+            "verified_observation": observation or None,
+            "verified_observation_source_url": observation_source_url or None,
+            "verified_observation_source_type": observation_source_type or None,
+            "status": "excluded_competitor" if excluded else "no_public_email",
+            "email": None,
+            "subject": None,
+            "body": None,
+            "subject_preview": None if excluded else subject_preview,
+            "concept_preview": None if excluded else preview,
+        }
+        if excluded:
+            rows.append(base)
+            continue
+        if emails:
+            base["email"] = emails[0]
+            base["lead_id"] = stable_lead_id(base["email"], base["website"])
+            if not has_verified_observation:
+                base["status"] = "blocked_missing_verified_observation"
+            elif selected < draft_limit:
+                selected += 1
+                base["status"] = "draft_ready" if basis == "pass" else "review_draft"
+                base["subject"] = subject_preview
+                base["body"] = preview
+            else:
+                base["status"] = "email_found_not_selected"
+        rows.append(base)
+
+    return {
+        "schema_version": "webactueel-growth-batch/4.2",
+        "product": config,
+        "row_count": len(rows),
+        "excluded_competitor_count": sum(1 for row in rows if row["status"] == "excluded_competitor"),
+        "email_found_count": sum(1 for row in rows if row["email"]),
+        "draft_candidate_count": sum(1 for row in rows if row["status"] in {"draft_ready", "review_draft"}),
+        "review_draft_count": sum(1 for row in rows if row["status"] == "review_draft"),
+        "rows": rows,
+        "safety": {
+            "one_product": True,
+            "one_offer": True,
+            "short_first_touch_max_100_words": True,
+            "no_price_in_first_touch": True,
+            "no_feature_dump": True,
+            "social_proof_requires_verified_source": True,
+            "language_matched_copy": True,
+            "verified_official_site_observation_required": True,
+            "contact_basis_review_required_before_send": True,
+            "review_draft_storage_allowed": True,
+            "automatic_send": False,
+        },
+    }
+
+
+def write_csv(payload: dict, path: Path) -> None:
+    fields = [
+        "lead_id", "company", "website", "email", "language", "status",
+        "excluded_competitor", "exclusion_reason", "contact_basis_status",
+        "contact_basis_hint", "email_source_types", "product_id",
+        "verified_observation", "verified_observation_source_url", "verified_observation_source_type",
+        "monthly_price_min_eur", "monthly_price_max_eur",
+        "subject_preview", "concept_preview",
+    ]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        for row in payload["rows"]:
+            writer.writerow({field: row.get(field) for field in fields})
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--contacts", required=True)
+    parser.add_argument("--config", required=True)
+    parser.add_argument("--output-json", required=True)
+    parser.add_argument("--output-csv", required=True)
+    parser.add_argument("--draft-limit", type=int, default=1)
+    args = parser.parse_args()
+    result = prepare_batch(
+        load_json(Path(args.contacts)),
+        load_json(Path(args.config)),
+        draft_limit=args.draft_limit,
+    )
+    output_json = Path(args.output_json)
+    output_json.parent.mkdir(parents=True, exist_ok=True)
+    output_json.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    write_csv(result, Path(args.output_csv))
+    print(
+        "GROWTH_BATCH=green "
+        f"rows={result['row_count']} emails={result['email_found_count']} "
+        f"excluded_competitors={result['excluded_competitor_count']} "
+        f"draft_candidates={result['draft_candidate_count']} email_send=false"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+,
+        r'Wat me opviel op jullie website:\s*(.+)',
+        r'Ik zag dat\s+(.+)',
+    )
+    for pattern in patterns:
+        match = re.fullmatch(pattern, text, flags=re.I)
+        if match:
+            fact = _finish_sentence(match.group(1).strip().strip('“”"'))
+            return f"Wat me opviel: {fact}"
+
+    site_focus = re.fullmatch(
+        r"Jullie site draait duidelijk om\s+(.+)",
+        text,
+        flags=re.I,
+    )
+    if site_focus:
+        fact = _finish_sentence(site_focus.group(1).strip())
+        return f"Wat me opviel: jullie site draait duidelijk om {fact}"
+
+    # Existing openings have already passed the historic verification route.
+    # Preserve them literally rather than inventing or reinterpreting a fact.
+    return f"Wat me opviel: {_finish_sentence(text[0].lower() + text[1:])}"
 
 
 def validate_short_first_touch(
