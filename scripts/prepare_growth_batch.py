@@ -187,6 +187,7 @@ def subject_label_for_company(company: str, language: str) -> str:
 def subject_for_company(company: str, language: str) -> str:
     label = subject_label_for_company(company, language)
     subject = f"An idea for {label}" if language == "en" else f"Idee voor {label}"
+    subject = " ".join(subject.replace("!", "").split())
     return subject.casefold()
 
 
@@ -360,6 +361,15 @@ def observation_line_from_opening(opening: str, language: str) -> str:
     lowered = text[0].lower() + text[1:]
     return f"Wat me opviel: {_finish_sentence(lowered)}"
 
+def _contains_first_touch_price(value: str) -> bool:
+    text = str(value or "")
+    return bool(
+        "€" in text
+        or re.search(r"\b\d+(?:[.,]\d+)?\s*(?:euro|eur)\b", text, re.I)
+        or re.search(r"\b(?:per\s+maand|per\s+month|p/m|pm)\b", text, re.I)
+    )
+
+
 def validate_short_first_touch(
     subject: str,
     body: str,
@@ -375,11 +385,7 @@ def validate_short_first_touch(
         raise ValueError("subject_must_be_lowercase_without_exclamation")
     if len(body.split()) > 100:
         raise ValueError("body_must_be_max_100_words")
-    if (
-        "€" in body
-        or re.search(r"\b\d+(?:[.,]\d+)?\s*(?:euro|eur)\b", body, re.I)
-        or re.search(r"\b(?:per\s+maand|per\s+month|p/m|pm)\b", body, re.I)
-    ):
+    if _contains_first_touch_price(body):
         raise ValueError("price_not_allowed_in_first_touch")
     if "• " in body:
         raise ValueError("feature_dump_not_allowed_in_first_touch")
@@ -463,9 +469,15 @@ def build_short_first_touch_from_opening(
     opening: str,
     language: str,
 ) -> tuple[str, str]:
-    short_subject = str(subject or "").strip().casefold()
+    short_subject = " ".join(str(subject or "").replace("!", "").split()).casefold()
     focus = infer_focus_from_observation(opening, language, None)
     observation_line = observation_line_from_opening(opening, language)
+    if _contains_first_touch_price(observation_line):
+        observation_line = (
+            "What stood out: your website includes pricing information."
+            if language == "en"
+            else "Wat me opviel: op jullie website staat informatie over jullie tarieven."
+        )
     if language == "en":
         summary = f"You operate in {focus}." if focus else None
         parts = ["Hello,", ""]
