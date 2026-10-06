@@ -11,7 +11,7 @@ def clean_text(value: str) -> str:
 
 def observation_rejection(value: str) -> str | None:
     text = clean_text(value)
-    if not 4 <= len(text.split()) <= 36 or len(text) > 240:
+    if not 3 <= len(text.split()) <= 36 or len(text) > 240:
         return "not_one_short_business_sentence"
     if re.search(r"[|<>\n]|\s[–—]\s|\s-\s|©|https?://|www\.|@", text):
         return "metadata_separator_or_contact_data"
@@ -23,7 +23,9 @@ def observation_rejection(value: str) -> str | None:
         return "boilerplate_contact_review_or_unsubstantiated_claim"
     # Require an explicit subject and finite business predicate. Category,
     # company, address and keyword lists have no such predicate.
-    predicate = re.search(r"\b(?:wij|we|jullie|our|[A-ZÀ-Ý][\w'’.-]*(?:\s+[\w'’.-]+){0,5})\s+(?:zijn|is|bieden|biedt|verkopen|verkoopt|maken|maakt|serveren|serveert|leveren|levert|produceren|produceert|verhuren|verhuurt|organiseren|organiseert|hebben|heeft|are|offers?|sells?|serves?|provides?|manufactures?|produces?|specializes?|specialises?|rents?|organizes?|organises?)\b", text)
+    predicate = re.search(r"^(?:Wij|We|Jullie|Our|[A-ZÀ-Ý][\w'’.-]*(?:\s+[\w'’.-]+){0,5})\s+(?:zijn|is|bieden|biedt|verkopen|verkoopt|maken|maakt|serveren|serveert|leveren|levert|produceren|produceert|verhuren|verhuurt|organiseren|organiseert|hebben|heeft|are|offers?|sells?|serves?|provides?|manufactures?|produces?|specializes?|specialises?|rents?|organizes?|organises?)\b", text)
+    if re.match(r"^(?:Wij|We|Jullie)\b", text) and not re.match(r"^(?:Wij|We|Jullie) (?:zijn|bieden|verkopen|maken|serveren|leveren|produceren|verhuren|organiseren|hebben|are|offer|sell|serve|provide|manufacture|produce|specialize|specialise|rent|organize|organise)\b", text):
+        return "non_business_predicate_or_embedded_fragment"
     if re.search(r"\b(?:en|and|maar|but)\s+(?:(?:wij|we|jullie)\s+)?(?:zijn|is|bieden|biedt|verkopen|verkoopt|maken|maakt|serveren|serveert|leveren|levert|hebben|heeft|offers?|provides?|sells?|serves?)\b", text, re.I):
         return "multiple_business_predicates"
     if re.search(r"\b(?:en|and|maar|but)\s+(?:denken|werken|kunnen|mogen|zullen|willen|doen|gaan|kunt|kijken|betrekken|can|think|work|will|want)\b|,\s*(?:voor|om|zodat|als|we|wij)|\b(?:zodat|omdat|want)\b", text, re.I):

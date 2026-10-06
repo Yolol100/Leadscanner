@@ -132,8 +132,12 @@ def website_audit(row, override=None):
             lang, _ = detect_language(html, default=row.get("language") or "nl")
             blocks = first_party_prose(html)
             sentences = business_sentences(html)
+            retained_blocks = blocks[:100]
+            if override and final == override.get("source_url"):
+                quote = str(override.get("evidence_quote") or override.get("observation") or "")
+                retained_blocks += [b for b in blocks if quote and quote in b and b not in retained_blocks]
             pages.append({"url": final, "http_status": status, "language": lang,
-                "sha256": hashlib.sha256(html.encode()).hexdigest(), "prose": blocks[:100]})
+                "sha256": hashlib.sha256(html.encode()).hexdigest(), "prose": retained_blocks})
             for sentence in sentences:
                 try:
                     opening = natural_opening(sentence, lang)
@@ -160,9 +164,12 @@ def website_audit(row, override=None):
         for page in pages:
             if page["url"] == override.get("source_url") and any(evidence_quote in b for b in page["prose"]):
                 try:
+                    language = override.get("language") or page["language"]
+                    if language not in {"nl", "en"}:
+                        raise ValueError("unsupported approved prose language")
                     return {"status": "ready", "proof": {"observation": observation,
-                        "opening": natural_opening(observation, page["language"]), "evidence_quote": evidence_quote,
-                        "source_url": page["url"], "language": page["language"]}, "pages": pages, "errors": errors}
+                        "opening": natural_opening(observation, language), "evidence_quote": evidence_quote,
+                        "source_url": page["url"], "language": language}, "pages": pages, "errors": errors}
                 except ValueError as exc:
                     errors.append(str(exc))
         errors.append("exact approved business sentence absent from eligible first-party prose")

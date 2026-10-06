@@ -29,10 +29,15 @@ class ObservationQualityTests(unittest.TestCase):
         self.assertEqual(extract_verified_observation(html), "Wij maken keukens op maat.")
 
     def test_one_fact_natural_dutch_and_english(self):
+        self.assertEqual(natural_opening("Wij serveren tapas.", "nl"), "Ik zag op jullie website dat jullie tapas serveren.")
         self.assertEqual(natural_opening("Wij bieden lunch en diner.", "nl"), "Ik zag op jullie website dat jullie lunch en diner aanbieden.")
         self.assertEqual(natural_opening("Wij zijn gespecialiseerd in maatwerkkeukens.", "nl"), "Ik zag op jullie website dat jullie gespecialiseerd zijn in maatwerkkeukens.")
         self.assertEqual(natural_opening("We provide bespoke kitchen furniture.", "en"), "I saw on your website that you provide bespoke kitchen furniture.")
         self.assertIsNotNone(observation_rejection("Wij verkopen fietsen en bieden onderhoud in Delft."))
+
+    def test_narrative_and_review_fragments_cannot_hide_a_predicate(self):
+        for bad in ("We weten hoe lastig het is om geen fiets te hebben.", "Wij willen meer zijn dan een sportschool.", "Wij begrijpen dat motivatie moeilijk is, daarom bieden wij training aan.", "We hebben beiden een steak gehad."):
+            self.assertIsNotNone(observation_rejection(bad))
 
     def test_opening_only_replacement_preserves_offer_subject_independent_body(self):
         tail = '\n\nMet mijn Groeiabonnement:\n• Website/webshop\n€250–€500\nCTA\nOpt-out\nGroet,\nAndrew'
