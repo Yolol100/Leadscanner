@@ -1,4 +1,4 @@
-name: Leads Value Sentence Remediation
+name: Leads Short First Touch Remediation
 
 on:
   issues:
@@ -10,14 +10,14 @@ permissions:
   issues: write
 
 concurrency:
-  group: leads-value-sentence-remediation
+  group: leads-short-first-touch-remediation
   cancel-in-progress: false
 
 jobs:
   remediate:
     if: >-
       github.event.issue.user.login == github.repository_owner &&
-      startsWith(github.event.issue.title, '[growth-value-remediate]')
+      startsWith(github.event.issue.title, '[growth-short-remediate]')
     runs-on: ubuntu-24.04
     timeout-minutes: 120
 
@@ -73,7 +73,7 @@ jobs:
               out.write(f"limit={limit}\n")
               out.write(f"artifact={artifact}\n")
           print(
-              f"VALUE_REQUEST=green mode={mode} offset={offset} limit={limit} "
+              f"SHORT_FIRST_TOUCH_REQUEST=green mode={mode} offset={offset} limit={limit} "
               "automatic_send=false"
           )
           PY
@@ -118,7 +118,7 @@ jobs:
             args+=(--audit-state results/audit-state.enc.json)
           fi
           set +e
-          PYTHONPATH=scripts python3 scripts/myhost_value_sentence_remediation.py "${args[@]}"             | tee results/summary.txt
+          PYTHONPATH=scripts python3 scripts/myhost_short_first_touch_remediation.py "${args[@]}"             | tee results/summary.txt
           code=${PIPESTATUS[0]}
           set -e
           echo "code=$code" >> "$GITHUB_OUTPUT"
@@ -129,7 +129,7 @@ jobs:
         if: steps.request.outputs.mode == 'audit' && hashFiles('results/state.enc.json') != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: value-sentence-audit-${{ github.event.issue.number }}
+          name: short-first-touch-audit-${{ github.event.issue.number }}
           path: |
             results/state.enc.json
             results/report.json
@@ -152,20 +152,20 @@ jobs:
 
           path = Path("results/report.json")
           if not path.is_file():
-              print("VALUE_SENTENCE_REMEDIATION=failed_closed")
+              print("SHORT_FIRST_TOUCH_REMEDIATION=failed_closed")
               print("No aggregate report was produced. Nothing was sent.")
           else:
               r = json.loads(path.read_text(encoding="utf-8"))
               keys = (
                   "mode", "selected_count", "growth_total", "replace_count",
-                  "unchanged_count", "tailored_expected_count",
-                  "fallback_expected_count", "legacy_value_count", "blocker_count", "blocker_reasons",
+                  "unchanged_count", "already_short_count",
+                  "legacy_long_count", "blocker_count", "blocker_reasons",
                   "changed_count", "already_expected_count", "verified_count",
                   "readback", "uidplus_available", "multiappend_available",
                   "multiappend_used", "multiappend_shards", "multiappend_shard_size",
               )
               public = {k: r[k] for k in keys if k in r}
-              print("VALUE_SENTENCE_REMEDIATION=" + ("green" if os.environ.get("CODE") == "0" else "failed_closed"))
+              print("SHORT_FIRST_TOUCH_REMEDIATION=" + ("green" if os.environ.get("CODE") == "0" else "failed_closed"))
               print("VALUE_SENTENCE_DETAIL=" + json.dumps(public, separators=(",", ":"), ensure_ascii=False))
               if os.environ.get("MODE") == "audit" and os.environ.get("AUDIT_ARTIFACT_ID"):
                   print("AUDIT_ARTIFACT_ID=" + os.environ["AUDIT_ARTIFACT_ID"])
@@ -178,7 +178,7 @@ jobs:
       - name: Fail closed on unsuccessful remediation
         if: always() && steps.execute.outcome == 'success' && steps.execute.outputs.code != '0'
         run: |
-          echo "Value-sentence remediation failed closed. No email was sent."
+          echo "Short first-touch remediation failed closed. No email was sent."
           exit 1
 
       - name: Close setup/runtime failure
@@ -187,7 +187,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
         run: |
-          gh api --method POST             -H "Accept: application/vnd.github+json"             "/repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER/comments"             -f body="Value-sentence remediation failed closed before a valid result was produced. No email was sent." >/dev/null
+          gh api --method POST             -H "Accept: application/vnd.github+json"             "/repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER/comments"             -f body="Short first-touch remediation failed closed before a valid result was produced. No email was sent." >/dev/null
           gh api --method PATCH             -H "Accept: application/vnd.github+json"             "/repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER"             -f state=closed -f state_reason=completed >/dev/null
 
       - name: Remove runtime residue
