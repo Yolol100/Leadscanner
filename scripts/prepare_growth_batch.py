@@ -281,7 +281,7 @@ def _finish_sentence(value: str) -> str:
     return text if text.endswith((".", "!", "?")) else text + "."
 
 
-def _verified_opening_fragment(value: str) -> str:
+def _verified_opening_fragment(value: str, language: str) -> str:
     text = re.sub(r"\\s+", " ", str(value or "")).strip()
     if text.startswith(("“", '"')):
         text = text[1:].strip()
@@ -289,6 +289,10 @@ def _verified_opening_fragment(value: str) -> str:
         text = text[:-1].strip()
     if text.endswith(("”.", '".')):
         text = text[:-2].strip() + "."
+    if language == "en":
+        text = re.sub(r"^We\\b", "you", text, count=1)
+    else:
+        text = re.sub(r"^(?:Wij|We)\\b", "jullie", text, count=1)
     return _finish_sentence(text)
 
 
@@ -306,7 +310,7 @@ def observation_line_from_opening(opening: str, language: str) -> str:
     if language == "en":
         prefix = "I saw on your website that "
         if text.casefold().startswith(prefix.casefold()):
-            fact = _verified_opening_fragment(text[len(prefix):])
+            fact = _verified_opening_fragment(text[len(prefix):], language)
             return f"What stood out: your website says that {fact}"
 
         for candidate in (
@@ -314,7 +318,7 @@ def observation_line_from_opening(opening: str, language: str) -> str:
             "I noticed this on your website:",
         ):
             if text.casefold().startswith(candidate.casefold()):
-                fact = _verified_opening_fragment(text[len(candidate):])
+                fact = _verified_opening_fragment(text[len(candidate):], language)
                 return f"What stood out: {fact}"
 
         lowered = text[0].lower() + text[1:]
@@ -322,7 +326,7 @@ def observation_line_from_opening(opening: str, language: str) -> str:
 
     prefix = "Ik zag op jullie website dat "
     if text.casefold().startswith(prefix.casefold()):
-        fact = _verified_opening_fragment(text[len(prefix):])
+        fact = _verified_opening_fragment(text[len(prefix):], language)
         return f"Wat me opviel: op jullie website staat dat {fact}"
 
     for candidate in (
@@ -334,16 +338,16 @@ def observation_line_from_opening(opening: str, language: str) -> str:
         "Ik zag dat ",
     ):
         if text.casefold().startswith(candidate.casefold()):
-            fact = _verified_opening_fragment(text[len(candidate):])
+            fact = _verified_opening_fragment(text[len(candidate):], language)
             return f"Wat me opviel: {fact}"
 
     match = re.search(r"\\bbekeken en zag\\s+(.+)$", text, flags=re.I)
     if match:
-        return f"Wat me opviel: {_verified_opening_fragment(match.group(1))}"
+        return f"Wat me opviel: {_verified_opening_fragment(match.group(1), language)}"
 
     candidate = "Jullie site draait duidelijk om "
     if text.casefold().startswith(candidate.casefold()):
-        fact = _verified_opening_fragment(text[len(candidate):])
+        fact = _verified_opening_fragment(text[len(candidate):], language)
         return f"Wat me opviel: jullie site draait duidelijk om {fact}"
 
     lowered = text[0].lower() + text[1:]
