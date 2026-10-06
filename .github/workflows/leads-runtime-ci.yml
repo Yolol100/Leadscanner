@@ -83,7 +83,34 @@ jobs:
           grep -q 'body_must_be_max_100_words' scripts/prepare_growth_batch.py
           grep -q 'price_not_allowed_in_first_touch' scripts/prepare_growth_batch.py
           grep -q 'social_proof_requires_verified_source' scripts/prepare_growth_batch.py
+          grep -q 'MAX_REMEDIATION = 1500' scripts/myhost_short_first_touch_remediation.py
+          grep -F -q 'pairs.sort(key=lambda item: item[0])' scripts/myhost_short_first_touch_remediation.py
           grep -q 'IMAPClient' requirements.txt
+          PYTHONPATH=scripts python3 - <<'PY'
+          from prepare_growth_batch import build_short_first_touch
+          from myhost_short_first_touch_remediation import analyze_body, MAX_REMEDIATION
+
+          subject, body = build_short_first_touch(
+              "Voorbeeld Fysiotherapie",
+              "nl",
+              "Wij bieden fysiotherapie in Utrecht.",
+          )
+          assert subject == subject.casefold()
+          assert len(subject.split()) <= 8
+          assert len(body.split()) <= 100
+          assert "€" not in body
+          assert "• " not in body
+          assert analyze_body(body, subject)["already_short"] is True
+
+          subject2, body2 = build_short_first_touch(
+              "Voorbeeld Showroom",
+              "nl",
+              "Wij hebben een showroom van 500 m2.",
+          )
+          assert "500 m2" in body2
+          assert analyze_body(body2, subject2)["already_short"] is True
+          assert MAX_REMEDIATION >= 1128
+          PY
           ! grep -E -q 'smtplib|sendmail\(|SMTP\(' scripts/myhost_short_first_touch_remediation.py
           ! grep -E -q 'client\.expunge\(|client\.store\(' scripts/myhost_short_first_touch_remediation.py
           echo 'SHORT_FIRST_TOUCH_REMEDIATION_BOUNDARY=green'
