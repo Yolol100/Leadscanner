@@ -1235,11 +1235,9 @@ def run(
                         }
                     )
             else:
-                raise RuntimeError(
-                    "verified-source refresh preflight failed for "
-                    f"{len(refresh_failures)} lead(s): "
-                    + " | ".join(refresh_failures)
-                )
+                for failure in refresh_failures:
+                    lead_id, _, _ = failure.partition(": ")
+                    holds.add(lead_id)
 
     online_evidence = {}
     evidence_failures: list[str] = []
@@ -1287,11 +1285,11 @@ def run(
                 rewrites.pop(lead_id, None)
                 replacements.pop(lead_id, None)
         else:
-            raise RuntimeError(
-                "official evidence preflight failed for "
-                f"{len(evidence_failures)} lead(s): "
-                + " | ".join(evidence_failures)
-            )
+            for lead_id in failed_evidence_leads:
+                holds.add(lead_id)
+                rewrites.pop(lead_id, None)
+                replacements.pop(lead_id, None)
+                online_evidence.pop(lead_id, None)
 
     existing_email_evidence = {}
     email_failures: list[str] = []
@@ -1326,11 +1324,12 @@ def run(
                     lead_id, None
                 )
         else:
-            raise RuntimeError(
-                "current email verification failed for "
-                f"{len(email_failures)} lead(s): "
-                + " | ".join(email_failures)
-            )
+            for lead_id in failed_email_leads:
+                holds.add(lead_id)
+                rewrites.pop(lead_id, None)
+                online_evidence.pop(
+                    lead_id, None
+                )
 
     for lead_id, change in rewrites.items():
         if (
