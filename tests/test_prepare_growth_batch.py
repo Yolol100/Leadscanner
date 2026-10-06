@@ -122,6 +122,29 @@ class GrowthBatchTests(unittest.TestCase):
                 contact_name="Marieke",
             )
 
+    def test_existing_verified_opening_is_preserved_without_revalidation(self):
+        subject, body = build_short_first_touch_from_opening(
+            "Idee voor Voorbeeld Showroom",
+            "Ik zag op jullie website dat Voorbeeld Showroom een showroom van 500 m2 heeft.",
+            "nl",
+        )
+        self.assertEqual(subject, "idee voor voorbeeld showroom")
+        self.assertIn(
+            "Wat me opviel: op jullie website staat dat Voorbeeld Showroom een showroom van 500 m2 heeft.",
+            body,
+        )
+        self.assertNotIn("€", body)
+        self.assertNotIn("• ", body)
+        self.assertLessEqual(len(body.split()), 100)
+
+    def test_legacy_verified_wrapper_is_preserved_without_revalidation(self):
+        _subject, body = build_short_first_touch_from_opening(
+            "Idee voor Voorbeeld BV",
+            "Eén detail dat opviel was “Maatwerk voor zakelijke klanten”.",
+            "nl",
+        )
+        self.assertIn("Wat me opviel: Maatwerk voor zakelijke klanten.", body)
+
     def test_existing_opening_migrates_without_price_or_features(self):
         subject, body = build_short_first_touch_from_opening(
             "Idee voor Voorbeeld Fysiotherapie",
