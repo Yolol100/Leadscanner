@@ -195,6 +195,14 @@ def multiappend_review_drafts(folder: str, messages) -> list[bytes]:
 
 def _rollback_new_uids(client, folder: str, uids, *, operation: str) -> None:
     errors = []
+    uids = list(uids)
+    capability_tokens = imap_capability_tokens(client)
+    if "UIDPLUS" not in capability_tokens:
+        raise RuntimeError(
+            f"IMAP UIDPLUS is required before {operation}; target-only rollback cannot be proven"
+        )
+    if uids:
+        select_folder(client, folder, readonly=False)
     for uid in uids:
         try:
             uid_expunge_only(
@@ -202,6 +210,8 @@ def _rollback_new_uids(client, folder: str, uids, *, operation: str) -> None:
                 folder,
                 uid,
                 operation=operation,
+                ensure_selected=False,
+                capability_tokens=capability_tokens,
             )
         except Exception as exc:
             errors.append(str(exc))
@@ -277,12 +287,15 @@ def replace_known_drafts_multiappend_and_verify(
 
     committed = 0
     try:
+        select_folder(client, folder, readonly=False)
         for row in rows:
             uid_expunge_only(
                 client,
                 folder,
                 row["existing_uid"],
                 operation=f"MULTIAPPEND replacement for {row['lead_id']}",
+                ensure_selected=False,
+                capability_tokens=tokens,
             )
             committed += 1
     except Exception as exc:

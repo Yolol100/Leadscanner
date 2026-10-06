@@ -55,34 +55,32 @@ class MyHostNaturalizeDraftTests(unittest.TestCase):
     def test_nl_draft_becomes_natural_without_changing_recipient_or_subject(self):
         row = rewrite_row_from_message(self.message())
         self.assertEqual(row["email"], "info@example.com")
-        self.assertEqual(row["subject"], "Idee voor Voorbeeld Fysio")
+        self.assertEqual(row["subject"], "idee voor voorbeeld fysio")
         self.assertTrue(row["body"].startswith("Hallo,\n\n"))
+        self.assertIn("Jullie zijn actief in fysiotherapie en revalidatie.", row["body"])
         self.assertIn(
-            "Ik zag op jullie website dat jullie fysiotherapie in Utrecht aanbieden.",
+            "Wat me opviel: op jullie website staat dat jullie fysiotherapie in Utrecht aanbieden.",
             row["body"],
         )
-        self.assertIn("€250–€500 per maand", row["body"])
+        self.assertNotIn("€", row["body"])
         self.assertIn("Geen interesse? Laat het gerust weten.", row["body"])
-        self.assertEqual(len([line for line in row["body"].splitlines() if line.startswith("• ")]), 6)
+        self.assertEqual(len([line for line in row["body"].splitlines() if line.startswith("• ")]), 0)
         self.assertFalse(row["_already_natural"])
 
     def test_nl_stale_subject_is_canonicalized(self):
         msg = self.message()
         msg.replace_header("Subject", "Oud Groeiabonnement onderwerp")
         row = rewrite_row_from_message(msg)
-        self.assertEqual(row["subject"], "Idee voor Voorbeeld Fysio")
+        self.assertEqual(row["subject"], "idee voor voorbeeld fysio")
         self.assertFalse(row["_already_natural"])
 
     def test_en_draft_becomes_natural_without_changing_recipient_or_subject(self):
         row = rewrite_row_from_message(self.message(language="en"))
         self.assertEqual(row["email"], "info@example.com")
-        self.assertEqual(row["subject"], "An idea for Example Gym")
-        self.assertIn(
-            "What stood out to me on your website: Personal training in Utrecht.",
-            row["body"],
-        )
-        self.assertIn("€250–€500 per month", row["body"])
-        self.assertEqual(len([line for line in row["body"].splitlines() if line.startswith("• ")]), 6)
+        self.assertEqual(row["subject"], "an idea for example gym")
+        self.assertIn("What stood out: Personal training in Utrecht.", row["body"])
+        self.assertNotIn("€", row["body"])
+        self.assertEqual(len([line for line in row["body"].splitlines() if line.startswith("• ")]), 0)
 
 
     @patch("myhost_naturalize_drafts.read_review_growth_rows_slice_all")
@@ -129,12 +127,13 @@ class MyHostNaturalizeDraftTests(unittest.TestCase):
     def test_verified_fact_opening_is_idempotent(self):
         first = rewrite_row_from_message(self.message())
         msg = self.message()
+        msg.replace_header("Subject", first["subject"])
         msg.set_content(first["body"])
         second = rewrite_row_from_message(msg)
         self.assertEqual(first["body"], second["body"])
         self.assertEqual(
             second["body"].count(
-                "Ik zag op jullie website dat jullie fysiotherapie in Utrecht aanbieden."
+                "Wat me opviel: op jullie website staat dat jullie fysiotherapie in Utrecht aanbieden."
             ),
             1,
         )
@@ -142,6 +141,7 @@ class MyHostNaturalizeDraftTests(unittest.TestCase):
     def test_naturalization_is_idempotent(self):
         first = rewrite_row_from_message(self.message())
         msg = self.message()
+        msg.replace_header("Subject", first["subject"])
         msg.set_content(first["body"])
         second = rewrite_row_from_message(msg)
         self.assertEqual(first["body"], second["body"])

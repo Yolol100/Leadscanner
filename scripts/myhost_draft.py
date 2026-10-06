@@ -78,9 +78,24 @@ def fetch_message_uid(client, uid: bytes) -> EmailMessage:
     raise RuntimeError("IMAP UID readback returned no message bytes")
 
 
-def uid_expunge_only(client, folder: str, uid: bytes, *, operation: str) -> None:
-    require_uidplus(client, operation)
-    select_folder(client, folder, readonly=False)
+def uid_expunge_only(
+    client,
+    folder: str,
+    uid: bytes,
+    *,
+    operation: str,
+    ensure_selected: bool = True,
+    capability_tokens: set[str] | None = None,
+) -> None:
+    if capability_tokens is None:
+        require_uidplus(client, operation)
+    elif "UIDPLUS" not in capability_tokens:
+        raise RuntimeError(
+            f"IMAP UIDPLUS is required before {operation}; "
+            "target-only deletion cannot be proven"
+        )
+    if ensure_selected:
+        select_folder(client, folder, readonly=False)
     uid_text = uid.decode("ascii")
     status, _ = client.uid("store", uid_text, "+FLAGS", "(\\Deleted)")
     if status != "OK":
@@ -233,6 +248,8 @@ def exact_message_matches(actual: EmailMessage, expected: EmailMessage) -> bool:
     return (
         normalize_text(actual.get("To", "")) == normalize_text(expected.get("To", ""))
         and normalize_text(actual.get("Subject", "")) == normalize_text(expected.get("Subject", ""))
+        and normalize_text(actual.get("X-Webactueel-Lead-ID", ""))
+        == normalize_text(expected.get("X-Webactueel-Lead-ID", ""))
         and normalize_text(actual.get("X-Webactueel-Review-Required", ""))
         == normalize_text(expected.get("X-Webactueel-Review-Required", ""))
         and plain_body(actual) == plain_body(expected)
