@@ -31,6 +31,7 @@ from myhost_draft import (
     require_uidplus,
 )
 from myhost_fast_mailbox import (
+    bulk_fetch_uid_messages,
     bulk_inventory_drafts,
     current_from_inventory,
     replace_known_draft_and_verify,
@@ -290,6 +291,10 @@ def build_audit(offset: int, limit: int) -> tuple[dict, dict]:
                 f"Requested {limit} Growth drafts at offset {offset}, but only {len(pairs)} exist"
             )
         selected = pairs[offset:offset + limit]
+        selected_messages = bulk_fetch_uid_messages(
+            client,
+            [uid for _lead_id, uid in selected],
+        )
         replace_count = 0
         unchanged_count = 0
         tailored_count = 0
@@ -297,7 +302,7 @@ def build_audit(offset: int, limit: int) -> tuple[dict, dict]:
         legacy_value_count = 0
 
         for lead_id, uid in selected:
-            msg = fetch_message_uid(client, uid)
+            msg = selected_messages[uid]
             before = full_snapshot(msg)
             reason = None
             analysis = None
@@ -371,6 +376,7 @@ def build_audit(offset: int, limit: int) -> tuple[dict, dict]:
             "blocker_reasons": dict(sorted(blockers.items())),
             "audit_eligible": not blockers,
             "uidplus_available": "UIDPLUS" in capability_tokens,
+            "multiappend_available": "MULTIAPPEND" in capability_tokens,
             "read_only": True,
         }
         return state, summary
