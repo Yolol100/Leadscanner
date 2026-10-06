@@ -29,6 +29,7 @@ class FakeUIDIMAP:
         self.deleted = set()
         self.next_uid = 11
         self.uid_searches = 0
+        self.append_calls = 0
 
     def select(self, folder, readonly=True):
         return "OK", [str(len(self.messages)).encode()]
@@ -74,6 +75,7 @@ class FakeUIDIMAP:
         raise AssertionError((command, args))
 
     def append(self, folder, flags, date, raw):
+        self.append_calls += 1
         uid = str(self.next_uid).encode()
         self.next_uid += 1
         self.messages[uid] = raw
@@ -112,6 +114,33 @@ class FastMailboxTests(unittest.TestCase):
         self.assertEqual(list(client.messages), [b"11"])
         self.assertEqual(final_msg.get_content().strip(), "new")
         self.assertEqual(client.uid_searches, 3)
+
+    def test_replacement_fails_before_append_without_uidplus(self):
+        lead_id = "growth-" + "e" * 20
+        client = FakeUIDIMAP(lead_id, uidplus=False)
+        inventory = bulk_inventory_drafts(client, "Drafts", [lead_id])
+        current = current_from_inventory(inventory, lead_id)
+
+        expected = EmailMessage(policy=default)
+        expected["To"] = "info@example.nl"
+        expected["Subject"] = "Idee"
+        expected["X-Webactueel-Lead-ID"] = lead_id
+        expected["X-Webactueel-Review-Required"] = "contact-basis"
+        expected.set_content("new")
+
+        with self.assertRaisesRegex(RuntimeError, "UIDPLUS"):
+            replace_known_draft_and_verify(
+                client,
+                "Drafts",
+                lead_id,
+                uid_from_inventory(inventory, lead_id),
+                expected,
+                current,
+            )
+        self.assertEqual(client.append_calls, 0)
+        self.assertEqual(list(client.messages), [b"10"])
+        self.assertFalse(client.deleted)
+
     def test_delete_fails_closed_without_uidplus(self):
         lead_id = "growth-" + "b" * 20
         client = FakeUIDIMAP(lead_id, uidplus=False)
