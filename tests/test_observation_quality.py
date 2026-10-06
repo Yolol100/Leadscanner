@@ -52,9 +52,9 @@ class ObservationQualityTests(unittest.TestCase):
 
     def test_parallel_website_workers_remain_bounded(self):
         with patch.dict(os.environ, {}, clear=True):
-            self.assertEqual(_website_workers(100), 20)
-        with patch.dict(os.environ, {"LEADSCANNER_WEBSITE_WORKERS": "999"}):
-            self.assertEqual(_website_workers(100), 24)
+            self.assertEqual(_website_workers(100), 60)
+        with patch.dict(os.environ, {"LEADSCANNER_WEBSITE_SHARD_CONCURRENCY": "999"}):
+            self.assertEqual(_website_workers(100), 80)
 
     def test_writes_require_bounded_source_and_immutable_audit(self):
         req = {"mode": "audit", "source_archive_artifact_id": 1, "source_artifact_ids": [1], "offset": 0, "limit": 100}
