@@ -17,6 +17,7 @@ from extract_public_contacts import (
     discover_contact_links,
     extract_emails,
     fetch_html,
+    inspect_candidate,
     normalize_domain,
     valid_email,
 )
@@ -74,6 +75,7 @@ def validate_request(request: dict) -> dict:
         "replacements",
         "holds",
         "refresh_verified_source_rows",
+        "research_unresolved",
         "audit_only",
     }
     unknown = set(request) - allowed
@@ -119,6 +121,13 @@ def validate_request(request: dict) -> dict:
     if not isinstance(refresh_verified, bool):
         raise ValueError(
             "refresh_verified_source_rows must be boolean"
+        )
+    research_unresolved = request.get(
+        "research_unresolved", False
+    )
+    if not isinstance(research_unresolved, bool):
+        raise ValueError(
+            "research_unresolved must be boolean"
         )
     audit_only = request.get("audit_only", False)
     if not isinstance(audit_only, bool):
@@ -441,20 +450,49 @@ def validate_online_evidence(
         )
 
     email_found = None
+    email_source_final = None
     if require_email:
         expected_email = str(
             change.get("email") or ""
         ).strip().casefold()
-        emails = {
-            email.casefold()
-            for email in extract_emails(html)
-        }
-        raw_source_emails = {
-            match.casefold().strip(".,;:()[]<>")
-            for match in EMAIL_RE.findall(html or "")
-            if valid_email(match)
-        }
-        emails.update(raw_source_emails)
+        email_source_url = str(
+            change.get("email_source_url")
+            or source_url
+        ).strip()
+        if (
+            normalize_domain(email_source_url)
+            != expected_domain
+        ):
+            raise RuntimeError(
+                f"{source_row['lead_id']}: replacement email source domain mismatch"
+            )
+        email_html = html
+        email_status = status
+        email_source_final = final_url
+        if email_source_url != source_url:
+            (
+                email_html,
+                email_source_final,
+                email_status,
+            ) = fetch_html(
+                session, email_source_url
+            )
+            if (
+                not email_html
+                or not email_source_final
+                or not (
+                    email_status
+                    and 200 <= email_status < 400
+                )
+                or normalize_domain(
+                    email_source_final
+                )
+                != expected_domain
+            ):
+                raise RuntimeError(
+                    f"{source_row['lead_id']}: replacement email source could not be read"
+                )
+        emails = _emails_in_source(email_html)
         if expected_email not in emails:
             raise RuntimeError(
                 f"{source_row['lead_id']}: replacement email is not "
@@ -464,6 +502,7 @@ def validate_online_evidence(
 
     return {
         "source_url": final_url,
+        "email_source_url": email_source_final,
         "http_status": status,
         "evidence_terms": len(
             change.get("evidence_terms") or []
@@ -588,6 +627,192 @@ def verify_existing_email(
     )
 
 
+def _research_unresolved_source(
+    source_row: dict,
+) -> dict:
+    lead_id = str(
+        source_row.get("lead_id") or ""
+    ).strip()
+    result = inspect_candidate(
+        {
+            "website_hint": (
+                source_row.get("website")
+                or source_row.get(
+                    "official_domain_hint"
+                )
+            ),
+            "name_hint": source_row.get(
+                "company"
+            ),
+            "category_hint": source_row.get(
+                "category_hint"
+            ),
+            "discovery_email_candidates": [],
+        }
+    )
+    if result.get("excluded_competitor"):
+        return {
+            "status": "hold",
+            "reason": (
+                "current official site matches "
+                "excluded competitor scope"
+            ),
+        }
+
+    observation = str(
+        result.get("verified_observation")
+        or ""
+    ).strip()
+    observation_url = str(
+        result.get(
+            "verified_observation_source_url"
+        )
+        or ""
+    ).strip()
+    if (
+        not observation
+        or not observation_url.startswith(
+            ("http://", "https://")
+        )
+        or result.get(
+            "verified_observation_source_type"
+        )
+        != "official_site"
+    ):
+        return {
+            "status": "hold",
+            "reason": (
+                "no current first-party fact "
+                "could be verified"
+            ),
+        }
+    if observation_is_low_signal(
+        str(source_row.get("company") or ""),
+        observation,
+    ):
+        return {
+            "status": "hold",
+            "reason": (
+                "current first-party observation "
+                "is low-signal"
+            ),
+        }
+
+    emails = [
+        str(email or "").strip().casefold()
+        for email in (
+            result.get(
+                "public_business_emails"
+            )
+            or []
+        )
+    ]
+    source_urls = [
+        str(url or "").strip()
+        for url in (
+            result.get("email_source_urls")
+            or []
+        )
+    ]
+    source_types = [
+        str(value or "").strip()
+        for value in (
+            result.get("email_source_types")
+            or []
+        )
+    ]
+    official_email_rows = []
+    for index, email in enumerate(emails):
+        source_type = (
+            source_types[index]
+            if index < len(source_types)
+            else ""
+        )
+        source_url = (
+            source_urls[index]
+            if index < len(source_urls)
+            else ""
+        )
+        if (
+            source_type == "official_site"
+            and source_url.startswith(
+                ("http://", "https://")
+            )
+            and valid_email(email)
+        ):
+            official_email_rows.append(
+                (email, source_url)
+            )
+    if not official_email_rows:
+        return {
+            "status": "hold",
+            "reason": (
+                "no current first-party public "
+                "business email could be verified"
+            ),
+        }
+
+    terms = _derive_refresh_evidence_terms(
+        {
+            **source_row,
+            "verified_observation": (
+                observation
+            ),
+        }
+    )
+    language = str(
+        result.get("language") or ""
+    ).strip().casefold()
+    if language not in {"nl", "en"}:
+        language = str(
+            source_row.get("language")
+            or "nl"
+        ).strip().casefold()
+    if language not in {"nl", "en"}:
+        language = "nl"
+
+    current_email = str(
+        source_row.get("email") or ""
+    ).strip().casefold()
+    for email, email_source_url in (
+        official_email_rows
+    ):
+        if email == current_email:
+            return {
+                "status": "rewrite",
+                "change": {
+                    "observation": (
+                        observation
+                    ),
+                    "source_url": (
+                        observation_url
+                    ),
+                    "email_source_url": (
+                        email_source_url
+                    ),
+                    "evidence_terms": terms,
+                    "language": language,
+                },
+            }
+
+    replacement_email, email_source_url = (
+        official_email_rows[0]
+    )
+    return {
+        "status": "replacement",
+        "change": {
+            "email": replacement_email,
+            "observation": observation,
+            "source_url": observation_url,
+            "email_source_url": (
+                email_source_url
+            ),
+            "evidence_terms": terms,
+            "language": language,
+        },
+    }
+
+
 def build_corrected_row(
     source_row: dict,
     change: dict,
@@ -647,11 +872,19 @@ def build_corrected_row(
         row["lead_id"] = stable_lead_id(
             email, str(row.get("website") or "")
         )
-        row["email_source_urls"] = [source_url]
+        email_source_url = str(
+            change.get("email_source_url")
+            or source_url
+        ).strip()
+        row["email_source_urls"] = [
+            email_source_url
+        ]
         row["email_source_types"] = [
             "official_site"
         ]
-        row["email_source_refs"] = [source_url]
+        row["email_source_refs"] = [
+            email_source_url
+        ]
 
     row["verified_observation"] = observation
     row["verified_observation_source_url"] = (
@@ -773,6 +1006,46 @@ def run(
         request.get("audit_only", False)
     )
     needs_research: list[dict] = []
+    auto_researched_count = 0
+    auto_research_hold_count = 0
+    auto_research_outcomes: list[dict] = []
+    if request.get(
+        "research_unresolved", False
+    ):
+        for lead_id in audited:
+            if (
+                lead_id in rewrites
+                or lead_id in replacements
+                or lead_id in holds
+            ):
+                continue
+            outcome = (
+                _research_unresolved_source(
+                    source_rows[lead_id]
+                )
+            )
+            auto_researched_count += 1
+            status = str(
+                outcome.get("status") or ""
+            )
+            if status == "rewrite":
+                rewrites[lead_id] = dict(
+                    outcome["change"]
+                )
+            elif status == "replacement":
+                replacements[lead_id] = dict(
+                    outcome["change"]
+                )
+            else:
+                holds.add(lead_id)
+                auto_research_hold_count += 1
+            auto_research_outcomes.append(
+                {
+                    "lead_id": lead_id,
+                    **outcome,
+                }
+            )
+
     auto_refreshed_count = 0
     refresh_failures: list[str] = []
     if request.get(
@@ -1040,6 +1313,24 @@ def run(
                     False,
                 )
             ),
+            "auto_researched_count": (
+                auto_researched_count
+            ),
+            "auto_research_hold_count": (
+                auto_research_hold_count
+            ),
+            "auto_research_outcomes": (
+                auto_research_outcomes
+            ),
+        "auto_researched_count": (
+            auto_researched_count
+        ),
+        "auto_research_hold_count": (
+            auto_research_hold_count
+        ),
+        "auto_research_outcomes": (
+            auto_research_outcomes
+        ),
             "auto_refreshed_count": (
                 auto_refreshed_count
             ),
