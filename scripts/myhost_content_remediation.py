@@ -389,34 +389,6 @@ def validate_online_evidence(
         change["source_url"]
     ).strip()
     source_domain = normalize_domain(source_url)
-    provider_type = str(
-        (change or {}).get(
-            "email_source_type"
-        )
-        or ""
-    ).strip()
-    provider_ref = str(
-        (change or {}).get(
-            "email_source_ref"
-        )
-        or ""
-    ).strip()
-    if (
-        provider_type
-        in {
-            "overture",
-            "google_maps",
-            "google_maps_targeted_fallback",
-        }
-        and provider_ref
-    ):
-        return {
-            "email": expected_email,
-            "source_url": None,
-            "source_ref": provider_ref,
-            "source_type": provider_type,
-        }
-
     expected_domain = normalize_domain(
         source_row.get("official_domain_hint")
         or source_row.get("website")
@@ -571,6 +543,34 @@ def verify_existing_email(
         raise RuntimeError(
             f"{lead_id}: current source email is invalid"
         )
+
+    provider_type = str(
+        (change or {}).get(
+            "email_source_type"
+        )
+        or ""
+    ).strip()
+    provider_ref = str(
+        (change or {}).get(
+            "email_source_ref"
+        )
+        or ""
+    ).strip()
+    if (
+        provider_type
+        in {
+            "overture",
+            "google_maps",
+            "google_maps_targeted_fallback",
+        }
+        and provider_ref
+    ):
+        return {
+            "email": expected_email,
+            "source_url": None,
+            "source_ref": provider_ref,
+            "source_type": provider_type,
+        }
 
     expected_domain = normalize_domain(
         source_row.get("official_domain_hint")
