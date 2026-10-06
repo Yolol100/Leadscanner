@@ -384,6 +384,62 @@ class ContentRemediationTests(unittest.TestCase):
         "myhost_content_remediation.stable_lead_id",
         return_value="growth-aaaaaaaaaaaaaaaaaaaa",
     )
+    def test_replacement_may_update_verified_website(
+        self,
+        stable,
+        template,
+        valid,
+    ):
+        source = {
+            "lead_id": "growth-bbbbbbbbbbbbbbbbbbbb",
+            "company": "Example BV",
+            "website": "https://old.example/",
+            "official_domain_hint": "old.example",
+            "email": "old@old.example",
+            "language": "nl",
+            "category_hint": "school",
+            "status": "review_draft",
+            "contact_basis_status": "review_required",
+        }
+        change = {
+            "email": "info@new.example",
+            "website": "https://new.example/",
+            "observation": "Example biedt praktijkonderwijs en stages.",
+            "source_url": "https://new.example/",
+            "evidence_terms": ["praktijkonderwijs"],
+        }
+        row = build_corrected_row(
+            source,
+            change,
+            price_min=250,
+            price_max=500,
+            replacement=True,
+        )
+        self.assertEqual(
+            row["website"],
+            "https://new.example/",
+        )
+        self.assertEqual(
+            row["official_domain_hint"],
+            "new.example",
+        )
+        stable.assert_called_once_with(
+            "info@new.example",
+            "https://new.example/",
+        )
+
+    @patch(
+        "myhost_content_remediation.valid_email",
+        return_value=True,
+    )
+    @patch(
+        "myhost_content_remediation.build_template",
+        return_value="body",
+    )
+    @patch(
+        "myhost_content_remediation.stable_lead_id",
+        return_value="growth-aaaaaaaaaaaaaaaaaaaa",
+    )
     def test_replacement_recomputes_id_and_stays_review_required(
         self,
         stable,
