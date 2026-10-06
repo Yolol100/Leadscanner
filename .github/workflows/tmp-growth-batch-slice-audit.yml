@@ -1,0 +1,57 @@
+name: Temporary Growth Batch Slice Audit
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/tmp-growth-batch-slice-audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+      OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+      OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+      OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+      OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+
+      - name: Read batches 12 through 14 without mailbox writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH="$GITHUB_WORKSPACE/scripts" python3 - <<'PY'
+          import json
+          from myhost_naturalize_drafts import read_review_growth_rows_slice_all
+
+          specs = [
+              ("batch-012", 1100, 100),
+              ("batch-013", 1200, 100),
+              ("batch-014", 1300, 50),
+          ]
+          totals = set()
+          for batch_id, offset, limit in specs:
+              _, total, rows = read_review_growth_rows_slice_all(offset, limit)
+              totals.add(total)
+              ids = [str(row["lead_id"]) for row in rows]
+              if len(ids) != limit or len(set(ids)) != limit:
+                  raise RuntimeError(f"{batch_id}: expected {limit} unique leads, found {len(ids)}")
+              print(f"{batch_id}=" + json.dumps(ids, separators=(",", ":")))
+          if totals != {1350}:
+              raise RuntimeError(f"Expected one current total of 1350, found {sorted(totals)}")
+          print("GROWTH_BATCH_SLICE_AUDIT=green total=1350 batch12=100 batch13=100 batch14=50")
+          print("read_only=true smtp_send=not_available")
+          PY
