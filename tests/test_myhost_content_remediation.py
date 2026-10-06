@@ -280,6 +280,47 @@ class ContentRemediationTests(unittest.TestCase):
     @patch(
         "myhost_content_remediation.fetch_html",
         return_value=(
+            '<html><body><a href="mailto:branch@example.nl">Mail</a></body></html>',
+            "https://example.nl/branch/contact",
+            200,
+        ),
+    )
+    def test_existing_email_accepts_researched_same_domain_source(
+        self,
+        fetch,
+        links,
+    ):
+        source = {
+            "lead_id": "growth-bbbbbbbbbbbbbbbbbbbb",
+            "website": "https://example.nl/",
+            "official_domain_hint": "example.nl",
+            "email": "branch@example.nl",
+            "email_source_urls": [],
+            "verified_observation_source_url": (
+                "https://example.nl/"
+            ),
+        }
+        change = {
+            "email_source_url": (
+                "https://example.nl/branch/contact"
+            )
+        }
+        result = verify_existing_email(
+            source,
+            change,
+        )
+        self.assertEqual(
+            result["source_url"],
+            "https://example.nl/branch/contact",
+        )
+
+    @patch(
+        "myhost_content_remediation.discover_contact_links",
+        return_value=[],
+    )
+    @patch(
+        "myhost_content_remediation.fetch_html",
+        return_value=(
             "<html><body>Contact us</body></html>",
             "https://example.nl/contact",
             200,
