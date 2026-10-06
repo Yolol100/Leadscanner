@@ -78,9 +78,17 @@ def fetch_message_uid(client, uid: bytes) -> EmailMessage:
     raise RuntimeError("IMAP UID readback returned no message bytes")
 
 
-def uid_expunge_only(client, folder: str, uid: bytes, *, operation: str) -> None:
+def uid_expunge_only(
+    client,
+    folder: str,
+    uid: bytes,
+    *,
+    operation: str,
+    ensure_selected: bool = True,
+) -> None:
     require_uidplus(client, operation)
-    select_folder(client, folder, readonly=False)
+    if ensure_selected:
+        select_folder(client, folder, readonly=False)
     uid_text = uid.decode("ascii")
     status, _ = client.uid("store", uid_text, "+FLAGS", "(\\Deleted)")
     if status != "OK":
