@@ -360,6 +360,19 @@ class GrowthBatchTests(unittest.TestCase):
         self.assertNotIn("30%", body)
         self.assertNotIn("meeting", body.casefold())
 
+    def test_non_business_observations_are_low_signal(self):
+        observations = (
+            "Product toegevoegd aan jouw offerte.",
+            "Samen werken aan jouw talent!",
+            "Prima locatie, maar te klein. Dank.",
+        )
+        for observation in observations:
+            self.assertTrue(
+                observation_is_low_signal(
+                    "Voorbeeld BV", observation
+                )
+            )
+
     def test_navigation_labels_are_low_signal(self):
         for observation in (
             "Contact",
