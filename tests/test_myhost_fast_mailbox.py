@@ -7,7 +7,9 @@ from myhost_fast_mailbox import (
     bulk_inventory_drafts,
     current_from_inventory,
     delete_known_draft_and_verify,
+    parse_multiappend_uids,
     replace_known_draft_and_verify,
+    replace_known_drafts_multiappend_and_verify,
     uid_from_inventory,
 )
 
@@ -23,9 +25,14 @@ def raw_message(lead_id, body="old"):
 
 
 class FakeUIDIMAP:
-    def __init__(self, lead_id, *, uidplus=True, appenduid=True):
+    def __init__(self, lead_id, *, uidplus=True, appenduid=True, multiappend=False):
         self.messages = {b"10": raw_message(lead_id)}
-        self.capabilities = (b"IMAP4REV1", b"UIDPLUS") if uidplus else (b"IMAP4REV1",)
+        capabilities = [b"IMAP4REV1"]
+        if uidplus:
+            capabilities.append(b"UIDPLUS")
+        if multiappend:
+            capabilities.append(b"MULTIAPPEND")
+        self.capabilities = tuple(capabilities)
         self.deleted = set()
         self.next_uid = 11
         self.uid_searches = 0
@@ -109,6 +116,133 @@ class FastMailboxTests(unittest.TestCase):
         self.assertEqual(current_from_inventory(inventory, lead_b)["body"], "other")
         self.assertEqual(client.uid_searches, 1)
         self.assertEqual(client.full_fetch_calls, 1)
+
+    def test_parse_multiappend_uid_range_preserves_order(self):
+        self.assertEqual(
+            parse_multiappend_uids(
+                b"[APPENDUID 777 21:23] MULTIAPPEND completed",
+                3,
+            ),
+            [b"21", b"22", b"23"],
+        )
+        self.assertEqual(
+            parse_multiappend_uids(
+                b"[APPENDUID 777 31,35,40] MULTIAPPEND completed",
+                3,
+            ),
+            [b"31", b"35", b"40"],
+        )
+        with self.assertRaisesRegex(RuntimeError, "count mismatch"):
+            parse_multiappend_uids(
+                b"[APPENDUID 777 21:22] MULTIAPPEND completed",
+                3,
+            )
+
+    def test_multiappend_shard_verifies_all_new_before_deleting_old(self):
+        lead_a = "growth-" + "1" * 20
+        lead_b = "growth-" + "2" * 20
+        client = FakeUIDIMAP(lead_a, multiappend=True)
+        client.messages[b"20"] = raw_message(lead_b, body="old-b")
+        inventory = bulk_inventory_drafts(client, "Drafts", [lead_a, lead_b])
+
+        expected_a = EmailMessage(policy=default)
+        expected_a["To"] = "info@example.nl"
+        expected_a["Subject"] = "Idee"
+        expected_a["X-Webactueel-Lead-ID"] = lead_a
+        expected_a["X-Webactueel-Review-Required"] = "contact-basis"
+        expected_a.set_content("new-a")
+
+        expected_b = EmailMessage(policy=default)
+        expected_b["To"] = "info@example.nl"
+        expected_b["Subject"] = "Idee"
+        expected_b["X-Webactueel-Lead-ID"] = lead_b
+        expected_b["X-Webactueel-Review-Required"] = "contact-basis"
+        expected_b.set_content("new-b")
+
+        replacements = [
+            {
+                "lead_id": lead_a,
+                "existing_uid": uid_from_inventory(inventory, lead_a),
+                "expected_msg": expected_a,
+                "expected_snapshot": current_from_inventory(inventory, lead_a),
+            },
+            {
+                "lead_id": lead_b,
+                "existing_uid": uid_from_inventory(inventory, lead_b),
+                "expected_msg": expected_b,
+                "expected_snapshot": current_from_inventory(inventory, lead_b),
+            },
+        ]
+
+        def append_shard(_folder, messages):
+            uids = [b"30", b"31"]
+            for uid, message in zip(uids, messages):
+                client.messages[uid] = message.as_bytes(policy=default)
+            return uids
+
+        results = replace_known_drafts_multiappend_and_verify(
+            client,
+            "Drafts",
+            replacements,
+            multiappend_func=append_shard,
+        )
+        self.assertEqual([row["new_uid"] for row in results], [b"30", b"31"])
+        self.assertEqual(set(client.messages), {b"30", b"31"})
+        self.assertEqual(
+            BytesParser(policy=default).parsebytes(client.messages[b"30"]).get_content().strip(),
+            "new-a",
+        )
+        self.assertEqual(
+            BytesParser(policy=default).parsebytes(client.messages[b"31"]).get_content().strip(),
+            "new-b",
+        )
+
+    def test_multiappend_shard_rolls_back_all_new_when_predelete_readback_fails(self):
+        lead_a = "growth-" + "3" * 20
+        lead_b = "growth-" + "4" * 20
+        client = FakeUIDIMAP(lead_a, multiappend=True)
+        client.messages[b"20"] = raw_message(lead_b, body="old-b")
+        inventory = bulk_inventory_drafts(client, "Drafts", [lead_a, lead_b])
+
+        expected = []
+        for lead_id, body in ((lead_a, "new-a"), (lead_b, "new-b")):
+            msg = EmailMessage(policy=default)
+            msg["To"] = "info@example.nl"
+            msg["Subject"] = "Idee"
+            msg["X-Webactueel-Lead-ID"] = lead_id
+            msg["X-Webactueel-Review-Required"] = "contact-basis"
+            msg.set_content(body)
+            expected.append(msg)
+
+        replacements = [
+            {
+                "lead_id": lead_a,
+                "existing_uid": uid_from_inventory(inventory, lead_a),
+                "expected_msg": expected[0],
+                "expected_snapshot": current_from_inventory(inventory, lead_a),
+            },
+            {
+                "lead_id": lead_b,
+                "existing_uid": uid_from_inventory(inventory, lead_b),
+                "expected_msg": expected[1],
+                "expected_snapshot": current_from_inventory(inventory, lead_b),
+            },
+        ]
+
+        def append_bad_shard(_folder, messages):
+            client.messages[b"30"] = messages[0].as_bytes(policy=default)
+            client.messages[b"31"] = raw_message(lead_b, body="tampered")
+            return [b"30", b"31"]
+
+        with self.assertRaisesRegex(RuntimeError, "readback mismatch"):
+            replace_known_drafts_multiappend_and_verify(
+                client,
+                "Drafts",
+                replacements,
+                multiappend_func=append_bad_shard,
+            )
+        self.assertEqual(set(client.messages), {b"10", b"20"})
+        self.assertFalse(client.deleted)
 
     def test_one_bulk_inventory_then_uid_replacement(self):
         lead_id = "growth-" + "a" * 20

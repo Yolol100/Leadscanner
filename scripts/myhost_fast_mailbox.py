@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import imaplib
+import os
 import re
 from email.parser import BytesParser
-from email.policy import default
+from email.policy import SMTP, default
+
+from imapclient import IMAPClient
 
 from myhost_draft import (
     LEAD_ID_RE,
@@ -12,6 +15,7 @@ from myhost_draft import (
     fetch_message_uid,
     normalize_text,
     plain_body,
+    imap_capability_tokens,
     require_uidplus,
     select_folder,
     uid_expunge_only,
@@ -97,6 +101,212 @@ def _append_uid_from_response(client, append_data) -> bytes | None:
         if match:
             return match.group(1)
     return None
+
+
+def _response_bytes(value) -> list[bytes]:
+    if value is None:
+        return []
+    if isinstance(value, bytes):
+        return [value]
+    if isinstance(value, str):
+        return [value.encode("ascii", errors="ignore")]
+    if isinstance(value, (list, tuple)):
+        out = []
+        for item in value:
+            out.extend(_response_bytes(item))
+        return out
+    return [str(value).encode("ascii", errors="ignore")]
+
+
+def _expand_uid_set(value: bytes) -> list[bytes]:
+    text = value.decode("ascii", errors="strict")
+    out = []
+    for part in text.split(","):
+        if ":" in part:
+            start_text, end_text = part.split(":", 1)
+            start = int(start_text)
+            end = int(end_text)
+            step = 1 if end >= start else -1
+            out.extend(str(uid).encode("ascii") for uid in range(start, end + step, step))
+        else:
+            out.append(str(int(part)).encode("ascii"))
+    return out
+
+
+def parse_multiappend_uids(response, expected_count: int) -> list[bytes]:
+    if expected_count < 1:
+        raise ValueError("expected_count must be positive")
+    for raw in _response_bytes(response):
+        match = re.search(
+            rb"APPENDUID\s+\d+\s+([0-9:,]+)",
+            raw,
+            re.IGNORECASE,
+        )
+        if not match:
+            continue
+        uids = _expand_uid_set(match.group(1))
+        if len(uids) != expected_count or len(set(uids)) != len(uids):
+            raise RuntimeError("MULTIAPPEND APPENDUID count mismatch")
+        return uids
+    return []
+
+
+def _connect_multiappend_client():
+    host = os.getenv("OUTREACH_IMAP_HOST", "mail.andrewbaeten.nl").strip()
+    port = int(os.getenv("OUTREACH_IMAP_PORT", "993"))
+    user = os.getenv("OUTREACH_MAIL_USER", "info@andrewbaeten.nl").strip()
+    password = os.getenv("OUTREACH_MAIL_PASSWORD", "")
+    timeout = float(os.getenv("OUTREACH_IMAP_TIMEOUT_SECONDS", "15"))
+    if not password:
+        raise RuntimeError("OUTREACH_MAIL_PASSWORD is required for MULTIAPPEND")
+    client = IMAPClient(host, port=port, ssl=True, timeout=timeout)
+    client.login(user, password)
+    return client
+
+
+def multiappend_review_drafts(folder: str, messages) -> list[bytes]:
+    messages = list(messages)
+    if not messages:
+        return []
+    client = _connect_multiappend_client()
+    try:
+        if not client.has_capability("MULTIAPPEND"):
+            raise RuntimeError("IMAP MULTIAPPEND is not available")
+        if not client.has_capability("UIDPLUS"):
+            raise RuntimeError("IMAP UIDPLUS is not available for MULTIAPPEND rollback")
+        payloads = [
+            {
+                "msg": message.as_bytes(policy=SMTP),
+                "flags": ("\\Draft",),
+            }
+            for message in messages
+        ]
+        response = client.multiappend(folder, payloads)
+        uids = parse_multiappend_uids(response, len(messages))
+        if not uids:
+            raise RuntimeError("MULTIAPPEND completed without a usable APPENDUID set")
+        return uids
+    finally:
+        try:
+            client.logout()
+        except Exception:
+            pass
+
+
+def _rollback_new_uids(client, folder: str, uids, *, operation: str) -> None:
+    errors = []
+    for uid in uids:
+        try:
+            uid_expunge_only(
+                client,
+                folder,
+                uid,
+                operation=operation,
+            )
+        except Exception as exc:
+            errors.append(str(exc))
+    if errors:
+        raise RuntimeError(
+            f"{operation} failed for {len(errors)} UID(s): " + "; ".join(errors[:3])
+        )
+
+
+def replace_known_drafts_multiappend_and_verify(
+    client,
+    folder: str,
+    replacements,
+    *,
+    multiappend_func=None,
+):
+    rows = list(replacements)
+    if not rows:
+        return []
+
+    tokens = imap_capability_tokens(client)
+    if "UIDPLUS" not in tokens or "MULTIAPPEND" not in tokens:
+        raise RuntimeError("MULTIAPPEND replacement requires UIDPLUS and MULTIAPPEND")
+
+    lead_ids = [row["lead_id"] for row in rows]
+    if len(set(lead_ids)) != len(lead_ids):
+        raise RuntimeError("MULTIAPPEND replacement requires unique lead IDs")
+    old_uids = [row["existing_uid"] for row in rows]
+    if any(not uid for uid in old_uids) or len(set(old_uids)) != len(old_uids):
+        raise RuntimeError("MULTIAPPEND replacement requires unique existing UIDs")
+
+    select_folder(client, folder, readonly=True)
+    old_messages = bulk_fetch_uid_messages(client, old_uids)
+    for row in rows:
+        _assert_expected_snapshot(
+            old_messages[row["existing_uid"]],
+            row["lead_id"],
+            row["expected_snapshot"],
+        )
+
+    append = multiappend_func or multiappend_review_drafts
+    new_uids = append(folder, [row["expected_msg"] for row in rows])
+    if len(new_uids) != len(rows) or len(set(new_uids)) != len(new_uids):
+        raise RuntimeError("MULTIAPPEND returned an invalid UID set")
+
+    try:
+        select_folder(client, folder, readonly=True)
+        new_messages = bulk_fetch_uid_messages(client, new_uids)
+        for row, new_uid in zip(rows, new_uids):
+            if not exact_message_matches(new_messages[new_uid], row["expected_msg"]):
+                raise RuntimeError(
+                    f"MULTIAPPEND draft readback mismatch for {row['lead_id']}"
+                )
+
+        old_messages = bulk_fetch_uid_messages(client, old_uids)
+        for row in rows:
+            _assert_expected_snapshot(
+                old_messages[row["existing_uid"]],
+                row["lead_id"],
+                row["expected_snapshot"],
+            )
+    except Exception as exc:
+        try:
+            _rollback_new_uids(
+                client,
+                folder,
+                new_uids,
+                operation="rollback uncommitted MULTIAPPEND shard",
+            )
+        except Exception as rollback_exc:
+            raise RuntimeError(f"{exc}; {rollback_exc}") from exc
+        raise
+
+    committed = 0
+    try:
+        for row in rows:
+            uid_expunge_only(
+                client,
+                folder,
+                row["existing_uid"],
+                operation=f"MULTIAPPEND replacement for {row['lead_id']}",
+            )
+            committed += 1
+    except Exception as exc:
+        rollback_uids = new_uids[committed:]
+        if rollback_uids:
+            try:
+                _rollback_new_uids(
+                    client,
+                    folder,
+                    rollback_uids,
+                    operation="rollback uncommitted MULTIAPPEND replacements",
+                )
+            except Exception as rollback_exc:
+                raise RuntimeError(f"{exc}; {rollback_exc}") from exc
+        raise
+
+    return [
+        {
+            "lead_id": row["lead_id"],
+            "new_uid": new_uid,
+            "message": new_messages[new_uid],
+        }
+        for row, new_uid in zip(rows, new_uids)
+    ]
 
 
 def search_lead_uids(client, folder: str, lead_id: str, *, ensure_selected: bool = True) -> list[bytes]:

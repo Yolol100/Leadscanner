@@ -35,6 +35,7 @@ from myhost_fast_mailbox import (
     bulk_inventory_drafts,
     current_from_inventory,
     replace_known_draft_and_verify,
+    replace_known_drafts_multiappend_and_verify,
     snapshot_message,
     uid_from_inventory,
 )
@@ -43,6 +44,7 @@ from prepare_growth_batch import build_value_sentence
 STATE_VERSION = "leadscanner-value-sentence-state-v1"
 STATE_TTL_SECONDS = 4 * 60 * 60
 MAX_REMEDIATION = 450
+MULTIAPPEND_SHARD_SIZE = 50
 HEADER_FETCH = "(BODY.PEEK[HEADER.FIELDS (X-Webactueel-Lead-ID)])"
 HEADER_CHUNK = 250
 
@@ -448,25 +450,101 @@ def verify_or_apply(state: dict, mode: str) -> dict:
 
         changed = 0
         existing = already_expected
+        multiappend_used = False
+        multiappend_shards = 0
         if mode == "apply":
-            for item in pending:
-                lead_id = item["lead_id"]
-                msg = inventory[lead_id]["messages"][0]
-                if full_snapshot(msg) != item["before"]:
-                    raise RuntimeError("draft changed after batch preflight; mutation blocked")
-                expected_msg = message_with_body(msg, item["expected"]["body"])
-                outcome, _uid, final_msg = replace_known_draft_and_verify(
-                    client,
-                    folder,
-                    lead_id,
-                    uid_from_inventory(inventory, lead_id),
-                    expected_msg,
-                    snapshot_message(msg, lead_id),
-                )
-                if full_snapshot(final_msg) != item["expected"]:
-                    raise RuntimeError("full final draft readback mismatch")
-                changed += int(outcome == "replaced")
-                existing += int(outcome == "existing")
+            capability_tokens = imap_capability_tokens(client)
+            use_multiappend = "MULTIAPPEND" in capability_tokens and len(pending) >= 2
+
+            if use_multiappend:
+                for start in range(0, len(pending), MULTIAPPEND_SHARD_SIZE):
+                    shard = pending[start:start + MULTIAPPEND_SHARD_SIZE]
+                    if len(shard) == 1:
+                        item = shard[0]
+                        lead_id = item["lead_id"]
+                        msg = inventory[lead_id]["messages"][0]
+                        if full_snapshot(msg) != item["before"]:
+                            raise RuntimeError("draft changed after batch preflight; mutation blocked")
+                        expected_msg = message_with_body(msg, item["expected"]["body"])
+                        outcome, _uid, final_msg = replace_known_draft_and_verify(
+                            client,
+                            folder,
+                            lead_id,
+                            uid_from_inventory(inventory, lead_id),
+                            expected_msg,
+                            snapshot_message(msg, lead_id),
+                        )
+                        if full_snapshot(final_msg) != item["expected"]:
+                            raise RuntimeError("full final draft readback mismatch")
+                        changed += int(outcome == "replaced")
+                        existing += int(outcome == "existing")
+                        continue
+
+                    replacements = []
+                    for item in shard:
+                        lead_id = item["lead_id"]
+                        msg = inventory[lead_id]["messages"][0]
+                        if full_snapshot(msg) != item["before"]:
+                            raise RuntimeError("draft changed after batch preflight; mutation blocked")
+                        replacements.append(
+                            {
+                                "lead_id": lead_id,
+                                "existing_uid": uid_from_inventory(inventory, lead_id),
+                                "expected_msg": message_with_body(
+                                    msg,
+                                    item["expected"]["body"],
+                                ),
+                                "expected_snapshot": snapshot_message(msg, lead_id),
+                            }
+                        )
+
+                    results = replace_known_drafts_multiappend_and_verify(
+                        client,
+                        folder,
+                        replacements,
+                    )
+                    result_by_lead = {row["lead_id"]: row for row in results}
+                    if set(result_by_lead) != {item["lead_id"] for item in shard}:
+                        raise RuntimeError("MULTIAPPEND result identity mismatch")
+
+                    shard_inventory = bulk_inventory_drafts(
+                        client,
+                        folder,
+                        [item["lead_id"] for item in shard],
+                    )
+                    for item in shard:
+                        lead_id = item["lead_id"]
+                        current = current_from_inventory(shard_inventory, lead_id)
+                        if current.get("count") != 1:
+                            raise RuntimeError("MULTIAPPEND shard final inventory count mismatch")
+                        final_msg = shard_inventory[lead_id]["messages"][0]
+                        if full_snapshot(final_msg) != item["expected"]:
+                            raise RuntimeError("MULTIAPPEND shard final readback mismatch")
+                        if full_snapshot(result_by_lead[lead_id]["message"]) != item["expected"]:
+                            raise RuntimeError("MULTIAPPEND pre-delete readback mismatch")
+                        changed += 1
+
+                    multiappend_used = True
+                    multiappend_shards += 1
+            else:
+                for item in pending:
+                    lead_id = item["lead_id"]
+                    msg = inventory[lead_id]["messages"][0]
+                    if full_snapshot(msg) != item["before"]:
+                        raise RuntimeError("draft changed after batch preflight; mutation blocked")
+                    expected_msg = message_with_body(msg, item["expected"]["body"])
+                    outcome, _uid, final_msg = replace_known_draft_and_verify(
+                        client,
+                        folder,
+                        lead_id,
+                        uid_from_inventory(inventory, lead_id),
+                        expected_msg,
+                        snapshot_message(msg, lead_id),
+                    )
+                    if full_snapshot(final_msg) != item["expected"]:
+                        raise RuntimeError("full final draft readback mismatch")
+                    changed += int(outcome == "replaced")
+                    existing += int(outcome == "existing")
 
         final_inventory = bulk_inventory_drafts(client, folder, lead_ids)
         verified = 0
@@ -485,6 +563,9 @@ def verify_or_apply(state: dict, mode: str) -> dict:
             "changed_count": changed,
             "already_expected_count": existing,
             "verified_count": verified,
+            "multiappend_used": multiappend_used,
+            "multiappend_shards": multiappend_shards,
+            "multiappend_shard_size": MULTIAPPEND_SHARD_SIZE,
             "read_only": mode == "final",
             "readback": "exact",
         }
