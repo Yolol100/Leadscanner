@@ -105,12 +105,22 @@ class ValueSentenceRemediationTests(unittest.TestCase):
         self.assertEqual(result["expected_value"], NL_GENERAL)
         self.assertEqual(result["expected_body"], body)
 
-    def test_noncanonical_value_sentence_fails_closed(self):
-        bad = NL_BODY.replace(
+    def test_legacy_value_sentence_in_canonical_slot_is_migrated(self):
+        legacy = NL_BODY.replace(
             NL_GENERAL,
-            "Wij zorgen gegarandeerd voor meer omzet:",
+            "Met één compact Groeiabonnement kan ik deze online onderdelen voor jullie combineren:",
         )
-        with self.assertRaisesRegex(ValueError, "unsupported_value_sentence"):
+        result = analyze_body(legacy)
+        self.assertTrue(result["tailored"])
+        self.assertNotIn("compact Groeiabonnement", result["expected_body"])
+        self.assertIn(
+            "Voor fysiotherapie en revalidatie brengt mijn Groeiabonnement website, vindbaarheid, content, automatisering en hosting samen met één vast aanspreekpunt:",
+            result["expected_body"],
+        )
+
+    def test_empty_or_broken_value_slot_fails_closed(self):
+        bad = NL_BODY.replace(NL_GENERAL + "\n\n", "\n\n")
+        with self.assertRaisesRegex(ValueError, "unsupported_growth_layout"):
             analyze_body(bad)
 
     def test_missing_bullet_fails_closed(self):
