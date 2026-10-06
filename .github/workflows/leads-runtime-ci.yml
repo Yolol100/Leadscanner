@@ -65,6 +65,22 @@ jobs:
           ! grep -R --line-number --include='*.yml' -E 'smtp|SMTP' .github/workflows
           echo 'ONE_RUN_GROWTH_DRAFT_CORE=green'
 
+      - name: Prove bounded value-sentence remediation boundary
+        run: |
+          set -euo pipefail
+          test -f .github/workflows/leads-value-sentence-remediation.yml
+          test -f scripts/myhost_value_sentence_remediation.py
+          test -f tests/test_myhost_value_sentence_remediation.py
+          grep -q "github.event.issue.user.login == github.repository_owner" .github/workflows/leads-value-sentence-remediation.yml
+          grep -F -q "startsWith(github.event.issue.title, '[growth-value-remediate]')" .github/workflows/leads-value-sentence-remediation.yml
+          grep -q 'myhost_value_sentence_remediation.py' .github/workflows/leads-value-sentence-remediation.yml
+          grep -q 'audit_artifact_id' .github/workflows/leads-value-sentence-remediation.yml
+          grep -q 'review_required_preserved' scripts/myhost_value_sentence_remediation.py
+          grep -q 'automatic_send.*False' scripts/myhost_value_sentence_remediation.py
+          ! grep -E -q 'smtplib|sendmail\(|SMTP\(' scripts/myhost_value_sentence_remediation.py
+          ! grep -E -q 'client\.expunge\(|client\.store\(' scripts/myhost_value_sentence_remediation.py
+          echo 'VALUE_SENTENCE_REMEDIATION_BOUNDARY=green'
+
       - name: Prove isolated discovery-only phase boundary
         run: |
           set -euo pipefail
