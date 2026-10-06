@@ -297,6 +297,11 @@ def build_audit(offset: int, limit: int) -> tuple[dict, dict]:
                 f"Requested offset {offset}, but only {len(pairs)} Growth drafts exist"
             )
         if limit == 0:
+            remaining = len(pairs) - offset
+            if remaining > MAX_REMEDIATION:
+                raise RuntimeError(
+                    f"All-mode would select {remaining} drafts; maximum is {MAX_REMEDIATION}"
+                )
             selected = pairs[offset:]
         else:
             if len(pairs) < offset + limit:
