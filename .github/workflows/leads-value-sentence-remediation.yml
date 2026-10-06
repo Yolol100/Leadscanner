@@ -159,7 +159,7 @@ jobs:
               keys = (
                   "mode", "selected_count", "growth_total", "replace_count",
                   "unchanged_count", "tailored_expected_count",
-                  "fallback_expected_count", "blocker_count", "blocker_reasons",
+                  "fallback_expected_count", "legacy_value_count", "blocker_count", "blocker_reasons",
                   "changed_count", "already_expected_count", "verified_count",
                   "readback",
               )
@@ -170,12 +170,9 @@ jobs:
                   print("AUDIT_ARTIFACT_ID=" + os.environ["AUDIT_ARTIFACT_ID"])
               print("Review-required status was preserved. Nothing was sent.")
           PY
-          gh issue comment "$ISSUE_NUMBER" --body-file results/comment.txt
-          if [ "$CODE" = "0" ]; then
-            gh issue close "$ISSUE_NUMBER" --reason completed
-          else
-            gh issue close "$ISSUE_NUMBER" --reason completed
-          fi
+          body="$(cat results/comment.txt)"
+          gh api --method POST             -H "Accept: application/vnd.github+json"             "/repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER/comments"             -f body="$body" >/dev/null
+          gh api --method PATCH             -H "Accept: application/vnd.github+json"             "/repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER"             -f state=closed -f state_reason=completed >/dev/null
 
       - name: Fail closed on unsuccessful remediation
         if: always() && steps.execute.outcome == 'success' && steps.execute.outputs.code != '0'
@@ -189,8 +186,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
         run: |
-          gh issue comment "$ISSUE_NUMBER" --body "Value-sentence remediation failed closed before a valid result was produced. No email was sent."
-          gh issue close "$ISSUE_NUMBER" --reason completed
+          gh api --method POST             -H "Accept: application/vnd.github+json"             "/repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER/comments"             -f body="Value-sentence remediation failed closed before a valid result was produced. No email was sent." >/dev/null
+          gh api --method PATCH             -H "Accept: application/vnd.github+json"             "/repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER"             -f state=closed -f state_reason=completed >/dev/null
 
       - name: Remove runtime residue
         if: always()
