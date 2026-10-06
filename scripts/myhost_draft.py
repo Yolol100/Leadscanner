@@ -6,6 +6,7 @@ import json
 import os
 import re
 import ssl
+import time
 from email.message import EmailMessage
 from email.parser import BytesParser
 from email.policy import default
@@ -66,11 +67,39 @@ def connect_imap():
     port = int(os.getenv("OUTREACH_IMAP_PORT", "993"))
     user = os.getenv("OUTREACH_MAIL_USER", "info@andrewbaeten.nl").strip()
     password = os.getenv("OUTREACH_MAIL_PASSWORD", "")
+    timeout = float(os.getenv("OUTREACH_IMAP_TIMEOUT_SECONDS", "15"))
+    retries = int(os.getenv("OUTREACH_IMAP_CONNECT_RETRIES", "3"))
+    retry_delay = float(os.getenv("OUTREACH_IMAP_RETRY_DELAY_SECONDS", "2"))
     if not password:
         raise RuntimeError("OUTREACH_MAIL_PASSWORD is required when drafts are ready")
-    client = imaplib.IMAP4_SSL(host, port, ssl_context=ssl.create_default_context())
-    client.login(user, password)
-    return client
+    if timeout <= 0 or retries < 1 or retry_delay < 0:
+        raise RuntimeError("Invalid IMAP retry/timeout configuration")
+
+    last_error: Exception | None = None
+    for attempt in range(1, retries + 1):
+        client = None
+        try:
+            client = imaplib.IMAP4_SSL(
+                host,
+                port,
+                ssl_context=ssl.create_default_context(),
+                timeout=timeout,
+            )
+            client.login(user, password)
+            return client
+        except (imaplib.IMAP4.error, OSError, TimeoutError) as exc:
+            last_error = exc
+            if client is not None:
+                try:
+                    client.shutdown()
+                except Exception:
+                    pass
+            if attempt < retries:
+                time.sleep(retry_delay)
+
+    raise RuntimeError(
+        f"IMAP connection/login failed after {retries} attempt(s): {last_error}"
+    )
 
 
 def find_drafts_folder(client) -> str:
