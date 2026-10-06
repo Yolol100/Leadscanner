@@ -14,6 +14,7 @@ class FakeIMAP:
         self.deleted = set()
         self.capabilities = (b"IMAP4REV1", b"UIDPLUS") if uidplus else (b"IMAP4REV1",)
         self.append_calls = 0
+        self.tamper_new_uid_fetch = False
 
     def list(self):
         return "OK", [b'(\\HasNoChildren \\Drafts) "/" "Drafts"']
@@ -41,7 +42,12 @@ class FakeIMAP:
         command = command.casefold()
         uid = int(str(args[0]))
         if command == "fetch":
-            return "OK", [(b"1 (UID " + str(uid).encode() + b" RFC822)", self.messages[uid - 1])]
+            payload = self.messages[uid - 1]
+            if self.tamper_new_uid_fetch and uid == len(self.messages):
+                msg = BytesParser(policy=default).parsebytes(payload)
+                msg.set_content("tampered")
+                payload = msg.as_bytes(policy=default)
+            return "OK", [(b"1 (UID " + str(uid).encode() + b" RFC822)", payload)]
         if command == "store":
             self.deleted.add(uid - 1)
             return "OK", [b"STORE completed"]
@@ -182,6 +188,31 @@ class DraftTests(unittest.TestCase):
         _, expected = build_message(self.row())
         actual = BytesParser(policy=default).parsebytes(client.messages[0])
         self.assertTrue(exact_message_matches(actual, expected))
+
+    def test_create_without_uidplus_blocks_before_append(self):
+        client = FakeIMAP(uidplus=False)
+        with patch("myhost_draft.connect_imap", return_value=client):
+            with self.assertRaisesRegex(RuntimeError, "UIDPLUS"):
+                create_drafts({"rows": [self.row()]})
+        self.assertEqual(client.append_calls, 0)
+        self.assertEqual(client.messages, [])
+
+    def test_replacement_readback_failure_rolls_back_new_draft(self):
+        client = FakeIMAP()
+        with patch("myhost_draft.connect_imap", return_value=client):
+            create_drafts({"rows": [self.row()]})
+        old_raw = client.messages[0]
+
+        updated = self.row()
+        updated["body"] = "Nieuwe gecontroleerde versie."
+        client.tamper_new_uid_fetch = True
+        with patch("myhost_draft.connect_imap", return_value=client):
+            with self.assertRaisesRegex(RuntimeError, "readback mismatch"):
+                create_drafts({"rows": [updated]})
+
+        self.assertEqual(len(client.messages), 1)
+        self.assertEqual(client.messages[0], old_raw)
+        self.assertFalse(client.deleted)
 
     def test_changed_existing_draft_without_uidplus_blocks_before_append(self):
         client = FakeIMAP()
