@@ -85,8 +85,15 @@ def uid_expunge_only(
     *,
     operation: str,
     ensure_selected: bool = True,
+    capability_tokens: set[str] | None = None,
 ) -> None:
-    require_uidplus(client, operation)
+    if capability_tokens is None:
+        require_uidplus(client, operation)
+    elif "UIDPLUS" not in capability_tokens:
+        raise RuntimeError(
+            f"IMAP UIDPLUS is required before {operation}; "
+            "target-only deletion cannot be proven"
+        )
     if ensure_selected:
         select_folder(client, folder, readonly=False)
     uid_text = uid.decode("ascii")
