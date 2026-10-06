@@ -31,6 +31,7 @@ class FakeUIDIMAP:
         self.uid_searches = 0
         self.append_calls = 0
         self.tamper_new_uid_fetch = False
+        self.last_appended_uid = None
 
     def select(self, folder, readonly=True):
         return "OK", [str(len(self.messages)).encode()]
@@ -62,7 +63,7 @@ class FakeUIDIMAP:
                     payload = header.as_bytes(policy=default)
                 else:
                     payload = self.messages[uid]
-                    if self.tamper_new_uid_fetch and uid == str(self.next_uid - 1).encode():
+                    if self.tamper_new_uid_fetch and uid == self.last_appended_uid:
                         tampered = BytesParser(policy=default).parsebytes(payload)
                         tampered.set_content("tampered")
                         payload = tampered.as_bytes(policy=default)
@@ -83,6 +84,7 @@ class FakeUIDIMAP:
         self.append_calls += 1
         uid = str(self.next_uid).encode()
         self.next_uid += 1
+        self.last_appended_uid = uid
         self.messages[uid] = raw
         return "OK", [b""]
 
