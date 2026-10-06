@@ -101,11 +101,11 @@ jobs:
           )
           if (
               not isinstance(audited, list)
-              or len(audited) != 100
-              or len(set(audited)) != 100
+              or not 1 <= len(audited) <= 100
+              or len(set(audited)) != len(audited)
           ):
               raise SystemExit(
-                  "request must audit exactly 100 unique leads"
+                  "request must audit 1-100 unique leads"
               )
           Path("results/request.json").write_text(
               json.dumps(
@@ -128,7 +128,7 @@ jobs:
           print(
               "CONTENT_REMEDIATION_REQUEST=green "
               f"batch={batch_id} "
-              "audited=100 "
+              f"audited={len(audited)} "
               f"rewrites={len(request.get('rewrites') or {})} "
               f"replacements={len(request.get('replacements') or {})} "
               f"holds={len(request.get('holds') or [])} "
@@ -175,9 +175,20 @@ jobs:
                   "results/content-remediation-report.json"
               ).read_text(encoding="utf-8")
           )
-          if report.get("audited_count") != 100:
+          request = json.loads(
+              Path("results/request.json").read_text(
+                  encoding="utf-8"
+              )
+          )
+          expected_audited = len(
+              request.get("audited_lead_ids") or []
+          )
+          if (
+              report.get("audited_count")
+              != expected_audited
+          ):
               raise SystemExit(
-                  "remediation escaped the 100-lead boundary"
+                  "remediation escaped the requested batch boundary"
               )
           audit_only = bool(
               report.get("audit_only")
@@ -224,9 +235,9 @@ jobs:
                           or 0
                       )
                   )
-                  if assessed != 100:
+                  if assessed != expected_audited:
                       raise SystemExit(
-                          f"full audit assessed={assessed}, expected 100"
+                          f"full audit assessed={assessed}, expected {expected_audited}"
                       )
                   if int(
                       report.get(
@@ -239,7 +250,7 @@ jobs:
                       )
               print(
                   "CONTENT_AUDIT_BOUNDARY=green "
-                  "audited=100 "
+                  f"audited={expected_audited} "
                   f"ready={report.get('canonical_ready_count')} "
                   f"email_verified={report.get('current_email_verified_count')} "
                   f"research={report.get('needs_research_count')} "
@@ -276,7 +287,7 @@ jobs:
                   )
               print(
                   "CONTENT_REMEDIATION_BOUNDARY=green "
-                  "audited=100 "
+                  f"audited={expected_audited} "
                   f"changed={expected_changed} "
                   f"holds={report.get('hold_count')} "
                   "automatic_send=false"
