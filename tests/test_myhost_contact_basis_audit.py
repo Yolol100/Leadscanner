@@ -2,8 +2,33 @@ from __future__ import annotations
 
 import unittest
 from email.message import EmailMessage
+from pathlib import Path
 
-from myhost_contact_basis_audit import email_hash, is_ready, is_review, make_ready, make_review, message_matches, validate_hashes
+from myhost_contact_basis_audit import (
+    email_hash,
+    is_ready,
+    is_review,
+    make_ready,
+    make_review,
+    message_matches,
+    remove_and_verify,
+    replace_and_verify,
+    validate_hashes,
+)
+
+
+class FakeNoUIDPlus:
+    capabilities = (b"IMAP4REV1",)
+
+    def __init__(self):
+        self.append_calls = 0
+
+    def select(self, folder, readonly=True):
+        return "OK", [b"1"]
+
+    def append(self, folder, flags, date_time, raw):
+        self.append_calls += 1
+        return "OK", [b""]
 
 
 class ContactBasisAuditTests(unittest.TestCase):
@@ -23,6 +48,30 @@ class ContactBasisAuditTests(unittest.TestCase):
     def test_validate_hashes_rejects_invalid_values(self):
         with self.assertRaises(ValueError):
             validate_hashes(["not-a-hash"])
+
+    def test_contact_basis_mutations_require_uidplus_before_write(self):
+        lead_id = "growth-1234567890abcdef1234"
+        expected = self.message()
+        for operation in ("replace", "remove"):
+            with self.subTest(operation=operation):
+                client = FakeNoUIDPlus()
+                with self.assertRaisesRegex(RuntimeError, "UIDPLUS"):
+                    if operation == "replace":
+                        replace_and_verify(client, "Drafts", lead_id, b"1", expected)
+                    else:
+                        remove_and_verify(client, "Drafts", lead_id, b"1")
+                self.assertEqual(client.append_calls, 0)
+
+    def test_all_myhost_scripts_forbid_global_expunge_and_sequence_store(self):
+        scripts = Path(__file__).resolve().parents[1] / "scripts"
+        offenders = []
+        for path in sorted(scripts.glob("myhost_*.py")):
+            text = path.read_text(encoding="utf-8")
+            if ".expunge(" in text:
+                offenders.append(f"{path.name}: global expunge")
+            if "client.store(" in text:
+                offenders.append(f"{path.name}: sequence store")
+        self.assertEqual(offenders, [])
 
     def test_review_to_ready_and_back_is_exact(self):
         review = self.message()
