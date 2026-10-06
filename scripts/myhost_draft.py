@@ -22,6 +22,76 @@ def normalize_text(value: object) -> str:
     return str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
 
 
+def imap_capability_tokens(client) -> set[str]:
+    raw = getattr(client, "capabilities", ()) or ()
+    if not raw and hasattr(client, "capability"):
+        status, data = client.capability()
+        if status == "OK":
+            raw = b" ".join(data or []).split()
+    tokens = set()
+    for value in raw:
+        if isinstance(value, bytes):
+            value = value.decode("ascii", errors="ignore")
+        tokens.add(str(value).upper())
+    return tokens
+
+
+def require_uidplus(client, operation: str) -> None:
+    if "UIDPLUS" not in imap_capability_tokens(client):
+        raise RuntimeError(
+            f"IMAP UIDPLUS is required before {operation}; "
+            "target-only deletion cannot be proven"
+        )
+
+
+def uid_for_message_id(client, message_id: bytes) -> bytes:
+    status, data = client.fetch(message_id, "(UID)")
+    if status != "OK":
+        raise RuntimeError("Could not resolve IMAP UID for target draft")
+    for item in data or []:
+        meta = item[0] if isinstance(item, tuple) and item else item
+        if isinstance(meta, str):
+            meta = meta.encode()
+        if isinstance(meta, (bytes, bytearray)):
+            match = re.search(rb"\bUID\s+(\d+)\b", bytes(meta))
+            if match:
+                return match.group(1)
+    raise RuntimeError("IMAP UID readback omitted target UID")
+
+
+def fetch_message_uid(client, uid: bytes) -> EmailMessage:
+    status, data = client.uid("fetch", uid.decode("ascii"), "(RFC822)")
+    if status != "OK":
+        raise RuntimeError(
+            f"Could not fetch draft UID {uid.decode('ascii', errors='replace')}"
+        )
+    for item in data or []:
+        if (
+            isinstance(item, tuple)
+            and len(item) >= 2
+            and isinstance(item[1], (bytes, bytearray))
+        ):
+            return BytesParser(policy=default).parsebytes(bytes(item[1]))
+    raise RuntimeError("IMAP UID readback returned no message bytes")
+
+
+def uid_expunge_only(client, folder: str, uid: bytes, *, operation: str) -> None:
+    require_uidplus(client, operation)
+    select_folder(client, folder, readonly=False)
+    uid_text = uid.decode("ascii")
+    status, _ = client.uid("store", uid_text, "+FLAGS", "(\\Deleted)")
+    if status != "OK":
+        raise RuntimeError(f"Could not mark target draft UID deleted during {operation}")
+    status, _ = client.uid("expunge", uid_text)
+    if status != "OK":
+        # Best-effort rollback of the target flag; never fall back to broad EXPUNGE.
+        try:
+            client.uid("store", uid_text, "-FLAGS", "(\\Deleted)")
+        except Exception:
+            pass
+        raise RuntimeError(f"Could not UID-expunge target draft during {operation}")
+
+
 def stable_lead_id(row: dict) -> str:
     existing = normalize_text(row.get("lead_id"))
     if not LEAD_ID_RE.fullmatch(existing):
@@ -193,10 +263,15 @@ def append_and_verify(client, folder: str, lead_id: str, msg: EmailMessage) -> s
     existing = find_message_ids(client, folder, lead_id)
     if len(existing) > 1:
         raise RuntimeError(f"Expected at most one existing draft for {lead_id}, found {len(existing)}")
+    existing_uid = None
+    existing_snapshot = None
     if existing:
         actual = fetch_message(client, existing[0])
         if exact_message_matches(actual, msg):
             return "existing"
+        require_uidplus(client, "bounded draft replacement")
+        existing_uid = uid_for_message_id(client, existing[0])
+        existing_snapshot = actual
 
     raw = msg.as_bytes(policy=default)
     status, _ = client.append(
@@ -219,12 +294,17 @@ def append_and_verify(client, folder: str, lead_id: str, msg: EmailMessage) -> s
         raise RuntimeError(f"Draft readback mismatch for {lead_id}")
 
     if existing:
-        select_folder(client, folder, readonly=False)
-        status, _ = client.store(existing[0], "+FLAGS", "(\\Deleted)")
-        if status != "OK":
-            raise RuntimeError(f"Could not mark old draft deleted for {lead_id}")
-        if client.expunge()[0] != "OK":
-            raise RuntimeError(f"Could not expunge old draft for {lead_id}")
+        current_old = fetch_message_uid(client, existing_uid)
+        if normalize_text(current_old.get("X-Webactueel-Lead-ID", "")) != lead_id:
+            raise RuntimeError(f"Existing draft identity changed before replacement for {lead_id}")
+        if not exact_message_matches(current_old, existing_snapshot):
+            raise RuntimeError(f"Existing draft changed before target-only replacement for {lead_id}")
+        uid_expunge_only(
+            client,
+            folder,
+            existing_uid,
+            operation=f"bounded draft replacement for {lead_id}",
+        )
 
         final_ids = find_message_ids(client, folder, lead_id)
         if len(final_ids) != 1:
