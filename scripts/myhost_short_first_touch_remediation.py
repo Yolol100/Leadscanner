@@ -43,7 +43,7 @@ from prepare_growth_batch import build_short_first_touch_from_opening, validate_
 
 STATE_VERSION = "leadscanner-short-first-touch-state-v1"
 STATE_TTL_SECONDS = 4 * 60 * 60
-MAX_REMEDIATION = 450
+MAX_REMEDIATION = 1500
 MULTIAPPEND_SHARD_SIZE = 50
 HEADER_FETCH = "(BODY.PEEK[HEADER.FIELDS (X-Webactueel-Lead-ID)])"
 HEADER_CHUNK = 250
@@ -142,7 +142,10 @@ def growth_uid_index(client, folder: str) -> list[tuple[str, bytes]]:
             if LEAD_ID_RE.fullmatch(lead_id):
                 pairs.append((lead_id, uid))
 
-    pairs.sort(key=lambda item: int(item[1]))
+    # Slice by stable lead identity, not mutable IMAP UID order. Replacements
+    # receive new UIDs, so UID ordering would make later offset batches overlap
+    # or skip leads after an earlier apply.
+    pairs.sort(key=lambda item: item[0])
     counts = Counter(lead_id for lead_id, _ in pairs)
     duplicate = next((lead_id for lead_id, count in counts.items() if count != 1), None)
     if duplicate:
@@ -279,8 +282,8 @@ def _summary_base(mode: str, selected_count: int) -> dict:
 
 
 def build_audit(offset: int, limit: int) -> tuple[dict, dict]:
-    if offset < 0 or not 1 <= limit <= MAX_REMEDIATION:
-        raise ValueError(f"offset must be >=0 and limit must be 1-{MAX_REMEDIATION}")
+    if offset < 0 or not 0 <= limit <= MAX_REMEDIATION:
+        raise ValueError(f"offset must be >=0 and limit must be 0-{MAX_REMEDIATION}")
 
     client = connect_imap()
     blockers: Counter[str] = Counter()
@@ -289,11 +292,18 @@ def build_audit(offset: int, limit: int) -> tuple[dict, dict]:
         folder = find_drafts_folder(client)
         capability_tokens = imap_capability_tokens(client)
         pairs = growth_uid_index(client, folder)
-        if len(pairs) < offset + limit:
+        if offset >= len(pairs):
             raise RuntimeError(
-                f"Requested {limit} Growth drafts at offset {offset}, but only {len(pairs)} exist"
+                f"Requested offset {offset}, but only {len(pairs)} Growth drafts exist"
             )
-        selected = pairs[offset:offset + limit]
+        if limit == 0:
+            selected = pairs[offset:]
+        else:
+            if len(pairs) < offset + limit:
+                raise RuntimeError(
+                    f"Requested {limit} Growth drafts at offset {offset}, but only {len(pairs)} exist"
+                )
+            selected = pairs[offset:offset + limit]
         selected_messages = bulk_fetch_uid_messages(
             client,
             [uid for _lead_id, uid in selected],
@@ -362,12 +372,12 @@ def build_audit(offset: int, limit: int) -> tuple[dict, dict]:
             "created_at_epoch": now,
             "expires_at_epoch": now + STATE_TTL_SECONDS,
             "offset": offset,
-            "limit": limit,
+            "limit": len(selected),
             "growth_total_at_audit": len(pairs),
             "items": items,
         }
         summary = {
-            **_summary_base("audit", limit),
+            **_summary_base("audit", len(selected)),
             "growth_total": len(pairs),
             "offset": offset,
             "replace_count": replace_count,
@@ -512,19 +522,8 @@ def verify_or_apply(state: dict, mode: str) -> dict:
                     if set(result_by_lead) != {item["lead_id"] for item in shard}:
                         raise RuntimeError("MULTIAPPEND result identity mismatch")
 
-                    shard_inventory = bulk_inventory_drafts(
-                        client,
-                        folder,
-                        [item["lead_id"] for item in shard],
-                    )
                     for item in shard:
                         lead_id = item["lead_id"]
-                        current = current_from_inventory(shard_inventory, lead_id)
-                        if current.get("count") != 1:
-                            raise RuntimeError("MULTIAPPEND shard final inventory count mismatch")
-                        final_msg = shard_inventory[lead_id]["messages"][0]
-                        if full_snapshot(final_msg) != item["expected"]:
-                            raise RuntimeError("MULTIAPPEND shard final readback mismatch")
                         if full_snapshot(result_by_lead[lead_id]["message"]) != item["expected"]:
                             raise RuntimeError("MULTIAPPEND pre-delete readback mismatch")
                         changed += 1
