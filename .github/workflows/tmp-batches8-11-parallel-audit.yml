@@ -1,0 +1,107 @@
+name: Temporary Batches 8-11 Parallel Audit
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/tmp-batches8-11-parallel-audit.yml'
+
+permissions:
+  contents: read
+  actions: read
+  issues: read
+
+jobs:
+  audit:
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        issue: [1338, 1339, 1340, 1341]
+        chunk: [0, 1, 2, 3]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Install runtime dependencies
+        run: python3 -m pip install --disable-pip-version-check -r requirements.txt
+      - name: Build exact read-only chunk
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ matrix.issue }}
+          CHUNK: ${{ matrix.chunk }}
+        run: |
+          set -euo pipefail
+          mkdir -p results/source
+          gh issue view "$ISSUE" --repo "$GITHUB_REPOSITORY" --json body -q .body > results/full.json
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          r=json.loads(Path("results/full.json").read_text())
+          n=int(os.environ["CHUNK"])
+          ids=r["audited_lead_ids"][n*25:(n+1)*25]
+          keep=set(ids)
+          r["audited_lead_ids"]=ids
+          r["rewrites"]={k:v for k,v in (r.get("rewrites") or {}).items() if k in keep}
+          r["replacements"]={k:v for k,v in (r.get("replacements") or {}).items() if k in keep}
+          r["holds"]=[x for x in (r.get("holds") or []) if x in keep]
+          assert r.get("audit_only") is True
+          assert r.get("refresh_verified_source_rows") is True
+          assert len(ids)==25
+          Path("results/request.json").write_text(json.dumps(r,ensure_ascii=False,indent=2)+"\n")
+          Path("results/archive-id.txt").write_text(str(r["source_archive_artifact_id"]))
+          print(f"CHUNK_REQUEST=green issue={os.environ['ISSUE']} chunk={n} audited={len(ids)}")
+          PY
+      - name: Download canonical source archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          SOURCE_ARCHIVE="$(cat results/archive-id.txt)"
+          gh api -H "Accept: application/vnd.github+json"             "/repos/$GITHUB_REPOSITORY/actions/artifacts/$SOURCE_ARCHIVE/zip" > results/source.zip
+          unzip -q results/source.zip -d results/source
+      - name: Audit official site, language, email and fact read-only
+        env:
+          ISSUE: ${{ matrix.issue }}
+          CHUNK: ${{ matrix.chunk }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH=scripts python3 scripts/myhost_content_remediation.py             --request results/request.json             --source-root results/source             --config config/growth-subscription.json             --report results/report.json > results/audit.txt
+          cat results/audit.txt
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          r=json.loads(Path("results/report.json").read_text())
+          assert r["audit_only"] is True
+          assert r["read_only"] is True
+          assert r["audited_count"] == 25
+          assert r["unassessed_count"] == 0
+          assert r["final_exact_changed_count"] == 0
+          assert r["automatic_send"] is False
+          assert r["send_capability"] == "unavailable"
+          print(
+              "PARALLEL_AUDIT_REPORT="
+              + json.dumps(
+                  {
+                      "issue": int(os.environ["ISSUE"]),
+                      "chunk": int(os.environ["CHUNK"]),
+                      "report": r,
+                  },
+                  ensure_ascii=False,
+                  separators=(",",":"),
+              )
+          )
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: parallel-audit-${{ matrix.issue }}-${{ matrix.chunk }}
+          path: |
+            results/report.json
+            results/audit.txt
+          if-no-files-found: error
+          retention-days: 1
