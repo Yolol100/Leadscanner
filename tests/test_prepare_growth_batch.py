@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from prepare_growth_batch import build_opening, build_short_first_touch, build_short_first_touch_from_opening, exact_nl_opening_from_existing, infer_focus_from_observation, observation_is_low_signal, prepare_batch, subject_for_company
+from prepare_growth_batch import build_opening, build_short_first_touch, build_short_first_touch_from_opening, build_value_sentence, exact_nl_opening_from_existing, infer_focus_from_observation, observation_is_low_signal, prepare_batch, subject_for_company
 
 
 class GrowthBatchTests(unittest.TestCase):
@@ -172,7 +172,8 @@ class GrowthBatchTests(unittest.TestCase):
         contact["name_hint"] = "De Juwelier"
         contact["verified_observation"] = "Wij serveren à la carte gerechten."
         row = prepare_batch({"candidates": [contact]}, self.config(), draft_limit=1)["rows"][0]
-        self.assertIn("Ik zag op jullie website dat jullie à la carte gerechten serveren.", row["body"])
+        self.assertIn("Jullie zijn actief in restaurant en gastvrijheid.", row["body"])
+        self.assertIn("Wat me opviel: jullie serveren à la carte gerechten.", row["body"])
         self.assertNotIn("sieraden en juwelierswerk", row["body"])
 
     def test_pass_contact_becomes_draft_ready(self):
@@ -318,9 +319,9 @@ class GrowthBatchTests(unittest.TestCase):
             )
 
     def test_subject_removes_decorative_emoji_and_avoids_dangling_connector(self):
-        self.assertEqual(subject_for_company("Piccola Italia 🇮🇹", "nl"), "Idee voor Piccola Italia")
-        self.assertEqual(subject_for_company("Bistro De Buik Van Parijs | Zwolle", "nl"), "Idee voor Bistro De Buik")
-        self.assertEqual(subject_for_company("Busch & van der Worp", "nl"), "Idee voor Busch")
+        self.assertEqual(subject_for_company("Piccola Italia 🇮🇹", "nl"), "idee voor piccola italia")
+        self.assertEqual(subject_for_company("Bistro De Buik Van Parijs | Zwolle", "nl"), "idee voor bistro de buik")
+        self.assertEqual(subject_for_company("Busch & van der Worp", "nl"), "idee voor busch")
 
 
     def test_canonical_nl_growth_template_bullets_are_fixed(self):
@@ -329,22 +330,16 @@ class GrowthBatchTests(unittest.TestCase):
             self.config(),
             draft_limit=1,
         )["rows"][0]
-        bullets = [
-            line
-            for line in row["body"].splitlines()
-            if line.startswith("• ")
-        ]
-        self.assertEqual(
-            bullets,
-            [
-                "• Website/webshop — verbeteren of nieuw maken waar nodig",
-                "• Zoekbaarheid — beter vindbaar worden",
-                "• Social content — passende content",
-                "• Automatisering — geschikte processen deels automatiseren waar haalbaar",
-                "• Hosting — beheren of overnemen waar passend",
-                "• Ik als vast contactpersoon",
-            ],
+        body = row["body"]
+        self.assertEqual([line for line in body.splitlines() if line.startswith("• ")], [])
+        self.assertNotIn("€", body)
+        self.assertIn("Wat me opviel:", body)
+        self.assertIn(
+            "Zal ik vrijblijvend een voorbeeld laten zien hoe dit er voor jullie uit kan zien?",
+            body,
         )
+        self.assertLessEqual(len(body.split()), 100)
+
 
     def test_canonical_en_growth_template_bullets_are_fixed(self):
         row = prepare_batch(
@@ -352,22 +347,16 @@ class GrowthBatchTests(unittest.TestCase):
             self.config(),
             draft_limit=1,
         )["rows"][0]
-        bullets = [
-            line
-            for line in row["body"].splitlines()
-            if line.startswith("• ")
-        ]
-        self.assertEqual(
-            bullets,
-            [
-                "• Website/webshop — improve or build new where needed",
-                "• Search visibility — improve findability",
-                "• Social content — relevant content",
-                "• Automation — partially automate suitable processes where feasible",
-                "• Hosting — manage or take over where appropriate",
-                "• Me as your fixed point of contact",
-            ],
+        body = row["body"]
+        self.assertEqual([line for line in body.splitlines() if line.startswith("• ")], [])
+        self.assertNotIn("€", body)
+        self.assertIn("What stood out:", body)
+        self.assertIn(
+            "Would you like me to show you a no-obligation example of what this could look like for you?",
+            body,
         )
+        self.assertLessEqual(len(body.split()), 100)
+
 
     def test_verified_fact_changes_opening_not_growth_offer(self):
         first = self.contact(language="nl")
@@ -385,17 +374,12 @@ class GrowthBatchTests(unittest.TestCase):
             draft_limit=1,
         )["rows"][0]["body"]
         self.assertNotEqual(body_a, body_b)
-        self.assertIn(
-            "Voor fysiotherapie en revalidatie brengt mijn Groeiabonnement website, vindbaarheid, content, automatisering en hosting samen met één vast aanspreekpunt:",
-            body_a,
-        )
-        self.assertIn(
-            "Voor fysiotherapie en revalidatie brengt mijn Groeiabonnement website, vindbaarheid, content, automatisering en hosting samen met één vast aanspreekpunt:",
-            body_b,
-        )
-        offer_a = body_a.split("• Website/webshop — verbeteren of nieuw maken waar nodig", 1)[1]
-        offer_b = body_b.split("• Website/webshop — verbeteren of nieuw maken waar nodig", 1)[1]
-        self.assertEqual(offer_a, offer_b)
+        self.assertIn("Wat me opviel: jullie bieden fysiotherapie in Utrecht.", body_a)
+        self.assertIn("Wat me opviel: jullie bieden revalidatie en dry needling in Utrecht.", body_b)
+        cta = "Zal ik vrijblijvend een voorbeeld laten zien hoe dit er voor jullie uit kan zien?"
+        self.assertIn(cta, body_a)
+        self.assertIn(cta, body_b)
+
 
     def test_value_sentence_uses_verified_observation_focus_only(self):
         self.assertEqual(
@@ -419,24 +403,26 @@ class GrowthBatchTests(unittest.TestCase):
         contact["category_hint"] = "restaurant"
         contact["verified_observation"] = "Wij leveren industriële componenten."
         row = prepare_batch({"candidates": [contact]}, self.config(), draft_limit=1)["rows"][0]
-        self.assertIn(
-            "Met mijn Groeiabonnement kan ik meerdere onderdelen van jullie online aanpak oppakken:",
-            row["body"],
-        )
+        self.assertIn("Wat me opviel: jullie leveren industriële componenten.", row["body"])
         self.assertNotIn("restaurant en gastvrijheid", row["body"])
+        self.assertNotIn("€", row["body"])
 
     def test_template_follows_growth_policy_order_and_single_offer(self):
         row = prepare_batch({"candidates": [self.contact()]}, self.config())["rows"][0]
         body = row["body"]
-        bullets = [line for line in body.splitlines() if line.startswith("• ")]
-        self.assertEqual(len(bullets), 6)
-        self.assertLess(body.index(bullets[0]), body.index("€250–€500 per maand"))
-        self.assertIn("Website/webshop — verbeteren of nieuw maken waar nodig", body)
-        self.assertIn("Zoekbaarheid — beter vindbaar worden", body)
-        self.assertIn("voorbeeld design maken voor Voorbeeld Fysiotherapie", body)
-        self.assertIn("richting interessant is", body)
+        self.assertEqual([line for line in body.splitlines() if line.startswith("• ")], [])
+        self.assertNotIn("€", body)
+        self.assertIn("Jullie zijn actief in fysiotherapie en revalidatie.", body)
+        self.assertIn("Wat me opviel: jullie bieden fysiotherapie in Utrecht.", body)
+        self.assertEqual(
+            body.count("Zal ik vrijblijvend een voorbeeld laten zien hoe dit er voor jullie uit kan zien?"),
+            1,
+        )
+        self.assertIn("Geen interesse? Laat het gerust weten.", body)
         self.assertNotIn("30%", body)
         self.assertNotIn("meeting", body.casefold())
+        self.assertLessEqual(len(body.split()), 100)
+
 
     def test_non_business_observations_are_low_signal(self):
         observations = (
