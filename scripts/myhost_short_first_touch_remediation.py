@@ -39,7 +39,7 @@ from myhost_fast_mailbox import (
     snapshot_message,
     uid_from_inventory,
 )
-from prepare_growth_batch import build_short_first_touch
+from prepare_growth_batch import build_short_first_touch_from_opening, validate_short_first_touch
 
 STATE_VERSION = "leadscanner-short-first-touch-state-v1"
 STATE_TTL_SECONDS = 4 * 60 * 60
@@ -47,6 +47,13 @@ MAX_REMEDIATION = 450
 MULTIAPPEND_SHARD_SIZE = 50
 HEADER_FETCH = "(BODY.PEEK[HEADER.FIELDS (X-Webactueel-Lead-ID)])"
 HEADER_CHUNK = 250
+BODY_LAYOUT = re.compile(
+    r"\A(?P<greeting>Hallo,|Goedendag,|Hello,)\n\n"
+    r"(?P<opening>[^\n]+)\n\n"
+    r"(?P<value>[^\n]+)\n\n"
+    r"(?P<rest>.+)\Z",
+    re.DOTALL,
+)
 
 def _state_key(secret: str, repository: str) -> bytes:
     if not secret:
@@ -459,10 +466,10 @@ def verify_or_apply(state: dict, mode: str) -> dict:
                         if full_snapshot(msg) != item["before"]:
                             raise RuntimeError("draft changed after batch preflight; mutation blocked")
                         expected_msg = message_with_expected(
-                            msg,
-                            item["expected"]["body"],
-                            item["expected"]["subject"],
-                        )
+                        msg,
+                        item["expected"]["body"],
+                        item["expected"]["subject"],
+                    )
                         outcome, _uid, final_msg = replace_known_draft_and_verify(
                             client,
                             folder,
