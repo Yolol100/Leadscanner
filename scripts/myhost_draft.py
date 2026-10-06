@@ -241,6 +241,8 @@ def exact_message_matches(actual: EmailMessage, expected: EmailMessage) -> bool:
     return (
         normalize_text(actual.get("To", "")) == normalize_text(expected.get("To", ""))
         and normalize_text(actual.get("Subject", "")) == normalize_text(expected.get("Subject", ""))
+        and normalize_text(actual.get("X-Webactueel-Lead-ID", ""))
+        == normalize_text(expected.get("X-Webactueel-Lead-ID", ""))
         and normalize_text(actual.get("X-Webactueel-Review-Required", ""))
         == normalize_text(expected.get("X-Webactueel-Review-Required", ""))
         and plain_body(actual) == plain_body(expected)
