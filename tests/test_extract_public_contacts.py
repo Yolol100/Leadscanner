@@ -55,6 +55,17 @@ class PublicContactDiscoveryTests(unittest.TestCase):
             "Voorbeeld verkoopt fietsen en biedt onderhoud in Delft.",
         )
 
+    def test_extracts_cloudflare_protected_public_email(self):
+        html = (
+            '<a class="__cf_email__" '
+            'data-cfemail="422b2c242d022527302e2b2c26236c2737">'
+            '[email protected]</a>'
+        )
+        self.assertEqual(
+            extract_emails(html),
+            ["info@gerlinda.eu"],
+        )
+
     def test_extracts_visible_or_mailto_emails_and_drops_placeholders(self):
         html = (
             '<input value="naam@voorbeeld.nl">'
