@@ -77,6 +77,10 @@ jobs:
           grep -q 'audit_artifact_id' .github/workflows/leads-value-sentence-remediation.yml
           grep -q 'review_required_preserved' scripts/myhost_value_sentence_remediation.py
           grep -q 'automatic_send.*False' scripts/myhost_value_sentence_remediation.py
+          grep -q 'MULTIAPPEND_SHARD_SIZE = 50' scripts/myhost_value_sentence_remediation.py
+          grep -q 'replace_known_drafts_multiappend_and_verify' scripts/myhost_value_sentence_remediation.py
+          grep -q 'multiappend_used' .github/workflows/leads-value-sentence-remediation.yml
+          grep -q 'IMAPClient' requirements.txt
           ! grep -E -q 'smtplib|sendmail\(|SMTP\(' scripts/myhost_value_sentence_remediation.py
           ! grep -E -q 'client\.expunge\(|client\.store\(' scripts/myhost_value_sentence_remediation.py
           echo 'VALUE_SENTENCE_REMEDIATION_BOUNDARY=green'
