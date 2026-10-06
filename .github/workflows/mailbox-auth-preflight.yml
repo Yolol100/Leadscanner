@@ -1,0 +1,87 @@
+name: Mailbox Auth Preflight
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  preflight:
+    if: >-
+      github.event.issue.user.login == github.repository_owner &&
+      startsWith(github.event.issue.title, '[mailbox-auth-preflight]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Test IMAP credentials without mailbox mutation
+        id: auth
+        env:
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_SMTP_PASSWORD: ${{ secrets.OUTREACH_SMTP_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import imaplib
+          import os
+          from pathlib import Path
+
+          host = os.environ["OUTREACH_IMAP_HOST"]
+          port = int(os.environ["OUTREACH_IMAP_PORT"])
+          user = os.environ["OUTREACH_MAIL_USER"]
+          candidates = (
+              ("mail", os.environ.get("OUTREACH_MAIL_PASSWORD", "")),
+              ("smtp_fallback", os.environ.get("OUTREACH_SMTP_PASSWORD", "")),
+          )
+          result = "none"
+          for label, password in candidates:
+              if not password:
+                  continue
+              client = None
+              try:
+                  client = imaplib.IMAP4_SSL(host, port)
+                  client.login(user, password)
+                  result = label
+                  try:
+                      client.logout()
+                  except Exception:
+                      pass
+                  break
+              except Exception:
+                  try:
+                      if client is not None:
+                          client.shutdown()
+                  except Exception:
+                      pass
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as out:
+              out.write(f"credential={result}\n")
+          if result == "none":
+              raise SystemExit("MAILBOX_AUTH=failed")
+          print(f"MAILBOX_AUTH=green credential={result}")
+          PY
+
+      - name: Report success
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          CREDENTIAL: ${{ steps.auth.outputs.credential }}
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --body "MAILBOX_AUTH=green credential=$CREDENTIAL read_only=true send=false"
+          gh issue close "$ISSUE_NUMBER" --reason completed
+
+      - name: Report failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --body "MAILBOX_AUTH=failed read_only=true send=false"
+          gh issue close "$ISSUE_NUMBER" --reason completed
