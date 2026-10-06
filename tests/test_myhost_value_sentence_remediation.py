@@ -15,6 +15,7 @@ from myhost_value_sentence_remediation import (
     encrypt_state,
     full_snapshot,
     message_with_body,
+    verify_or_apply,
 )
 
 
@@ -199,6 +200,85 @@ class ValueSentenceRemediationTests(unittest.TestCase):
         self.assertTrue(summary["uidplus_available"])
         self.assertTrue(summary["multiappend_available"])
         self.assertEqual(summary["blocker_count"], 0)
+
+    def test_apply_uses_multiappend_for_multiple_pending_drafts(self):
+        lead_a = "growth-" + "5" * 20
+        lead_b = "growth-" + "6" * 20
+
+        def make_message(lead_id):
+            msg = self.message()
+            msg.replace_header("X-Webactueel-Lead-ID", lead_id)
+            return msg
+
+        old_a = make_message(lead_a)
+        old_b = make_message(lead_b)
+        expected_body = analyze_body(NL_BODY)["expected_body"]
+        expected_a = message_with_body(old_a, expected_body)
+        expected_b = message_with_body(old_b, expected_body)
+
+        state = {
+            "version": "leadscanner-value-sentence-state-v1",
+            "expires_at_epoch": 9999999999,
+            "items": [
+                {
+                    "lead_id": lead_a,
+                    "status": "ready",
+                    "action": "replace",
+                    "before": full_snapshot(old_a),
+                    "expected": full_snapshot(expected_a),
+                },
+                {
+                    "lead_id": lead_b,
+                    "status": "ready",
+                    "action": "replace",
+                    "before": full_snapshot(old_b),
+                    "expected": full_snapshot(expected_b),
+                },
+            ],
+        }
+
+        initial = {
+            lead_a: {"uids": [b"10"], "messages": [old_a]},
+            lead_b: {"uids": [b"20"], "messages": [old_b]},
+        }
+        final = {
+            lead_a: {"uids": [b"30"], "messages": [expected_a]},
+            lead_b: {"uids": [b"31"], "messages": [expected_b]},
+        }
+
+        class ApplyClient:
+            capabilities = (b"IMAP4REV1", b"UIDPLUS", b"MULTIAPPEND")
+            def logout(self):
+                return "BYE", []
+
+        client = ApplyClient()
+        with patch(
+            "myhost_value_sentence_remediation.connect_imap",
+            return_value=client,
+        ), patch(
+            "myhost_value_sentence_remediation.find_drafts_folder",
+            return_value="Drafts",
+        ), patch(
+            "myhost_value_sentence_remediation.bulk_inventory_drafts",
+            side_effect=[initial, final, final],
+        ), patch(
+            "myhost_value_sentence_remediation.replace_known_drafts_multiappend_and_verify",
+            return_value=[
+                {"lead_id": lead_a, "new_uid": b"30", "message": expected_a},
+                {"lead_id": lead_b, "new_uid": b"31", "message": expected_b},
+            ],
+        ) as multiappend, patch(
+            "myhost_value_sentence_remediation.replace_known_draft_and_verify",
+            side_effect=AssertionError("single replacement should not run"),
+        ):
+            summary = verify_or_apply(state, "apply")
+
+        self.assertEqual(multiappend.call_count, 1)
+        self.assertTrue(summary["multiappend_used"])
+        self.assertEqual(summary["multiappend_shards"], 1)
+        self.assertEqual(summary["multiappend_shard_size"], 50)
+        self.assertEqual(summary["changed_count"], 2)
+        self.assertEqual(summary["verified_count"], 2)
 
     def test_encrypted_state_roundtrip_and_tamper_rejection(self):
         payload = {"items": [{"lead_id": "growth-" + "b" * 20}], "version": "x"}
