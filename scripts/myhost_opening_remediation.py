@@ -91,6 +91,24 @@ def replace_opening(body, opening):
     return body[:start] + opening + body[end:]
 
 
+def correct_company_placeholders(body, subject, proof):
+    new = proof.get("company_name")
+    if not new:
+        return body, subject
+    old = proof.get("old_company_name")
+    if not old or not new.strip() or "\n" in old + new or len(new) > 120:
+        raise ValueError("invalid proven company-name correction")
+    old_cta = f"Zal ik vrijblijvend een voorbeeld design maken voor {old}?"
+    new_cta = f"Zal ik vrijblijvend een voorbeeld design maken voor {new}?"
+    if subject not in {f"Idee voor {old}", f"Idee voor {new}"}:
+        raise ValueError("company correction subject does not match audited identity")
+    if body.count(old_cta) == 1:
+        body = body.replace(old_cta, new_cta, 1)
+    elif body.count(new_cta) != 1:
+        raise ValueError("company correction CTA does not match audited identity")
+    return body, f"Idee voor {new}"
+
+
 def snapshot(msg, lead_id):
     return {"lead_id": lead_id, "to": normalize_text(msg.get("To", "")),
         "subject": normalize_text(msg.get("Subject", "")), "body": plain_body(msg),
@@ -167,9 +185,15 @@ def website_audit(row, override=None):
                     language = override.get("language") or page["language"]
                     if language not in {"nl", "en"}:
                         raise ValueError("unsupported approved prose language")
+                    name_fields = {}
+                    if override.get("company_name"):
+                        name_quote = override.get("company_name_quote") or ""
+                        if override["company_name"] not in name_quote or not any(name_quote in b for b in page["prose"]):
+                            raise ValueError("company-name correction lacks exact first-party prose evidence")
+                        name_fields = {k: override[k] for k in ("company_name", "old_company_name", "company_name_quote")}
                     return {"status": "ready", "proof": {"observation": observation,
                         "opening": natural_opening(observation, language), "evidence_quote": evidence_quote,
-                        "source_url": page["url"], "language": language}, "pages": pages, "errors": errors}
+                        "source_url": page["url"], "language": language, **name_fields}, "pages": pages, "errors": errors}
                 except ValueError as exc:
                     errors.append(str(exc))
         errors.append("exact approved business sentence absent from eligible first-party prose")
@@ -266,12 +290,13 @@ def run(req, source_root, audit=None):
                     else:
                         opening = item["website"]["proof"]["opening"]
                         body = replace_opening(current["body"], opening)
+                        body, subject = correct_company_placeholders(body, current["subject"], item["website"]["proof"])
                         if mode == "final":
-                            if body != current["body"]:
+                            if body != current["body"] or subject != current["subject"]:
                                 raise ValueError("ready draft opening does not match current official proof")
                             item["status"] = "ready"
                         else:
-                            new_row = {"lead_id": lead_id, "email": current["to"], "subject": current["subject"],
+                            new_row = {"lead_id": lead_id, "email": current["to"], "subject": subject,
                                 "body": body, "status": "review_draft", "contact_basis_status": "review_required"}
                             _, expected = build_message(new_row)
                             require_existing_drafts(client, folder, [(new_row, lead_id, expected)])
@@ -284,7 +309,7 @@ def run(req, source_root, audit=None):
                 item["after"] = read_current(client, folder, lead_id)
                 if mode != "audit" and item["status"] == "ready":
                     after = item["after"]
-                    if after["count"] != 1 or after["duplicate"] or after["review_status"] != "contact-basis" or after["to"] != current["to"] or after["subject"] != current["subject"] or after["body"] != body:
+                    if after["count"] != 1 or after["duplicate"] or after["review_status"] != "contact-basis" or after["to"] != current["to"] or after["subject"] != subject or after["body"] != body:
                         raise ValueError("full final mailbox readback mismatch")
                 if mode == "apply" and item["status"] in {"hold", "absent"} and item["after"]["count"] != 0:
                     raise ValueError("unproven hold draft remains; closure blocked")

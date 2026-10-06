@@ -5,6 +5,15 @@ import myhost_opening_remediation as repair
 
 
 class OpeningRemediationTests(unittest.TestCase):
+    def test_proven_name_correction_preserves_other_text_and_is_idempotent(self):
+        body = 'Hallo,\n\nBewezen feit.\n\n€250–€500\nZal ik vrijblijvend een voorbeeld design maken voor Oude naam?\nGeen interesse?\nAndrew'
+        proof = {'old_company_name': 'Oude naam', 'company_name': 'Nieuwe naam'}
+        result = repair.correct_company_placeholders(body, 'Idee voor Oude naam', proof)
+        self.assertEqual(result, (body.replace('voor Oude naam?', 'voor Nieuwe naam?'), 'Idee voor Nieuwe naam'))
+        self.assertEqual(repair.correct_company_placeholders(*result, proof), result)
+        with self.assertRaises(ValueError):
+            repair.correct_company_placeholders(body, 'Ander onderwerp', proof)
+
     def request(self, mode='audit'):
         return {'mode': mode, 'source_archive_artifact_id': 1, 'source_artifact_ids': [2], 'offset': 0, 'limit': 1, **({'audit_artifact_id': 3} if mode != 'audit' else {})}
 
