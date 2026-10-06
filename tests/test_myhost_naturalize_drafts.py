@@ -36,7 +36,7 @@ class MyHostNaturalizeDraftTests(unittest.TestCase):
             msg["Subject"] = "Idee voor Voorbeeld Fysio"
             msg.set_content(
                 "Goedendag,\n\n"
-                "Op jullie site viel me op: “Fysiotherapie in Utrecht”.\n\n"
+                "Op jullie site viel me op: “Wij bieden fysiotherapie in Utrecht.”.\n\n"
                 "Met mijn Groeiabonnement help ik met:\n\n"
                 "• Website/webshop — verbeteren of nieuw maken waar nodig\n"
                 "• Zoekbaarheid — beter vindbaar worden\n"
@@ -58,7 +58,7 @@ class MyHostNaturalizeDraftTests(unittest.TestCase):
         self.assertEqual(row["subject"], "Idee voor Voorbeeld Fysio")
         self.assertTrue(row["body"].startswith("Hallo,\n\n"))
         self.assertIn(
-            "Ik zag op jullie website dat Fysiotherapie in Utrecht.",
+            "Ik zag op jullie website dat jullie fysiotherapie in Utrecht aanbieden.",
             row["body"],
         )
         self.assertIn("€250–€500 per maand", row["body"])
@@ -134,7 +134,7 @@ class MyHostNaturalizeDraftTests(unittest.TestCase):
         self.assertEqual(first["body"], second["body"])
         self.assertEqual(
             second["body"].count(
-                "Ik zag op jullie website dat Fysiotherapie in Utrecht."
+                "Ik zag op jullie website dat jullie fysiotherapie in Utrecht aanbieden."
             ),
             1,
         )
@@ -150,3 +150,4 @@ class MyHostNaturalizeDraftTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

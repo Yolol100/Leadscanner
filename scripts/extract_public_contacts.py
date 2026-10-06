@@ -13,6 +13,7 @@ from urllib.parse import unquote, urljoin, urlparse
 import requests
 
 from url_safety import is_public_http_url
+from observation_quality import business_sentences, observation_rejection
 
 MAX_WORKERS = 12
 MAX_CANDIDATES_PER_RUN = 100
@@ -206,98 +207,8 @@ def _clean_observation_candidate(raw: str) -> str | None:
 
 
 def extract_verified_observation(html: str) -> str | None:
-    candidates: list[tuple[int, str]] = []
-
-    for tag in re.findall(r"(?is)<meta\b[^>]*>", html or ""):
-        kind = re.search(
-            r"""(?is)(?:name|property)\s*=\s*["']([^"']+)["']""",
-            tag,
-        )
-        content = re.search(
-            r"""(?is)content\s*=\s*["']([^"']+)["']""",
-            tag,
-        )
-        if not kind or not content:
-            continue
-        label = kind.group(1).strip().casefold()
-        if label not in {"description", "og:description"}:
-            continue
-        cleaned = _clean_observation_candidate(content.group(1))
-        if cleaned:
-            candidates.append((40, cleaned))
-
-    for raw in re.findall(
-        r"(?is)<p\b[^>]*>(.*?)</p>",
-        html or "",
-    )[:40]:
-        cleaned = _clean_observation_candidate(raw)
-        if cleaned:
-            candidates.append((30, cleaned))
-
-    for priority, pattern in (
-        (20, r"(?is)<h1\b[^>]*>(.*?)</h1>"),
-        (10, r"(?is)<title\b[^>]*>(.*?)</title>"),
-    ):
-        for match in re.finditer(pattern, html or ""):
-            cleaned = _clean_observation_candidate(
-                match.group(1)
-            )
-            if cleaned:
-                candidates.append(
-                    (priority, cleaned)
-                )
-
-    if not candidates:
-        return None
-
-    def score(item: tuple[int, str]) -> tuple[int, int, int]:
-        priority, text = item
-        word_count = len(text.split())
-        specificity = 0
-        lowered = text.casefold()
-        if 7 <= word_count <= 28:
-            specificity += 8
-        if 40 <= len(text) <= 200:
-            specificity += 6
-        if any(
-            marker in lowered
-            for marker in (
-                " biedt ",
-                " verkoopt ",
-                " gespecialiseerd ",
-                " restaurant ",
-                " winkel ",
-                " service ",
-                " diensten ",
-                " sinds ",
-                " gevestigd ",
-                " locatie ",
-                " assortiment ",
-                " catering ",
-                " webshop ",
-                " offers ",
-                " serves ",
-                " specializes ",
-                " located ",
-            )
-        ):
-            specificity += 8
-        if lowered.startswith(
-            (
-                "welkom bij ",
-                "welkom op ",
-                "welcome to ",
-                "home ",
-            )
-        ):
-            specificity -= 10
-        return (
-            priority + specificity,
-            min(len(text), 200),
-            word_count,
-        )
-
-    return max(candidates, key=score)[1]
+    candidates = business_sentences(html)
+    return candidates[0] if candidates else None
 
 
 def normalize_domain(value: object) -> str | None:
@@ -853,3 +764,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

@@ -129,7 +129,7 @@ class FinalAuditTests(unittest.TestCase):
             "email_source_urls": ["https://voorbeeld.nl/contact"],
             "email_source_types": ["official_site"],
             "email_source_refs": ["https://voorbeeld.nl/contact"],
-            "verified_observation": "Fysiotherapie in Utrecht",
+            "verified_observation": "Wij bieden fysiotherapie in Utrecht.",
             "verified_observation_source_url": "https://voorbeeld.nl/",
             "verified_observation_source_type": "official_site",
             "language": "nl",
@@ -162,3 +162,4 @@ class FinalAuditTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

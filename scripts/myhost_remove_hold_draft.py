@@ -15,7 +15,7 @@ from myhost_draft import (
 )
 
 
-def remove_hold_draft(lead_id: str) -> dict:
+def remove_hold_draft(lead_id: str, *, expected_snapshot: dict | None = None) -> dict:
     lead_id = str(lead_id or "").strip()
     if not LEAD_ID_RE.fullmatch(lead_id):
         raise ValueError("lead_id must be a canonical growth-<20 hex> ID")
@@ -79,6 +79,20 @@ def remove_hold_draft(lead_id: str) -> dict:
                 f"Current draft review status changed for {lead_id}"
             )
 
+        if expected_snapshot is not None:
+            from myhost_draft import plain_body
+            current = {
+                "lead_id": lead_id,
+                "to": normalize_text(actual.get("To", "")),
+                "subject": normalize_text(actual.get("Subject", "")),
+                "body": plain_body(actual),
+                "review_status": normalize_text(actual.get("X-Webactueel-Review-Required", "")),
+                "actual_lead_id": normalize_text(actual.get("X-Webactueel-Lead-ID", "")),
+                "count": 1, "duplicate": False,
+            }
+            if current != expected_snapshot:
+                raise RuntimeError(f"Current hold draft changed since exact audit for {lead_id}")
+
         status, _ = client.store(
             current_ids[0],
             "+FLAGS",
@@ -135,3 +149,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

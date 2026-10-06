@@ -210,6 +210,9 @@ def _word_set(value: str) -> set[str]:
 
 
 def observation_is_low_signal(company: str, observation: str) -> bool:
+    from observation_quality import observation_rejection
+    if observation_rejection(observation):
+        return True
     text = re.sub(r"\s+", " ", str(observation or "")).strip()
     low = text.casefold()
     if not text:
@@ -286,60 +289,11 @@ def observation_is_low_signal(company: str, observation: str) -> bool:
     return False
 
 
-def build_opening(
-    company: str,
-    language: str,
-    observation: str,
-    category_hint: str | None = None,
-) -> str:
-    company_label = short_company_name(company)
-    observed = re.sub(r"\s+", " ", str(observation or "")).strip()
-    low_signal = observation_is_low_signal(company, observed)
-    low = observed.casefold()
-    boilerplate_heading = bool(
-        re.match(r"^(home|homepage|welkom|welcome)\b", observed, flags=re.IGNORECASE)
-    )
-    placeholder_observation = low in {
-        "gelieve te wachten",
-        "mysite",
-        "wij zijn verhuisd..",
-        "wij zijn verhuisd",
-        "wie zijn wij?",
-        "wie zijn wij",
-        "🔒 beveiligde website",
-        "beveiligde website",
-        "staff member carousel",
-    } or bool(
-        re.search(
-            r"reserved domain|under construction|coming soon|domainorder|geparkeerd|"
-            r"crypto casino|bitcoin casino|tempat main|window \d+|without code",
-            low,
-        )
-    )
-    weak_observation = bool(re.search(r"\b\d+\s*%", observed))
-
-    if (
-        observed
-        and len(_word_set(observed)) >= 3
-        and not boilerplate_heading
-        and not placeholder_observation
-        and not weak_observation
-        and not low_signal
-    ):
-        punctuation = "" if observed.endswith((".", "!", "?")) else "."
-        if language == "en":
-            return f"What stood out to me on your website: {observed}{punctuation}"
-        return f"Wat me opviel op jullie website: {observed}{punctuation}"
-
-    # Never turn a weak page title, company name or discovery category into
-    # a prospect claim. A first touch requires one specific verified fact from
-    # the official site; otherwise content research must continue.
-    _ = category_hint
-    _ = company_label
-    _ = low_signal
-    raise ValueError(
-        "No specific verified site detail for outreach opening"
-    )
+def build_opening(company: str, language: str, observation: str, category_hint: str | None = None) -> str:
+    from observation_quality import natural_opening
+    if observation_is_low_signal(company, observation):
+        raise ValueError("No specific verified site detail for outreach opening")
+    return natural_opening(observation, language)
 
 
 def naturalize_existing_opening(opening: str, language: str) -> str:
@@ -368,7 +322,7 @@ def naturalize_existing_opening(opening: str, language: str) -> str:
     return text
 
 
-def exact_nl_opening_from_existing(opening: str, company: str | None = None) -> str:
+def _legacy_exact_nl_opening_from_existing(opening: str, company: str | None = None) -> str:
     text = re.sub(r"\s+", " ", str(opening or "")).strip()
     if not text:
         raise ValueError("unsupported existing Dutch verified opening")
@@ -433,6 +387,30 @@ def exact_nl_opening_from_existing(opening: str, company: str | None = None) -> 
             return f"Ik zag op jullie website dat {company_label} zich richt op {focus_text}."
 
     raise ValueError("unsupported existing Dutch verified opening")
+
+
+def exact_nl_opening_from_existing(opening: str, company: str | None = None) -> str:
+    from observation_quality import observation_rejection, natural_opening
+    text = str(opening or "").strip()
+    if text.startswith("Op jullie website las ik: “"):
+        fact = text.removeprefix("Op jullie website las ik: “").removesuffix("”")
+        return natural_opening(fact, "nl")
+    direct = re.fullmatch(r"Ik zag op jullie website dat (jullie .+)\.", text)
+    if direct:
+        fact = direct[1]
+        verbs = r"zijn|bieden|aanbieden|verkopen|maken|serveren|leveren|produceren|verhuren|organiseren|hebben"
+        m = re.fullmatch(r"jullie (.+) (" + verbs + r")", fact)
+        if m:
+            verb = {"aanbieden": "bieden"}.get(m[2], m[2])
+            if not observation_rejection("Wij " + verb + " " + m[1]):
+                return text
+    legacy = _legacy_exact_nl_opening_from_existing(text, company)
+    fact = legacy.removeprefix("Ik zag op jullie website dat ").removesuffix(".")
+    # Legacy wrappers contain hints, never a fresh verification. They may only
+    # preserve grammatical business prose; metadata/category focus fails closed.
+    if observation_rejection(fact):
+        raise ValueError("unsupported existing Dutch verified opening: invalid business sentence")
+    return natural_opening(fact, "nl")
 
 
 def _copy_variant_index(key: str, count: int) -> int:
@@ -669,3 +647,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

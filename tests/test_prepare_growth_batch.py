@@ -19,7 +19,7 @@ class GrowthBatchTests(unittest.TestCase):
             "email_source_urls": ["https://voorbeeld.nl/contact"],
             "email_source_types": ["official_site"],
             "email_source_refs": ["https://voorbeeld.nl/contact"],
-            "verified_observation": "Fysiotherapie in Utrecht" if language == "nl" else "Physical therapy in Utrecht",
+            "verified_observation": "Wij bieden fysiotherapie in Utrecht." if language == "nl" else "We provide physical therapy in Utrecht.",
             "verified_observation_source_url": "https://voorbeeld.nl" if language == "nl" else "https://example.com",
             "verified_observation_source_type": "official_site",
             "language": language,
@@ -31,12 +31,10 @@ class GrowthBatchTests(unittest.TestCase):
 
     def test_exact_nl_opening_recovers_legacy_verified_fact_forms(self):
         cases = (
-            ('Op jullie website staat “Fysiotherapie in Utrecht”. Met één compact Groeiabonnement help ik bedrijven.', "Ik zag op jullie website dat Fysiotherapie in Utrecht."),
-            ('Op jullie website zag ik “Fysiotherapie in Utrecht”.', "Ik zag op jullie website dat Fysiotherapie in Utrecht."),
-            ('Ik heb de website van Voorbeeld Fysio bekeken en zag “Fysiotherapie in Utrecht”. Ik heb een idee om jullie online aanpak sterker te maken.', "Ik zag op jullie website dat Fysiotherapie in Utrecht."),
-            ('Ik kwam Voorbeeld Fysio tegen en heb jullie website bekeken. Eén detail dat opviel was “Fysiotherapie in Utrecht”. Mijn idee voor Voorbeeld Fysio: website en content laten samenwerken.', "Ik zag op jullie website dat Fysiotherapie in Utrecht."),
-            ('Ik zag dat Voorbeeld Fysio zich richt op fysiotherapie. Ik heb een idee om jullie online aanpak sterker te maken.', "Ik zag op jullie website dat Voorbeeld Fysio zich richt op fysiotherapie."),
-            ('Ik kwam Voorbeeld Fysio tegen en heb jullie website bekeken. Jullie site draait duidelijk om fysiotherapie. Mijn idee voor Voorbeeld Fysio: website en content laten samenwerken.', "Ik zag op jullie website dat Voorbeeld Fysio zich richt op fysiotherapie."),
+            ('Op jullie website staat “Wij bieden fysiotherapie in Utrecht.”. Met één compact Groeiabonnement help ik bedrijven.', "Ik zag op jullie website dat jullie fysiotherapie in Utrecht aanbieden."),
+            ('Op jullie website zag ik “Wij bieden fysiotherapie in Utrecht.”.', "Ik zag op jullie website dat jullie fysiotherapie in Utrecht aanbieden."),
+            ('Ik heb de website van Voorbeeld Fysio bekeken en zag “Wij bieden fysiotherapie in Utrecht.”. Ik heb een idee om jullie online aanpak sterker te maken.', "Ik zag op jullie website dat jullie fysiotherapie in Utrecht aanbieden."),
+            ('Ik kwam Voorbeeld Fysio tegen en heb jullie website bekeken. Eén detail dat opviel was “Wij bieden fysiotherapie in Utrecht.”. Mijn idee voor Voorbeeld Fysio: website en content laten samenwerken.', "Ik zag op jullie website dat jullie fysiotherapie in Utrecht aanbieden."),
         )
         for opening, expected in cases:
             with self.subTest(opening=opening):
@@ -54,14 +52,14 @@ class GrowthBatchTests(unittest.TestCase):
 
     def test_specific_verified_observation_is_used_in_opening(self):
         contact = self.contact()
-        contact["verified_observation"] = "Fysiotherapie in Utrecht"
+        contact["verified_observation"] = "Wij bieden fysiotherapie in Utrecht."
         opening = build_opening(
             "Voorbeeld Fysiotherapie",
             "nl",
             contact["verified_observation"],
             contact["category_hint"],
         )
-        self.assertEqual(opening, "Wat me opviel op jullie website: Fysiotherapie in Utrecht.")
+        self.assertEqual(opening, "Ik zag op jullie website dat jullie fysiotherapie in Utrecht aanbieden.")
 
     def test_review_required_contact_becomes_personal_review_draft(self):
         row = prepare_batch({"candidates": [self.contact()]}, self.config(), draft_limit=1)["rows"][0]
@@ -71,7 +69,7 @@ class GrowthBatchTests(unittest.TestCase):
         self.assertEqual(row["copy_company_label"], "Voorbeeld Fysiotherapie")
         self.assertTrue(row["body"].startswith("Hallo,\n\n"))
         self.assertIn(
-            "Ik zag op jullie website dat Fysiotherapie in Utrecht.",
+            "Ik zag op jullie website dat jullie fysiotherapie in Utrecht aanbieden.",
             row["body"],
         )
         self.assertIn(
@@ -124,9 +122,9 @@ class GrowthBatchTests(unittest.TestCase):
     def test_observation_overrides_misleading_company_name_for_focus(self):
         contact = self.contact()
         contact["name_hint"] = "De Juwelier"
-        contact["verified_observation"] = "À LA CARTE RESTAURANT"
+        contact["verified_observation"] = "Wij serveren à la carte gerechten."
         row = prepare_batch({"candidates": [contact]}, self.config(), draft_limit=1)["rows"][0]
-        self.assertIn("Ik zag op jullie website dat À LA CARTE RESTAURANT.", row["body"])
+        self.assertIn("Ik zag op jullie website dat jullie à la carte gerechten serveren.", row["body"])
         self.assertNotIn("sieraden en juwelierswerk", row["body"])
 
     def test_pass_contact_becomes_draft_ready(self):
@@ -138,7 +136,7 @@ class GrowthBatchTests(unittest.TestCase):
         self.assertEqual(row["status"], "draft_ready")
         self.assertEqual(row["subject"], "An idea for Example Physiotherapy")
         self.assertIn(
-            "What stood out to me on your website: Physical therapy in Utrecht.",
+            "I saw on your website that you provide physical therapy in Utrecht.",
             row["body"],
         )
         self.assertIn("€250–€500 per month, depending on what you need", row["body"])
@@ -219,7 +217,7 @@ class GrowthBatchTests(unittest.TestCase):
         contact = self.contact()
         contact["name_hint"] = "Steakhouse The Longhorn Rib and"
         contact["category_hint"] = "restaurant"
-        contact["verified_observation"] = "Steakhouse met grillgerechten in Utrecht"
+        contact["verified_observation"] = "Wij serveren grillgerechten in Utrecht."
         row = prepare_batch({"candidates": [contact]}, self.config(), draft_limit=1)["rows"][0]
         self.assertEqual(row["copy_company_label"], "Steakhouse The Longhorn Rib")
         self.assertIn("voorbeeld design maken voor Steakhouse The Longhorn Rib?", row["body"])
@@ -324,8 +322,8 @@ class GrowthBatchTests(unittest.TestCase):
     def test_verified_fact_changes_opening_not_growth_offer(self):
         first = self.contact(language="nl")
         second = self.contact(language="nl")
-        first["verified_observation"] = "Fysiotherapie in Utrecht"
-        second["verified_observation"] = "Revalidatie en dry needling in Utrecht"
+        first["verified_observation"] = "Wij bieden fysiotherapie in Utrecht."
+        second["verified_observation"] = "Wij bieden revalidatie en dry needling in Utrecht."
         body_a = prepare_batch(
             {"candidates": [first]},
             self.config(),
@@ -427,3 +425,4 @@ class GrowthBatchTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

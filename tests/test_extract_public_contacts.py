@@ -25,7 +25,7 @@ class FakeResponse:
     headers = {"content-type": "text/html"}
 
     def iter_content(self, chunk_size=65536, decode_unicode=False):
-        yield b'<html lang="nl"><body><h1>Ambachtelijke bakkerij voor Den Haag</h1>Welkom bij ons bedrijf.</body></html>'
+        yield b'<html lang="nl"><body><h1>Wij maken ambachtelijk brood in Den Haag.</h1>Welkom bij ons bedrijf.</body></html>'
 
     def close(self):
         pass
@@ -38,22 +38,19 @@ class FakeSession:
 
 class PublicContactDiscoveryTests(unittest.TestCase):
     def test_extracts_verified_observation_from_official_page(self):
-        html = "<html><head><title>Voorbeeld</title></head><body><h1>Ambachtelijke bakkerij voor Den Haag</h1></body></html>"
+        html = "<html><head><title>Voorbeeld</title></head><body><h1>Wij maken ambachtelijk brood in Den Haag.</h1></body></html>"
         self.assertEqual(
             extract_verified_observation(html),
-            "Ambachtelijke bakkerij voor Den Haag",
+            "Wij maken ambachtelijk brood in Den Haag.",
         )
 
-    def test_prefers_meta_description_over_generic_heading(self):
+    def test_meta_description_is_never_business_evidence(self):
         html = (
             '<html><head><meta name="description" '
             'content="Voorbeeld verkoopt fietsen en biedt onderhoud in Delft."></head>'
             '<body><h1>Welkom bij Voorbeeld</h1></body></html>'
         )
-        self.assertEqual(
-            extract_verified_observation(html),
-            "Voorbeeld verkoopt fietsen en biedt onderhoud in Delft.",
-        )
+        self.assertIsNone(extract_verified_observation(html))
 
     def test_extracts_cloudflare_protected_public_email(self):
         html = (
@@ -189,7 +186,7 @@ class PublicContactDiscoveryTests(unittest.TestCase):
         self.assertEqual(result["email_source_types"], ["overture"])
         self.assertEqual(result["contact_basis_status"], "review_required")
         self.assertEqual(result["contact_discovery_status"], "found_discovery_fallback")
-        self.assertEqual(result["verified_observation"], "Ambachtelijke bakkerij voor Den Haag")
+        self.assertEqual(result["verified_observation"], "Wij maken ambachtelijk brood in Den Haag.")
         self.assertEqual(result["verified_observation_source_type"], "official_site")
         self.assertEqual(result["verified_observation_source_url"], "https://example.nl/")
 
@@ -333,3 +330,4 @@ class PublicContactDiscoveryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
