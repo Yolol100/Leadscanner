@@ -11,7 +11,7 @@ permissions:
 
 concurrency:
   group: >-
-    ${{ (contains(github.event.issue.body, '"audit_only":true') || contains(github.event.issue.body, '"audit_only": true')) && 'leads-content-remediation-audit' || 'leads-content-remediation-write' }}
+    ${{ (contains(github.event.issue.body, '"audit_only":true') || contains(github.event.issue.body, '"audit_only": true')) && format('leads-content-remediation-audit-{0}', github.event.issue.number) || 'leads-content-remediation-write' }}
   cancel-in-progress: false
 
 jobs:
