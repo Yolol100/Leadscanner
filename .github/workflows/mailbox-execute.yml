@@ -196,7 +196,7 @@ jobs:
         run: |
           set -euo pipefail
           gh issue comment "$ISSUE_NUMBER" --body "Mailbox request completed. The result was stored privately."
-          gh issue close "$ISSUE_NUMBER" --reason completed
+          gh issue close "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --reason completed
 
       - name: Close failed public request shell
         if: failure()
@@ -207,7 +207,7 @@ jobs:
         run: |
           set -euo pipefail
           gh issue comment "$ISSUE_NUMBER" --body "Mailbox request failed closed. No mailbox payload was published."
-          gh issue close "$ISSUE_NUMBER" --reason completed
+          gh issue close "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --reason completed
 
       - name: Remove mailbox runtime residue
         if: always()
@@ -280,8 +280,8 @@ jobs:
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           CREDENTIAL: ${{ steps.auth.outputs.credential }}
         run: |
-          gh issue comment "$ISSUE_NUMBER" --body "MAILBOX_AUTH=green credential=$CREDENTIAL read_only=true send=false"
-          gh issue close "$ISSUE_NUMBER" --reason completed
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "MAILBOX_AUTH=green credential=$CREDENTIAL read_only=true send=false"
+          gh issue close "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --reason completed
 
       - name: Report auth failure
         if: failure()
@@ -289,5 +289,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
         run: |
-          gh issue comment "$ISSUE_NUMBER" --body "MAILBOX_AUTH=failed read_only=true send=false"
-          gh issue close "$ISSUE_NUMBER" --reason completed
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "MAILBOX_AUTH=failed read_only=true send=false"
+          gh issue close "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --reason completed
