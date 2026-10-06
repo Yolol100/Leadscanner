@@ -571,6 +571,7 @@ def verify_existing_email(source_row: dict) -> dict:
         f"{lead_id}: current email is not verified on the current official site"
     )
 
+
 def build_corrected_row(
     source_row: dict,
     change: dict,
@@ -997,10 +998,6 @@ def run(
             "online_evidence_count": len(
                 online_evidence
             ),
-        "current_email_verified_count": (
-            len(existing_email_evidence)
-            + len(replacement_rows)
-        ),
             "current_email_verified_count": (
                 len(existing_email_evidence)
                 + len(replacement_rows)
@@ -1292,6 +1289,10 @@ def run(
         "read_only": False,
         "online_evidence_count": len(
             online_evidence
+        ),
+        "current_email_verified_count": (
+            len(existing_email_evidence)
+            + len(replacement_rows)
         ),
         "refresh_verified_source_rows": bool(
             request.get(
