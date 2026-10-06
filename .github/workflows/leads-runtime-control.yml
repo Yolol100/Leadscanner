@@ -1,0 +1,42 @@
+name: Leads Runtime Control
+on:
+  issues:
+    types: [opened]
+permissions:
+  actions: write
+  contents: read
+  issues: write
+jobs:
+  stop-pending:
+    if: github.event.issue.user.login == github.repository_owner && startsWith(github.event.issue.title, '[growth-runtime-control]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Cancel bounded unstarted opening runs only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_PATH: ${{ github.event_path }}
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          event=json.loads(Path(os.environ['EVENT_PATH']).read_text())
+          req=json.loads(event['issue']['body'])
+          ids=req.get('run_ids')
+          if set(req)!={'operation','run_ids'} or req['operation']!='cancel_pending_opening' or not isinstance(ids,list) or not 1<=len(ids)<=20 or len(set(ids))!=len(ids) or any(type(i) is not int or i<=0 for i in ids):
+              raise ValueError('invalid bounded cancellation request')
+          repo=os.environ['GITHUB_REPOSITORY']; result=[]
+          for rid in ids:
+              url=f'/repos/{repo}/actions/runs/{rid}'
+              r=json.loads(subprocess.check_output(['gh','api',url]))
+              if r['path']!='.github/workflows/leads-opening-remediation.yml' or r['event']!='issues' or r['head_branch']!='main':
+                  raise ValueError('run outside opening runtime')
+              if r['status'] in {'pending','queued','waiting','requested'}:
+                  subprocess.run(['gh','api','-X','POST',url+'/cancel'],check=True)
+                  result.append({'run_id':rid,'outcome':'cancelled_before_mailbox_stage'})
+              else:
+                  result.append({'run_id':rid,'outcome':'left_untouched','status':r['status']})
+          Path('comment.txt').write_text(json.dumps(result))
+          subprocess.run(['gh','issue','comment',str(event['issue']['number']),'--body-file','comment.txt'],check=True)
+          subprocess.run(['gh','issue','close',str(event['issue']['number']),'--reason','completed'],check=True)
+          PY

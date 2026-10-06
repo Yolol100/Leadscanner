@@ -28,6 +28,11 @@ class ObservationQualityTests(unittest.TestCase):
         self.assertEqual(business_sentences(html), ["Wij maken keukens op maat."])
         self.assertEqual(extract_verified_observation(html), "Wij maken keukens op maat.")
 
+    def test_root_template_and_consent_classes_do_not_hide_main_prose(self):
+        for marker in ('page-template-elementor_header_footer', 'cookies-not-set'):
+            html = f'<html><body class="{marker}"><main><p>Wij serveren tapas.</p></main><div class="cookie-banner"><p>Wij verkopen fietsen.</p></div><footer><p>Wij verkopen fietsen.</p></footer></body></html>'
+            self.assertEqual(business_sentences(html), ['Wij serveren tapas.'])
+
     def test_one_fact_natural_dutch_and_english(self):
         self.assertEqual(natural_opening("Wij serveren tapas.", "nl"), "Ik zag op jullie website dat jullie tapas serveren.")
         self.assertEqual(natural_opening("Wij bieden lunch en diner.", "nl"), "Ik zag op jullie website dat jullie lunch en diner aanbieden.")

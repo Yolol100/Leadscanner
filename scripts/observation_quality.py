@@ -56,7 +56,10 @@ class ProseParser(HTMLParser):
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
         markers = " ".join(str(attrs.get(k, "")) for k in ("class", "id", "role", "itemprop"))
-        blocked = tag in {"head", "title", "script", "style", "nav", "footer", "header", "aside", "form", "blockquote"} or bool(re.search(r"breadcrumb|footer|copyright|testimonial|review|vacanc|career|cookie", markers, re.I))
+        # Root layout/body classes (e.g. Elementor header/footer templates or
+        # cookie-consent state) describe the layout, not a footer/cookie block.
+        marker_blocked = tag not in {"html", "body"} and bool(re.search(r"breadcrumb|footer|copyright|testimonial|review|vacanc|career|cookie", markers, re.I))
+        blocked = tag in {"head", "title", "script", "style", "nav", "footer", "header", "aside", "form", "blockquote"} or marker_blocked
         inherited = any(x[1] for x in self.stack)
         if tag not in self.VOID:
             self.stack.append([tag, blocked or inherited, []])
