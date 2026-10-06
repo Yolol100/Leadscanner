@@ -25,13 +25,12 @@ jobs:
       - name: Validate and cancel only stale content-remediation runs
         env:
           GH_TOKEN: ${{ github.token }}
-          EVENT_PATH: ${{ github.event_path }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
           import json, os
           from pathlib import Path
-          event=json.loads(Path(os.environ["EVENT_PATH"]).read_text(encoding="utf-8"))
+          event=json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text(encoding="utf-8"))
           req=json.loads(event["issue"].get("body") or "{}")
           if set(req) != {"run_ids","reason_code","confirm"}:
               raise SystemExit("request fields mismatch")
@@ -85,8 +84,8 @@ jobs:
           else
             echo "STALE_CONTENT_RUN_CANCEL=failed_closed. No mailbox content was changed." > comment.txt
           fi
-          gh issue comment "$ISSUE_NUMBER" --body-file comment.txt
-          gh issue close "$ISSUE_NUMBER" --reason completed
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file comment.txt
+          gh issue close "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --reason completed
 
       - name: Remove residue
         if: always()
