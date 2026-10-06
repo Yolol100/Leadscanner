@@ -241,6 +241,7 @@ jobs:
                   "CONTENT_AUDIT_BOUNDARY=green "
                   "audited=100 "
                   f"ready={report.get('canonical_ready_count')} "
+                  f"email_verified={report.get('current_email_verified_count')} "
                   f"research={report.get('needs_research_count')} "
                   f"holds={report.get('hold_count')} "
                   "read_only=true automatic_send=false"
@@ -309,6 +310,10 @@ jobs:
           set -euo pipefail
           {
             cat results/content-remediation.txt
+            if python3 -c 'import json,sys; r=json.load(open("results/content-remediation-report.json", encoding="utf-8")); sys.exit(0 if r.get("audit_only") else 1)'; then
+              echo
+              python3 -c 'import json; r=json.load(open("results/content-remediation-report.json", encoding="utf-8")); print("CONTENT_AUDIT_DETAIL=" + json.dumps({"ready": r.get("canonical_ready_count"), "email_verified": r.get("current_email_verified_count"), "research": r.get("needs_research_count"), "needs_research": r.get("needs_research"), "holds": r.get("hold_count"), "hold_lead_ids": r.get("hold_lead_ids"), "unassessed": r.get("unassessed_count")}, ensure_ascii=False, separators=(",", ":")))'
+            fi
             echo
             echo "Official-site content audit/remediation completed. Nothing was sent."
           } > results/issue-comment.txt
