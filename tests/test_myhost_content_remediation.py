@@ -6,6 +6,7 @@ from myhost_content_remediation import (
     _refresh_change_from_source,
     build_corrected_row,
     validate_request,
+    verify_existing_email,
 )
 
 
@@ -210,6 +211,79 @@ class ContentRemediationTests(unittest.TestCase):
         self.assertTrue(
             result["language_source"]
         )
+
+    @patch(
+        "myhost_content_remediation.discover_contact_links",
+        return_value=[],
+    )
+    @patch(
+        "myhost_content_remediation.fetch_html",
+        return_value=(
+            '<html><body><a href="mailto:info@example.nl">Mail</a></body></html>',
+            "https://example.nl/contact",
+            200,
+        ),
+    )
+    def test_existing_email_requires_current_first_party_presence(
+        self,
+        fetch,
+        links,
+    ):
+        source = {
+            "lead_id": "growth-bbbbbbbbbbbbbbbbbbbb",
+            "website": "https://example.nl/",
+            "official_domain_hint": "example.nl",
+            "email": "info@example.nl",
+            "email_source_urls": [
+                "https://example.nl/contact"
+            ],
+            "verified_observation_source_url": (
+                "https://example.nl/"
+            ),
+        }
+        result = verify_existing_email(source)
+        self.assertEqual(
+            result["email"],
+            "info@example.nl",
+        )
+        self.assertEqual(
+            result["source_type"],
+            "official_site",
+        )
+
+    @patch(
+        "myhost_content_remediation.discover_contact_links",
+        return_value=[],
+    )
+    @patch(
+        "myhost_content_remediation.fetch_html",
+        return_value=(
+            "<html><body>Contact us</body></html>",
+            "https://example.nl/contact",
+            200,
+        ),
+    )
+    def test_existing_email_fails_closed_when_not_currently_public(
+        self,
+        fetch,
+        links,
+    ):
+        source = {
+            "lead_id": "growth-bbbbbbbbbbbbbbbbbbbb",
+            "website": "https://example.nl/",
+            "official_domain_hint": "example.nl",
+            "email": "old@example.nl",
+            "email_source_urls": [],
+            "email_source_types": ["overture"],
+            "verified_observation_source_url": (
+                "https://example.nl/contact"
+            ),
+        }
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "not verified",
+        ):
+            verify_existing_email(source)
 
     @patch(
         "myhost_content_remediation.valid_email",
