@@ -95,6 +95,30 @@ class ApprovalRevalidationTests(unittest.TestCase):
         finally:
             tmp.cleanup()
 
+    def test_missing_approved_count_fails_closed(self):
+        batch = self.batch()
+        del batch["approval"]["approved_count"]
+        tmp, registry = self.registry([
+            ["Existing", "https://existing.nl", "existing.nl", "info@existing.nl", "concept", "concept", "growth-cccccccccccccccccccc", "", "", "TRUE"]
+        ])
+        try:
+            with self.assertRaisesRegex(ValueError, "approved_count_required"):
+                revalidate_approved(batch, registry)
+        finally:
+            tmp.cleanup()
+
+    def test_automatic_send_true_fails_closed(self):
+        batch = self.batch()
+        batch["approval"]["automatic_send"] = True
+        tmp, registry = self.registry([
+            ["Existing", "https://existing.nl", "existing.nl", "info@existing.nl", "concept", "concept", "growth-cccccccccccccccccccc", "", "", "TRUE"]
+        ])
+        try:
+            with self.assertRaisesRegex(ValueError, "automatic_send_must_be_false"):
+                revalidate_approved(batch, registry)
+        finally:
+            tmp.cleanup()
+
     def test_approval_count_mismatch_fails_closed(self):
         batch = self.batch()
         batch["approval"]["approved_count"] = 1
