@@ -58,7 +58,6 @@ on:
     paths:
       - '.github/workflows/leads-cold.yml'
       - 'requirements-cold.txt'
-      - 'requirements-instantly-mcp.txt'
       - 'config/instantly-control.json'
       - 'instantly-commands/README.md'
       - 'instantly-commands/inbox/*.json'
@@ -79,7 +78,6 @@ on:
       - 'scripts/instantly_client.py'
       - 'scripts/instantly_webhook.py'
       - 'scripts/instantly_service.py'
-      - 'scripts/instantly_mcp.py'
       - 'scripts/instantly_control.py'
       - 'scripts/instantly_sync.py'
       - 'scripts/instantly_audit.py'
@@ -100,7 +98,6 @@ on:
       - 'tests/test_instantly_client.py'
       - 'tests/test_instantly_webhook.py'
       - 'tests/test_instantly_service.py'
-      - 'tests/test_instantly_mcp.py'
       - 'tests/test_instantly_control.py'
       - 'tests/test_instantly_sync.py'
       - 'tests/test_instantly_audit.py'
@@ -112,7 +109,6 @@ on:
     paths:
       - '.github/workflows/leads-cold.yml'
       - 'requirements-cold.txt'
-      - 'requirements-instantly-mcp.txt'
       - 'config/instantly-control.json'
       - 'instantly-commands/README.md'
       - 'instantly-commands/inbox/*.json'
@@ -133,7 +129,6 @@ on:
       - 'scripts/instantly_client.py'
       - 'scripts/instantly_webhook.py'
       - 'scripts/instantly_service.py'
-      - 'scripts/instantly_mcp.py'
       - 'scripts/instantly_control.py'
       - 'scripts/instantly_sync.py'
       - 'scripts/instantly_audit.py'
@@ -154,7 +149,6 @@ on:
       - 'tests/test_instantly_client.py'
       - 'tests/test_instantly_webhook.py'
       - 'tests/test_instantly_service.py'
-      - 'tests/test_instantly_mcp.py'
       - 'tests/test_instantly_control.py'
       - 'tests/test_instantly_sync.py'
       - 'tests/test_instantly_audit.py'
@@ -188,7 +182,7 @@ jobs:
           python-version: '3.12'
           cache: pip
           cache-dependency-path: requirements-cold.txt
-      - run: python3 -m pip install --disable-pip-version-check 'requests>=2,<3' 'google-auth>=2,<3' 'mcp==2.3.0'
+      - run: python3 -m pip install --disable-pip-version-check 'requests>=2,<3' 'google-auth>=2,<3'
       - name: Run focused active-path tests
         env:
           PYTHONPATH: scripts
@@ -212,7 +206,6 @@ jobs:
             scripts/instantly_client.py \
             scripts/instantly_webhook.py \
             scripts/instantly_service.py \
-            scripts/instantly_mcp.py \
             scripts/instantly_control.py \
             scripts/instantly_sync.py \
             scripts/instantly_audit.py
@@ -234,7 +227,6 @@ jobs:
             tests.test_instantly_client \
             tests.test_instantly_webhook \
             tests.test_instantly_service \
-            tests.test_instantly_mcp \
             tests.test_instantly_control \
             tests.test_instantly_sync \
             tests.test_instantly_audit \
