@@ -453,6 +453,38 @@ class OvertureDiscoveryTests(unittest.TestCase):
         self.assertEqual(result["final_url"], "https://final.example/")
         response.close.assert_called_once()
 
+    def test_website_probe_blocks_private_redirect_before_following_it(self):
+        class RedirectResponse:
+            status_code = 302
+            url = "https://public.example/"
+            headers = {"location": "http://127.0.0.1/private"}
+
+            def close(self):
+                pass
+
+        class Session:
+            def __init__(self):
+                self.calls = []
+
+            def get(self, url, **kwargs):
+                self.calls.append((url, kwargs))
+                if len(self.calls) > 1:
+                    raise AssertionError("private redirect must not be requested")
+                return RedirectResponse()
+
+        session = Session()
+
+        def public_url(url):
+            return not str(url).startswith("http://127.0.0.1")
+
+        with patch("overture_discovery.is_public_http_url", side_effect=public_url):
+            result = probe_website("https://public.example/", session=session)
+
+        self.assertEqual(result["status"], "blocked_non_public_url")
+        self.assertEqual(result["detail"], "redirected_to_non_public_url")
+        self.assertEqual(len(session.calls), 1)
+        self.assertFalse(session.calls[0][1]["allow_redirects"])
+
     @patch("overture_discovery.is_public_http_url", return_value=False)
     def test_website_probe_blocks_non_public_url(self, public_url):
         result = probe_website("http://127.0.0.1/")
