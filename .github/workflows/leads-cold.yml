@@ -574,17 +574,6 @@ jobs:
             --approved-tokens-env INPUT_APPROVED_REVIEW_TOKENS \
             --output results/approved-review-draft-batch.json
 
-      - name: Phase 21 - Revalidate approved leads against live registry
-        if: inputs.execution_mode == 'draft'
-        env:
-          PYTHONPATH: scripts
-        run: |
-          set -euo pipefail
-          python3 scripts/approval_revalidation.py \
-            --batch results/approved-review-draft-batch.json \
-            --registry-csv results/dedupe-registry.csv \
-            --output results/approved-current-batch.json
-
       - name: Phase 21 - Preflight canonical registry write access
         if: inputs.execution_mode == 'draft'
         env:
@@ -593,7 +582,7 @@ jobs:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: |
           set -euo pipefail
-          COUNT=$(python3 -c "import json; print(json.load(open('results/approved-current-batch.json'))['remaining_count'])")
+          COUNT=$(python3 -c "import json; print(len(json.load(open('results/approved-review-draft-batch.json'))['rows']))")
           if [ "$COUNT" -eq 0 ]; then
             echo "DEDUPE_REGISTRY_ACCESS=not_needed count=0"
           else
@@ -601,6 +590,36 @@ jobs:
               --check-only \
               --output results/registry-access.json
           fi
+
+      - name: Phase 21 - Refresh live dedupe registry immediately before draft storage
+        if: inputs.execution_mode == 'draft'
+        env:
+          PYTHONPATH: scripts
+        run: |
+          set -euo pipefail
+          curl --fail --location --silent --show-error \
+            --retry 2 --retry-all-errors \
+            --connect-timeout 10 --max-time 30 \
+            "$DEDUPE_REGISTRY_CSV_URL" \
+            --output results/dedupe-registry-current.csv
+          test -s results/dedupe-registry-current.csv
+          printf '[]\n' > results/empty-current-candidates.json
+          python3 scripts/dedupe_preflight.py \
+            --registry-csv results/dedupe-registry-current.csv \
+            --candidates-json results/empty-current-candidates.json \
+            --output results/registry-current-check.json
+          echo 'DEDUPE_REGISTRY_REFRESH=green'
+
+      - name: Phase 21 - Revalidate approved leads against live registry
+        if: inputs.execution_mode == 'draft'
+        env:
+          PYTHONPATH: scripts
+        run: |
+          set -euo pipefail
+          python3 scripts/approval_revalidation.py \
+            --batch results/approved-review-draft-batch.json \
+            --registry-csv results/dedupe-registry-current.csv \
+            --output results/approved-current-batch.json
 
       - name: Phase 21 - Store only still-current approved review drafts
         if: inputs.execution_mode == 'draft'
