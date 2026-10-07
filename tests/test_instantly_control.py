@@ -5,6 +5,8 @@ from pathlib import Path
 
 from instantly_control import (
     _activate,
+    _wait_background_job,
+    _write,
     command_paths_from_push_event,
     execute_command,
     expected_confirmation,
@@ -157,6 +159,8 @@ class InstantlyControlTests(unittest.TestCase):
                 }
 
             def _request(self, method, path, **kwargs):
+                if method == "GET" and path.endswith("/sending-status"):
+                    return {"summary": {"status": "campaign_draft"}}
                 if method == "GET" and path == "/accounts/sender%40example.com":
                     return {"email": "sender@example.com", "status": 1}
                 if method == "POST" and path.endswith("/activate"):
@@ -170,6 +174,80 @@ class InstantlyControlTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "requires_non_pending_non_risky_verification"):
                     _activate(client, "c1")
                 self.assertFalse(client.activated)
+
+    def test_load_command_rejects_secret_shaped_args(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "secret-command-001.json"
+            path.write_text(
+                json.dumps({
+                    "schema_version": "leadscanner-instantly-command/1.0",
+                    "command_id": "secret-command-001",
+                    "action": "update_account",
+                    "args": {
+                        "email": "sender@example.com",
+                        "payload": {"nested": {"api_key": "do-not-store"}},
+                    },
+                    "confirm": "EXECUTE update_account sender@example.com",
+                }),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "command_secret_material_forbidden"):
+                load_command(path)
+
+    def test_result_writer_redacts_nested_credentials(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "result.json"
+            _write(path, {
+                "status": "green",
+                "result": {
+                    "email": "sender@example.com",
+                    "advanced": {"smtp_password": "private", "access_token": "private-2"},
+                },
+            })
+            written = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(written["result"]["advanced"]["smtp_password"], "[REDACTED]")
+            self.assertEqual(written["result"]["advanced"]["access_token"], "[REDACTED]")
+            self.assertEqual(written["result"]["email"], "sender@example.com")
+
+    def test_test_send_200_error_body_fails_closed(self):
+        class ActionClient:
+            def _request(self, method, path, **kwargs):
+                self.last = (method, path, kwargs)
+                return {"error": "ACC_AUTH_ERROR"}
+
+        command = {
+            "schema_version": "leadscanner-instantly-command/1.0",
+            "command_id": "test-send-error-001",
+            "action": "send_test_email",
+            "args": {
+                "payload": {
+                    "eaccount": "sender@example.com",
+                    "to_address_email_list": "target@example.com",
+                }
+            },
+            "confirm": "EXECUTE send_test_email sender@example.com|target@example.com",
+            "requested_by": "chatgpt",
+        }
+        with self.assertRaisesRegex(RuntimeError, "instantly_test_send_error:ACC_AUTH_ERROR"):
+            execute_command(command, config(), ActionClient())
+
+    def test_background_job_waits_until_success(self):
+        class JobClient:
+            def __init__(self):
+                self.states = ["processing", "success"]
+
+            def _request(self, method, path, **kwargs):
+                return {"id": "job-1", "status": self.states.pop(0)}
+
+        sleeps = []
+        result = _wait_background_job(
+            JobClient(),
+            {"id": "job-1"},
+            max_polls=3,
+            sleep_fn=sleeps.append,
+        )
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(sleeps, [1.0])
 
     def test_push_event_executes_only_new_inbox_json_files(self):
         event = {
