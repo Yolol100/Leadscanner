@@ -94,10 +94,27 @@ class InstantlyClient:
     def get_campaign(self, campaign_id: str):
         return self._request("GET", f"/campaigns/{quote(str(campaign_id), safe='')}", retry_safe=True)
 
-    def list_leads(self, *, campaign: str | None = None, limit: int = 50, starting_after: str | None = None):
+    def list_leads(
+        self,
+        *,
+        campaign: str | None = None,
+        list_id: str | None = None,
+        contacts: list[str] | None = None,
+        limit: int = 50,
+        starting_after: str | None = None,
+    ):
         body = {"limit": min(max(int(limit), 1), 100)}
         if campaign:
             body["campaign"] = campaign
+        if list_id:
+            body["list_id"] = list_id
+        normalized_contacts = [
+            str(value or "").strip().casefold()
+            for value in (contacts or [])
+            if str(value or "").strip()
+        ]
+        if normalized_contacts:
+            body["contacts"] = normalized_contacts
         if starting_after:
             body["starting_after"] = starting_after
         return self._request("POST", "/leads/list", json=body, retry_safe=True)
