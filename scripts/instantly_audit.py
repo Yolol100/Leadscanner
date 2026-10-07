@@ -49,6 +49,12 @@ def evaluate(root: str | Path = ".") -> dict:
                 < workflow.find("Phase 21 - Store only still-current approved review drafts")
                 and "fresh_registry_rows = fetch_live_registry" in service
                 and "approved_lead_no_longer_eligible_after_registry_preflight" in service
+                and "stage_approved_batch" in service
+                and "instantly_stage" in workflow
+                and "Phase 21 - Stage exact approved leads into Instantly" in workflow
+                and "campaign_activation_required" in workflow
+                and "leadscanner_subject" in client
+                and "leadscanner_body" in client
             ),
         },
         {
