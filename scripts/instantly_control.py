@@ -252,6 +252,12 @@ def _activate(client: InstantlyClient, campaign_id: str) -> dict:
         raise ValueError("campaign_must_be_draft_or_paused_before_activation")
     if campaign.get("allow_risky_contacts") is True:
         raise ValueError("activation_blocks_allow_risky_contacts_true")
+    sending_status = _api(
+        client,
+        "GET",
+        f"/campaigns/{_id(campaign_id, 'campaign_id')}/sending-status",
+        params={"with_ai_summary": False},
+    ) or {}
     senders = [str(x).strip().casefold() for x in (campaign.get("email_list") or []) if str(x).strip()]
     if not senders:
         raise ValueError("activation_requires_sender_accounts")
@@ -268,7 +274,7 @@ def _activate(client: InstantlyClient, campaign_id: str) -> dict:
     observed = client.get_campaign(campaign_id) or {}
     if int(observed.get("status")) not in {1, 4}:
         raise RuntimeError("campaign_activation_readback_not_active")
-    return {"operation": operation, "readback": observed, "preflight_lead_count": len(leads)}
+    return {"operation": operation, "readback": observed, "preflight_lead_count": len(leads), "preflight_sending_status": sending_status}
 
 
 def execute_command(command: dict, config: dict, client: InstantlyClient, *, run_attempt: str = "1") -> dict:
