@@ -134,10 +134,13 @@ def exact_rows_present(expected_rows: list[list[str]], current_values: list[list
 
 
 def _authorized_session():
-    raw = os.getenv("LEAD_REGISTRY_SERVICE_ACCOUNT_JSON", "").strip()
+    raw = (
+        os.getenv("LEAD_REGISTRY_SERVICE_ACCOUNT_JSON", "").strip()
+        or os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
+    )
     if not raw:
         raise RuntimeError(
-            "LEAD_REGISTRY_SERVICE_ACCOUNT_JSON is required for canonical registry writes"
+            "LEAD_REGISTRY_SERVICE_ACCOUNT_JSON or GOOGLE_SERVICE_ACCOUNT_JSON is required for canonical registry writes"
         )
     try:
         info = json.loads(raw)
