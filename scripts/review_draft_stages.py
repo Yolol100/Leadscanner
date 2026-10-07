@@ -13,6 +13,8 @@ import json
 from pathlib import Path
 from urllib.parse import urlparse
 
+from dedupe_preflight import domains_match
+
 MAX_DRAFTS = 100
 
 
@@ -74,7 +76,11 @@ def prepare_review_batch(payload: dict) -> dict:
             raise ValueError("review_mail_invalid_email_domain")
 
         lead_id = stable_lead_id(domain, email)
-        if domain in seen_domains or email in seen_emails or lead_id in seen_ids:
+        if (
+            any(domains_match(domain, seen) for seen in seen_domains)
+            or email in seen_emails
+            or lead_id in seen_ids
+        ):
             raise ValueError("duplicate_review_draft_identity")
         seen_domains.add(domain)
         seen_emails.add(email)
