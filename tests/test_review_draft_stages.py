@@ -45,6 +45,18 @@ class ReviewDraftStagesTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "duplicate_review_draft_identity"):
             prepare_review_batch({"candidates": [first, second]})
 
+    def test_prepare_rejects_parent_subdomain_duplicate(self):
+        first = self.mail_candidate()
+        second = {
+            **self.mail_candidate(),
+            "name_hint": "Acme Shop",
+            "official_domain": "shop.acmefietsen.nl",
+            "official_url": "https://shop.acmefietsen.nl/",
+            "public_business_email": "sales@shop.acmefietsen.nl",
+        }
+        with self.assertRaisesRegex(ValueError, "duplicate_review_draft_identity"):
+            prepare_review_batch({"candidates": [first, second]})
+
     def test_readback_requires_exact_to_subject_body_and_review_status(self):
         batch = prepare_review_batch({"candidates": [self.mail_candidate()]})
         row = batch["rows"][0]
