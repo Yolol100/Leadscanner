@@ -16,6 +16,11 @@ on:
         required: true
         default: false
         type: boolean
+      approved_review_tokens:
+        description: 'Draft mode: plak alleen approval tokens uit de preview; komma/newline gescheiden'
+        required: false
+        default: ''
+        type: string
       region:
         description: 'Plaats/regio voor cold discovery'
         required: true
@@ -50,6 +55,7 @@ on:
       - 'scripts/outreach_stages.py'
       - 'scripts/cold_run_manifest.py'
       - 'scripts/review_draft_stages.py'
+      - 'scripts/review_selection.py'
       - 'scripts/myhost_draft.py'
       - 'scripts/update_dedupe_registry.py'
       - 'scripts/url_safety.py'
@@ -58,6 +64,7 @@ on:
       - 'tests/test_outreach_stages.py'
       - 'tests/test_cold_run_manifest.py'
       - 'tests/test_review_draft_stages.py'
+      - 'tests/test_review_selection.py'
       - 'tests/test_myhost_draft.py'
       - 'tests/test_update_dedupe_registry.py'
       - 'tests/test_url_safety.py'
@@ -73,6 +80,7 @@ on:
       - 'scripts/outreach_stages.py'
       - 'scripts/cold_run_manifest.py'
       - 'scripts/review_draft_stages.py'
+      - 'scripts/review_selection.py'
       - 'scripts/myhost_draft.py'
       - 'scripts/update_dedupe_registry.py'
       - 'scripts/url_safety.py'
@@ -81,6 +89,7 @@ on:
       - 'tests/test_outreach_stages.py'
       - 'tests/test_cold_run_manifest.py'
       - 'tests/test_review_draft_stages.py'
+      - 'tests/test_review_selection.py'
       - 'tests/test_myhost_draft.py'
       - 'tests/test_update_dedupe_registry.py'
       - 'tests/test_url_safety.py'
@@ -116,8 +125,8 @@ jobs:
           PYTHONPATH: scripts
         run: |
           set -euo pipefail
-          python3 -m compileall -q scripts/dedupe_preflight.py scripts/cold_stages.py scripts/outreach_stages.py scripts/cold_run_manifest.py scripts/review_draft_stages.py scripts/myhost_draft.py scripts/update_dedupe_registry.py scripts/overture_discovery.py scripts/url_safety.py
-          python3 -m unittest tests.test_dedupe_preflight tests.test_cold_stages tests.test_outreach_stages tests.test_cold_run_manifest tests.test_review_draft_stages tests.test_myhost_draft tests.test_update_dedupe_registry tests.test_url_safety -v
+          python3 -m compileall -q scripts/dedupe_preflight.py scripts/cold_stages.py scripts/outreach_stages.py scripts/cold_run_manifest.py scripts/review_draft_stages.py scripts/review_selection.py scripts/myhost_draft.py scripts/update_dedupe_registry.py scripts/overture_discovery.py scripts/url_safety.py
+          python3 -m unittest tests.test_dedupe_preflight tests.test_cold_stages tests.test_outreach_stages tests.test_cold_run_manifest tests.test_review_draft_stages tests.test_review_selection tests.test_myhost_draft tests.test_update_dedupe_registry tests.test_url_safety -v
 
   execute:
     if: github.event_name == 'workflow_dispatch'
@@ -139,6 +148,7 @@ jobs:
         env:
           INPUT_EXECUTION_MODE: ${{ inputs.execution_mode }}
           INPUT_CONFIRM_REVIEW_DRAFTS: ${{ inputs.confirm_review_drafts }}
+          INPUT_APPROVED_REVIEW_TOKENS: ${{ inputs.approved_review_tokens }}
           INPUT_REGION: ${{ inputs.region }}
           INPUT_KEYWORDS: ${{ inputs.keywords }}
           INPUT_TARGET: ${{ inputs.target_candidates }}
@@ -153,12 +163,17 @@ jobs:
 
           mode = os.environ['INPUT_EXECUTION_MODE'].strip()
           confirm = os.environ['INPUT_CONFIRM_REVIEW_DRAFTS'].strip().casefold() == 'true'
+          approved_tokens = os.environ['INPUT_APPROVED_REVIEW_TOKENS'].strip()
           if mode not in {'preview', 'draft'}:
               raise SystemExit('execution_mode must be preview or draft')
           if mode == 'draft' and not confirm:
               raise SystemExit('draft mode requires confirm_review_drafts=true')
+          if mode == 'draft' and not approved_tokens:
+              raise SystemExit('draft mode requires one or more approved_review_tokens from a preview')
           if mode == 'preview' and confirm:
               raise SystemExit('confirm_review_drafts must remain false in preview mode')
+          if mode == 'preview' and approved_tokens:
+              raise SystemExit('approved_review_tokens must remain empty in preview mode')
 
           region = os.environ['INPUT_REGION'].strip()
           if not region or len(region) > 120:
@@ -315,6 +330,29 @@ jobs:
             --input results/mail-review.json \
             --output results/review-draft-batch.json
 
+      - name: Phase 16 - Build human-review queue
+        env:
+          PYTHONPATH: scripts
+        run: |
+          set -euo pipefail
+          python3 scripts/review_selection.py queue \
+            --batch results/review-draft-batch.json \
+            --json-output results/review-queue.json \
+            --markdown-output results/review-queue.md \
+            --csv-output results/review-queue.csv
+
+      - name: Phase 17 - Select exact approved review tokens
+        if: inputs.execution_mode == 'draft'
+        env:
+          PYTHONPATH: scripts
+          INPUT_APPROVED_REVIEW_TOKENS: ${{ inputs.approved_review_tokens }}
+        run: |
+          set -euo pipefail
+          python3 scripts/review_selection.py select \
+            --batch results/review-draft-batch.json \
+            --approved-tokens-env INPUT_APPROVED_REVIEW_TOKENS \
+            --output results/approved-review-draft-batch.json
+
       - name: Phase 10 - Preflight canonical registry write access
         if: inputs.execution_mode == 'draft'
         env:
@@ -322,7 +360,7 @@ jobs:
           LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON }}
         run: |
           set -euo pipefail
-          COUNT=$(python3 -c "import json; print(json.load(open('results/review-draft-batch.json'))['draft_candidate_count'])")
+          COUNT=$(python3 -c "import json; print(json.load(open('results/approved-review-draft-batch.json'))['draft_candidate_count'])")
           if [ "$COUNT" -eq 0 ]; then
             echo "DEDUPE_REGISTRY_ACCESS=not_needed count=0"
           else
@@ -345,7 +383,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/myhost_draft.py \
-            --batch results/review-draft-batch.json \
+            --batch results/approved-review-draft-batch.json \
             --report results/myhost-drafts.json \
             --reject-changed-existing | tee results/myhost-drafts.txt
           grep -q '^MYHOST_DRAFT_SYNC=green ' results/myhost-drafts.txt
@@ -359,7 +397,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/review_draft_stages.py readback \
-            --batch results/review-draft-batch.json \
+            --batch results/approved-review-draft-batch.json \
             --report results/myhost-drafts.json \
             --output results/review-draft-readback.json
 
@@ -381,7 +419,9 @@ jobs:
         run: |
           set -euo pipefail
           EXTRA_ARGS=()
+          DRAFT_BATCH_PATH=results/review-draft-batch.json
           if [ "$INPUT_EXECUTION_MODE" = "draft" ]; then
+            DRAFT_BATCH_PATH=results/approved-review-draft-batch.json
             EXTRA_ARGS+=(--draft-readback results/review-draft-readback.json)
             EXTRA_ARGS+=(--registry-update results/registry-update.json)
           fi
@@ -395,7 +435,7 @@ jobs:
             --reasons results/outreach-reasons.json \
             --values results/value-actions.json \
             --mail results/mail-review.json \
-            --draft-batch results/review-draft-batch.json \
+            --draft-batch "$DRAFT_BATCH_PATH" \
             "${EXTRA_ARGS[@]}" \
             --output results/run-manifest.json
 
@@ -413,6 +453,10 @@ jobs:
             results/value-actions.json
             results/mail-review.json
             results/review-draft-batch.json
+            results/review-queue.json
+            results/review-queue.md
+            results/review-queue.csv
+            results/approved-review-draft-batch.json
             results/run-manifest.json
             results/myhost-drafts.json
             results/myhost-drafts.txt
