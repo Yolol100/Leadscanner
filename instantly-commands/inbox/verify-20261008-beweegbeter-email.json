@@ -1,0 +1,10 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "verify-20261008-beweegbeter-email",
+  "action": "verify_email",
+  "args": {
+    "email": "info@beweegbeter.nu"
+  },
+  "confirm": "EXECUTE verify_email info@beweegbeter.nu",
+  "requested_by": "chatgpt"
+}
