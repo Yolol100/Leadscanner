@@ -107,6 +107,23 @@ class InstantlyClientTests(unittest.TestCase):
         self.assertEqual(kwargs["params"]["email_type"], "received")
         self.assertEqual(kwargs["params"]["starting_after"], "cursor-1")
 
+    def test_list_leads_supports_official_contact_and_list_filters(self):
+        session = FakeSession([FakeResponse(payload={"items": []})])
+        client = InstantlyClient("secret", session=session)
+        client.list_leads(
+            campaign="c1",
+            list_id="list-1",
+            contacts=["Lead@Example.com"],
+            limit=25,
+            starting_after="cursor-1",
+        )
+        method, url, kwargs = session.calls[0]
+        self.assertEqual((method, url), ("POST", "https://api.instantly.ai/api/v2/leads/list"))
+        self.assertEqual(kwargs["json"]["campaign"], "c1")
+        self.assertEqual(kwargs["json"]["list_id"], "list-1")
+        self.assertEqual(kwargs["json"]["contacts"], ["lead@example.com"])
+        self.assertEqual(kwargs["json"]["starting_after"], "cursor-1")
+
     def test_add_requires_draft_or_paused_campaign(self):
         session = FakeSession([FakeResponse(payload={"id": "c1", "status": 1})])
         client = InstantlyClient("secret", session=session)
