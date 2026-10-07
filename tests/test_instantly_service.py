@@ -102,6 +102,34 @@ class InstantlyServiceTests(unittest.TestCase):
     @patch("instantly_service.update_registry")
     @patch("instantly_service.check_registry_access")
     @patch("instantly_service.resolve_exact_approval")
+    def test_registry_access_preflight_precedes_fresh_approval_resolution(
+        self, resolve_mock, preflight_mock, update_mock
+    ):
+        events = []
+        preflight_mock.side_effect = lambda **kwargs: events.append("preflight") or {"status": "green"}
+        resolve_mock.side_effect = lambda **kwargs: events.append("resolve") or resolved()
+        update_mock.return_value = {"exact_readback": True}
+
+        class OrderedClient(FakeInstantlyClient):
+            def add_approved_lead_to_campaign(self, **kwargs):
+                events.append("add")
+                return super().add_approved_lead_to_campaign(**kwargs)
+
+        with patch.dict(os.environ, {"LEADSCANNER_INSTANTLY_WRITES_ENABLED": "true"}, clear=False):
+            stage_exact_approved_lead(
+                preview_run_id=123,
+                approval_token="growth-aaaaaaaaaaaaaaaaaaaa@1111111111111111",
+                campaign_id="campaign-1",
+                instantly_api_key="key",
+                github_token="gh",
+                instantly_client=OrderedClient(),
+            )
+
+        self.assertEqual(events[:3], ["preflight", "resolve", "add"])
+
+    @patch("instantly_service.update_registry")
+    @patch("instantly_service.check_registry_access")
+    @patch("instantly_service.resolve_exact_approval")
     def test_stage_requires_readback_then_registry_exact_write(
         self, resolve_mock, preflight_mock, update_mock
     ):
