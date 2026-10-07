@@ -1,11 +1,11 @@
 {
-  "execution_mode": "preview",
-  "confirm_review_drafts": false,
-  "approved_review_tokens": "",
-  "preview_run_id": "",
-  "region": "Rotterdam",
-  "keywords": "schilder",
-  "target_candidates": 30,
-  "verify_limit": 20,
-  "radius_km": 10
+  "execution_mode": "draft",
+  "confirm_review_drafts": true,
+  "approved_review_tokens": "growth-c92cefbb6ef171b04987@e7ce0f90be81d17c",
+  "preview_run_id": "37611570538",
+  "region": "",
+  "keywords": "",
+  "target_candidates": 20,
+  "verify_limit": 12,
+  "radius_km": 5
 }
