@@ -70,6 +70,28 @@ class ReviewDraftStagesTests(unittest.TestCase):
         self.assertEqual(result["registry_rows"][0][6], row["lead_id"])
         self.assertEqual(result["registry_rows"][0][9], "TRUE")
 
+    def test_readback_counts_must_match_item_outcomes(self):
+        batch = prepare_review_batch({"candidates": [self.mail_candidate()]})
+        row = batch["rows"][0]
+        report = {
+            "eligible_count": 1,
+            "created_count": 0,
+            "existing_count": 0,
+            "replaced_count": 0,
+            "review_required_count": 1,
+            "smtp_send": "not_available",
+            "items": [{
+                "lead_id": row["lead_id"],
+                "to": row["email"],
+                "subject": row["subject"],
+                "body": row["body"],
+                "review_status": "contact-basis",
+                "outcome": "created",
+            }],
+        }
+        with self.assertRaisesRegex(ValueError, "draft_outcome_count_mismatch"):
+            audit_exact_readback(batch, report)
+
     def test_readback_allows_exact_existing_retry_but_never_replacement(self):
         batch = prepare_review_batch({"candidates": [self.mail_candidate()]})
         row = batch["rows"][0]
