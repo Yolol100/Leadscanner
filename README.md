@@ -18,19 +18,21 @@ Current manual run:
 3. **Historical dedupe** — fetch the live Lead Dedupe Registry and exclude matches by normalized company, domain, email or prior lead ID.
 4. **Verification** — for at most 100 deduped candidates, visit the official-domain website with bounded concurrency; require same-domain redirects, prove company/domain consistency, exclude confirmed competitors, and find a public business email on the official site.
 5. **Bounded research** — only for verified candidates with a public business email, reuse the homepage text already fetched during verification and visit at most two additional relevant first-party pages. Store sourced visible-text evidence only; add no inferred pain.
-6. **Outreach reason** — select exactly one concrete first-party signal or hold. Generic company descriptions, opening hours, prices/percentages, reviews and directory evidence do not qualify.
+6. **Outreach reason** — select exactly one concrete first-party customer action or hold. Only appointment/booking, quote-request, reservation or ordering flows qualify. Generic quality, service, craftsmanship, customization, company descriptions, service/product catalogs, opening hours, prices/percentages, reviews and directory evidence do not qualify.
 7. **Value-first action** — map the selected signal to one small proposed website example. The pipeline uses proposed-language only and never claims the artifact already exists.
-8. **Mail generation + semantic QA** — create one short NL/EN cold email with one observation, one proposed example, one low-friction CTA and an easy no. Subject <=8 words; body <=100 words; no meeting pressure, price, ROI, percentage or unsupported result claim.
+8. **Mail generation + semantic QA** — create one short NL/EN cold email only for a concrete customer-action signal, with one observation, one proposed example, one low-friction CTA and an easy no. Subject <=8 words; body <=100 words; no meeting pressure, price, ROI, percentage or unsupported result claim.
 9. **Review-draft preparation** — create a deterministic `growth-<20 hex>` lead ID from official domain + verified public email and build only `review_draft` / `review_required` rows.
-10. **Human review queue** — export every reviewable lead with company, domain, verified email, signal, evidence URL, proposed value, subject, body and an approval token. The token fingerprint includes the exact copy/evidence, so a changed rerun becomes stale and is rejected.
-11. **Immutable preview snapshot** — seal request, review batch, review queue and preview manifest into `preview-snapshot.json` with a content digest and source run/commit provenance. Preview artifacts are retained for 7 days.
-12. **Fast draft resume** — draft mode loads the exact artifact from `preview_run_id`, verifies the successful workflow-dispatch run, repository, `main` branch, commit SHA and snapshot digest, then materializes only the snapshot-bound review batch. Discovery, verification, research and copy generation are not repeated.
-13. **Exact approval selection** — draft mode accepts only preview tokens explicitly pasted into `approved_review_tokens`; there is no `all` wildcard and unknown/stale tokens fail closed.
-14. **Live dedupe revalidation** — immediately before mutation, re-check every approved lead against the current canonical registry. Anything added since the preview is suppressed and cannot become a new draft.
-15. **Registry access preflight + approved mijn.host draft storage** — before the still-current approved batch is written, prove Google Sheets write access. Then append only those drafts through IMAP. Exact retries are allowed; changed existing drafts are rejected instead of overwritten.
-16. **Exact mailbox readback** — require an exact match on recipient, subject, body, lead ID and review status. SMTP/send remains unavailable.
-17. **Canonical dedupe closure** — append only successfully read-back, still-current approved identities to `DedupeRegistry` in one Google Sheets batch and verify the new rows by an exact API readback.
-18. **Run manifest** — emit `run-manifest.json` with mode, stage counts, review-queue count, approved count, operator-rejected count, post-preview suppression count, source preview ID/run/commit, mutation state and safety flags. Preview ends as `preview_ready`; a successful draft run ends as `closed`.
+10. **Funnel diagnostics** — emit privacy-safe stage counts and exact rejection-reason totals for cheap filters, dedupe, verification, research, outreach and mail QA. No prospect copy, company names or email addresses are included in the metrics artifact.
+11. **Overture coverage audit** — compare raw/filtered/deduped candidate supply with the requested verification capacity. Classify the run as sufficient, sufficient-with-buffer, thin, gap or configuration-limited. Never auto-add a second source from one run.
+12. **Human review queue** — export every reviewable lead with company, domain, verified email, signal, evidence URL, proposed value, subject, body and an approval token. The token fingerprint includes the exact copy/evidence, so a changed rerun becomes stale and is rejected.
+13. **Immutable preview snapshot** — seal request, review batch, review queue and preview manifest into `preview-snapshot.json` with a content digest and source run/commit provenance. Preview artifacts are retained for 7 days.
+14. **Fast draft resume** — draft mode loads the exact artifact from `preview_run_id`, verifies the successful workflow-dispatch run, repository, `main` branch, commit SHA and snapshot digest, then materializes only the snapshot-bound review batch. Discovery, verification, research and copy generation are not repeated.
+15. **Exact approval selection** — draft mode accepts only preview tokens explicitly pasted into `approved_review_tokens`; there is no `all` wildcard and unknown/stale tokens fail closed.
+16. **Live dedupe revalidation** — immediately before mutation, re-check every approved lead against the current canonical registry. Anything added since the preview is suppressed and cannot become a new draft.
+17. **Registry access preflight + approved mijn.host draft storage** — before the still-current approved batch is written, prove Google Sheets write access. Then append only those drafts through IMAP. Exact retries are allowed; changed existing drafts are rejected instead of overwritten.
+18. **Exact mailbox readback** — require an exact match on recipient, subject, body, lead ID and review status. SMTP/send remains unavailable.
+19. **Canonical dedupe closure** — append only successfully read-back, still-current approved identities to `DedupeRegistry` in one Google Sheets batch and verify the new rows by an exact API readback.
+20. **Run manifest** — emit `run-manifest.json` with mode, stage counts, review-queue count, approved count, operator-rejected count, post-preview suppression count, source preview ID/run/commit, mutation state and safety flags. Preview ends as `preview_ready`; a successful draft run ends as `closed`.
 
 Preview is the default and is mutation-free. Confirmed draft mode creates review drafts only; neither mode sends commercial email.
 
@@ -71,3 +73,7 @@ The active discovery path does not use Google Maps scraping.
 - **mijn.host** stores human-review drafts only. SMTP/send is not part of the active workflow.
 
 The previous Google Maps CSV adapters and remediation-era code were removed from the repository. If Google Maps is ever reintroduced, it must be a deliberate new source with its own current verification, tests and evidence contract; no deleted legacy behavior is implicitly restored.
+
+## Quality diagnostics
+
+Every preview now emits `funnel-metrics.json` and `coverage-audit.json` in addition to the review artifacts. The funnel file explains why leads were rejected at each stage without storing prospect copy or contact details. The coverage file measures whether Overture supplies enough candidates for the requested verification capacity. A second discovery source is not added automatically; first broaden the query/radius, and require repeated independent gap evidence before introducing another source.
