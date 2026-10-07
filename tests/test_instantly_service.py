@@ -5,6 +5,7 @@ from unittest.mock import patch
 from instantly_service import (
     _verify_instantly_readback,
     require_instantly_writes_enabled,
+    stage_approved_batch,
     stage_exact_approved_lead,
 )
 
@@ -133,6 +134,92 @@ class InstantlyServiceTests(unittest.TestCase):
             )
 
         self.assertEqual(events[:5], ["resolve", "preflight", "refresh", "revalidate", "add"])
+
+    @patch("instantly_service.update_registry")
+    @patch("instantly_service.revalidate_approved")
+    @patch("instantly_service.fetch_live_registry")
+    @patch("instantly_service.check_registry_access")
+    def test_stage_batch_uses_fresh_dedupe_and_never_activates(
+        self, preflight_mock, fetch_registry_mock, revalidate_mock, update_mock
+    ):
+        selected = {
+            "schema_version": "leadscanner-approved-review-draft-batch/1.0",
+            "draft_candidate_count": 1,
+            "review_draft_count": 1,
+            "rows": [resolved()["row"]],
+            "approval": {
+                "requested_count": 1,
+                "approved_count": 1,
+                "rejected_by_operator_count": 0,
+                "automatic_send": False,
+            },
+            "safety": {"automatic_send": False},
+        }
+        fetch_registry_mock.return_value = []
+        revalidate_mock.return_value = resolved()["approved_current"]
+        update_mock.return_value = {"status": "green", "exact_readback": True}
+        client = FakeInstantlyClient()
+
+        with patch.dict(os.environ, {"LEADSCANNER_INSTANTLY_WRITES_ENABLED": "true"}, clear=False):
+            result = stage_approved_batch(
+                approved_batch=selected,
+                campaign_id="campaign-1",
+                instantly_api_key="key",
+                instantly_client=client,
+            )
+
+        self.assertEqual(result["requested_count"], 1)
+        self.assertEqual(result["staged_count"], 1)
+        self.assertEqual(result["suppressed_count"], 0)
+        self.assertFalse(result["automatic_send"])
+        self.assertTrue(result["campaign_activation_required"])
+        self.assertEqual([call[0] for call in client.calls], ["add", "get"])
+        preflight_mock.assert_called_once()
+        fetch_registry_mock.assert_called()
+        update_mock.assert_called_once()
+
+    @patch("instantly_service.update_registry")
+    @patch("instantly_service.revalidate_approved")
+    @patch("instantly_service.fetch_live_registry")
+    @patch("instantly_service.check_registry_access")
+    def test_stage_batch_skips_lead_that_became_suppressed(
+        self, preflight_mock, fetch_registry_mock, revalidate_mock, update_mock
+    ):
+        selected = {
+            "schema_version": "leadscanner-approved-review-draft-batch/1.0",
+            "draft_candidate_count": 1,
+            "review_draft_count": 1,
+            "rows": [resolved()["row"]],
+            "approval": {
+                "requested_count": 1,
+                "approved_count": 1,
+                "rejected_by_operator_count": 0,
+                "automatic_send": False,
+            },
+            "safety": {"automatic_send": False},
+        }
+        fetch_registry_mock.return_value = []
+        suppressed = {
+            **resolved()["approved_current"],
+            "remaining_count": 0,
+            "suppressed_after_preview_count": 1,
+            "rows": [],
+        }
+        revalidate_mock.return_value = suppressed
+        client = FakeInstantlyClient()
+
+        with patch.dict(os.environ, {"LEADSCANNER_INSTANTLY_WRITES_ENABLED": "true"}, clear=False):
+            result = stage_approved_batch(
+                approved_batch=selected,
+                campaign_id="campaign-1",
+                instantly_api_key="key",
+                instantly_client=client,
+            )
+
+        self.assertEqual(result["staged_count"], 0)
+        self.assertEqual(result["suppressed_count"], 1)
+        self.assertEqual(client.calls, [])
+        update_mock.assert_not_called()
 
     @patch("instantly_service.update_registry")
     @patch("instantly_service.revalidate_approved")
