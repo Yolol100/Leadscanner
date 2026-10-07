@@ -53,6 +53,7 @@ Preview is the default and is mutation-free. Confirmed draft mode creates review
 - A confirmed still-current approved draft batch is not written unless canonical Google Sheets write access succeeds first.
 - Manual execution runs are never auto-cancelled by a newer manual run, avoiding an interruption between draft storage and registry closure.
 - Only the cold runtime dependencies are installed and pip caching is enabled.
+- The ChatGPT/Instantly control boundary is repository-native through immutable command files; no separate MCP server/runtime is part of the active dependency closure.
 
 ## Historical state
 
