@@ -7,6 +7,7 @@ from instantly_client import InstantlyError
 from instantly_control import (
     _activate,
     _campaign_leads,
+    _verify_email,
     _wait_background_job,
     _wait_interest_status,
     _write,
@@ -703,6 +704,75 @@ class InstantlyControlTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "sender_accounts_active"):
             _activate(ActivationClient(), "c1")
+
+    def test_email_verification_polls_pending_to_verified(self):
+        class VerificationClient:
+            def __init__(self):
+                self.gets = 0
+
+            def _request(self, method, path, **kwargs):
+                if method == "POST" and path == "/email-verification":
+                    self.assert_payload = kwargs["json"]
+                    return {"verification_status": "pending", "catch_all": "pending"}
+                if method == "GET" and path == "/email-verification/lead%40example.com":
+                    self.gets += 1
+                    if self.gets == 1:
+                        return {"verification_status": "pending", "catch_all": "pending"}
+                    return {"verification_status": "verified", "catch_all": False}
+                raise AssertionError((method, path, kwargs))
+
+        client = VerificationClient()
+        result = _verify_email(
+            client,
+            "lead@example.com",
+            max_polls=3,
+            sleep_fn=lambda _: None,
+        )
+        self.assertEqual(client.assert_payload, {"email": "lead@example.com"})
+        self.assertEqual(result["verification_status"], "verified")
+        self.assertFalse(result["catch_all"])
+
+    def test_activation_uses_direct_verification_when_lead_status_missing(self):
+        class ActivationClient:
+            def __init__(self, verification):
+                self.verification = verification
+                self.activated = False
+
+            def get_campaign(self, campaign_id):
+                return {
+                    "id": campaign_id,
+                    "status": 1 if self.activated else 0,
+                    "allow_risky_contacts": False,
+                    "email_list": ["sender@example.com"],
+                }
+
+            def list_leads(self, **kwargs):
+                return {
+                    "items": [{"id": "l1", "email": "lead@example.com"}],
+                    "next_starting_after": None,
+                }
+
+            def _request(self, method, path, **kwargs):
+                if method == "GET" and path.endswith("/sending-status"):
+                    raise InstantlyError("instantly_api_error status=400")
+                if method == "GET" and path == "/accounts/sender%40example.com":
+                    return {"status": 1}
+                if method == "GET" and path == "/email-verification/lead%40example.com":
+                    return self.verification
+                if method == "POST" and path.endswith("/activate"):
+                    self.activated = True
+                    return {"accepted": True}
+                raise AssertionError((method, path, kwargs))
+
+        good = ActivationClient({"verification_status": "verified", "catch_all": False})
+        result = _activate(good, "c1")
+        self.assertTrue(good.activated)
+        self.assertEqual(result["preflight_lead_count"], 1)
+
+        risky = ActivationClient({"verification_status": "verified", "catch_all": True})
+        with self.assertRaisesRegex(ValueError, "verified_leads_only"):
+            _activate(risky, "c1")
+        self.assertFalse(risky.activated)
 
     def test_activation_allows_verified_status_and_blocks_unknown_status(self):
         class ActivationClient:
