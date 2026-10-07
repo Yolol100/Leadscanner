@@ -194,6 +194,29 @@ class InstantlyControlTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "command_secret_material_forbidden"):
                 load_command(path)
 
+    def test_leadscanner_approval_token_is_allowed_in_command_args(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "stage-approved-001.json"
+            path.write_text(
+                json.dumps({
+                    "schema_version": "leadscanner-instantly-command/1.0",
+                    "command_id": "stage-approved-001",
+                    "action": "stage_approved_lead",
+                    "args": {
+                        "preview_run_id": 123,
+                        "approval_token": "growth-aaaaaaaaaaaaaaaaaaaa@1111111111111111",
+                        "campaign_id": "campaign-1",
+                    },
+                    "confirm": "EXECUTE stage_approved_lead campaign-1",
+                }),
+                encoding="utf-8",
+            )
+            loaded = load_command(path)
+            self.assertEqual(
+                loaded["args"]["approval_token"],
+                "growth-aaaaaaaaaaaaaaaaaaaa@1111111111111111",
+            )
+
     def test_result_writer_redacts_nested_credentials(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "result.json"
