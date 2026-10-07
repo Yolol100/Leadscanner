@@ -301,14 +301,21 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
     }
 
 
+def command_paths_from_lines(lines) -> list[Path]:
+    paths = []
+    for raw in lines:
+        path = str(raw or "").strip()
+        if path.startswith(COMMAND_PREFIX) and path.endswith(".json"):
+            paths.append(path)
+    return [Path(path) for path in dict.fromkeys(paths)]
+
+
 def command_paths_from_push_event(event: dict) -> list[Path]:
     paths = []
     for commit in event.get("commits") or []:
-        for raw in commit.get("added") or []:
-            path = str(raw or "")
-            if path.startswith(COMMAND_PREFIX) and path.endswith(".json"):
-                paths.append(path)
-    return [Path(path) for path in dict.fromkeys(paths)]
+        paths.extend(commit.get("added") or [])
+    paths.extend((event.get("head_commit") or {}).get("added") or [])
+    return command_paths_from_lines(paths)
 
 
 def _write(path: Path, payload: dict) -> None:
@@ -316,10 +323,8 @@ def _write(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
-def run_event(event_path: str | Path, output_dir: str | Path, config_path: str | Path) -> int:
-    event = json.loads(Path(event_path).read_text(encoding="utf-8"))
+def run_paths(paths: list[Path], output_dir: str | Path, config_path: str | Path) -> int:
     config = load_config(config_path)
-    paths = command_paths_from_push_event(event)
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     if not paths:
@@ -340,6 +345,16 @@ def run_event(event_path: str | Path, output_dir: str | Path, config_path: str |
     return 1 if failures else 0
 
 
+def run_event(event_path: str | Path, output_dir: str | Path, config_path: str | Path) -> int:
+    event = json.loads(Path(event_path).read_text(encoding="utf-8"))
+    return run_paths(command_paths_from_push_event(event), output_dir, config_path)
+
+
+def run_paths_file(paths_file: str | Path, output_dir: str | Path, config_path: str | Path) -> int:
+    paths = command_paths_from_lines(Path(paths_file).read_text(encoding="utf-8").splitlines())
+    return run_paths(paths, output_dir, config_path)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -347,6 +362,10 @@ def main() -> int:
     run.add_argument("--event", required=True)
     run.add_argument("--output-dir", required=True)
     run.add_argument("--config", default="config/instantly-control.json")
+    paths = sub.add_parser("run-paths")
+    paths.add_argument("--paths-file", required=True)
+    paths.add_argument("--output-dir", required=True)
+    paths.add_argument("--config", default="config/instantly-control.json")
     one = sub.add_parser("run-command")
     one.add_argument("--command", required=True)
     one.add_argument("--output", required=True)
@@ -354,6 +373,8 @@ def main() -> int:
     args = parser.parse_args()
     if args.cmd == "run-event":
         return run_event(args.event, args.output_dir, args.config)
+    if args.cmd == "run-paths":
+        return run_paths_file(args.paths_file, args.output_dir, args.config)
     result = execute_command(
         load_command(args.command),
         load_config(args.config),
