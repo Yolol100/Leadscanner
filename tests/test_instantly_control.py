@@ -355,6 +355,25 @@ class InstantlyControlTests(unittest.TestCase):
         self.assertEqual(result["result"]["completion_state"], "completed")
         self.assertEqual(result["result"]["readback"][0]["lt_interest_status"], 2)
 
+    def test_interest_readback_rejects_boolean_schema_drift(self):
+        class BoolInterestClient:
+            def list_leads(self, **kwargs):
+                return {
+                    "items": [{
+                        "email": "lead@example.com",
+                        "lt_interest_status": True,
+                    }]
+                }
+
+        result = _wait_interest_status(
+            BoolInterestClient(),
+            lead_email="lead@example.com",
+            interest_value=1,
+            max_polls=1,
+            sleep_fn=lambda _: None,
+        )
+        self.assertEqual(result["state"], "pending")
+
     def test_interest_readback_is_bounded_and_can_remain_pending(self):
         class PendingClient:
             def list_leads(self, **kwargs):
@@ -558,6 +577,34 @@ class InstantlyControlTests(unittest.TestCase):
         }
         with self.assertRaisesRegex(ValueError, "draft_or_paused_before_update"):
             execute_command(command, config(), ActiveCampaignClient())
+
+    def test_activation_rejects_boolean_sender_status(self):
+        class ActivationClient:
+            def get_campaign(self, campaign_id):
+                return {
+                    "id": campaign_id,
+                    "status": 0,
+                    "allow_risky_contacts": False,
+                    "email_list": ["sender@example.com"],
+                }
+
+            def list_leads(self, **kwargs):
+                return {
+                    "items": [{"email": "lead@example.com", "verification_status": 1}],
+                    "next_starting_after": None,
+                }
+
+            def _request(self, method, path, **kwargs):
+                if method == "GET" and path.endswith("/sending-status"):
+                    return {"summary": {"status": "campaign_draft"}}
+                if method == "GET" and path == "/accounts/sender%40example.com":
+                    return {"status": True}
+                if method == "POST" and path.endswith("/activate"):
+                    raise AssertionError("boolean sender status must not authorize activation")
+                raise AssertionError((method, path, kwargs))
+
+        with self.assertRaisesRegex(ValueError, "sender_accounts_active"):
+            _activate(ActivationClient(), "c1")
 
     def test_activation_allows_verified_status_and_blocks_unknown_status(self):
         class ActivationClient:
