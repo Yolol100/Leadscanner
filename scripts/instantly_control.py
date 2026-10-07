@@ -38,6 +38,8 @@ WRITE_ACTIONS = {
 SEND_ACTIONS = {"activate_campaign", "reply_email", "forward_email", "send_test_email"}
 DESTRUCTIVE_ACTIONS = {"delete_campaign", "delete_lead", "delete_blocklist_entry"}
 ALL_ACTIONS = READ_ACTIONS | WRITE_ACTIONS
+PUBLIC_SAFE_ACTIONS = {"list_campaigns", "campaign_sending_status", "campaign_analytics"}
+PRIVATE_ONLY_ACTIONS = ALL_ACTIONS - PUBLIC_SAFE_ACTIONS
 SENSITIVE_ACCOUNT_KEYS = ("password", "secret", "token", "credential", "imap", "smtp")
 
 
@@ -117,8 +119,16 @@ def expected_confirmation(action: str, args: dict) -> str:
     return f"EXECUTE {action}" + (f" {target}" if target else "")
 
 
+def validate_repository_visibility(action: str) -> None:
+    if action not in PRIVATE_ONLY_ACTIONS:
+        return
+    if os.getenv("GITHUB_REPOSITORY_PRIVATE", "").strip().casefold() != "true":
+        raise RuntimeError("private_repository_required_for_sensitive_instantly_control")
+
+
 def validate_write_gate(command: dict, config: dict, *, run_attempt: str) -> None:
     action = command["action"]
+    validate_repository_visibility(action)
     if action not in WRITE_ACTIONS:
         return
     if str(run_attempt or "1") != "1":
@@ -186,7 +196,25 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
     action, args = command["action"], command["args"]
 
     if action == "list_campaigns":
-        data = client.list_campaigns(limit=_limit(args), starting_after=_text(args.get("starting_after")) or None, status=args.get("status"))
+        page = client.list_campaigns(
+            limit=_limit(args),
+            starting_after=_text(args.get("starting_after")) or None,
+            status=args.get("status"),
+        ) or {}
+        data = {
+            "items": [
+                {
+                    "id": item.get("id"),
+                    "name": item.get("name"),
+                    "status": item.get("status"),
+                    "timestamp_created": item.get("timestamp_created"),
+                    "timestamp_updated": item.get("timestamp_updated"),
+                }
+                for item in (page.get("items") or [])
+                if isinstance(item, dict)
+            ],
+            "next_starting_after": page.get("next_starting_after"),
+        }
     elif action == "get_campaign":
         data = client.get_campaign(_text(args.get("campaign_id")))
     elif action == "campaign_sending_status":
