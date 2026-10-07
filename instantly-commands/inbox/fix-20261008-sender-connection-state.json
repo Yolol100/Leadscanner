@@ -1,0 +1,10 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "fix-20261008-sender-connection-state",
+  "action": "mark_account_fixed",
+  "args": {
+    "email": "info@andrewbaeten.nl"
+  },
+  "confirm": "EXECUTE mark_account_fixed info@andrewbaeten.nl",
+  "requested_by": "chatgpt"
+}
