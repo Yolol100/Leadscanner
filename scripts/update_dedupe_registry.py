@@ -167,9 +167,7 @@ def _api_values_url(spreadsheet_id: str, sheet_name: str) -> str:
 def read_live_values(session, spreadsheet_id: str, sheet_name: str) -> list[list[object]]:
     response = session.get(_api_values_url(spreadsheet_id, sheet_name), timeout=20)
     if response.status_code != 200:
-        raise RuntimeError(
-            f"registry_read_failed status={response.status_code} body={response.text[:300]}"
-        )
+        raise RuntimeError(f"registry_read_failed status={response.status_code}")
     payload = response.json()
     values = payload.get("values")
     if not isinstance(values, list):
@@ -190,9 +188,7 @@ def append_values(session, spreadsheet_id: str, sheet_name: str, rows: list[list
         timeout=20,
     )
     if response.status_code not in {200, 201}:
-        raise RuntimeError(
-            f"registry_append_failed status={response.status_code} body={response.text[:300]}"
-        )
+        raise RuntimeError(f"registry_append_failed status={response.status_code}")
 
 
 def check_registry_access(*, spreadsheet_id: str, sheet_name: str) -> dict:
@@ -212,9 +208,7 @@ def check_registry_access(*, spreadsheet_id: str, sheet_name: str) -> dict:
         timeout=20,
     )
     if response.status_code not in {200, 201}:
-        raise RuntimeError(
-            f"registry_write_preflight_failed status={response.status_code} body={response.text[:300]}"
-        )
+        raise RuntimeError(f"registry_write_preflight_failed status={response.status_code}")
     confirmed = read_live_values(session, spreadsheet_id, sheet_name)
     if not confirmed or normalize_row(confirmed[0]) != HEADERS:
         raise RuntimeError("registry_write_preflight_readback_mismatch")
