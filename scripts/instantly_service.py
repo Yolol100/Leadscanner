@@ -18,6 +18,7 @@ from update_dedupe_registry import (
     DEFAULT_SHEET_NAME,
     DEFAULT_SPREADSHEET_ID,
     HEADERS,
+    check_registry_access,
     update_registry,
 )
 
@@ -155,6 +156,21 @@ def stage_exact_approved_lead(
         registry_session=registry_session,
     )
     row = resolved["row"]
+    resolved_spreadsheet_id = (
+        spreadsheet_id
+        or os.getenv("LEAD_REGISTRY_SPREADSHEET_ID", "").strip()
+        or DEFAULT_SPREADSHEET_ID
+    )
+    resolved_sheet_name = (
+        sheet_name
+        or os.getenv("LEAD_REGISTRY_SHEET_NAME", "").strip()
+        or DEFAULT_SHEET_NAME
+    )
+    check_registry_access(
+        spreadsheet_id=resolved_spreadsheet_id,
+        sheet_name=resolved_sheet_name,
+    )
+
     client = instantly_client or InstantlyClient(instantly_api_key)
     created = client.add_approved_lead_to_campaign(
         approved_batch=resolved["approved_current"],
@@ -168,16 +184,6 @@ def stage_exact_approved_lead(
     observed = client.get_lead(instantly_id)
     _verify_instantly_readback(observed, row=row, campaign_id=campaign_id)
 
-    resolved_spreadsheet_id = (
-        spreadsheet_id
-        or os.getenv("LEAD_REGISTRY_SPREADSHEET_ID", "").strip()
-        or DEFAULT_SPREADSHEET_ID
-    )
-    resolved_sheet_name = (
-        sheet_name
-        or os.getenv("LEAD_REGISTRY_SHEET_NAME", "").strip()
-        or DEFAULT_SHEET_NAME
-    )
     registry_result = update_registry(
         _registry_readback_for_staged(row, campaign_id),
         spreadsheet_id=resolved_spreadsheet_id,
