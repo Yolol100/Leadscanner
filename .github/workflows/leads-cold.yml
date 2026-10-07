@@ -35,10 +35,16 @@ on:
       - 'scripts/cold_stages.py'
       - 'scripts/overture_discovery.py'
       - 'scripts/outreach_stages.py'
+      - 'scripts/review_draft_stages.py'
+      - 'scripts/myhost_draft.py'
+      - 'scripts/update_dedupe_registry.py'
       - 'scripts/url_safety.py'
       - 'tests/test_dedupe_preflight.py'
       - 'tests/test_cold_stages.py'
       - 'tests/test_outreach_stages.py'
+      - 'tests/test_review_draft_stages.py'
+      - 'tests/test_myhost_draft.py'
+      - 'tests/test_update_dedupe_registry.py'
       - 'tests/test_url_safety.py'
       - 'AGENTS.md'
       - 'README.md'
@@ -63,7 +69,7 @@ permissions:
 
 concurrency:
   group: leads-cold-${{ github.event_name == 'workflow_dispatch' && 'execution' || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 env:
   DEDUPE_REGISTRY_CSV_URL: https://docs.google.com/spreadsheets/d/1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI/export?format=csv&gid=1354777664
@@ -87,8 +93,8 @@ jobs:
           PYTHONPATH: scripts
         run: |
           set -euo pipefail
-          python3 -m compileall -q scripts/dedupe_preflight.py scripts/cold_stages.py scripts/outreach_stages.py scripts/overture_discovery.py scripts/url_safety.py
-          python3 -m unittest tests.test_dedupe_preflight tests.test_cold_stages tests.test_outreach_stages tests.test_url_safety -v
+          python3 -m compileall -q scripts/dedupe_preflight.py scripts/cold_stages.py scripts/outreach_stages.py scripts/review_draft_stages.py scripts/myhost_draft.py scripts/update_dedupe_registry.py scripts/overture_discovery.py scripts/url_safety.py
+          python3 -m unittest tests.test_dedupe_preflight tests.test_cold_stages tests.test_outreach_stages tests.test_review_draft_stages tests.test_myhost_draft tests.test_update_dedupe_registry tests.test_url_safety -v
 
   execute:
     if: github.event_name == 'workflow_dispatch'
@@ -265,6 +271,70 @@ jobs:
             --input results/value-actions.json \
             --output results/mail-review.json
 
+      - name: Phase 10 - Prepare strict review-draft batch
+        env:
+          PYTHONPATH: scripts
+        run: |
+          set -euo pipefail
+          python3 scripts/review_draft_stages.py prepare \
+            --input results/mail-review.json \
+            --output results/review-draft-batch.json
+
+      - name: Phase 10 - Preflight canonical registry write access
+        env:
+          PYTHONPATH: scripts
+          LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -euo pipefail
+          COUNT=$(python3 -c "import json; print(json.load(open('results/review-draft-batch.json'))['draft_candidate_count'])")
+          if [ "$COUNT" -eq 0 ]; then
+            echo "DEDUPE_REGISTRY_ACCESS=not_needed count=0"
+          else
+            python3 scripts/update_dedupe_registry.py \
+              --check-only \
+              --output results/registry-access.json
+          fi
+
+      - name: Phase 10 - Store mijn.host review drafts only
+        env:
+          PYTHONPATH: scripts
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME || 'Andrew Baeten' }}
+          OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
+          OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
+        run: |
+          set -euo pipefail
+          python3 scripts/myhost_draft.py \
+            --batch results/review-draft-batch.json \
+            --report results/myhost-drafts.json \
+            --reject-changed-existing | tee results/myhost-drafts.txt
+          grep -q '^MYHOST_DRAFT_SYNC=green ' results/myhost-drafts.txt
+          grep -q 'reject_changed_existing=true' results/myhost-drafts.txt
+          grep -q 'smtp_send=not_available' results/myhost-drafts.txt
+
+      - name: Phase 11 - Exact mailbox readback gate
+        env:
+          PYTHONPATH: scripts
+        run: |
+          set -euo pipefail
+          python3 scripts/review_draft_stages.py readback \
+            --batch results/review-draft-batch.json \
+            --report results/myhost-drafts.json \
+            --output results/review-draft-readback.json
+
+      - name: Phase 12 - Append canonical dedupe registry and read back
+        env:
+          PYTHONPATH: scripts
+          LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -euo pipefail
+          python3 scripts/update_dedupe_registry.py \
+            --readback results/review-draft-readback.json \
+            --output results/registry-update.json
+
       - name: Summarize phase handoffs
         run: |
           set -euo pipefail
@@ -278,6 +348,8 @@ jobs:
           reasons = json.loads(Path('results/outreach-reasons.json').read_text())
           values = json.loads(Path('results/value-actions.json').read_text())
           mail = json.loads(Path('results/mail-review.json').read_text())
+          drafts = json.loads(Path('results/review-draft-readback.json').read_text())
+          registry = json.loads(Path('results/registry-update.json').read_text())
           print(
               'COLD_PHASES=green '
               f"discovery={filtered['candidate_count']} "
@@ -287,13 +359,16 @@ jobs:
               f"outreach_reason_ready={reasons['ready_count']} "
               f"value_action_ready={values['ready_count']} "
               f"mail_ready={mail['ready_for_human_review_count']} "
-              'draft=false mailbox_mutation=false email_send=false'
+              f"drafts={drafts['draft_count']} "
+              f"registry_appended={registry['appended_count']} "
+              f"registry_existing={registry['already_present_count']} "
+              'automatic_send=false smtp_send=not_available'
           )
           PY
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: leads-cold-phases-4-9-${{ github.run_number }}
+          name: leads-cold-phases-4-12-${{ github.run_number }}
           path: |
             results/request.json
             results/discovery-raw.json
@@ -304,5 +379,10 @@ jobs:
             results/outreach-reasons.json
             results/value-actions.json
             results/mail-review.json
+            results/review-draft-batch.json
+            results/myhost-drafts.json
+            results/myhost-drafts.txt
+            results/review-draft-readback.json
+            results/registry-update.json
           if-no-files-found: error
           retention-days: 1
