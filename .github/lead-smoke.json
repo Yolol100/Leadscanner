@@ -1,0 +1,11 @@
+{
+  "execution_mode": "preview",
+  "confirm_review_drafts": false,
+  "approved_review_tokens": "",
+  "preview_run_id": "",
+  "region": "Rotterdam",
+  "keywords": "restaurant",
+  "target_candidates": 20,
+  "verify_limit": 12,
+  "radius_km": 5
+}
