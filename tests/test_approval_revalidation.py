@@ -83,6 +83,18 @@ class ApprovalRevalidationTests(unittest.TestCase):
         self.assertEqual(result["remaining_count"], 1)
         self.assertEqual(result["suppressed_after_preview"][0]["lead_id"], "growth-bbbbbbbbbbbbbbbbbbbb")
 
+    def test_zero_approved_count_with_rows_fails_closed(self):
+        batch = self.batch()
+        batch["approval"]["approved_count"] = 0
+        tmp, registry = self.registry([
+            ["Existing", "https://existing.nl", "existing.nl", "info@existing.nl", "concept", "concept", "growth-cccccccccccccccccccc", "", "", "TRUE"]
+        ])
+        try:
+            with self.assertRaisesRegex(ValueError, "approved_count_mismatch"):
+                revalidate_approved(batch, registry)
+        finally:
+            tmp.cleanup()
+
     def test_approval_count_mismatch_fails_closed(self):
         batch = self.batch()
         batch["approval"]["approved_count"] = 1
