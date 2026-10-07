@@ -19,6 +19,7 @@ from instantly_client import InstantlyClient
 from instantly_service import (
     DEFAULT_REGISTRY_URL,
     DEFAULT_REPOSITORY,
+    require_instantly_writes_enabled,
     stage_exact_approved_lead,
 )
 from instantly_webhook import apply_registry_event
@@ -127,12 +128,14 @@ def add_approved_lead_to_campaign(
 @server.tool(annotations=WRITE)
 def block_email(email: str) -> dict:
     """Add one exact email address to the Instantly block list."""
+    require_instantly_writes_enabled()
     return _client().block_email(email)
 
 
 @server.tool(annotations=WRITE)
 def block_domain(domain: str) -> dict:
     """Add one exact domain to the Instantly block list."""
+    require_instantly_writes_enabled()
     return _client().block_domain(domain)
 
 
