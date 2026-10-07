@@ -1,14 +1,15 @@
 import unittest
 
-from instantly_client import FORBIDDEN_TOOL_NAMES, InstantlyClient
+from instantly_client import FORBIDDEN_TOOL_NAMES, InstantlyClient, InstantlyError
 
 
 class FakeResponse:
-    def __init__(self, status_code=200, payload=None):
+    def __init__(self, status_code=200, payload=None, headers=None):
         self.status_code = status_code
         self._payload = payload or {}
         self.text = str(self._payload)
         self.content = b"{}" if status_code != 204 else b""
+        self.headers = headers or {}
 
     def json(self):
         return self._payload
@@ -53,6 +54,43 @@ class InstantlyClientTests(unittest.TestCase):
         self.assertEqual(method, "GET")
         self.assertEqual(url, "https://api.instantly.ai/api/v2/campaigns")
         self.assertEqual(kwargs["headers"]["Authorization"], "Bearer secret")
+
+    def test_safe_read_retries_once_on_429_without_leaking_body(self):
+        sleeps = []
+        session = FakeSession([
+            FakeResponse(status_code=429, payload={"message": "sensitive detail"}, headers={"Retry-After": "0"}),
+            FakeResponse(payload={"items": []}),
+        ])
+        client = InstantlyClient("secret", session=session, sleep_fn=sleeps.append)
+        result = client.list_campaigns(limit=10)
+        self.assertEqual(result, {"items": []})
+        self.assertEqual(len(session.calls), 2)
+        self.assertEqual(sleeps, [0.0])
+
+    def test_write_does_not_retry_on_server_error(self):
+        session = FakeSession([
+            FakeResponse(payload={"id": "c1", "status": 2}),
+            FakeResponse(status_code=503, payload={"message": "do not repeat this write"}),
+        ])
+        client = InstantlyClient("secret", session=session, sleep_fn=lambda _: None)
+        with self.assertRaisesRegex(InstantlyError, "status=503"):
+            client.add_approved_lead_to_campaign(
+                approved_batch=approved_batch(),
+                lead_id="growth-aaaaaaaaaaaaaaaaaaaa",
+                campaign_id="c1",
+                registry_rows=[],
+            )
+        self.assertEqual(len(session.calls), 2)
+
+    def test_api_error_does_not_include_response_body(self):
+        session = FakeSession([
+            FakeResponse(status_code=400, payload={"message": "private lead content"}),
+        ])
+        client = InstantlyClient("secret", session=session, sleep_fn=lambda _: None)
+        with self.assertRaises(InstantlyError) as caught:
+            client.list_campaigns(limit=10)
+        self.assertIn("status=400", str(caught.exception))
+        self.assertNotIn("private lead content", str(caught.exception))
 
     def test_add_requires_draft_or_paused_campaign(self):
         session = FakeSession([FakeResponse(payload={"id": "c1", "status": 1})])
