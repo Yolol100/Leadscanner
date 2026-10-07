@@ -11,7 +11,7 @@ import tempfile
 import unicodedata
 from pathlib import Path
 from typing import Iterable
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import requests
 
@@ -460,25 +460,59 @@ def probe_website(
             "http_status": None,
             "detail": "non_public_url",
         }
+
+    current = url
+    status_code = None
+    final_url = url
     try:
-        response = session.get(
-            url,
-            allow_redirects=True,
-            timeout=timeout,
-            stream=True,
-            headers={"User-Agent": "WebactueelLeadDiscovery/1.0 (+https://andrewbaeten.nl)"},
-        )
-        try:
-            status_code = int(response.status_code)
-            final_url = str(response.url or "").strip()
-        finally:
-            response.close()
-        if not is_public_http_url(final_url):
+        for _ in range(5):
+            if not is_public_http_url(current):
+                return {
+                    "status": "blocked_non_public_url",
+                    "final_url": None,
+                    "http_status": status_code,
+                    "detail": "redirected_to_non_public_url",
+                }
+            response = session.get(
+                current,
+                allow_redirects=False,
+                timeout=timeout,
+                stream=True,
+                headers={"User-Agent": "WebactueelLeadDiscovery/1.0 (+https://andrewbaeten.nl)"},
+            )
+            try:
+                status_code = int(response.status_code)
+                final_url = str(response.url or current).strip()
+                if not is_public_http_url(final_url):
+                    return {
+                        "status": "blocked_non_public_url",
+                        "final_url": None,
+                        "http_status": status_code,
+                        "detail": "redirected_to_non_public_url",
+                    }
+                if status_code in {301, 302, 303, 307, 308}:
+                    location = str((getattr(response, "headers", {}) or {}).get("location") or "").strip()
+                    if not location:
+                        break
+                    next_url = urljoin(final_url, location)
+                    if not is_public_http_url(next_url):
+                        return {
+                            "status": "blocked_non_public_url",
+                            "final_url": None,
+                            "http_status": status_code,
+                            "detail": "redirected_to_non_public_url",
+                        }
+                    current = next_url
+                    continue
+                break
+            finally:
+                response.close()
+        else:
             return {
-                "status": "blocked_non_public_url",
+                "status": "unreachable",
                 "final_url": None,
                 "http_status": status_code,
-                "detail": "redirected_to_non_public_url",
+                "detail": "too_many_redirects",
             }
     except requests.RequestException as exc:
         return {
@@ -488,7 +522,7 @@ def probe_website(
             "detail": type(exc).__name__,
         }
 
-    if 200 <= status_code < 400 and _valid_http_url(final_url):
+    if status_code is not None and 200 <= status_code < 400 and _valid_http_url(final_url):
         return {
             "status": "reachable_needs_leads_identity_verification",
             "final_url": final_url,
