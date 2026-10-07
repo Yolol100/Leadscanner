@@ -20,6 +20,7 @@ from urllib.parse import unquote, urljoin, urlparse
 
 import requests
 
+from dedupe_preflight import domains_match
 from url_safety import is_public_http_url
 
 MAX_DISCOVERY = 5000
@@ -151,7 +152,7 @@ def filter_discovery(payload: dict) -> dict:
         if reason:
             excluded.append({"index": index, "reason": reason, "candidate": raw})
             continue
-        if domain in seen_domains:
+        if any(domains_match(domain, seen) for seen in seen_domains):
             excluded.append({"index": index, "reason": "duplicate_domain_in_discovery", "candidate": raw})
             continue
         seen_domains.add(domain)
