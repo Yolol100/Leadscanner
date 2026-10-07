@@ -33,7 +33,7 @@ WRITE_ACTIONS = {
     "create_campaign_draft", "update_campaign", "pause_campaign", "activate_campaign",
     "delete_campaign", "update_lead", "delete_lead", "update_interest", "reply_email",
     "forward_email", "send_test_email", "mark_thread_read", "update_account",
-    "pause_account", "resume_account", "enable_warmup", "disable_warmup",
+    "mark_account_fixed", "pause_account", "resume_account", "enable_warmup", "disable_warmup",
     "block_email", "block_domain", "delete_blocklist_entry", "stage_approved_lead",
 }
 SEND_ACTIONS = {"activate_campaign", "reply_email", "forward_email", "send_test_email"}
@@ -131,7 +131,7 @@ def _confirmation_target(action: str, args: dict) -> str:
         "update_campaign": "campaign_id", "pause_campaign": "campaign_id",
         "activate_campaign": "campaign_id", "delete_campaign": "campaign_id",
         "update_lead": "lead_id", "delete_lead": "lead_id", "mark_thread_read": "thread_id",
-        "update_account": "email", "pause_account": "email", "resume_account": "email",
+        "update_account": "email", "mark_account_fixed": "email", "pause_account": "email", "resume_account": "email",
         "block_email": "email", "block_domain": "domain", "delete_blocklist_entry": "entry_id",
         "stage_approved_lead": "campaign_id",
     }
@@ -532,6 +532,13 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
             raise ValueError("account_secret_material_must_not_be_committed_to_command_file")
         email = _text(args.get("email"))
         data = {"operation": _api(client, "PATCH", f"/accounts/{_id(email, 'email')}", payload=payload), "readback": _api(client, "GET", f"/accounts/{_id(email, 'email')}")}
+    elif action == "mark_account_fixed":
+        email = _text(args.get("email"))
+        operation = _api(client, "POST", f"/accounts/{_id(email, 'email')}/mark-fixed", payload={})
+        readback = _api(client, "GET", f"/accounts/{_id(email, 'email')}") or {}
+        if type(readback.get("status")) is not int or readback.get("status") != 1:
+            raise RuntimeError("account_mark_fixed_readback_not_active")
+        data = {"operation": operation, "readback": readback}
     elif action in {"pause_account", "resume_account"}:
         email = _text(args.get("email"))
         verb = "pause" if action == "pause_account" else "resume"
