@@ -53,6 +53,40 @@ class RegistryUpdateTests(unittest.TestCase):
         self.assertEqual(plan["append_count"], 0)
         self.assertEqual(plan["existing_count"], 1)
 
+    def test_company_identity_matches_accent_tolerant_preflight_rules(self):
+        existing = self.row(
+            company="Café Fietsen B.V.",
+            domain="ander.nl",
+            email="other@ander.nl",
+            lead_id="growth-bbbbbbbbbbbbbbbbbbbb",
+        )
+        expected = self.row(
+            company="Cafe Fietsen BV",
+            domain="nieuw.nl",
+            email="new@nieuw.nl",
+            lead_id="growth-cccccccccccccccccccc",
+        )
+        plan = plan_registry_update(self.readback([expected]), [HEADERS, existing])
+        self.assertEqual(plan["append_count"], 0)
+        self.assertEqual(plan["existing_count"], 1)
+
+    def test_subdomain_identity_matches_preflight_domain_rules(self):
+        existing = self.row(
+            company="Ander Label",
+            domain="shop.acmefietsen.nl",
+            email="other@shop.acmefietsen.nl",
+            lead_id="growth-bbbbbbbbbbbbbbbbbbbb",
+        )
+        expected = self.row(
+            company="Nieuw Label",
+            domain="acmefietsen.nl",
+            email="new@acmefietsen.nl",
+            lead_id="growth-cccccccccccccccccccc",
+        )
+        plan = plan_registry_update(self.readback([expected]), [HEADERS, existing])
+        self.assertEqual(plan["append_count"], 0)
+        self.assertEqual(plan["existing_count"], 1)
+
     def test_registry_requires_true_suppression_flag(self):
         expected = self.row()
         expected[9] = "FALSE"
