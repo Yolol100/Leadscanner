@@ -77,7 +77,7 @@ jobs:
           python-version: '3.12'
           cache: pip
           cache-dependency-path: requirements-cold.txt
-      - run: python3 -m pip install --disable-pip-version-check -r requirements-cold.txt
+      - run: python3 -m pip install --disable-pip-version-check 'requests>=2,<3'
       - name: Run focused active-path tests
         env:
           PYTHONPATH: scripts
