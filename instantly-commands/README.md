@@ -64,6 +64,19 @@ Explicit writes:
 
 There is deliberately **no generic HTTP method/path action**.
 
+## Repository visibility
+
+This repository may be public. While it is public, the executor exposes only a
+small non-sensitive summary surface (`list_campaigns`,
+`campaign_sending_status`, `campaign_analytics`). Lead/email/account reads
+and **all writes** fail closed with
+`private_repository_required_for_sensitive_instantly_control`.
+
+After the repository is made private, the same workflow automatically unlocks
+the allowlisted sensitive/write actions; no code change or extra service is
+needed. This prevents lead data, reply content, account details, or write
+payloads from being committed to or returned through a public repository.
+
 ## Safety boundaries
 
 - Leadscanner sourcing and prospect eligibility still use the canonical live
