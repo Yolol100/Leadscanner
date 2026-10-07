@@ -75,6 +75,36 @@ class InstantlyWebhookTests(unittest.TestCase):
         )
         self.assertEqual(second["after"][4], "closed")
 
+    def test_terminal_suppression_states_survive_later_nonterminal_events(self):
+        cases = {
+            "email_bounced": "bounced",
+            "lead_unsubscribed": "unsubscribed",
+            "lead_closed": "closed",
+            "lead_lost": "lost",
+            "lead_not_interested": "not_interested",
+            "lead_wrong_person": "wrong_person",
+        }
+        for event_type, expected_status in cases.items():
+            with self.subTest(event_type=event_type):
+                first = plan_registry_event_update(
+                    {
+                        "event_type": event_type,
+                        "lead_email": "info@acme.nl",
+                        "timestamp": "2026-10-07T10:00:00Z",
+                    },
+                    [HEADERS, row()],
+                )
+                second = plan_registry_event_update(
+                    {
+                        "event_type": "campaign_completed",
+                        "lead_email": "info@acme.nl",
+                        "timestamp": "2026-10-07T11:00:00Z",
+                    },
+                    [HEADERS, first["after"]],
+                )
+                self.assertEqual(first["after"][4], expected_status)
+                self.assertEqual(second["after"][4], expected_status)
+
     def test_interest_status_supported(self):
         event = normalize_event({
             "event_type": "lead_interested",
