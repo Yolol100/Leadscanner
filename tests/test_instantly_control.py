@@ -5,6 +5,7 @@ from pathlib import Path
 
 from instantly_control import (
     _activate,
+    _campaign_leads,
     _wait_background_job,
     _wait_interest_status,
     _write,
@@ -418,6 +419,34 @@ class InstantlyControlTests(unittest.TestCase):
         }
         with self.assertRaisesRegex(ValueError, "test_body_required"):
             execute_command(test_send, config(), NoCall())
+
+    def test_activation_lead_scan_rejects_repeated_cursor(self):
+        class RepeatingClient:
+            def __init__(self):
+                self.calls = 0
+
+            def list_leads(self, **kwargs):
+                self.calls += 1
+                if self.calls > 2:
+                    raise AssertionError("cursor loop was not detected")
+                return {
+                    "items": [{"id": f"l{self.calls}", "verification_status": 1}],
+                    "next_starting_after": "cursor-repeat",
+                }
+
+        with self.assertRaisesRegex(RuntimeError, "cursor_loop"):
+            _campaign_leads(RepeatingClient(), "c1")
+
+    def test_activation_lead_scan_rejects_non_list_items(self):
+        class BadShapeClient:
+            def list_leads(self, **kwargs):
+                return {
+                    "items": {"id": "not-a-list"},
+                    "next_starting_after": None,
+                }
+
+        with self.assertRaisesRegex(RuntimeError, "items_must_be_list"):
+            _campaign_leads(BadShapeClient(), "c1")
 
     def test_activation_blocks_all_accounts_unhealthy_reason(self):
         class ActivationClient:
