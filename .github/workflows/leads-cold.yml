@@ -61,6 +61,7 @@ on:
       - 'config/instantly-control.json'
       - 'instantly-commands/README.md'
       - 'instantly-commands/inbox/*.json'
+      - 'single-draft-scenario.json'
       - 'scripts/dedupe_preflight.py'
       - 'scripts/cold_stages.py'
       - 'scripts/overture_discovery.py'
@@ -838,5 +839,154 @@ jobs:
         with:
           name: instantly-sync-${{ github.run_id }}
           path: results/instantly-sync.json
+          if-no-files-found: warn
+          retention-days: 1
+
+  single_draft_scenario:
+    if: ${{ github.event_name == 'push' && github.event.head_commit.message == 'Run single-lead draft scenario' }}
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    concurrency:
+      group: leadscanner-instantly-registry
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Install single-draft runtime
+        run: python3 -m pip install --disable-pip-version-check 'requests>=2,<3' 'google-auth>=2,<3'
+      - name: Load one approved scenario
+        run: |
+          set -euo pipefail
+          test -s single-draft-scenario.json
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import json
+          data=json.load(open("single-draft-scenario.json", encoding="utf-8"))
+          run_id=int(data["preview_run_id"])
+          token=str(data["approval_token"]).strip()
+          if run_id <= 0 or not token:
+              raise SystemExit("invalid_single_draft_scenario")
+          print(f"PREVIEW_RUN_ID={run_id}")
+          print(f"APPROVAL_TOKEN={token}")
+          PY
+      - name: Resume sealed preview
+        env:
+          PYTHONPATH: scripts
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 scripts/preview_snapshot.py resume             --run-id "$PREVIEW_RUN_ID"             --output-dir results
+      - name: Select exactly one approved lead
+        env:
+          PYTHONPATH: scripts
+          INPUT_APPROVED_REVIEW_TOKENS: ${{ env.APPROVAL_TOKEN }}
+        run: |
+          set -euo pipefail
+          python3 scripts/review_selection.py select             --batch results/review-draft-batch.json             --approved-tokens-env INPUT_APPROVED_REVIEW_TOKENS             --output results/approved-review-draft-batch.json
+          python3 - <<'PY'
+          import json
+          p=json.load(open("results/approved-review-draft-batch.json"))
+          assert p["approval"]["approved_count"] == 1
+          assert len(p["rows"]) == 1
+          assert p["approval"]["automatic_send"] is False
+          PY
+      - name: Preflight canonical registry write access
+        env:
+          PYTHONPATH: scripts
+          LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON || secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -euo pipefail
+          python3 scripts/update_dedupe_registry.py             --check-only             --output results/registry-access.json
+      - name: Refresh live dedupe registry
+        env:
+          PYTHONPATH: scripts
+        run: |
+          set -euo pipefail
+          curl --fail --location --silent --show-error             --retry 2 --retry-all-errors             --connect-timeout 10 --max-time 30             "$DEDUPE_REGISTRY_CSV_URL"             --output results/dedupe-registry-current.csv
+          test -s results/dedupe-registry-current.csv
+          printf '[]\n' > results/empty-current-candidates.json
+          python3 scripts/dedupe_preflight.py             --registry-csv results/dedupe-registry-current.csv             --candidates-json results/empty-current-candidates.json             --output results/registry-current-check.json
+      - name: Revalidate the one approved lead
+        env:
+          PYTHONPATH: scripts
+        run: |
+          set -euo pipefail
+          python3 scripts/approval_revalidation.py             --batch results/approved-review-draft-batch.json             --registry-csv results/dedupe-registry-current.csv             --output results/approved-current-batch.json
+          python3 - <<'PY'
+          import json
+          p=json.load(open("results/approved-current-batch.json"))
+          if p.get("remaining_count") != 1:
+              raise SystemExit("single_draft_lead_suppressed_by_live_registry")
+          PY
+      - name: Store exactly one review draft
+        env:
+          PYTHONPATH: scripts
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME || 'Andrew Baeten' }}
+          OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
+          OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
+        run: |
+          set -euo pipefail
+          python3 scripts/myhost_draft.py             --batch results/approved-current-batch.json             --report results/myhost-drafts.json             --reject-changed-existing | tee results/myhost-drafts.txt
+          grep -q '^MYHOST_DRAFT_SYNC=green ' results/myhost-drafts.txt
+          grep -q 'smtp_send=not_available' results/myhost-drafts.txt
+      - name: Exact mailbox readback
+        env:
+          PYTHONPATH: scripts
+        run: |
+          set -euo pipefail
+          python3 scripts/review_draft_stages.py readback             --batch results/approved-current-batch.json             --report results/myhost-drafts.json             --output results/review-draft-readback.json
+      - name: Close canonical registry
+        env:
+          PYTHONPATH: scripts
+          LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON || secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -euo pipefail
+          python3 scripts/update_dedupe_registry.py             --readback results/review-draft-readback.json             --output results/registry-update.json
+      - name: Build safe scenario result
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          batch=json.load(open("results/approved-current-batch.json"))
+          draft=json.load(open("results/myhost-drafts.json"))
+          registry=json.load(open("results/registry-update.json"))
+          row=batch["rows"][0]
+          result={
+              "status":"green",
+              "lead_id":row.get("lead_id"),
+              "company":row.get("company"),
+              "email":row.get("email"),
+              "created_count":draft.get("created_count"),
+              "existing_count":draft.get("existing_count"),
+              "replaced_count":draft.get("replaced_count"),
+              "registry_appended":registry.get("appended_count"),
+              "registry_already_present":registry.get("already_present_count"),
+              "exact_readback":registry.get("exact_readback"),
+              "automatic_send":False,
+              "smtp_send":"not_available"
+          }
+          open("results/single-draft-result.json","w",encoding="utf-8").write(json.dumps(result,indent=2,ensure_ascii=False)+"\n")
+          print(json.dumps(result,ensure_ascii=False))
+          PY
+      - name: Upload single-draft evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: single-draft-scenario-${{ github.run_id }}
+          path: |
+            results/single-draft-result.json
+            results/myhost-drafts.json
+            results/review-draft-readback.json
+            results/registry-update.json
           if-no-files-found: warn
           retention-days: 1
