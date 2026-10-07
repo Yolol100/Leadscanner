@@ -1,0 +1,10 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "audit-20261008-draft-sending-status",
+  "action": "campaign_sending_status",
+  "args": {
+    "campaign_id": "827b1b45-6a7e-45ba-88de-d89db2a47d6a",
+    "with_ai_summary": true
+  },
+  "requested_by": "chatgpt"
+}

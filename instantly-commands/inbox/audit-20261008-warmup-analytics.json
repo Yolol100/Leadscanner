@@ -1,0 +1,11 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "audit-20261008-warmup-analytics",
+  "action": "warmup_analytics",
+  "args": {
+    "emails": [
+      "info@andrewbaeten.nl"
+    ]
+  },
+  "requested_by": "chatgpt"
+}

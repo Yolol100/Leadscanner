@@ -1,0 +1,13 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "audit-20261008-account-daily",
+  "action": "daily_account_analytics",
+  "args": {
+    "emails": [
+      "info@andrewbaeten.nl"
+    ],
+    "start_date": "2026-09-24",
+    "end_date": "2026-10-08"
+  },
+  "requested_by": "chatgpt"
+}
