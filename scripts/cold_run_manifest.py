@@ -71,10 +71,20 @@ def build_manifest(
         if draft_count:
             if draft_readback.get("status") != "green":
                 raise ValueError("draft_mode_requires_green_mailbox_readback")
+            mailbox_count = int(draft_readback.get("created_count") or 0) + int(
+                draft_readback.get("existing_count") or 0
+            )
+            if mailbox_count != draft_count:
+                raise ValueError("draft_mode_mailbox_count_mismatch")
             if registry_update.get("status") != "green":
                 raise ValueError("draft_mode_requires_green_registry_update")
             if not registry_update.get("exact_readback"):
                 raise ValueError("draft_mode_requires_exact_registry_readback")
+            registry_count = int(registry_update.get("appended_count") or 0) + int(
+                registry_update.get("already_present_count") or 0
+            )
+            if registry_count != draft_count:
+                raise ValueError("draft_mode_registry_count_mismatch")
         closure = {
             "status": "closed",
             "mailbox_mutation": bool(draft_count),
