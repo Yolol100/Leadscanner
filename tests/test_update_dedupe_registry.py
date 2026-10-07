@@ -88,6 +88,13 @@ class RegistryUpdateTests(unittest.TestCase):
         self.assertEqual(plan["append_count"], 0)
         self.assertEqual(plan["existing_count"], 1)
 
+    def test_existing_identity_without_suppression_fails_closed(self):
+        existing = self.row()
+        existing[9] = "FALSE"
+        expected = self.row()
+        with self.assertRaisesRegex(ValueError, "identity_exists_without_suppression"):
+            plan_registry_update(self.readback([expected]), [HEADERS, existing])
+
     def test_registry_requires_true_suppression_flag(self):
         expected = self.row()
         expected[9] = "FALSE"
