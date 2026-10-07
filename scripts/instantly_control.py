@@ -100,7 +100,7 @@ def load_command(path: str | Path) -> dict:
     action = _text(raw.get("action")).casefold()
     if action not in ALL_ACTIONS:
         raise ValueError("unsupported_instantly_action")
-    args = raw.get("args") or {}
+    args = raw["args"] if "args" in raw else {}
     if not isinstance(args, dict):
         raise ValueError("command_args_must_be_object")
     if _contains_sensitive_key(args):
