@@ -236,6 +236,7 @@ jobs:
             tests.test_instantly_control \
             tests.test_instantly_sync \
             tests.test_instantly_audit -v
+          python3 scripts/instantly_audit.py
 
   execute:
     if: github.event_name == 'workflow_dispatch'
