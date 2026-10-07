@@ -207,6 +207,29 @@ def _redact_sensitive(value):
     return value
 
 
+def _wait_background_job(
+    client: InstantlyClient,
+    operation: dict,
+    *,
+    max_polls: int = 15,
+    sleep_fn=time.sleep,
+) -> dict:
+    job_id = _text((operation or {}).get("id") or (operation or {}).get("job_id"))
+    if not job_id:
+        raise RuntimeError("instantly_background_job_missing_id")
+    last = {}
+    for index in range(max(int(max_polls), 1)):
+        last = _api(client, "GET", f"/background-jobs/{_id(job_id, 'job_id')}") or {}
+        status = _text(last.get("status")).casefold()
+        if status in {"completed", "success"}:
+            return last
+        if status in {"failed", "error"}:
+            raise RuntimeError(f"instantly_background_job_failed:{status}")
+        if index + 1 < max_polls:
+            sleep_fn(1.0)
+    raise RuntimeError("instantly_background_job_timeout")
+
+
 def _campaign_leads(client: InstantlyClient, campaign_id: str, max_leads: int = 2000) -> list[dict]:
     rows, cursor = [], None
     while len(rows) < max_leads:
@@ -361,7 +384,19 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
         data = {"operation": operation, "readback": readback}
     elif action in {"enable_warmup", "disable_warmup"}:
         verb = "enable" if action == "enable_warmup" else "disable"
-        data = _api(client, "POST", f"/accounts/warmup/{verb}", payload={"emails": list(args.get("emails") or [])})
+        emails = sorted({_text(email).casefold() for email in (args.get("emails") or []) if _text(email)})
+        if not emails:
+            raise ValueError("warmup_accounts_required")
+        operation = _api(client, "POST", f"/accounts/warmup/{verb}", payload={"emails": emails})
+        job = _wait_background_job(client, operation or {})
+        expected_warmup = 1 if action == "enable_warmup" else 0
+        readback = []
+        for email in emails:
+            observed = _api(client, "GET", f"/accounts/{_id(email, 'email')}") or {}
+            if int(observed.get("warmup_status")) != expected_warmup:
+                raise RuntimeError(f"warmup_{verb}_readback_mismatch")
+            readback.append(observed)
+        data = {"operation": operation, "background_job": job, "readback": readback}
     elif action == "block_email":
         data = client.block_email(_text(args.get("email")))
     elif action == "block_domain":
