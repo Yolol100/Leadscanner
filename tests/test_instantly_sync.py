@@ -187,7 +187,7 @@ class InstantlySyncTests(unittest.TestCase):
                 "next_starting_after": "cursor-still-present",
             }
         ])
-        with self.assertRaisesRegex(RuntimeError, "empty_page_with_cursor"):
+        with self.assertRaisesRegex(RuntimeError, "lead_page_empty_with_cursor"):
             fetch_all_leads(client, max_leads=200)
 
     def test_pagination_rejects_non_object_item(self):
