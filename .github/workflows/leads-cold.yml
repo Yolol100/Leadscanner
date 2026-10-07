@@ -160,8 +160,8 @@ permissions:
   actions: read
 
 concurrency:
-  group: leads-cold-${{ github.event_name }}-${{ github.event_name == 'workflow_dispatch' && inputs.execution_mode || github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+  group: leads-cold-${{ github.event_name }}-${{ github.event_name == 'workflow_dispatch' && inputs.execution_mode || github.sha }}
+  cancel-in-progress: false
 
 env:
   DEDUPE_REGISTRY_CSV_URL: https://docs.google.com/spreadsheets/d/1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI/export?format=csv&gid=1354777664
@@ -695,6 +695,9 @@ jobs:
     needs: test
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    concurrency:
+      group: leadscanner-instantly-registry
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -705,6 +708,20 @@ jobs:
           python-version: '3.12'
       - name: Install Instantly control runtime
         run: python3 -m pip install --disable-pip-version-check 'requests>=2,<3' 'google-auth>=2,<3'
+      - name: Reject edits or deletes of immutable Instantly commands
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            exit 0
+          fi
+          CHANGED="$(git diff --diff-filter=MD --name-only "$BEFORE_SHA" "$AFTER_SHA" -- 'instantly-commands/inbox/*.json')"
+          if [ -n "$CHANGED" ]; then
+            printf 'immutable_instantly_command_modified_or_deleted\n%s\n' "$CHANGED" >&2
+            exit 1
+          fi
       - name: Detect newly-added immutable Instantly commands
         env:
           BEFORE_SHA: ${{ github.event.before }}
@@ -747,6 +764,9 @@ jobs:
     if: github.event_name == 'schedule'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    concurrency:
+      group: leadscanner-instantly-registry
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
