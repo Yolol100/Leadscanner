@@ -153,6 +153,33 @@ class InstantlySyncTests(unittest.TestCase):
                 }
             ])
 
+    def test_pagination_rejects_repeated_cursor(self):
+        class RepeatingClient:
+            def __init__(self):
+                self.calls = 0
+
+            def list_leads(self, **kwargs):
+                self.calls += 1
+                if self.calls > 2:
+                    raise AssertionError("cursor loop was not detected")
+                return {
+                    "items": [{"id": f"l{self.calls}"}],
+                    "next_starting_after": "cursor-repeat",
+                }
+
+        with self.assertRaisesRegex(RuntimeError, "cursor_loop"):
+            fetch_all_leads(RepeatingClient(), max_leads=200)
+
+    def test_pagination_rejects_non_list_items(self):
+        client = FakeClient([
+            {
+                "items": {"id": "not-a-list"},
+                "next_starting_after": None,
+            }
+        ])
+        with self.assertRaisesRegex(RuntimeError, "items_must_be_list"):
+            fetch_all_leads(client, max_leads=200)
+
     def test_pagination_uses_next_starting_after(self):
         client = FakeClient(
             [
