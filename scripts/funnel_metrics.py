@@ -28,6 +28,7 @@ def build_funnel(
     verified: dict,
     research: dict,
     reasons: dict,
+    values: dict,
     mail: dict,
 ) -> dict:
     filter_excluded = filtered.get("excluded") or []
@@ -35,6 +36,7 @@ def build_funnel(
     verified_candidates = verified.get("candidates") or []
     research_candidates = research.get("candidates") or []
     reason_candidates = reasons.get("candidates") or []
+    value_candidates = values.get("candidates") or []
     mail_candidates = mail.get("candidates") or []
 
     dedupe_matches = []
@@ -62,8 +64,16 @@ def build_funnel(
         for item in reason_candidates
         if item.get("outreach_status") == "ready" and item.get("signal_type")
     ]
+    value_holds = [
+        item.get("value_action_hold_reason") or "unknown"
+        for item in value_candidates
+        if item.get("outreach_status") == "ready"
+        and item.get("value_action_status") != "proposed"
+    ]
     mail_holds = []
     for item in mail_candidates:
+        if item.get("value_action_status") != "proposed":
+            continue
         if item.get("mail_status") == "ready_for_human_review":
             continue
         reasons_list = item.get("copy_validation_reasons") or ["unknown"]
@@ -90,6 +100,7 @@ def build_funnel(
             "verification": _count(verification_holds),
             "research": _count(research_holds),
             "outreach": _count(outreach_holds),
+            "value_action": _count(value_holds),
             "mail": _count(mail_holds),
         },
         "ready_signal_types": _count(signal_types),
@@ -103,7 +114,7 @@ def build_funnel(
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    for name in ("raw", "filtered", "dedupe", "verified", "research", "reasons", "mail"):
+    for name in ("raw", "filtered", "dedupe", "verified", "research", "reasons", "values", "mail"):
         parser.add_argument(f"--{name}", required=True)
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
@@ -115,6 +126,7 @@ def main() -> int:
         verified=_load(args.verified),
         research=_load(args.research),
         reasons=_load(args.reasons),
+        values=_load(args.values),
         mail=_load(args.mail),
     )
     out = Path(args.output)
