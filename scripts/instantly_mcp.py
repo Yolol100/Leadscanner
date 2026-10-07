@@ -119,7 +119,7 @@ def add_approved_lead_to_campaign(
         approval_token=approval_token,
         campaign_id=campaign_id,
         instantly_api_key=_env("INSTANTLY_API_KEY"),
-        github_token=_env("GITHUB_TOKEN"),
+        github_token=_env("LEADSCANNER_GITHUB_TOKEN"),
         repository=os.getenv("GITHUB_REPOSITORY", DEFAULT_REPOSITORY).strip() or DEFAULT_REPOSITORY,
         registry_url=os.getenv("DEDUPE_REGISTRY_CSV_URL", DEFAULT_REGISTRY_URL).strip() or DEFAULT_REGISTRY_URL,
     )
