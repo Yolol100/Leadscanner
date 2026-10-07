@@ -48,6 +48,27 @@ class InstantlyWebhookTests(unittest.TestCase):
         })
         self.assertEqual(event["kind"], "interested")
 
+    def test_meeting_booked_event_is_supported(self):
+        event = normalize_event({
+            "event_type": "lead_meeting_booked",
+            "lead_email": "info@acme.nl",
+            "timestamp": "t",
+        })
+        self.assertEqual(event["kind"], "meeting_booked")
+
+    def test_poll_source_marker_is_recorded_instead_of_webhook_marker(self):
+        plan = plan_registry_event_update(
+            {
+                "event_type": "reply_received",
+                "lead_email": "info@acme.nl",
+                "timestamp": "2026-10-07T13:00:00Z",
+            },
+            [HEADERS, row()],
+            source_marker="instantly:poll",
+        )
+        self.assertIn("instantly:poll", plan["after"][8])
+        self.assertNotIn("instantly:webhook", plan["after"][8])
+
     def test_unknown_event_fails_closed(self):
         with self.assertRaisesRegex(ValueError, "unsupported_instantly_event"):
             normalize_event({"event_type": "email_opened", "lead_email": "info@acme.nl"})
