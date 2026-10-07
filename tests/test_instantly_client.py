@@ -92,6 +92,21 @@ class InstantlyClientTests(unittest.TestCase):
         self.assertIn("status=400", str(caught.exception))
         self.assertNotIn("private lead content", str(caught.exception))
 
+    def test_email_reads_support_cursor_pagination(self):
+        session = FakeSession([FakeResponse(payload={"items": [], "next_starting_after": None})])
+        client = InstantlyClient("secret", session=session)
+        client.get_emails(
+            campaign_id="c1",
+            received_only=True,
+            limit=25,
+            starting_after="cursor-1",
+        )
+        method, url, kwargs = session.calls[0]
+        self.assertEqual((method, url), ("GET", "https://api.instantly.ai/api/v2/emails"))
+        self.assertEqual(kwargs["params"]["campaign_id"], "c1")
+        self.assertEqual(kwargs["params"]["email_type"], "received")
+        self.assertEqual(kwargs["params"]["starting_after"], "cursor-1")
+
     def test_add_requires_draft_or_paused_campaign(self):
         session = FakeSession([FakeResponse(payload={"id": "c1", "status": 1})])
         client = InstantlyClient("secret", session=session)
