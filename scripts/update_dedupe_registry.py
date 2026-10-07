@@ -13,6 +13,12 @@ import re
 from pathlib import Path
 from urllib.parse import quote, urlparse
 
+from dedupe_preflight import (
+    domains_match,
+    normalize_company as canonical_normalize_company,
+    normalize_domain as canonical_normalize_domain,
+)
+
 HEADERS = [
     "company",
     "website",
@@ -34,18 +40,11 @@ def _text(value: object) -> str:
 
 
 def normalize_company(value: object) -> str:
-    return re.sub(r"[^a-z0-9]+", "", _text(value).casefold())
+    return canonical_normalize_company(value)
 
 
 def normalize_domain(value: object) -> str:
-    raw = _text(value).casefold()
-    if not raw:
-        return ""
-    candidate = raw if "://" in raw else f"//{raw}"
-    host = (urlparse(candidate).hostname or "").rstrip(".")
-    if host.startswith("www."):
-        host = host[4:]
-    return host
+    return canonical_normalize_domain(value)
 
 
 def split_values(value: object) -> set[str]:
@@ -78,7 +77,7 @@ def rows_match(left: list[object], right: list[object]) -> bool:
         return True
     if a["emails"] & b["emails"]:
         return True
-    if a["domain"] and a["domain"] == b["domain"]:
+    if domains_match(a["domain"], b["domain"]):
         return True
     if a["company"] and a["company"] == b["company"]:
         return True
