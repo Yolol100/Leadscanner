@@ -159,14 +159,22 @@ def fetch_all_leads(client: InstantlyClient, *, max_leads: int = 10000) -> list[
     maximum = min(max(int(max_leads), 1), 50000)
     rows: list[dict] = []
     cursor: str | None = None
+    seen_cursors: set[str] = set()
     while len(rows) < maximum:
         limit = min(100, maximum - len(rows))
         page = client.list_leads(limit=limit, starting_after=cursor) or {}
-        batch = page.get("items") or []
+        batch = page.get("items")
+        if not isinstance(batch, list):
+            raise RuntimeError("instantly_lead_page_items_must_be_list")
         if not batch:
             break
         rows.extend(item for item in batch if isinstance(item, dict))
-        cursor = _text(page.get("next_starting_after")) or None
+        next_cursor = _text(page.get("next_starting_after")) or None
+        if next_cursor:
+            if next_cursor == cursor or next_cursor in seen_cursors:
+                raise RuntimeError("instantly_lead_pagination_cursor_loop")
+            seen_cursors.add(next_cursor)
+        cursor = next_cursor
         if not cursor:
             break
     if len(rows) >= maximum and cursor:
