@@ -1,0 +1,9 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "preflight-20261008-beweegbeter-lead",
+  "action": "get_lead",
+  "args": {
+    "lead_id": "01a11895-f3fb-7fd3-975b-8088ea87417c"
+  },
+  "requested_by": "chatgpt"
+}
