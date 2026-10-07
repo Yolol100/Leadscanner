@@ -6,10 +6,11 @@ Leadscanner is being rebuilt as a fast, cold-only lead pipeline.
 
 The only active GitHub workflow is `.github/workflows/leads-cold.yml`.
 
-Manual dispatch has two modes:
+Manual dispatch has three modes:
 
-- `preview` (default): runs research and mail generation, then exports `review-queue.md`, `review-queue.csv`, and `review-queue.json`. Each reviewable lead receives an approval token bound to the exact reviewed copy. Preview performs zero mailbox or Google Sheet mutations and needs no mutation credentials.
-- `draft`: requires `execution_mode=draft`, `confirm_review_drafts=true`, the GitHub Actions `preview_run_id` of the reviewed preview, and one or more exact `approved_review_tokens`. Draft mode downloads that exact successful preview artifact instead of repeating discovery/research.
+- `preview` (default): runs discovery, verification, research and mail generation, then exports the human review queue. Preview is mutation-free.
+- `instantly_stage` (**primary outbound route**): requires `confirm_instantly_stage=true`, the reviewed `preview_run_id`, one or more exact `approved_review_tokens`, and an `instantly_campaign_id`. It resumes the sealed preview, revalidates dedupe immediately before each mutation, and stages approved leads into a Draft/Paused Instantly campaign. It never activates the campaign.
+- `draft` (optional fallback): keeps the existing mijn.host review-draft path for manual mailbox review. It is not the primary outbound route.
 
 Current manual run:
 
@@ -26,15 +27,17 @@ Current manual run:
 11. **Overture coverage audit** — compare raw/filtered/deduped candidate supply with the requested verification capacity. Classify the run as sufficient, sufficient-with-buffer, thin, gap or configuration-limited. Never auto-add a second source from one run.
 12. **Human review queue** — export every reviewable lead with company, domain, verified email, signal, evidence URL, proposed value, subject, body and an approval token. The token fingerprint includes the exact copy/evidence, so a changed rerun becomes stale and is rejected.
 13. **Immutable preview snapshot** — seal request, review batch, review queue and preview manifest into `preview-snapshot.json` with a content digest and source run/commit provenance. Preview artifacts are retained for 7 days.
-14. **Fast draft resume** — draft mode loads the exact artifact from `preview_run_id`, verifies the successful workflow-dispatch run, repository, `main` branch, commit SHA and snapshot digest, then materializes only the snapshot-bound review batch. Discovery, verification, research and copy generation are not repeated.
-15. **Exact approval selection** — draft mode accepts only preview tokens explicitly pasted into `approved_review_tokens`; there is no `all` wildcard and unknown/stale tokens fail closed.
-16. **Live dedupe revalidation** — immediately before mutation, re-check every approved lead against the current canonical registry. Anything added since the preview is suppressed and cannot become a new draft.
-17. **Registry access preflight + approved mijn.host draft storage** — before the still-current approved batch is written, prove Google Sheets write access. Then append only those drafts through IMAP. Exact retries are allowed; changed existing drafts are rejected instead of overwritten.
-18. **Exact mailbox readback** — require an exact match on recipient, subject, body, lead ID and review status. SMTP/send remains unavailable.
-19. **Canonical dedupe closure** — append only successfully read-back, still-current approved identities to `DedupeRegistry` in one Google Sheets batch and verify the new rows by an exact API readback.
-20. **Run manifest** — emit `run-manifest.json` with mode, stage counts, review-queue count, approved count, operator-rejected count, post-preview suppression count, source preview ID/run/commit, mutation state and safety flags. Preview ends as `preview_ready`; a successful draft run ends as `closed`.
+14. **Fast sealed-preview resume** — mutation modes load the exact artifact from `preview_run_id`, verify the successful workflow-dispatch run, repository, `main` branch, commit SHA and snapshot digest, and never repeat discovery/research.
+15. **Exact approval selection** — only explicitly pasted preview tokens are accepted; there is no `all` wildcard and unknown/stale tokens fail closed.
+16. **Primary Instantly stage** — `instantly_stage` re-checks each approved lead against the current canonical registry immediately before mutation, requires a Draft/Paused Instantly campaign, and adds only still-current approved leads.
+17. **Personalized campaign variables** — every staged lead carries the exact reviewed `leadscanner_subject` and `leadscanner_body` custom variables plus the Leadscanner lead ID. Configure the Instantly campaign sequence to use `{{leadscanner_subject}}` in the subject and `{{leadscanner_body}}` in the body.
+18. **Canonical dedupe closure** — only after exact Instantly lead readback succeeds is the identity written as `instantly_staged` in the canonical registry.
+19. **Separate activation gate** — staging never sends. Campaign activation remains a distinct explicit `activate_campaign` action with sender/lead/sending-status preflight and exact confirmation.
+20. **Scheduled reconciliation** — Instantly state is periodically read back and may update only already-existing registry identities; scheduled sync cannot create prospects or send mail.
+21. **Optional mailbox fallback** — `draft` mode remains available for manual mijn.host review drafts when explicitly requested, but is outside the primary Instantly outbound route.
+22. **Run manifest** — every manual run records provenance, counts, mutation state and safety flags. `instantly_stage` closes with `automatic_send=false` and `campaign_activation_required=true`.
 
-Preview is the default and is mutation-free. Confirmed draft mode creates review drafts only; neither mode sends commercial email.
+The primary route is now: **Leadscanner discovery/review → Instantly staging → explicit campaign activation → Instantly sending/replies → registry sync**.
 
 ## Speed design
 
@@ -61,7 +64,7 @@ The Google Sheet **Lead Dedupe Registry** is the only retained historical lead s
 
 ## Safety
 
-The active path may generate and store validated review drafts, but it never sends email. Discovery hints are not treated as verified company facts. Public business email addresses are accepted only when observed on the official site. Draft storage requires `OUTREACH_MAIL_PASSWORD`; canonical registry writes require the GitHub Actions secret `LEAD_REGISTRY_SERVICE_ACCOUNT_JSON` for a service account that can edit the retained Google Sheet.
+The active path may stage approved leads into a Draft/Paused Instantly campaign, but staging never sends email. Sending starts only through the separate explicit campaign-activation gate. Discovery hints are not treated as verified company facts. Public business email addresses are accepted only when observed on the official site. Instantly writes require `INSTANTLY_API_KEY`; canonical registry writes require `LEAD_REGISTRY_SERVICE_ACCOUNT_JSON`. The optional mijn.host fallback still requires `OUTREACH_MAIL_PASSWORD`.
 
 ## Active data sources
 
@@ -71,7 +74,8 @@ The active discovery path does not use Google Maps scraping.
 - **Overture Maps Places** supplies discovery candidates. The active handoff keeps only `overture_id`, business name hint, category/taxonomy hint, website hint, longitude, latitude, confidence and bounded discovery email candidates when Overture contains public email data. Phone numbers and social profiles are deliberately not emitted by discovery.
 - **Official business websites** are the verification and research source. They supply the verified official domain/URL, identity evidence, HTTP status, public business email + source URL, verification/research URLs and bounded first-party text evidence.
 - **Lead Dedupe Registry** is suppression-only historical state: company, website/domain, email(s), status/history, lead IDs, source and `exclude_from_new_leads`.
-- **mijn.host** stores human-review drafts only. SMTP/send is not part of the active workflow.
+- **Instantly Email Outreach** is the primary outbound execution layer after Leadscanner approval: campaign lead storage, personalized variables, scheduling, warmup, sending and reply/campaign state.
+- **mijn.host** remains an optional manual draft fallback only; it is not the primary outbound route.
 
 The previous Google Maps CSV adapters and remediation-era code were removed from the repository. If Google Maps is ever reintroduced, it must be a deliberate new source with its own current verification, tests and evidence contract; no deleted legacy behavior is implicitly restored.
 
