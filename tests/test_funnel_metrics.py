@@ -49,11 +49,18 @@ class FunnelMetricsTests(unittest.TestCase):
                     {"outreach_status": "hold", "outreach_hold_reason": "weak_generic_marketing_signal"},
                 ],
             },
+            values={
+                "ready_count": 1,
+                "candidates": [
+                    {"outreach_status": "ready", "value_action_status": "proposed"},
+                    {"outreach_status": "hold", "value_action_status": "hold"},
+                ],
+            },
             mail={
                 "ready_for_human_review_count": 1,
                 "candidates": [
-                    {"mail_status": "ready_for_human_review"},
-                    {"mail_status": "hold", "copy_validation_reasons": ["value_action_not_ready"]},
+                    {"value_action_status": "proposed", "mail_status": "ready_for_human_review"},
+                    {"value_action_status": "hold", "mail_status": "hold", "copy_validation_reasons": ["value_action_not_ready"]},
                 ],
             },
         )
@@ -62,6 +69,7 @@ class FunnelMetricsTests(unittest.TestCase):
         self.assertEqual(result["drop_reasons"]["dedupe"]["company"], 1)
         self.assertEqual(result["drop_reasons"]["verification"]["hold_no_public_business_email"], 2)
         self.assertEqual(result["drop_reasons"]["outreach"]["weak_generic_marketing_signal"], 1)
+        self.assertEqual(result["drop_reasons"]["mail"], {})
         self.assertEqual(result["ready_signal_types"], {"appointment": 1})
         self.assertFalse(result["privacy"]["contains_email_addresses"])
         self.assertFalse(result["privacy"]["contains_company_names"])
