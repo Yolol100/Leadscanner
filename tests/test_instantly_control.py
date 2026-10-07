@@ -273,6 +273,20 @@ class InstantlyControlTests(unittest.TestCase):
         self.assertEqual(result["job"]["status"], "success")
         self.assertEqual(sleeps, [1.0])
 
+    def test_background_job_can_remain_pending_after_bounded_poll(self):
+        class JobClient:
+            def _request(self, method, path, **kwargs):
+                return {"id": "job-2", "status": "processing"}
+
+        result = _wait_background_job(
+            JobClient(),
+            {"id": "job-2"},
+            max_polls=2,
+            sleep_fn=lambda _: None,
+        )
+        self.assertEqual(result["state"], "pending")
+        self.assertEqual(result["job"]["status"], "processing")
+
     def test_push_event_executes_only_new_inbox_json_files(self):
         event = {
             "commits": [
