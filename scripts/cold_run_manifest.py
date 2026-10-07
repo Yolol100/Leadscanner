@@ -33,6 +33,8 @@ def build_manifest(
     draft_batch: dict,
     review_queue: dict | None = None,
     approved_batch: dict | None = None,
+    revalidation: dict | None = None,
+    source_preview_snapshot: dict | None = None,
     draft_readback: dict | None = None,
     registry_update: dict | None = None,
 ) -> dict:
@@ -41,12 +43,15 @@ def build_manifest(
 
     review_queue = review_queue or {}
     approved_batch = approved_batch or {}
+    revalidation = revalidation or {}
+    source_preview_snapshot = source_preview_snapshot or {}
     draft_readback = draft_readback or {}
     registry_update = registry_update or {}
     draft_count = int(draft_batch.get("draft_candidate_count") or 0)
     review_queue_count = int(review_queue.get("review_candidate_count") or 0)
     approved_count = int((approved_batch.get("approval") or {}).get("approved_count") or 0)
     operator_rejected_count = int((approved_batch.get("approval") or {}).get("rejected_by_operator_count") or 0)
+    suppressed_after_preview = int(revalidation.get("suppressed_after_preview_count") or 0)
 
     if mode == "preview":
         if draft_readback or registry_update:
@@ -95,11 +100,17 @@ def build_manifest(
             "review_queue_candidates": review_queue_count,
             "approved_for_draft": approved_count,
             "operator_rejected": operator_rejected_count,
+            "suppressed_after_preview": suppressed_after_preview,
             "review_draft_candidates": draft_count,
             "draft_created": int(draft_readback.get("created_count") or 0),
             "draft_existing_exact": int(draft_readback.get("existing_count") or 0),
             "registry_appended": int(registry_update.get("appended_count") or 0),
             "registry_already_present": int(registry_update.get("already_present_count") or 0),
+        },
+        "provenance": {
+            "source_preview_id": source_preview_snapshot.get("preview_id"),
+            "source_preview_run_id": (source_preview_snapshot.get("source") or {}).get("run_id"),
+            "source_preview_head_sha": (source_preview_snapshot.get("source") or {}).get("head_sha"),
         },
         "safety": {
             "human_review_required": True,
@@ -126,24 +137,50 @@ def main() -> int:
     parser.add_argument("--draft-batch", required=True)
     parser.add_argument("--review-queue")
     parser.add_argument("--approved-batch")
+    parser.add_argument("--revalidation")
+    parser.add_argument("--source-preview-manifest")
+    parser.add_argument("--source-preview-snapshot")
     parser.add_argument("--draft-readback")
     parser.add_argument("--registry-update")
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
 
+    source_manifest = _load(args.source_preview_manifest)
+    if args.mode == "draft" and source_manifest:
+        source_counts = source_manifest.get("counts") or {}
+        request = source_manifest.get("request") or {}
+        filtered = {"candidate_count": source_counts.get("discovery_after_cheap_filters", 0)}
+        dedupe = {"kept_count": source_counts.get("dedupe_kept", 0)}
+        verified = {"ready_for_research_count": source_counts.get("verified_for_research", 0)}
+        research = {"research_ready_count": source_counts.get("research_ready", 0)}
+        reasons = {"ready_count": source_counts.get("outreach_reason_ready", 0)}
+        values = {"ready_count": source_counts.get("value_action_ready", 0)}
+        mail = {"ready_for_human_review_count": source_counts.get("mail_ready_for_human_review", 0)}
+    else:
+        request = _load(args.request)
+        filtered = _load(args.filtered)
+        dedupe = _load(args.dedupe)
+        verified = _load(args.verified)
+        research = _load(args.research)
+        reasons = _load(args.reasons)
+        values = _load(args.values)
+        mail = _load(args.mail)
+
     result = build_manifest(
         mode=args.mode,
-        request=_load(args.request),
-        filtered=_load(args.filtered),
-        dedupe=_load(args.dedupe),
-        verified=_load(args.verified),
-        research=_load(args.research),
-        reasons=_load(args.reasons),
-        values=_load(args.values),
-        mail=_load(args.mail),
+        request=request,
+        filtered=filtered,
+        dedupe=dedupe,
+        verified=verified,
+        research=research,
+        reasons=reasons,
+        values=values,
+        mail=mail,
         draft_batch=_load(args.draft_batch),
         review_queue=_load(args.review_queue),
         approved_batch=_load(args.approved_batch),
+        revalidation=_load(args.revalidation),
+        source_preview_snapshot=_load(args.source_preview_snapshot),
         draft_readback=_load(args.draft_readback),
         registry_update=_load(args.registry_update),
     )
