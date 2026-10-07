@@ -16,6 +16,12 @@ EVENT_ALIASES = {
     "lead_not_interested": "not_interested",
     "lead_is_not_interested": "not_interested",
     "not_interested": "not_interested",
+    "lead_meeting_booked": "meeting_booked",
+    "lead_meeting_completed": "meeting_completed",
+    "lead_closed": "closed",
+    "lead_out_of_office": "out_of_office",
+    "lead_wrong_person": "wrong_person",
+    "lead_no_show": "no_show",
     "campaign_completed": "campaign_completed",
     "campaign_completed_for_lead_without_reply": "campaign_completed_no_reply",
 }
@@ -26,6 +32,12 @@ STATUS_BY_KIND = {
     "unsubscribe": "unsubscribed",
     "interested": "interested",
     "not_interested": "not_interested",
+    "meeting_booked": "meeting_booked",
+    "meeting_completed": "meeting_completed",
+    "closed": "closed",
+    "out_of_office": "out_of_office",
+    "wrong_person": "wrong_person",
+    "no_show": "no_show",
     "campaign_completed": "campaign_completed",
     "campaign_completed_no_reply": "campaign_completed_no_reply",
 }
@@ -69,7 +81,14 @@ def _merge_semicolon(existing: str, value: str) -> str:
     return ";".join(values)
 
 
-def plan_registry_event_update(payload: dict, current_values: list[list[object]]) -> dict:
+def plan_registry_event_update(
+    payload: dict,
+    current_values: list[list[object]],
+    *,
+    source_marker: str = "instantly:webhook",
+) -> dict:
+    if not _text(source_marker).startswith("instantly:"):
+        raise ValueError("invalid_instantly_source_marker")
     event = normalize_event(payload)
     if not current_values or normalize_row(current_values[0]) != HEADERS:
         raise ValueError("live_registry_headers_mismatch")
@@ -94,7 +113,7 @@ def plan_registry_event_update(payload: dict, current_values: list[list[object]]
     event_marker = f"instantly:{event['event_type']}"
     after[5] = _merge_semicolon(after[5], event_marker)
     after[7] = event["timestamp"]
-    after[8] = _merge_semicolon(after[8], "instantly:webhook")
+    after[8] = _merge_semicolon(after[8], _text(source_marker))
     after[9] = "TRUE"
 
     return {
@@ -116,11 +135,19 @@ def plan_registry_event_update(payload: dict, current_values: list[list[object]]
     }
 
 
-def apply_registry_event(session, spreadsheet_id: str, sheet_name: str, payload: dict, current_values: list[list[object]]):
+def apply_registry_event(
+    session,
+    spreadsheet_id: str,
+    sheet_name: str,
+    payload: dict,
+    current_values: list[list[object]],
+    *,
+    source_marker: str = "instantly:webhook",
+):
     """Update exactly one existing A:J row and verify exact readback."""
     from urllib.parse import quote
 
-    plan = plan_registry_event_update(payload, current_values)
+    plan = plan_registry_event_update(payload, current_values, source_marker=source_marker)
     row_number = plan["sheet_row"]
     range_name = quote(f"{sheet_name}!A{row_number}:J{row_number}", safe="")
     url = (
