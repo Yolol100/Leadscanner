@@ -1,54 +1,31 @@
-# Leadscanner — Verified B2B Lead Workflow
+# Leadscanner
 
-> **Operations tooling · Python · GitHub Actions · PDOK · Overture · Google Maps · review-only outreach**
+Leadscanner is being rebuilt as a fast, cold-only lead pipeline.
 
-Leadscanner supports a controlled B2B prospect workflow for the Andrews Groeiabonnement. It discovers candidate businesses, removes unsuitable competitors, verifies public business/contact evidence and prepares short NL/EN email drafts for human review.
+## Active architecture
 
-It does **not** guess email addresses and does **not** send outreach automatically.
+The active execution path is intentionally small:
 
-## Workflow
+candidate input -> live dedupe registry -> dedupe result
 
-`discover/filter -> verify -> draft -> mijn.host review_draft -> exact readback`
+The next planned phases are:
 
-| Stage | What happens |
-| --- | --- |
-| Discovery | PDOK, Overture and Google Maps are used as discovery sources |
-| Filtering | Duplicates and competing web/marketing/SEO providers are excluded |
-| Verification | Official site, language and a public business email address are checked |
-| Drafting | A short Groeiabonnement email is prepared only from verified evidence |
-| Review | Drafts remain `review_required` and are read back exactly before human action |
+discovery -> cheap filters -> identity/domain verification -> contact discovery -> bounded prospect research -> opportunity selection -> draft construction -> validation -> human-reviewed draft
 
-## Safety boundaries
+Only the first dedupe path is active today. Legacy scripts remain in the repository as implementation material but are not part of the active workflow unless deliberately reintroduced later.
 
-- Never invent or infer an email address.
-- Never auto-send outreach.
-- Keep public email evidence in review state.
-- Exclude competing marketing, web, SEO, social, automation, WordPress and hosting providers.
-- Use only the requested number of verified drafts.
-- Treat GitHub Actions and issues as workflow transport/evidence, not as permission to contact anyone.
+## Historical state
 
-## Why there can be many open GitHub issues
+The Google Sheet Lead Dedupe Registry is the only retained historical lead source. It exists solely to prevent re-prospecting companies that already had a concept, send, reply, bounce, opt-out, or other prior lead history.
 
-This repository also uses owner-only GitHub issues as structured workflow requests and queue records, for example `[lead-verify]` and `[growth-draft]` jobs. Therefore, the repository's open-issue count should not be interpreted as a count of unresolved software defects.
+The active workflow reads the registry live on every manual run and excludes matches by conservative normalized company, domain, email, or lead ID.
 
-Concrete technical defects can still be tracked as normal issues, but operational request records are intentionally part of the workflow surface.
+## GitHub Actions
 
-## Running the workflow
+.github/workflows/leads-cold.yml is the only active Leadscanner workflow.
 
-Start through `workflow_dispatch` or an owner-only `[growth-draft]` issue with a JSON body.
-
-The runtime is designed around explicit inputs, bounded batches and review-only outputs. Public repository state must not contain private credentials or unreviewed customer data.
-
-## What this demonstrates
-
-- Source-aware B2B prospect discovery and deduplication.
-- Evidence-bound contact verification.
-- Deterministic filtering and bounded workflow execution.
-- Human-in-the-loop outreach safeguards.
-- GitHub Actions orchestration and auditable request handling.
-
-## About the developer
-
-I am **Andrew Baeten**, a Senior WordPress Developer with 10+ years of experience across **90+ WordPress projects** and ongoing responsibility for **120+ websites and webshops**. I also build internal automation and QA tooling that makes repetitive web operations more controlled and reviewable.
-
-[Portfolio cases](https://andrewbaeten.nl/category/cases) · [LinkedIn](https://www.linkedin.com/in/andrew-baeten-305a1478/) · [GitHub profile](https://github.com/Yolol100)
+- push / pull_request: run only the focused dedupe tests when the new execution-path files change.
+- workflow_dispatch: test first, then fetch the live dedupe registry and run the hard dedupe gate.
+- No issue event listeners.
+- No automatic outreach sending.
+- No pip install on the active path; dedupe uses Python's standard library only.

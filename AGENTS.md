@@ -1,21 +1,25 @@
 # Leadscanner repository agent contract
 
-## Scope
-- This repository is the controlled discovery, verification and review-draft runtime for the `leads` Skill.
-- `webactueel-workflow` remains the cross-skill controller; Leadscanner does not become a second workflow owner.
-- Never infer email addresses, contact permission or business facts from memory, trend sources or model guesses.
-- Outreach stays review-only; no automatic send.
+## Current scope
+- Build a fast cold-lead pipeline from a clean slate.
+- Treat the current repository as implementation material, not as a legacy requirements source.
+- The only historical lead state that remains authoritative is the Google Sheet Lead Dedupe Registry.
+- Use that registry only to suppress companies already seen in prior concepts/outreach. Never use it as prospect research or outreach evidence.
 
-## Agent capability and impact policy
-- Classify every intended action as `read_only`, `safe_write` or `high_risk_write`.
-- `read_only`: inspect/search/test without external mutation.
-- `safe_write`: bounded, reversible repository/runtime changes with preflight and exact readback.
-- `high_risk_write`: sending outreach, destructive changes, permission/security changes, production deploys or broad external mutations. These are outside the normal Leadscanner runtime unless the owning workflow explicitly authorizes them.
-- Tool availability or green CI never grants contact or write permission.
+## Execution rules
+- Work on main unless the user explicitly requests another branch.
+- Put cheap gates before network-heavy research.
+- Keep each stage contract explicit and fail closed when required identity/evidence is missing.
+- Prefer one execution workflow over multiple event listeners and artifact handoffs.
+- Reuse existing code only when it is clearly useful for the new critical path.
+- Keep changes bounded to the active phase; avoid unrelated refactors.
 
-Before non-trivial code changes, build a bounded impact context from changed paths, direct dependencies, workflow contracts and relevant tests. Generated indexes/graphs are commit-bound evidence/cache only, never lead truth or durable memory.
-
-GitHub Trending and external repositories are discovery-only. Reuse patterns only after owner-fit, primary-source/currentness checks and license/usage-rights review. Never import scraped identities or contact data from trend repositories.
+## Safety
+- Never infer an email address or prospect fact.
+- Never automatically send commercial outreach.
+- Repository/runtime automation may create review artifacts only when a later phase explicitly implements that path.
 
 ## Validation
-Run the repository's existing tests and workflow validation for every changed execution path. Preserve bounded batches, exact evidence, draft readback and the no-send invariant.
+- Run focused tests for the changed execution path first.
+- Add wider regression coverage only when that wider path becomes active again.
+- Report completion only with exact repository and workflow evidence.

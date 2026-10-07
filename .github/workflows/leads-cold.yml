@@ -1,0 +1,118 @@
+name: Leads Cold Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidates_json:
+        description: 'JSON array of cold-lead candidates for dedupe preflight'
+        required: true
+        default: '[]'
+        type: string
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/leads-cold.yml'
+      - 'scripts/dedupe_preflight.py'
+      - 'tests/test_dedupe_preflight.py'
+      - 'AGENTS.md'
+      - 'README.md'
+  pull_request:
+    paths:
+      - '.github/workflows/leads-cold.yml'
+      - 'scripts/dedupe_preflight.py'
+      - 'tests/test_dedupe_preflight.py'
+      - 'AGENTS.md'
+      - 'README.md'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: leads-cold-${{ github.event_name == 'workflow_dispatch' && 'execution' || github.ref }}
+  cancel-in-progress: true
+
+env:
+  DEDUPE_REGISTRY_CSV_URL: https://docs.google.com/spreadsheets/d/1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI/export?format=csv&gid=1354777664
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Run focused dedupe tests
+        env:
+          PYTHONPATH: scripts
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q scripts/dedupe_preflight.py
+          python3 -m unittest tests.test_dedupe_preflight -v
+
+  dedupe-preflight:
+    if: github.event_name == 'workflow_dispatch'
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Validate candidate input
+        env:
+          INPUT_CANDIDATES_JSON: ${{ inputs.candidates_json }}
+        run: |
+          set -euo pipefail
+          mkdir -p results
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          raw = os.environ['INPUT_CANDIDATES_JSON']
+          data = json.loads(raw)
+          if not isinstance(data, list):
+              raise SystemExit('candidates_json must be a JSON array')
+          if len(data) > 5000:
+              raise SystemExit('candidate limit exceeded')
+          Path('results/candidates.json').write_text(
+              json.dumps(data, ensure_ascii=False) + '\n', encoding='utf-8'
+          )
+          print(f'CANDIDATE_INPUT=green count={len(data)}')
+          PY
+
+      - name: Fetch live dedupe registry
+        run: |
+          set -euo pipefail
+          curl --fail --location --silent --show-error \
+            --retry 2 --retry-all-errors \
+            --connect-timeout 10 --max-time 30 \
+            "$DEDUPE_REGISTRY_CSV_URL" \
+            --output results/dedupe-registry.csv
+          test -s results/dedupe-registry.csv
+          echo 'DEDUPE_REGISTRY_FETCH=green'
+
+      - name: Apply hard dedupe gate
+        env:
+          PYTHONPATH: scripts
+        run: |
+          set -euo pipefail
+          python3 scripts/dedupe_preflight.py \
+            --registry-csv results/dedupe-registry.csv \
+            --candidates-json results/candidates.json \
+            --output results/dedupe-preflight.json
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: leads-dedupe-preflight-${{ github.run_number }}
+          path: results/dedupe-preflight.json
+          if-no-files-found: error
+          retention-days: 1
