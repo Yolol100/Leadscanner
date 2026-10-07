@@ -82,7 +82,9 @@ def evaluate(root: str | Path = ".") -> dict:
                 and "activation_requires_all_sender_accounts_active" in control
                 and "activation_requires_verified_leads_only" in control
                 and "activation_sending_status_all_accounts_unhealthy" in control
-                and 'lead.get("verification_status") != 1' in control
+                and "verification_status = lead.get" in control
+                and "/email-verification/" in control
+                and "activation_requires_verified_leads_only" in control
             ),
         },
         {
