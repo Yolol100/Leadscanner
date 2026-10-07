@@ -34,9 +34,11 @@ on:
       - 'scripts/dedupe_preflight.py'
       - 'scripts/cold_stages.py'
       - 'scripts/overture_discovery.py'
+      - 'scripts/outreach_stages.py'
       - 'scripts/url_safety.py'
       - 'tests/test_dedupe_preflight.py'
       - 'tests/test_cold_stages.py'
+      - 'tests/test_outreach_stages.py'
       - 'tests/test_url_safety.py'
       - 'AGENTS.md'
       - 'README.md'
@@ -47,9 +49,11 @@ on:
       - 'scripts/dedupe_preflight.py'
       - 'scripts/cold_stages.py'
       - 'scripts/overture_discovery.py'
+      - 'scripts/outreach_stages.py'
       - 'scripts/url_safety.py'
       - 'tests/test_dedupe_preflight.py'
       - 'tests/test_cold_stages.py'
+      - 'tests/test_outreach_stages.py'
       - 'tests/test_url_safety.py'
       - 'AGENTS.md'
       - 'README.md'
@@ -83,8 +87,8 @@ jobs:
           PYTHONPATH: scripts
         run: |
           set -euo pipefail
-          python3 -m compileall -q scripts/dedupe_preflight.py scripts/cold_stages.py scripts/overture_discovery.py scripts/url_safety.py
-          python3 -m unittest tests.test_dedupe_preflight tests.test_cold_stages tests.test_url_safety -v
+          python3 -m compileall -q scripts/dedupe_preflight.py scripts/cold_stages.py scripts/outreach_stages.py scripts/overture_discovery.py scripts/url_safety.py
+          python3 -m unittest tests.test_dedupe_preflight tests.test_cold_stages tests.test_outreach_stages tests.test_url_safety -v
 
   execute:
     if: github.event_name == 'workflow_dispatch'
@@ -234,6 +238,33 @@ jobs:
             --max-workers 6 \
             --output results/research.json
 
+      - name: Phase 7 - Select one evidence-backed outreach reason
+        env:
+          PYTHONPATH: scripts
+        run: |
+          set -euo pipefail
+          python3 scripts/outreach_stages.py select \
+            --input results/research.json \
+            --output results/outreach-reasons.json
+
+      - name: Phase 8 - Choose one proposed value-first action
+        env:
+          PYTHONPATH: scripts
+        run: |
+          set -euo pipefail
+          python3 scripts/outreach_stages.py value \
+            --input results/outreach-reasons.json \
+            --output results/value-actions.json
+
+      - name: Phase 9 - Generate and validate short cold mail
+        env:
+          PYTHONPATH: scripts
+        run: |
+          set -euo pipefail
+          python3 scripts/outreach_stages.py mail \
+            --input results/value-actions.json \
+            --output results/mail-review.json
+
       - name: Summarize phase handoffs
         run: |
           set -euo pipefail
@@ -244,19 +275,25 @@ jobs:
           dedupe = json.loads(Path('results/dedupe-preflight.json').read_text())
           verified = json.loads(Path('results/verification.json').read_text())
           research = json.loads(Path('results/research.json').read_text())
+          reasons = json.loads(Path('results/outreach-reasons.json').read_text())
+          values = json.loads(Path('results/value-actions.json').read_text())
+          mail = json.loads(Path('results/mail-review.json').read_text())
           print(
               'COLD_PHASES=green '
               f"discovery={filtered['candidate_count']} "
               f"dedupe_kept={dedupe['kept_count']} "
               f"verified_for_research={verified['ready_for_research_count']} "
               f"research_ready={research['research_ready_count']} "
-              'copy=false draft=false email_send=false'
+              f"outreach_reason_ready={reasons['ready_count']} "
+              f"value_action_ready={values['ready_count']} "
+              f"mail_ready={mail['ready_for_human_review_count']} "
+              'draft=false mailbox_mutation=false email_send=false'
           )
           PY
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: leads-cold-phases-4-6-${{ github.run_number }}
+          name: leads-cold-phases-4-9-${{ github.run_number }}
           path: |
             results/request.json
             results/discovery-raw.json
@@ -264,5 +301,8 @@ jobs:
             results/dedupe-preflight.json
             results/verification.json
             results/research.json
+            results/outreach-reasons.json
+            results/value-actions.json
+            results/mail-review.json
           if-no-files-found: error
           retention-days: 1
