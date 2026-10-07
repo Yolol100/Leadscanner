@@ -141,6 +141,18 @@ class InstantlySyncTests(unittest.TestCase):
         )
         self.assertEqual(event["event_type"], "reply_received")
 
+    def test_malformed_provider_timestamp_fails_before_sync_selection(self):
+        with self.assertRaisesRegex(ValueError, "instantly_lead_timestamp_invalid"):
+            select_events([
+                {
+                    "id": "bad-ts",
+                    "email": "bad@example.com",
+                    "status": -2,
+                    "lt_interest_status": 999,
+                    "timestamp_updated": "not-a-timestamp",
+                }
+            ])
+
     def test_pagination_uses_next_starting_after(self):
         client = FakeClient(
             [
