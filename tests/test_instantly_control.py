@@ -444,6 +444,206 @@ class InstantlyControlTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "draft_or_paused_before_update"):
             execute_command(command, config(), ActiveCampaignClient())
 
+    def test_activation_allows_verified_status_and_blocks_unknown_status(self):
+        class ActivationClient:
+            def __init__(self, verification_status):
+                self.verification_status = verification_status
+                self.activated = False
+
+            def get_campaign(self, campaign_id):
+                return {
+                    "id": campaign_id,
+                    "status": 1 if self.activated else 0,
+                    "allow_risky_contacts": False,
+                    "email_list": ["sender@example.com"],
+                }
+
+            def list_leads(self, **kwargs):
+                return {
+                    "items": [{
+                        "id": "l1",
+                        "email": "lead@example.com",
+                        "verification_status": self.verification_status,
+                    }],
+                    "next_starting_after": None,
+                }
+
+            def _request(self, method, path, **kwargs):
+                if method == "GET" and path.endswith("/sending-status"):
+                    return {"summary": {"status": "campaign_draft"}}
+                if method == "GET" and path == "/accounts/sender%40example.com":
+                    return {"status": 1}
+                if method == "POST" and path.endswith("/activate"):
+                    self.activated = True
+                    return {"accepted": True}
+                raise AssertionError((method, path, kwargs))
+
+        good = ActivationClient(1)
+        result = _activate(good, "c1")
+        self.assertTrue(good.activated)
+        self.assertEqual(result["readback"]["status"], 1)
+
+        unknown = ActivationClient(99)
+        with self.assertRaisesRegex(ValueError, "verified_leads_only"):
+            _activate(unknown, "c1")
+        self.assertFalse(unknown.activated)
+
+    def test_update_campaign_only_allows_draft_or_paused(self):
+        class CampaignClient:
+            def __init__(self, status):
+                self.status = status
+                self.patches = 0
+
+            def get_campaign(self, campaign_id):
+                return {"id": campaign_id, "status": self.status}
+
+            def _request(self, method, path, **kwargs):
+                if method == "PATCH" and path == "/campaigns/c1":
+                    self.patches += 1
+                    return {"id": "c1"}
+                raise AssertionError((method, path, kwargs))
+
+        for status in (0, 2):
+            with self.subTest(allowed_status=status):
+                client = CampaignClient(status)
+                command = {
+                    "schema_version": "leadscanner-instantly-command/1.0",
+                    "command_id": f"campaign-update-allowed-{status}",
+                    "action": "update_campaign",
+                    "args": {"campaign_id": "c1", "payload": {"name": "Changed"}},
+                    "confirm": "EXECUTE update_campaign c1",
+                    "requested_by": "chatgpt",
+                }
+                result = execute_command(command, config(), client)
+                self.assertEqual(result["status"], "green")
+                self.assertEqual(client.patches, 1)
+
+        for status in (1, 3, 4, -1):
+            with self.subTest(blocked_status=status):
+                client = CampaignClient(status)
+                command = {
+                    "schema_version": "leadscanner-instantly-command/1.0",
+                    "command_id": f"campaign-update-blocked-{str(status).replace('-', 'neg')}",
+                    "action": "update_campaign",
+                    "args": {"campaign_id": "c1", "payload": {"name": "Changed"}},
+                    "confirm": "EXECUTE update_campaign c1",
+                    "requested_by": "chatgpt",
+                }
+                with self.assertRaisesRegex(ValueError, "draft_or_paused_before_update"):
+                    execute_command(command, config(), client)
+                self.assertEqual(client.patches, 0)
+
+    def test_forward_confirmation_binds_uuid_recipient_and_sender(self):
+        args = {
+            "payload": {
+                "reply_to_uuid": "email-1",
+                "to_address_email_list": "target@example.com",
+                "eaccount": "sender@example.com",
+                "subject": "Fwd: Test",
+                "include_original_body": True,
+            }
+        }
+        expected = "EXECUTE forward_email email-1|target@example.com|sender@example.com"
+        self.assertEqual(expected_confirmation("forward_email", args), expected)
+
+        class NoCall:
+            def _request(self, *args, **kwargs):
+                raise AssertionError("unexpected API call")
+
+        for confirm in (
+            "EXECUTE forward_email email-1|other@example.com|sender@example.com",
+            "EXECUTE forward_email email-1|target@example.com|other-sender@example.com",
+        ):
+            with self.subTest(confirm=confirm):
+                command = {
+                    "schema_version": "leadscanner-instantly-command/1.0",
+                    "command_id": "forward-confirmation-mismatch-001",
+                    "action": "forward_email",
+                    "args": args,
+                    "confirm": confirm,
+                    "requested_by": "chatgpt",
+                }
+                with self.assertRaisesRegex(ValueError, "exact_confirmation_required"):
+                    execute_command(command, config(), NoCall())
+
+    def test_update_interest_accepts_null_and_rejects_wrong_type(self):
+        class NullInterestClient:
+            def _request(self, method, path, **kwargs):
+                if (method, path) == ("POST", "/leads/update-interest-status"):
+                    return {"message": "accepted"}
+                raise AssertionError((method, path, kwargs))
+
+            def list_leads(self, **kwargs):
+                return {
+                    "items": [{
+                        "id": "l1",
+                        "email": "lead@example.com",
+                        "lt_interest_status": None,
+                    }]
+                }
+
+        command = {
+            "schema_version": "leadscanner-instantly-command/1.0",
+            "command_id": "interest-null-001",
+            "action": "update_interest",
+            "args": {"payload": {"lead_email": "lead@example.com", "interest_value": None}},
+            "confirm": "EXECUTE update_interest lead@example.com|null",
+            "requested_by": "chatgpt",
+        }
+        result = execute_command(command, config(), NullInterestClient())
+        self.assertEqual(result["result"]["completion_state"], "completed")
+
+        class NoCall:
+            def _request(self, *args, **kwargs):
+                raise AssertionError("unexpected API call")
+
+        invalid = dict(command)
+        invalid["command_id"] = "interest-type-invalid-001"
+        invalid["args"] = {"payload": {"lead_email": "lead@example.com", "interest_value": "2"}}
+        invalid["confirm"] = "EXECUTE update_interest lead@example.com|2"
+        with self.assertRaisesRegex(ValueError, "interest_value_must_be_number_or_null"):
+            execute_command(invalid, config(), NoCall())
+
+    def test_forward_contract_blocks_missing_recipient_or_body_before_api(self):
+        class NoCall:
+            def _request(self, *args, **kwargs):
+                raise AssertionError("unexpected API call")
+
+        cases = [
+            (
+                {
+                    "reply_to_uuid": "email-1",
+                    "eaccount": "sender@example.com",
+                    "subject": "Fwd: Test",
+                    "include_original_body": True,
+                },
+                "EXECUTE forward_email email-1|sender@example.com",
+                "forward_recipient_required",
+            ),
+            (
+                {
+                    "reply_to_uuid": "email-1",
+                    "to_address_email_list": "target@example.com",
+                    "eaccount": "sender@example.com",
+                    "subject": "Fwd: Test",
+                },
+                "EXECUTE forward_email email-1|target@example.com|sender@example.com",
+                "forward_body_or_original_required",
+            ),
+        ]
+        for payload, confirm, error in cases:
+            with self.subTest(error=error):
+                command = {
+                    "schema_version": "leadscanner-instantly-command/1.0",
+                    "command_id": "forward-invalid-contract-001",
+                    "action": "forward_email",
+                    "args": {"payload": payload},
+                    "confirm": confirm,
+                    "requested_by": "chatgpt",
+                }
+                with self.assertRaisesRegex(ValueError, error):
+                    execute_command(command, config(), NoCall())
+
     def test_push_event_executes_only_new_inbox_json_files(self):
         event = {
             "commits": [
