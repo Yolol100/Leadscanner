@@ -166,10 +166,14 @@ def fetch_all_leads(client: InstantlyClient, *, max_leads: int = 10000) -> list[
         batch = page.get("items")
         if not isinstance(batch, list):
             raise RuntimeError("instantly_lead_page_items_must_be_list")
-        if not batch:
-            break
-        rows.extend(item for item in batch if isinstance(item, dict))
         next_cursor = _text(page.get("next_starting_after")) or None
+        if not batch:
+            if next_cursor:
+                raise RuntimeError("instantly_lead_page_empty_with_cursor")
+            break
+        if any(not isinstance(item, dict) for item in batch):
+            raise RuntimeError("instantly_lead_page_item_must_be_object")
+        rows.extend(batch)
         if next_cursor:
             if next_cursor == cursor or next_cursor in seen_cursors:
                 raise RuntimeError("instantly_lead_pagination_cursor_loop")
