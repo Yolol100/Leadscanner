@@ -353,7 +353,7 @@ jobs:
             --approved-tokens-env INPUT_APPROVED_REVIEW_TOKENS \
             --output results/approved-review-draft-batch.json
 
-      - name: Phase 10 - Preflight canonical registry write access
+      - name: Phase 18 - Preflight canonical registry write access
         if: inputs.execution_mode == 'draft'
         env:
           PYTHONPATH: scripts
@@ -369,7 +369,7 @@ jobs:
               --output results/registry-access.json
           fi
 
-      - name: Phase 10 - Store mijn.host review drafts only
+      - name: Phase 18 - Store approved mijn.host review drafts only
         if: inputs.execution_mode == 'draft'
         env:
           PYTHONPATH: scripts
@@ -390,7 +390,7 @@ jobs:
           grep -q 'reject_changed_existing=true' results/myhost-drafts.txt
           grep -q 'smtp_send=not_available' results/myhost-drafts.txt
 
-      - name: Phase 11 - Exact mailbox readback gate
+      - name: Phase 18 - Exact mailbox readback gate
         if: inputs.execution_mode == 'draft'
         env:
           PYTHONPATH: scripts
@@ -401,7 +401,7 @@ jobs:
             --report results/myhost-drafts.json \
             --output results/review-draft-readback.json
 
-      - name: Phase 12 - Append canonical dedupe registry and read back
+      - name: Phase 18 - Append canonical dedupe registry and read back
         if: inputs.execution_mode == 'draft'
         env:
           PYTHONPATH: scripts
@@ -412,7 +412,7 @@ jobs:
             --readback results/review-draft-readback.json \
             --output results/registry-update.json
 
-      - name: Phase 15 - Build run preview or closure manifest
+      - name: Build run preview or closure manifest
         env:
           PYTHONPATH: scripts
           INPUT_EXECUTION_MODE: ${{ inputs.execution_mode }}
@@ -422,6 +422,7 @@ jobs:
           DRAFT_BATCH_PATH=results/review-draft-batch.json
           if [ "$INPUT_EXECUTION_MODE" = "draft" ]; then
             DRAFT_BATCH_PATH=results/approved-review-draft-batch.json
+            EXTRA_ARGS+=(--approved-batch results/approved-review-draft-batch.json)
             EXTRA_ARGS+=(--draft-readback results/review-draft-readback.json)
             EXTRA_ARGS+=(--registry-update results/registry-update.json)
           fi
@@ -436,6 +437,7 @@ jobs:
             --values results/value-actions.json \
             --mail results/mail-review.json \
             --draft-batch "$DRAFT_BATCH_PATH" \
+            --review-queue results/review-queue.json \
             "${EXTRA_ARGS[@]}" \
             --output results/run-manifest.json
 
