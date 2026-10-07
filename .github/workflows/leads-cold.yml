@@ -71,6 +71,7 @@ on:
       - 'tests/test_dedupe_preflight.py'
       - 'tests/test_cold_stages.py'
       - 'tests/test_outreach_stages.py'
+      - 'tests/test_overture_discovery.py'
       - 'tests/test_cold_run_manifest.py'
       - 'tests/test_review_draft_stages.py'
       - 'tests/test_review_selection.py'
@@ -100,6 +101,7 @@ on:
       - 'tests/test_dedupe_preflight.py'
       - 'tests/test_cold_stages.py'
       - 'tests/test_outreach_stages.py'
+      - 'tests/test_overture_discovery.py'
       - 'tests/test_cold_run_manifest.py'
       - 'tests/test_review_draft_stages.py'
       - 'tests/test_review_selection.py'
@@ -158,6 +160,7 @@ jobs:
             tests.test_dedupe_preflight \
             tests.test_cold_stages \
             tests.test_outreach_stages \
+            tests.test_overture_discovery \
             tests.test_cold_run_manifest \
             tests.test_review_draft_stages \
             tests.test_review_selection \
