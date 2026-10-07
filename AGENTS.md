@@ -35,6 +35,7 @@
 - Keep the ChatGPT web control boundary repository-native: new immutable JSON commands under `instantly-commands/inbox/` -> allowlisted executor -> Actions result artifact.
 - Instantly write commands require exact target-bound confirmation and must fail closed on a GitHub Actions re-run; intentional retries require a fresh command file.
 - Do not expose a generic Instantly HTTP method/path escape hatch. Add named operations with focused validation instead.
+- If the repository is public, sensitive Instantly reads and all Instantly writes must fail closed. Full ChatGPT control is allowed only after the repository is private so command payloads and Actions results cannot expose lead/reply/account data publicly.
 - Campaign activation, replies, forwards and test sends are explicit send-capable actions; they require the send gate plus exact confirmation, and activation must re-read campaign, sender and lead state before activation.
 - Never commit Instantly, SMTP/IMAP, OAuth, Google service-account or other credential material in command JSON. Keep secrets in GitHub Actions Secrets.
 - Scheduled Instantly reconciliation is read-only toward Instantly and may update only an already-existing canonical dedupe row. It must never create a registry identity or send outreach.
