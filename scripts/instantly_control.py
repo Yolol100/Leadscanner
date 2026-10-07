@@ -40,6 +40,7 @@ SEND_ACTIONS = {"activate_campaign", "reply_email", "forward_email", "send_test_
 DESTRUCTIVE_ACTIONS = {"delete_campaign", "delete_lead", "delete_blocklist_entry"}
 ALL_ACTIONS = READ_ACTIONS | WRITE_ACTIONS
 SENSITIVE_ACCOUNT_KEYS = ("password", "secret", "token", "credential", "private_key", "api_key")
+NON_SECRET_COMMAND_KEYS = {"approval_token"}
 
 
 def _text(value: object) -> str:
@@ -68,7 +69,9 @@ def _contains_sensitive_key(value: object) -> bool:
     if isinstance(value, dict):
         for key, nested in value.items():
             normalized = str(key or "").casefold()
-            if any(marker in normalized for marker in SENSITIVE_ACCOUNT_KEYS):
+            if normalized not in NON_SECRET_COMMAND_KEYS and any(
+                marker in normalized for marker in SENSITIVE_ACCOUNT_KEYS
+            ):
                 return True
             if _contains_sensitive_key(nested):
                 return True
