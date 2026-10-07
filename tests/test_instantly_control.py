@@ -513,6 +513,36 @@ class InstantlyControlTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "payload_must_be_object"):
             execute_command(command, config(), CampaignClient())
 
+    def test_account_vitals_is_read_only_diagnostic(self):
+        class VitalsClient:
+            def _request(self, method, path, **kwargs):
+                self.method = method
+                self.path = path
+                self.kwargs = kwargs
+                return {
+                    "status": "success",
+                    "success_list": [{"domain": "andrewbaeten.nl", "allPass": True}],
+                    "failure_list": [],
+                }
+
+        client = VitalsClient()
+        command = {
+            "schema_version": "leadscanner-instantly-command/1.0",
+            "command_id": "account-vitals-read-001",
+            "action": "test_account_vitals",
+            "args": {"accounts": ["info@andrewbaeten.nl"]},
+            "requested_by": "chatgpt",
+        }
+        result = execute_command(command, config(), client)
+        self.assertEqual(result["mode"], "read")
+        self.assertFalse(result["send_action"])
+        self.assertEqual(client.method, "POST")
+        self.assertEqual(client.path, "/accounts/test/vitals")
+        self.assertEqual(
+            client.kwargs["json"],
+            {"accounts": ["info@andrewbaeten.nl"]},
+        )
+
     def test_warmup_email_targets_must_be_list(self):
         args = {"emails": "sender@example.com"}
         command = {
