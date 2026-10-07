@@ -180,6 +180,26 @@ class InstantlySyncTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "items_must_be_list"):
             fetch_all_leads(client, max_leads=200)
 
+    def test_pagination_rejects_empty_page_with_cursor(self):
+        client = FakeClient([
+            {
+                "items": [],
+                "next_starting_after": "cursor-still-present",
+            }
+        ])
+        with self.assertRaisesRegex(RuntimeError, "empty_page_with_cursor"):
+            fetch_all_leads(client, max_leads=200)
+
+    def test_pagination_rejects_non_object_item(self):
+        client = FakeClient([
+            {
+                "items": [{"id": "ok"}, "bad-item"],
+                "next_starting_after": None,
+            }
+        ])
+        with self.assertRaisesRegex(RuntimeError, "item_must_be_object"):
+            fetch_all_leads(client, max_leads=200)
+
     def test_pagination_uses_next_starting_after(self):
         client = FakeClient(
             [
