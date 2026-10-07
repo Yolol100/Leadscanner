@@ -269,7 +269,8 @@ class InstantlyControlTests(unittest.TestCase):
             max_polls=3,
             sleep_fn=sleeps.append,
         )
-        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["state"], "completed")
+        self.assertEqual(result["job"]["status"], "success")
         self.assertEqual(sleeps, [1.0])
 
     def test_push_event_executes_only_new_inbox_json_files(self):
