@@ -475,7 +475,7 @@ class InstantlyControlTests(unittest.TestCase):
                     "next_starting_after": "cursor-still-present",
                 }
 
-        with self.assertRaisesRegex(RuntimeError, "empty_page_with_cursor"):
+        with self.assertRaisesRegex(RuntimeError, "lead_page_empty_with_cursor"):
             _campaign_leads(EmptyCursorClient(), "c1")
 
     def test_activation_lead_scan_rejects_non_object_item(self):
