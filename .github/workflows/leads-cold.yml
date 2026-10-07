@@ -104,6 +104,7 @@ on:
       - 'tests/test_instantly_control.py'
       - 'tests/test_instantly_sync.py'
       - 'tests/test_instantly_audit.py'
+      - 'tests/test_pipeline_contract_scenarios.py'
       - 'AGENTS.md'
       - 'README.md'
       - 'docs/INSTANTLY_AUDIT_PROMPT.md'
@@ -157,6 +158,7 @@ on:
       - 'tests/test_instantly_control.py'
       - 'tests/test_instantly_sync.py'
       - 'tests/test_instantly_audit.py'
+      - 'tests/test_pipeline_contract_scenarios.py'
       - 'AGENTS.md'
       - 'README.md'
       - 'docs/INSTANTLY_AUDIT_PROMPT.md'
@@ -235,7 +237,8 @@ jobs:
             tests.test_instantly_mcp \
             tests.test_instantly_control \
             tests.test_instantly_sync \
-            tests.test_instantly_audit -v
+            tests.test_instantly_audit \
+            tests.test_pipeline_contract_scenarios -v
           python3 scripts/instantly_audit.py
 
   execute:
