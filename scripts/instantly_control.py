@@ -278,13 +278,21 @@ def _wait_interest_status(
 
 def _campaign_leads(client: InstantlyClient, campaign_id: str, max_leads: int = 2000) -> list[dict]:
     rows, cursor = [], None
+    seen_cursors: set[str] = set()
     while len(rows) < max_leads:
         page = client.list_leads(campaign=campaign_id, limit=100, starting_after=cursor) or {}
-        batch = page.get("items") or []
+        batch = page.get("items")
+        if not isinstance(batch, list):
+            raise RuntimeError("instantly_lead_page_items_must_be_list")
         if not batch:
             break
         rows.extend(batch)
-        cursor = page.get("next_starting_after")
+        next_cursor = _text(page.get("next_starting_after")) or None
+        if next_cursor:
+            if next_cursor == cursor or next_cursor in seen_cursors:
+                raise RuntimeError("instantly_lead_pagination_cursor_loop")
+            seen_cursors.add(next_cursor)
+        cursor = next_cursor
         if not cursor:
             break
     if len(rows) >= max_leads and cursor:
