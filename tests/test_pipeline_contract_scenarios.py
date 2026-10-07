@@ -1,0 +1,85 @@
+import unittest
+
+from approval_revalidation import revalidate_approved
+from dedupe_preflight import candidate_identity
+from outreach_stages import choose_value_actions, generate_mails, select_reasons
+from review_draft_stages import prepare_review_batch
+from review_selection import build_review_queue, select_approved
+
+
+class PipelineContractScenarioTests(unittest.TestCase):
+    def candidate(self, *, source_type="official_site", evidence_text=None):
+        return {
+            "name_hint": "Acme Fietsen",
+            "official_domain": "acmefietsen.nl",
+            "official_url": "https://acmefietsen.nl/",
+            "public_business_email": "info@acmefietsen.nl",
+            "research_status": "ready",
+            "evidence_candidates": [{
+                "text": evidence_text or (
+                    "Klanten kunnen online een werkplaatsafspraak aanvragen "
+                    "voor onderhoud of reparatie."
+                ),
+                "source_url": "https://acmefietsen.nl/afspraak",
+                "source_type": source_type,
+                "page_type": "process",
+            }],
+        }
+
+    def build_approved(self):
+        selected = select_reasons({"candidates": [self.candidate()]})
+        self.assertEqual(selected["ready_count"], 1)
+        valued = choose_value_actions(selected)
+        mails = generate_mails(valued)
+        self.assertEqual(mails["ready_for_human_review_count"], 1)
+        batch = prepare_review_batch(mails)
+        queue = build_review_queue(batch)
+        self.assertEqual(queue["review_candidate_count"], 1)
+        return select_approved(batch, queue["items"][0]["approval_token"])
+
+    def test_positive_signal_reaches_exact_approval_and_live_revalidation(self):
+        approved = self.build_approved()
+        current = revalidate_approved(approved, [])
+        self.assertEqual(current["remaining_count"], 1)
+        row = current["rows"][0]
+        self.assertEqual(row["signal_type"], "appointment")
+        self.assertFalse(row["automatic_send"])
+        self.assertTrue(current["safety"]["dedupe_rechecked_immediately_before_mutation"])
+
+    def test_post_preview_registry_match_suppresses_approved_lead(self):
+        approved = self.build_approved()
+        row = approved["rows"][0]
+        registry = [{
+            "identity": candidate_identity({
+                "company": row["company"],
+                "domain": row["official_domain"],
+                "emails": row["email"],
+                "lead_ids": "growth-ffffffffffffffffffff",
+            }),
+            "status": "sent",
+            "row_number": 2,
+        }]
+        current = revalidate_approved(approved, registry)
+        self.assertEqual(current["remaining_count"], 0)
+        self.assertEqual(current["suppressed_after_preview_count"], 1)
+
+    def test_generic_marketing_copy_never_becomes_outreach(self):
+        selected = select_reasons({
+            "candidates": [self.candidate(
+                evidence_text="Kwaliteit en goede service staan centraal bij al onze werkzaamheden."
+            )]
+        })
+        self.assertEqual(selected["ready_count"], 0)
+        mails = generate_mails(choose_value_actions(selected))
+        batch = prepare_review_batch(mails)
+        self.assertEqual(batch["draft_candidate_count"], 0)
+
+    def test_third_party_evidence_never_becomes_outreach(self):
+        selected = select_reasons({"candidates": [self.candidate(source_type="directory")]})
+        self.assertEqual(selected["ready_count"], 0)
+        mails = generate_mails(choose_value_actions(selected))
+        self.assertEqual(mails["ready_for_human_review_count"], 0)
+
+
+if __name__ == "__main__":
+    unittest.main()
