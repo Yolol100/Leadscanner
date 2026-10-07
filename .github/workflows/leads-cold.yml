@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       execution_mode:
-        description: 'preview = alleen resultaten; draft = review-concepten + dedupe closure'
+        description: 'preview = research/review; draft = resume exact preview and store approved drafts'
         required: true
         default: preview
         type: choice
@@ -17,30 +17,37 @@ on:
         default: false
         type: boolean
       approved_review_tokens:
-        description: 'Draft mode: plak alleen approval tokens uit de preview; komma/newline gescheiden'
+        description: 'Draft mode: approval tokens uit de gekozen preview'
+        required: false
+        default: ''
+        type: string
+      preview_run_id:
+        description: 'Draft mode: GitHub Actions run ID van de goedgekeurde preview'
         required: false
         default: ''
         type: string
       region:
-        description: 'Plaats/regio voor cold discovery'
-        required: true
+        description: 'Preview mode: plaats/regio voor cold discovery'
+        required: false
+        default: ''
         type: string
       keywords:
-        description: 'Komma- of newlinegescheiden branches/zoektermen'
-        required: true
+        description: 'Preview mode: komma- of newlinegescheiden branches/zoektermen'
+        required: false
+        default: ''
         type: string
       target_candidates:
-        description: 'Max discovery candidates met website (1-5000)'
+        description: 'Preview mode: max discovery candidates met website (1-5000)'
         required: true
         default: '100'
         type: string
       verify_limit:
-        description: 'Max kandidaten voor official-site verification/research (1-100)'
+        description: 'Preview mode: max kandidaten voor verification/research (1-100)'
         required: true
         default: '40'
         type: string
       radius_km:
-        description: 'Overture zoekstraal in km (0.5-50)'
+        description: 'Preview mode: Overture zoekstraal in km (0.5-50)'
         required: true
         default: '8'
         type: string
@@ -56,6 +63,8 @@ on:
       - 'scripts/cold_run_manifest.py'
       - 'scripts/review_draft_stages.py'
       - 'scripts/review_selection.py'
+      - 'scripts/preview_snapshot.py'
+      - 'scripts/approval_revalidation.py'
       - 'scripts/myhost_draft.py'
       - 'scripts/update_dedupe_registry.py'
       - 'scripts/url_safety.py'
@@ -65,6 +74,8 @@ on:
       - 'tests/test_cold_run_manifest.py'
       - 'tests/test_review_draft_stages.py'
       - 'tests/test_review_selection.py'
+      - 'tests/test_preview_snapshot.py'
+      - 'tests/test_approval_revalidation.py'
       - 'tests/test_myhost_draft.py'
       - 'tests/test_update_dedupe_registry.py'
       - 'tests/test_url_safety.py'
@@ -81,6 +92,8 @@ on:
       - 'scripts/cold_run_manifest.py'
       - 'scripts/review_draft_stages.py'
       - 'scripts/review_selection.py'
+      - 'scripts/preview_snapshot.py'
+      - 'scripts/approval_revalidation.py'
       - 'scripts/myhost_draft.py'
       - 'scripts/update_dedupe_registry.py'
       - 'scripts/url_safety.py'
@@ -90,6 +103,8 @@ on:
       - 'tests/test_cold_run_manifest.py'
       - 'tests/test_review_draft_stages.py'
       - 'tests/test_review_selection.py'
+      - 'tests/test_preview_snapshot.py'
+      - 'tests/test_approval_revalidation.py'
       - 'tests/test_myhost_draft.py'
       - 'tests/test_update_dedupe_registry.py'
       - 'tests/test_url_safety.py'
@@ -98,9 +113,10 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
-  group: leads-cold-${{ github.event_name == 'workflow_dispatch' && 'execution' || github.ref }}
+  group: leads-cold-${{ github.event_name == 'workflow_dispatch' && inputs.execution_mode || github.ref }}
   cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 env:
@@ -125,8 +141,31 @@ jobs:
           PYTHONPATH: scripts
         run: |
           set -euo pipefail
-          python3 -m compileall -q scripts/dedupe_preflight.py scripts/cold_stages.py scripts/outreach_stages.py scripts/cold_run_manifest.py scripts/review_draft_stages.py scripts/review_selection.py scripts/myhost_draft.py scripts/update_dedupe_registry.py scripts/overture_discovery.py scripts/url_safety.py
-          python3 -m unittest tests.test_dedupe_preflight tests.test_cold_stages tests.test_outreach_stages tests.test_cold_run_manifest tests.test_review_draft_stages tests.test_review_selection tests.test_myhost_draft tests.test_update_dedupe_registry tests.test_url_safety -v
+          python3 -m compileall -q \
+            scripts/dedupe_preflight.py \
+            scripts/cold_stages.py \
+            scripts/outreach_stages.py \
+            scripts/cold_run_manifest.py \
+            scripts/review_draft_stages.py \
+            scripts/review_selection.py \
+            scripts/preview_snapshot.py \
+            scripts/approval_revalidation.py \
+            scripts/myhost_draft.py \
+            scripts/update_dedupe_registry.py \
+            scripts/overture_discovery.py \
+            scripts/url_safety.py
+          python3 -m unittest \
+            tests.test_dedupe_preflight \
+            tests.test_cold_stages \
+            tests.test_outreach_stages \
+            tests.test_cold_run_manifest \
+            tests.test_review_draft_stages \
+            tests.test_review_selection \
+            tests.test_preview_snapshot \
+            tests.test_approval_revalidation \
+            tests.test_myhost_draft \
+            tests.test_update_dedupe_registry \
+            tests.test_url_safety -v
 
   execute:
     if: github.event_name == 'workflow_dispatch'
@@ -149,6 +188,7 @@ jobs:
           INPUT_EXECUTION_MODE: ${{ inputs.execution_mode }}
           INPUT_CONFIRM_REVIEW_DRAFTS: ${{ inputs.confirm_review_drafts }}
           INPUT_APPROVED_REVIEW_TOKENS: ${{ inputs.approved_review_tokens }}
+          INPUT_PREVIEW_RUN_ID: ${{ inputs.preview_run_id }}
           INPUT_REGION: ${{ inputs.region }}
           INPUT_KEYWORDS: ${{ inputs.keywords }}
           INPUT_TARGET: ${{ inputs.target_candidates }}
@@ -164,43 +204,57 @@ jobs:
           mode = os.environ['INPUT_EXECUTION_MODE'].strip()
           confirm = os.environ['INPUT_CONFIRM_REVIEW_DRAFTS'].strip().casefold() == 'true'
           approved_tokens = os.environ['INPUT_APPROVED_REVIEW_TOKENS'].strip()
+          preview_run_id = os.environ['INPUT_PREVIEW_RUN_ID'].strip()
+          region = os.environ['INPUT_REGION'].strip()
+          raw_keywords = os.environ['INPUT_KEYWORDS'].strip()
+
           if mode not in {'preview', 'draft'}:
               raise SystemExit('execution_mode must be preview or draft')
-          if mode == 'draft' and not confirm:
-              raise SystemExit('draft mode requires confirm_review_drafts=true')
-          if mode == 'draft' and not approved_tokens:
-              raise SystemExit('draft mode requires one or more approved_review_tokens from a preview')
-          if mode == 'preview' and confirm:
-              raise SystemExit('confirm_review_drafts must remain false in preview mode')
-          if mode == 'preview' and approved_tokens:
-              raise SystemExit('approved_review_tokens must remain empty in preview mode')
 
-          region = os.environ['INPUT_REGION'].strip()
-          if not region or len(region) > 120:
-              raise SystemExit('region must be 1-120 characters')
-          keywords = [x.strip() for x in re.split(r'[,\n]+', os.environ['INPUT_KEYWORDS']) if x.strip()]
-          keywords = list(dict.fromkeys(keywords))
-          if not 1 <= len(keywords) <= 20 or any(len(x) > 120 for x in keywords):
-              raise SystemExit('keywords must contain 1-20 unique values of <=120 characters')
-          target = int(os.environ['INPUT_TARGET'])
-          verify_limit = int(os.environ['INPUT_VERIFY_LIMIT'])
-          radius = float(os.environ['INPUT_RADIUS_KM'])
-          if not 1 <= target <= 5000:
-              raise SystemExit('target_candidates must be 1-5000')
-          if not 1 <= verify_limit <= 100:
-              raise SystemExit('verify_limit must be 1-100')
-          if not 0.5 <= radius <= 50:
-              raise SystemExit('radius_km must be 0.5-50')
-          request = {
-              'execution_mode': mode,
-              'region': region,
-              'keywords': keywords,
-              'target_candidates': target,
-              'verify_limit': verify_limit,
-              'radius_km': radius,
-          }
-          Path('results/request.json').write_text(json.dumps(request, ensure_ascii=False) + '\n', encoding='utf-8')
-          print('COLD_REQUEST=green')
+          request = {'execution_mode': mode}
+          if mode == 'preview':
+              if confirm:
+                  raise SystemExit('confirm_review_drafts must remain false in preview mode')
+              if approved_tokens:
+                  raise SystemExit('approved_review_tokens must remain empty in preview mode')
+              if preview_run_id:
+                  raise SystemExit('preview_run_id must remain empty in preview mode')
+              if not region or len(region) > 120:
+                  raise SystemExit('preview region must be 1-120 characters')
+              keywords = [x.strip() for x in re.split(r'[,\n]+', raw_keywords) if x.strip()]
+              keywords = list(dict.fromkeys(keywords))
+              if not 1 <= len(keywords) <= 20 or any(len(x) > 120 for x in keywords):
+                  raise SystemExit('preview keywords must contain 1-20 unique values of <=120 characters')
+              target = int(os.environ['INPUT_TARGET'])
+              verify_limit = int(os.environ['INPUT_VERIFY_LIMIT'])
+              radius = float(os.environ['INPUT_RADIUS_KM'])
+              if not 1 <= target <= 5000:
+                  raise SystemExit('target_candidates must be 1-5000')
+              if not 1 <= verify_limit <= 100:
+                  raise SystemExit('verify_limit must be 1-100')
+              if not 0.5 <= radius <= 50:
+                  raise SystemExit('radius_km must be 0.5-50')
+              request.update({
+                  'region': region,
+                  'keywords': keywords,
+                  'target_candidates': target,
+                  'verify_limit': verify_limit,
+                  'radius_km': radius,
+              })
+          else:
+              if not confirm:
+                  raise SystemExit('draft mode requires confirm_review_drafts=true')
+              if not approved_tokens:
+                  raise SystemExit('draft mode requires one or more approved_review_tokens')
+              if not re.fullmatch(r'[1-9][0-9]*', preview_run_id):
+                  raise SystemExit('draft mode requires numeric preview_run_id')
+              request['source_preview_run_id'] = int(preview_run_id)
+
+          Path('results/request.json').write_text(
+              json.dumps(request, ensure_ascii=False) + '\n',
+              encoding='utf-8',
+          )
+          print(f"COLD_REQUEST=green mode={mode}")
           PY
 
       - name: Fetch and validate live dedupe registry first
@@ -222,6 +276,7 @@ jobs:
           echo 'DEDUPE_REGISTRY_FETCH=green'
 
       - name: Phase 4 - Overture discovery with website gate
+        if: inputs.execution_mode == 'preview'
         env:
           PYTHONPATH: scripts
         run: |
@@ -241,11 +296,15 @@ jobs:
               require_website=True,
               probe_websites=False,
           )
-          Path('results/discovery-raw.json').write_text(json.dumps(result, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+          Path('results/discovery-raw.json').write_text(
+              json.dumps(result, indent=2, ensure_ascii=False) + '\n',
+              encoding='utf-8',
+          )
           print(f"DISCOVERY_RAW=green candidates={result['candidate_count']}")
           PY
 
       - name: Phase 4 - Cheap filters before any website research
+        if: inputs.execution_mode == 'preview'
         env:
           PYTHONPATH: scripts
         run: |
@@ -257,10 +316,14 @@ jobs:
           import json
           from pathlib import Path
           payload = json.loads(Path('results/discovery-filtered.json').read_text(encoding='utf-8'))
-          Path('results/candidates.json').write_text(json.dumps(payload['candidates'], ensure_ascii=False) + '\n', encoding='utf-8')
+          Path('results/candidates.json').write_text(
+              json.dumps(payload['candidates'], ensure_ascii=False) + '\n',
+              encoding='utf-8',
+          )
           PY
 
       - name: Phase 4 - Hard historical dedupe
+        if: inputs.execution_mode == 'preview'
         env:
           PYTHONPATH: scripts
         run: |
@@ -271,6 +334,7 @@ jobs:
             --output results/dedupe-preflight.json
 
       - name: Phase 5 - Identity, domain and public contact verification
+        if: inputs.execution_mode == 'preview'
         env:
           PYTHONPATH: scripts
         run: |
@@ -283,6 +347,7 @@ jobs:
             --output results/verification.json
 
       - name: Phase 6 - Bounded first-party prospect research
+        if: inputs.execution_mode == 'preview'
         env:
           PYTHONPATH: scripts
         run: |
@@ -295,6 +360,7 @@ jobs:
             --output results/research.json
 
       - name: Phase 7 - Select one evidence-backed outreach reason
+        if: inputs.execution_mode == 'preview'
         env:
           PYTHONPATH: scripts
         run: |
@@ -304,6 +370,7 @@ jobs:
             --output results/outreach-reasons.json
 
       - name: Phase 8 - Choose one proposed value-first action
+        if: inputs.execution_mode == 'preview'
         env:
           PYTHONPATH: scripts
         run: |
@@ -313,6 +380,7 @@ jobs:
             --output results/value-actions.json
 
       - name: Phase 9 - Generate and validate short cold mail
+        if: inputs.execution_mode == 'preview'
         env:
           PYTHONPATH: scripts
         run: |
@@ -322,6 +390,7 @@ jobs:
             --output results/mail-review.json
 
       - name: Phase 10 - Prepare strict review-draft batch
+        if: inputs.execution_mode == 'preview'
         env:
           PYTHONPATH: scripts
         run: |
@@ -331,6 +400,7 @@ jobs:
             --output results/review-draft-batch.json
 
       - name: Phase 16 - Build human-review queue
+        if: inputs.execution_mode == 'preview'
         env:
           PYTHONPATH: scripts
         run: |
@@ -341,7 +411,52 @@ jobs:
             --markdown-output results/review-queue.md \
             --csv-output results/review-queue.csv
 
-      - name: Phase 17 - Select exact approved review tokens
+      - name: Build preview manifest
+        if: inputs.execution_mode == 'preview'
+        env:
+          PYTHONPATH: scripts
+        run: |
+          set -euo pipefail
+          python3 scripts/cold_run_manifest.py \
+            --mode preview \
+            --request results/request.json \
+            --filtered results/discovery-filtered.json \
+            --dedupe results/dedupe-preflight.json \
+            --verified results/verification.json \
+            --research results/research.json \
+            --reasons results/outreach-reasons.json \
+            --values results/value-actions.json \
+            --mail results/mail-review.json \
+            --draft-batch results/review-draft-batch.json \
+            --review-queue results/review-queue.json \
+            --output results/run-manifest.json
+
+      - name: Phase 19 - Seal immutable preview snapshot
+        if: inputs.execution_mode == 'preview'
+        env:
+          PYTHONPATH: scripts
+        run: |
+          set -euo pipefail
+          python3 scripts/preview_snapshot.py build \
+            --request results/request.json \
+            --batch results/review-draft-batch.json \
+            --queue results/review-queue.json \
+            --manifest results/run-manifest.json \
+            --output results/preview-snapshot.json
+
+      - name: Phase 20 - Resume exact successful preview artifact
+        if: inputs.execution_mode == 'draft'
+        env:
+          PYTHONPATH: scripts
+          GITHUB_TOKEN: ${{ github.token }}
+          INPUT_PREVIEW_RUN_ID: ${{ inputs.preview_run_id }}
+        run: |
+          set -euo pipefail
+          python3 scripts/preview_snapshot.py resume \
+            --run-id "$INPUT_PREVIEW_RUN_ID" \
+            --output-dir results
+
+      - name: Phase 20 - Select exact approved review tokens from snapshot
         if: inputs.execution_mode == 'draft'
         env:
           PYTHONPATH: scripts
@@ -353,14 +468,25 @@ jobs:
             --approved-tokens-env INPUT_APPROVED_REVIEW_TOKENS \
             --output results/approved-review-draft-batch.json
 
-      - name: Phase 18 - Preflight canonical registry write access
+      - name: Phase 21 - Revalidate approved leads against live registry
+        if: inputs.execution_mode == 'draft'
+        env:
+          PYTHONPATH: scripts
+        run: |
+          set -euo pipefail
+          python3 scripts/approval_revalidation.py \
+            --batch results/approved-review-draft-batch.json \
+            --registry-csv results/dedupe-registry.csv \
+            --output results/approved-current-batch.json
+
+      - name: Phase 21 - Preflight canonical registry write access
         if: inputs.execution_mode == 'draft'
         env:
           PYTHONPATH: scripts
           LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON }}
         run: |
           set -euo pipefail
-          COUNT=$(python3 -c "import json; print(json.load(open('results/approved-review-draft-batch.json'))['draft_candidate_count'])")
+          COUNT=$(python3 -c "import json; print(json.load(open('results/approved-current-batch.json'))['remaining_count'])")
           if [ "$COUNT" -eq 0 ]; then
             echo "DEDUPE_REGISTRY_ACCESS=not_needed count=0"
           else
@@ -369,7 +495,7 @@ jobs:
               --output results/registry-access.json
           fi
 
-      - name: Phase 18 - Store approved mijn.host review drafts only
+      - name: Phase 21 - Store only still-current approved review drafts
         if: inputs.execution_mode == 'draft'
         env:
           PYTHONPATH: scripts
@@ -383,25 +509,25 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/myhost_draft.py \
-            --batch results/approved-review-draft-batch.json \
+            --batch results/approved-current-batch.json \
             --report results/myhost-drafts.json \
             --reject-changed-existing | tee results/myhost-drafts.txt
           grep -q '^MYHOST_DRAFT_SYNC=green ' results/myhost-drafts.txt
           grep -q 'reject_changed_existing=true' results/myhost-drafts.txt
           grep -q 'smtp_send=not_available' results/myhost-drafts.txt
 
-      - name: Phase 18 - Exact mailbox readback gate
+      - name: Phase 21 - Exact mailbox readback gate
         if: inputs.execution_mode == 'draft'
         env:
           PYTHONPATH: scripts
         run: |
           set -euo pipefail
           python3 scripts/review_draft_stages.py readback \
-            --batch results/approved-review-draft-batch.json \
+            --batch results/approved-current-batch.json \
             --report results/myhost-drafts.json \
             --output results/review-draft-readback.json
 
-      - name: Phase 18 - Append canonical dedupe registry and read back
+      - name: Phase 21 - Append canonical dedupe registry and read back
         if: inputs.execution_mode == 'draft'
         env:
           PYTHONPATH: scripts
@@ -412,38 +538,27 @@ jobs:
             --readback results/review-draft-readback.json \
             --output results/registry-update.json
 
-      - name: Build run preview or closure manifest
+      - name: Build resumed draft closure manifest
+        if: inputs.execution_mode == 'draft'
         env:
           PYTHONPATH: scripts
-          INPUT_EXECUTION_MODE: ${{ inputs.execution_mode }}
         run: |
           set -euo pipefail
-          EXTRA_ARGS=()
-          DRAFT_BATCH_PATH=results/review-draft-batch.json
-          if [ "$INPUT_EXECUTION_MODE" = "draft" ]; then
-            DRAFT_BATCH_PATH=results/approved-review-draft-batch.json
-            EXTRA_ARGS+=(--approved-batch results/approved-review-draft-batch.json)
-            EXTRA_ARGS+=(--draft-readback results/review-draft-readback.json)
-            EXTRA_ARGS+=(--registry-update results/registry-update.json)
-          fi
           python3 scripts/cold_run_manifest.py \
-            --mode "$INPUT_EXECUTION_MODE" \
-            --request results/request.json \
-            --filtered results/discovery-filtered.json \
-            --dedupe results/dedupe-preflight.json \
-            --verified results/verification.json \
-            --research results/research.json \
-            --reasons results/outreach-reasons.json \
-            --values results/value-actions.json \
-            --mail results/mail-review.json \
-            --draft-batch "$DRAFT_BATCH_PATH" \
+            --mode draft \
+            --source-preview-manifest results/source-preview-manifest.json \
+            --source-preview-snapshot results/preview-snapshot.json \
+            --draft-batch results/approved-current-batch.json \
             --review-queue results/review-queue.json \
-            "${EXTRA_ARGS[@]}" \
+            --approved-batch results/approved-review-draft-batch.json \
+            --revalidation results/approved-current-batch.json \
+            --draft-readback results/review-draft-readback.json \
+            --registry-update results/registry-update.json \
             --output results/run-manifest.json
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: leads-cold-${{ inputs.execution_mode }}-${{ github.run_number }}
+          name: leads-cold-${{ inputs.execution_mode }}-${{ github.run_id }}
           path: |
             results/request.json
             results/discovery-raw.json
@@ -458,11 +573,15 @@ jobs:
             results/review-queue.json
             results/review-queue.md
             results/review-queue.csv
+            results/preview-snapshot.json
+            results/source-preview-manifest.json
+            results/source-preview-request.json
             results/approved-review-draft-batch.json
+            results/approved-current-batch.json
             results/run-manifest.json
             results/myhost-drafts.json
             results/myhost-drafts.txt
             results/review-draft-readback.json
             results/registry-update.json
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 7
