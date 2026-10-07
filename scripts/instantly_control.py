@@ -315,7 +315,7 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
     elif action == "get_lead":
         data = client.get_lead(_text(args.get("lead_id")))
     elif action == "list_emails":
-        data = client.get_emails(campaign_id=_text(args.get("campaign_id")) or None, received_only=bool(args.get("received_only", True)), limit=_limit(args))
+        data = client.get_emails(campaign_id=_text(args.get("campaign_id")) or None, received_only=bool(args.get("received_only", True)), limit=_limit(args), starting_after=_text(args.get("starting_after")) or None)
     elif action == "get_email":
         data = _api(client, "GET", f"/emails/{_id(args.get('email_id'), 'email_id')}")
     elif action == "count_unread_emails":
