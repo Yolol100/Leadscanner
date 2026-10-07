@@ -1,0 +1,7 @@
+{
+  "region": "Rotterdam",
+  "keywords": "schilder",
+  "target_candidates": 30,
+  "verify_limit": 20,
+  "radius_km": 10
+}
