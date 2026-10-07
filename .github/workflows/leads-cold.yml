@@ -3,24 +3,54 @@ name: Leads Cold Pipeline
 on:
   workflow_dispatch:
     inputs:
-      candidates_json:
-        description: 'JSON array of cold-lead candidates for dedupe preflight'
+      region:
+        description: 'Plaats/regio voor cold discovery'
         required: true
-        default: '[]'
+        type: string
+      keywords:
+        description: 'Komma- of newlinegescheiden branches/zoektermen'
+        required: true
+        type: string
+      target_candidates:
+        description: 'Max discovery candidates met website (1-5000)'
+        required: true
+        default: '100'
+        type: string
+      verify_limit:
+        description: 'Max kandidaten voor official-site verification/research (1-100)'
+        required: true
+        default: '40'
+        type: string
+      radius_km:
+        description: 'Overture zoekstraal in km (0.5-50)'
+        required: true
+        default: '8'
         type: string
   push:
     branches: [main]
     paths:
       - '.github/workflows/leads-cold.yml'
+      - 'requirements-cold.txt'
       - 'scripts/dedupe_preflight.py'
+      - 'scripts/cold_stages.py'
+      - 'scripts/overture_discovery.py'
+      - 'scripts/url_safety.py'
       - 'tests/test_dedupe_preflight.py'
+      - 'tests/test_cold_stages.py'
+      - 'tests/test_url_safety.py'
       - 'AGENTS.md'
       - 'README.md'
   pull_request:
     paths:
       - '.github/workflows/leads-cold.yml'
+      - 'requirements-cold.txt'
       - 'scripts/dedupe_preflight.py'
+      - 'scripts/cold_stages.py'
+      - 'scripts/overture_discovery.py'
+      - 'scripts/url_safety.py'
       - 'tests/test_dedupe_preflight.py'
+      - 'tests/test_cold_stages.py'
+      - 'tests/test_url_safety.py'
       - 'AGENTS.md'
       - 'README.md'
 
@@ -37,7 +67,7 @@ env:
 jobs:
   test:
     runs-on: ubuntu-24.04
-    timeout-minutes: 3
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -45,19 +75,22 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
-      - name: Run focused dedupe tests
+          cache: pip
+          cache-dependency-path: requirements-cold.txt
+      - run: python3 -m pip install --disable-pip-version-check -r requirements-cold.txt
+      - name: Run focused active-path tests
         env:
           PYTHONPATH: scripts
         run: |
           set -euo pipefail
-          python3 -m compileall -q scripts/dedupe_preflight.py
-          python3 -m unittest tests.test_dedupe_preflight -v
+          python3 -m compileall -q scripts/dedupe_preflight.py scripts/cold_stages.py scripts/overture_discovery.py scripts/url_safety.py
+          python3 -m unittest tests.test_dedupe_preflight tests.test_cold_stages tests.test_url_safety -v
 
-  dedupe-preflight:
+  execute:
     if: github.event_name == 'workflow_dispatch'
     needs: test
     runs-on: ubuntu-24.04
-    timeout-minutes: 3
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -65,31 +98,54 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-cold.txt
+      - run: python3 -m pip install --disable-pip-version-check -r requirements-cold.txt
 
-      - name: Validate candidate input
+      - name: Validate request
         env:
-          INPUT_CANDIDATES_JSON: ${{ inputs.candidates_json }}
+          INPUT_REGION: ${{ inputs.region }}
+          INPUT_KEYWORDS: ${{ inputs.keywords }}
+          INPUT_TARGET: ${{ inputs.target_candidates }}
+          INPUT_VERIFY_LIMIT: ${{ inputs.verify_limit }}
+          INPUT_RADIUS_KM: ${{ inputs.radius_km }}
         run: |
           set -euo pipefail
           mkdir -p results
           python3 - <<'PY'
-          import json
-          import os
+          import json, os, re
           from pathlib import Path
 
-          raw = os.environ['INPUT_CANDIDATES_JSON']
-          data = json.loads(raw)
-          if not isinstance(data, list):
-              raise SystemExit('candidates_json must be a JSON array')
-          if len(data) > 5000:
-              raise SystemExit('candidate limit exceeded')
-          Path('results/candidates.json').write_text(
-              json.dumps(data, ensure_ascii=False) + '\n', encoding='utf-8'
-          )
-          print(f'CANDIDATE_INPUT=green count={len(data)}')
+          region = os.environ['INPUT_REGION'].strip()
+          if not region or len(region) > 120:
+              raise SystemExit('region must be 1-120 characters')
+          keywords = [x.strip() for x in re.split(r'[,\n]+', os.environ['INPUT_KEYWORDS']) if x.strip()]
+          keywords = list(dict.fromkeys(keywords))
+          if not 1 <= len(keywords) <= 20 or any(len(x) > 120 for x in keywords):
+              raise SystemExit('keywords must contain 1-20 unique values of <=120 characters')
+          target = int(os.environ['INPUT_TARGET'])
+          verify_limit = int(os.environ['INPUT_VERIFY_LIMIT'])
+          radius = float(os.environ['INPUT_RADIUS_KM'])
+          if not 1 <= target <= 5000:
+              raise SystemExit('target_candidates must be 1-5000')
+          if not 1 <= verify_limit <= 100:
+              raise SystemExit('verify_limit must be 1-100')
+          if not 0.5 <= radius <= 50:
+              raise SystemExit('radius_km must be 0.5-50')
+          request = {
+              'region': region,
+              'keywords': keywords,
+              'target_candidates': target,
+              'verify_limit': verify_limit,
+              'radius_km': radius,
+          }
+          Path('results/request.json').write_text(json.dumps(request, ensure_ascii=False) + '\n', encoding='utf-8')
+          print('COLD_REQUEST=green')
           PY
 
-      - name: Fetch live dedupe registry
+      - name: Fetch and validate live dedupe registry first
+        env:
+          PYTHONPATH: scripts
         run: |
           set -euo pipefail
           curl --fail --location --silent --show-error \
@@ -98,9 +154,53 @@ jobs:
             "$DEDUPE_REGISTRY_CSV_URL" \
             --output results/dedupe-registry.csv
           test -s results/dedupe-registry.csv
+          printf '[]\n' > results/empty-candidates.json
+          python3 scripts/dedupe_preflight.py \
+            --registry-csv results/dedupe-registry.csv \
+            --candidates-json results/empty-candidates.json \
+            --output results/registry-check.json
           echo 'DEDUPE_REGISTRY_FETCH=green'
 
-      - name: Apply hard dedupe gate
+      - name: Phase 4 - Overture discovery with website gate
+        env:
+          PYTHONPATH: scripts
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from overture_discovery import discover
+
+          request = json.loads(Path('results/request.json').read_text(encoding='utf-8'))
+          result = discover(
+              region=request['region'],
+              bbox=None,
+              radius_km=request['radius_km'],
+              keywords=request['keywords'],
+              max_results=request['target_candidates'],
+              require_website=True,
+              probe_websites=False,
+          )
+          Path('results/discovery-raw.json').write_text(json.dumps(result, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+          print(f"DISCOVERY_RAW=green candidates={result['candidate_count']}")
+          PY
+
+      - name: Phase 4 - Cheap filters before any website research
+        env:
+          PYTHONPATH: scripts
+        run: |
+          set -euo pipefail
+          python3 scripts/cold_stages.py filter \
+            --input results/discovery-raw.json \
+            --output results/discovery-filtered.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path('results/discovery-filtered.json').read_text(encoding='utf-8'))
+          Path('results/candidates.json').write_text(json.dumps(payload['candidates'], ensure_ascii=False) + '\n', encoding='utf-8')
+          PY
+
+      - name: Phase 4 - Hard historical dedupe
         env:
           PYTHONPATH: scripts
         run: |
@@ -110,9 +210,59 @@ jobs:
             --candidates-json results/candidates.json \
             --output results/dedupe-preflight.json
 
+      - name: Phase 5 - Identity, domain and public contact verification
+        env:
+          PYTHONPATH: scripts
+        run: |
+          set -euo pipefail
+          VERIFY_LIMIT=$(python3 -c "import json; print(json.load(open('results/request.json'))['verify_limit'])")
+          python3 scripts/cold_stages.py verify \
+            --input results/dedupe-preflight.json \
+            --limit "$VERIFY_LIMIT" \
+            --max-workers 10 \
+            --output results/verification.json
+
+      - name: Phase 6 - Bounded first-party prospect research
+        env:
+          PYTHONPATH: scripts
+        run: |
+          set -euo pipefail
+          VERIFY_LIMIT=$(python3 -c "import json; print(json.load(open('results/request.json'))['verify_limit'])")
+          python3 scripts/cold_stages.py research \
+            --input results/verification.json \
+            --limit "$VERIFY_LIMIT" \
+            --max-workers 6 \
+            --output results/research.json
+
+      - name: Summarize phase handoffs
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          filtered = json.loads(Path('results/discovery-filtered.json').read_text())
+          dedupe = json.loads(Path('results/dedupe-preflight.json').read_text())
+          verified = json.loads(Path('results/verification.json').read_text())
+          research = json.loads(Path('results/research.json').read_text())
+          print(
+              'COLD_PHASES=green '
+              f"discovery={filtered['candidate_count']} "
+              f"dedupe_kept={dedupe['kept_count']} "
+              f"verified_for_research={verified['ready_for_research_count']} "
+              f"research_ready={research['research_ready_count']} "
+              'copy=false draft=false email_send=false'
+          )
+          PY
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: leads-dedupe-preflight-${{ github.run_number }}
-          path: results/dedupe-preflight.json
+          name: leads-cold-phases-4-6-${{ github.run_number }}
+          path: |
+            results/request.json
+            results/discovery-raw.json
+            results/discovery-filtered.json
+            results/dedupe-preflight.json
+            results/verification.json
+            results/research.json
           if-no-files-found: error
           retention-days: 1
