@@ -699,11 +699,66 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
       - name: Install Instantly control runtime
         run: python3 -m pip install --disable-pip-version-check 'requests>=2,<3' 'google-auth>=2,<3'
+      - name: Detect newly-added immutable Instantly commands
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p results
+          if printf '%s' "$BEFORE_SHA" | grep -Eq '^0+      - name: Upload Instantly command results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: instantly-control-${{ github.run_id }}
+          path: results/instantly-control/
+          if-no-files-found: warn
+          retention-days: 14
+
+  instantly_sync:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Install Instantly sync runtime
+        run: python3 -m pip install --disable-pip-version-check 'requests>=2,<3' 'google-auth>=2,<3'
+      - name: Reconcile Instantly states into existing registry rows
+        env:
+          PYTHONPATH: scripts
+          INSTANTLY_API_KEY: ${{ secrets.INSTANTLY_API_KEY }}
+          LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON || secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -euo pipefail
+          python3 scripts/instantly_sync.py \
+            --output results/instantly-sync.json \
+            --max-leads 10000
+      - name: Upload Instantly sync result
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: instantly-sync-${{ github.run_id }}
+          path: results/instantly-sync.json
+          if-no-files-found: warn
+          retention-days: 14
+; then
+            git diff-tree --root --no-commit-id --name-only -r --diff-filter=A "$AFTER_SHA" -- 'instantly-commands/inbox/*.json'
+          else
+            git diff --diff-filter=A --name-only "$BEFORE_SHA" "$AFTER_SHA" -- 'instantly-commands/inbox/*.json'
+          fi | sort -u > results/new-instantly-command-paths.txt
+          cat results/new-instantly-command-paths.txt
       - name: Execute only newly-added immutable Instantly commands
         env:
           PYTHONPATH: scripts
@@ -715,8 +770,8 @@ jobs:
           GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           set -euo pipefail
-          python3 scripts/instantly_control.py run-event \
-            --event "$GITHUB_EVENT_PATH" \
+          python3 scripts/instantly_control.py run-paths \
+            --paths-file results/new-instantly-command-paths.txt \
             --config config/instantly-control.json \
             --output-dir results/instantly-control
       - name: Upload Instantly command results
