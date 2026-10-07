@@ -65,6 +65,65 @@ class OutreachStagesTests(unittest.TestCase):
         self.assertIn("werkplaatsafspraak", item["verified_observation"])
         self.assertEqual(item["reason_for_outreach"], item["verified_observation"])
 
+    def test_generic_quality_service_and_catalog_copy_are_hold(self):
+        payload = {
+            "candidates": [
+                candidate_with_evidence([
+                    {
+                        "text": "Kwaliteit en goede service staan centraal bij al onze werkzaamheden.",
+                        "source_url": "https://acmefietsen.nl/",
+                        "source_type": "official_site",
+                        "page_type": "home",
+                    },
+                    {
+                        "text": "Bekijk ons overzicht van diensten voor onderhoud reparatie en advies.",
+                        "source_url": "https://acmefietsen.nl/diensten",
+                        "source_type": "official_site",
+                        "page_type": "services",
+                    },
+                ])
+            ]
+        }
+        result = select_reasons(payload)
+        self.assertEqual(result["ready_count"], 0)
+        self.assertEqual(
+            result["candidates"][0]["outreach_hold_reason"],
+            "weak_generic_marketing_signal",
+        )
+
+    def test_appointment_word_without_customer_action_is_hold(self):
+        payload = {
+            "candidates": [
+                candidate_with_evidence([
+                    {
+                        "text": "Wij werken op afspraak en leveren professionele service aan onze klanten.",
+                        "source_url": "https://acmefietsen.nl/",
+                        "source_type": "official_site",
+                        "page_type": "home",
+                    }
+                ])
+            ]
+        }
+        result = select_reasons(payload)
+        self.assertEqual(result["ready_count"], 0)
+
+    def test_concrete_quote_request_is_ready(self):
+        payload = {
+            "candidates": [
+                candidate_with_evidence([
+                    {
+                        "text": "Vraag online een offerte aan via het formulier voor uw schilderwerk.",
+                        "source_url": "https://acmefietsen.nl/offerte",
+                        "source_type": "official_site",
+                        "page_type": "process",
+                    }
+                ])
+            ]
+        }
+        result = select_reasons(payload)
+        self.assertEqual(result["ready_count"], 1)
+        self.assertEqual(result["candidates"][0]["signal_type"], "quote_request")
+
     def test_opening_hours_and_price_are_not_outreach_signals(self):
         payload = {
             "candidates": [
