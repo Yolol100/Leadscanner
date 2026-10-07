@@ -4,7 +4,7 @@
 - Build a fast cold-lead pipeline from a clean slate.
 - Treat legacy repository code as implementation material, never as requirements by default.
 - The Google Sheet Lead Dedupe Registry is the only retained historical lead source and is suppression-only.
-- The active phases are discovery/filter -> historical dedupe -> identity/domain/contact verification -> bounded first-party research -> one evidence-backed outreach reason -> one proposed value-first action -> short validated cold mail -> human review queue with exact approval tokens -> explicitly approved strict review-draft storage -> exact mailbox readback -> canonical dedupe-registry append/readback -> run manifest.
+- The active phases are preview discovery/filter -> historical dedupe -> identity/domain/contact verification -> bounded first-party research -> one evidence-backed outreach reason -> one proposed value-first action -> short validated cold mail -> human review queue -> immutable preview snapshot -> draft resume from that exact snapshot -> exact approval selection -> live dedupe revalidation -> strict review-draft storage -> exact mailbox readback -> canonical dedupe-registry append/readback -> provenance-bound run manifest.
 - Commercial sending is not active and must not be added to this workflow.
 
 ## Execution rules
@@ -20,8 +20,11 @@
 - Default every manual execution to `preview`; preview must not require mailbox or Google write credentials and must not mutate either system.
 - Every preview must emit `review-queue.json`, `review-queue.md`, and `review-queue.csv` with one approval token per reviewable lead.
 - Bind each approval token to the exact lead ID, subject, body, evidence and proposed value action; changed copy must invalidate the token.
-- Enter mutation mode only when `execution_mode=draft`, `confirm_review_drafts=true`, and at least one exact `approved_review_tokens` value are all explicit.
-- Store only the exact approved subset as `review_draft` mail through the dedicated IMAP draft writer; allow exact retries but reject changed existing drafts.
+- Seal every preview into a digest-bound `preview-snapshot.json` containing source repository/run/commit, the review batch, review queue, request and preview manifest.
+- Enter mutation mode only when `execution_mode=draft`, `confirm_review_drafts=true`, a numeric `preview_run_id`, and at least one exact `approved_review_tokens` value are all explicit.
+- Draft mode must resume the exact successful, non-expired preview artifact from `main`; it must not rerun discovery, verification, research or copy generation.
+- Revalidate approved snapshot leads against the current dedupe registry immediately before any mailbox mutation; suppress anything that appeared in the registry after preview.
+- Store only the remaining exact approved subset as `review_draft` mail through the dedicated IMAP draft writer; allow exact retries but reject changed existing drafts.
 - Require exact To/Subject/body/lead-ID/review-status readback before updating the registry.
 - Preflight Google Sheets write access before any non-empty draft batch, then append/read back the canonical DedupeRegistry only after mailbox readback is green.
 - Preserve bounded concurrency and same-domain URL safety.
@@ -35,5 +38,5 @@
 ## Validation
 - Run focused tests for every active-path change.
 - Keep the active workflow path list narrow so unrelated legacy edits do not consume CI time.
-- Emit one `run-manifest.json` for every manual run with execution mode, stage counts, review-queue count, approval count, operator-rejected count, closure state, and safety flags.
+- Emit one `run-manifest.json` for every manual run with execution mode, stage counts, review-queue count, approval count, operator-rejected count, post-preview suppression count, source preview ID/run/commit, closure state, and safety flags.
 - Report completion only with exact `main` commit and GitHub Actions evidence.
