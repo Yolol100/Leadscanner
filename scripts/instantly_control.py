@@ -353,7 +353,12 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
     elif action in {"pause_account", "resume_account"}:
         email = _text(args.get("email"))
         verb = "pause" if action == "pause_account" else "resume"
-        data = {"operation": _api(client, "POST", f"/accounts/{_id(email, 'email')}/{verb}", payload={}), "readback": _api(client, "GET", f"/accounts/{_id(email, 'email')}")}
+        operation = _api(client, "POST", f"/accounts/{_id(email, 'email')}/{verb}", payload={})
+        readback = _api(client, "GET", f"/accounts/{_id(email, 'email')}") or {}
+        expected_status = 2 if action == "pause_account" else 1
+        if int(readback.get("status") or 0) != expected_status:
+            raise RuntimeError(f"account_{verb}_readback_mismatch")
+        data = {"operation": operation, "readback": readback}
     elif action in {"enable_warmup", "disable_warmup"}:
         verb = "enable" if action == "enable_warmup" else "disable"
         data = _api(client, "POST", f"/accounts/warmup/{verb}", payload={"emails": list(args.get("emails") or [])})
