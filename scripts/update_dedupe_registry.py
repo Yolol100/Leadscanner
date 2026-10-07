@@ -109,6 +109,8 @@ def plan_registry_update(readback: dict, current_values: list[list[object]]) -> 
             raise ValueError("registry_intent_must_suppress")
         matches = [current for current in existing_rows + append_rows if rows_match(row, current)]
         if matches:
+            if any(match[9].casefold() != "true" for match in matches):
+                raise ValueError("registry_identity_exists_without_suppression")
             existing_count += 1
             continue
         append_rows.append(row)
