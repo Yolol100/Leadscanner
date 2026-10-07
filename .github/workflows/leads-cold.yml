@@ -82,6 +82,7 @@ on:
       - 'scripts/instantly_mcp.py'
       - 'scripts/instantly_control.py'
       - 'scripts/instantly_sync.py'
+      - 'scripts/instantly_audit.py'
       - 'tests/test_dedupe_preflight.py'
       - 'tests/test_cold_stages.py'
       - 'tests/test_outreach_stages.py'
@@ -102,8 +103,10 @@ on:
       - 'tests/test_instantly_mcp.py'
       - 'tests/test_instantly_control.py'
       - 'tests/test_instantly_sync.py'
+      - 'tests/test_instantly_audit.py'
       - 'AGENTS.md'
       - 'README.md'
+      - 'docs/INSTANTLY_AUDIT_PROMPT.md'
   pull_request:
     paths:
       - '.github/workflows/leads-cold.yml'
@@ -132,6 +135,7 @@ on:
       - 'scripts/instantly_mcp.py'
       - 'scripts/instantly_control.py'
       - 'scripts/instantly_sync.py'
+      - 'scripts/instantly_audit.py'
       - 'tests/test_dedupe_preflight.py'
       - 'tests/test_cold_stages.py'
       - 'tests/test_outreach_stages.py'
@@ -152,8 +156,10 @@ on:
       - 'tests/test_instantly_mcp.py'
       - 'tests/test_instantly_control.py'
       - 'tests/test_instantly_sync.py'
+      - 'tests/test_instantly_audit.py'
       - 'AGENTS.md'
       - 'README.md'
+      - 'docs/INSTANTLY_AUDIT_PROMPT.md'
 
 permissions:
   contents: read
@@ -206,7 +212,8 @@ jobs:
             scripts/instantly_service.py \
             scripts/instantly_mcp.py \
             scripts/instantly_control.py \
-            scripts/instantly_sync.py
+            scripts/instantly_sync.py \
+            scripts/instantly_audit.py
           python3 -m unittest \
             tests.test_dedupe_preflight \
             tests.test_cold_stages \
@@ -227,7 +234,8 @@ jobs:
             tests.test_instantly_service \
             tests.test_instantly_mcp \
             tests.test_instantly_control \
-            tests.test_instantly_sync -v
+            tests.test_instantly_sync \
+            tests.test_instantly_audit -v
 
   execute:
     if: github.event_name == 'workflow_dispatch'
