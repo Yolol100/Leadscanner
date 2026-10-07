@@ -145,6 +145,31 @@ class ColdRunManifestTests(unittest.TestCase):
             "preview-1234567890abcdef12345678",
         )
 
+    def test_manifest_includes_quality_and_coverage_diagnostics(self):
+        kwargs = base_inputs()
+        kwargs["funnel"] = {
+            "drop_reasons": {
+                "outreach": {"weak_generic_marketing_signal": 2},
+            },
+            "ready_signal_types": {"appointment": 1},
+        }
+        kwargs["coverage"] = {
+            "source_status": "sufficient",
+            "operational_pool_status": "sufficient",
+            "second_source_decision": "second_source_not_needed",
+        }
+        result = build_manifest(mode="preview", **kwargs)
+        self.assertEqual(
+            result["diagnostics"]["drop_reasons"]["outreach"]["weak_generic_marketing_signal"],
+            2,
+        )
+        self.assertEqual(result["diagnostics"]["ready_signal_types"], {"appointment": 1})
+        self.assertEqual(result["diagnostics"]["coverage_source_status"], "sufficient")
+        self.assertEqual(
+            result["diagnostics"]["second_source_decision"],
+            "second_source_not_needed",
+        )
+
     def test_zero_draft_draft_mode_can_close_without_external_mutation(self):
         kwargs = base_inputs()
         kwargs["draft_batch"] = {"draft_candidate_count": 0}
