@@ -127,6 +127,14 @@ def _confirmation_target(action: str, args: dict) -> str:
     payload = args.get("payload") or {}
     if action == "create_campaign_draft":
         return _text(payload.get("name"))
+    if action == "stage_approved_lead":
+        return "|".join(
+            part for part in (
+                _text(args.get("preview_run_id")),
+                _text(args.get("approval_token")).casefold(),
+                _text(args.get("campaign_id")),
+            ) if part
+        )
     if action == "reply_email":
         return "|".join(
             part for part in (
