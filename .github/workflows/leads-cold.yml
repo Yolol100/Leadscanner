@@ -242,6 +242,9 @@ jobs:
     needs: test
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    concurrency:
+      group: ${{ inputs.execution_mode == 'draft' && 'leadscanner-instantly-registry' || format('leadscanner-preview-{0}', github.run_id) }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
