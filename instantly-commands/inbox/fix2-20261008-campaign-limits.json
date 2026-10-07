@@ -1,0 +1,18 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "fix2-20261008-campaign-limits",
+  "action": "update_campaign",
+  "args": {
+    "campaign_id": "827b1b45-6a7e-45ba-88de-d89db2a47d6a",
+    "payload": {
+      "email_gap": 10,
+      "daily_limit": 15,
+      "daily_max_leads": 15,
+      "stop_on_reply": true,
+      "stop_on_auto_reply": true,
+      "open_tracking": false
+    }
+  },
+  "confirm": "EXECUTE update_campaign 827b1b45-6a7e-45ba-88de-d89db2a47d6a",
+  "requested_by": "chatgpt"
+}

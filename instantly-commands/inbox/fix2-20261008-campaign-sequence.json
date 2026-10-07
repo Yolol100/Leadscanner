@@ -1,0 +1,30 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "fix2-20261008-campaign-sequence",
+  "action": "update_campaign",
+  "args": {
+    "campaign_id": "827b1b45-6a7e-45ba-88de-d89db2a47d6a",
+    "payload": {
+      "sequences": [
+        {
+          "steps": [
+            {
+              "type": "email",
+              "delay": 2,
+              "variants": [
+                {
+                  "subject": "{{leadscanner_subject}}",
+                  "body": "{{leadscanner_body}}"
+                }
+              ],
+              "delay_unit": "days",
+              "pre_delay_unit": "days"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "confirm": "EXECUTE update_campaign 827b1b45-6a7e-45ba-88de-d89db2a47d6a",
+  "requested_by": "chatgpt"
+}

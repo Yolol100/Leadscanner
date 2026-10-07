@@ -1,0 +1,33 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "fix2-20261008-campaign-schedule",
+  "action": "update_campaign",
+  "args": {
+    "campaign_id": "827b1b45-6a7e-45ba-88de-d89db2a47d6a",
+    "payload": {
+      "campaign_schedule": {
+        "schedules": [
+          {
+            "name": "Standaard Kantoortijden (NL)",
+            "timing": {
+              "from": "09:00",
+              "to": "17:00"
+            },
+            "days": {
+              "0": false,
+              "1": true,
+              "2": true,
+              "3": true,
+              "4": true,
+              "5": true,
+              "6": false
+            },
+            "timezone": "Europe/Amsterdam"
+          }
+        ]
+      }
+    }
+  },
+  "confirm": "EXECUTE update_campaign 827b1b45-6a7e-45ba-88de-d89db2a47d6a",
+  "requested_by": "chatgpt"
+}
