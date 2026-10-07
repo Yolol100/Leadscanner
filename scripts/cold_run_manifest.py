@@ -126,14 +126,14 @@ def build_manifest(
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", required=True, choices=("preview", "draft"))
-    parser.add_argument("--request", required=True)
-    parser.add_argument("--filtered", required=True)
-    parser.add_argument("--dedupe", required=True)
-    parser.add_argument("--verified", required=True)
-    parser.add_argument("--research", required=True)
-    parser.add_argument("--reasons", required=True)
-    parser.add_argument("--values", required=True)
-    parser.add_argument("--mail", required=True)
+    parser.add_argument("--request")
+    parser.add_argument("--filtered")
+    parser.add_argument("--dedupe")
+    parser.add_argument("--verified")
+    parser.add_argument("--research")
+    parser.add_argument("--reasons")
+    parser.add_argument("--values")
+    parser.add_argument("--mail")
     parser.add_argument("--draft-batch", required=True)
     parser.add_argument("--review-queue")
     parser.add_argument("--approved-batch")
@@ -146,6 +146,20 @@ def main() -> int:
     args = parser.parse_args()
 
     source_manifest = _load(args.source_preview_manifest)
+    if args.mode == "preview":
+        required_preview_paths = {
+            "request": args.request,
+            "filtered": args.filtered,
+            "dedupe": args.dedupe,
+            "verified": args.verified,
+            "research": args.research,
+            "reasons": args.reasons,
+            "values": args.values,
+            "mail": args.mail,
+        }
+        missing = [name for name, path in required_preview_paths.items() if not path]
+        if missing:
+            raise SystemExit("preview manifest missing inputs: " + ",".join(missing))
     if args.mode == "draft" and source_manifest:
         source_counts = source_manifest.get("counts") or {}
         request = source_manifest.get("request") or {}
