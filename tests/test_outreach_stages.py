@@ -124,6 +124,37 @@ class OutreachStagesTests(unittest.TestCase):
         self.assertEqual(result["ready_count"], 1)
         self.assertEqual(result["candidates"][0]["signal_type"], "quote_request")
 
+    def test_reservation_and_ordering_signals_are_ready(self):
+        cases = [
+            (
+                "Reserveer online een tafel voor vanavond via onze reserveringspagina.",
+                "https://acmefietsen.nl/reserveren",
+                "reservation",
+            ),
+            (
+                "Bestel online uw maaltijd en kies daarna het gewenste afhaalmoment.",
+                "https://acmefietsen.nl/bestellen",
+                "ordering",
+            ),
+        ]
+        for text, source_url, expected in cases:
+            with self.subTest(signal=expected):
+                payload = {
+                    "candidates": [
+                        candidate_with_evidence([
+                            {
+                                "text": text,
+                                "source_url": source_url,
+                                "source_type": "official_site",
+                                "page_type": "process",
+                            }
+                        ])
+                    ]
+                }
+                result = select_reasons(payload)
+                self.assertEqual(result["ready_count"], 1)
+                self.assertEqual(result["candidates"][0]["signal_type"], expected)
+
     def test_opening_hours_and_price_are_not_outreach_signals(self):
         payload = {
             "candidates": [
