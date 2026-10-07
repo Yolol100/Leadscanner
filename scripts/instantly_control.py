@@ -11,6 +11,7 @@ import argparse
 import json
 import os
 import re
+import time
 from pathlib import Path
 from urllib.parse import quote
 
@@ -174,8 +175,34 @@ def validate_write_gate(command: dict, config: dict, *, run_attempt: str) -> Non
         raise ValueError(f"exact_confirmation_required:{expected}")
 
 
-def _api(client: InstantlyClient, method: str, path: str, *, params=None, payload=None):
-    return client._request(method, path, params=params, json=payload)
+def _api(
+    client: InstantlyClient,
+    method: str,
+    path: str,
+    *,
+    params=None,
+    payload=None,
+    retry_safe: bool | None = None,
+):
+    safe = method.upper() == "GET" if retry_safe is None else bool(retry_safe)
+    return client._request(method, path, params=params, json=payload, retry_safe=safe)
+
+
+def _redact_sensitive(value):
+    if isinstance(value, dict):
+        redacted = {}
+        for key, nested in value.items():
+            normalized = str(key or "").casefold()
+            if any(marker in normalized for marker in SENSITIVE_ACCOUNT_KEYS):
+                redacted[key] = "[REDACTED]"
+            else:
+                redacted[key] = _redact_sensitive(nested)
+        return redacted
+    if isinstance(value, list):
+        return [_redact_sensitive(item) for item in value]
+    if isinstance(value, tuple):
+        return [_redact_sensitive(item) for item in value]
+    return value
 
 
 def _campaign_leads(client: InstantlyClient, campaign_id: str, max_leads: int = 2000) -> list[dict]:
@@ -376,7 +403,7 @@ def command_paths_from_push_event(event: dict) -> list[Path]:
 
 def _write(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    path.write_text(json.dumps(_redact_sensitive(payload), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
 def run_paths(paths: list[Path], output_dir: str | Path, config_path: str | Path) -> int:
