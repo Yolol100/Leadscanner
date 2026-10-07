@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from instantly_client import InstantlyError
 from instantly_control import (
     _activate,
     _campaign_leads,
@@ -529,6 +530,42 @@ class InstantlyControlTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "emails_must_be_list"):
             execute_command(command, config(), NoCall())
+
+    def test_activation_tolerates_draft_sending_status_400_and_keeps_other_gates(self):
+        class ActivationClient:
+            def __init__(self):
+                self.activated = False
+
+            def get_campaign(self, campaign_id):
+                return {
+                    "id": campaign_id,
+                    "status": 1 if self.activated else 0,
+                    "allow_risky_contacts": False,
+                    "email_list": ["sender@example.com"],
+                }
+
+            def list_leads(self, **kwargs):
+                return {
+                    "items": [{"id": "l1", "email": "lead@example.com", "verification_status": 1}],
+                    "next_starting_after": None,
+                }
+
+            def _request(self, method, path, **kwargs):
+                if method == "GET" and path.endswith("/sending-status"):
+                    raise InstantlyError("instantly_api_error status=400")
+                if method == "GET" and path == "/accounts/sender%40example.com":
+                    return {"status": 1}
+                if method == "POST" and path.endswith("/activate"):
+                    self.activated = True
+                    return {"accepted": True}
+                raise AssertionError((method, path, kwargs))
+
+        result = _activate(ActivationClient(), "c1")
+        self.assertEqual(result["readback"]["status"], 1)
+        self.assertEqual(
+            result["preflight_sending_status"],
+            {"state": "unavailable_before_activation", "http_status": 400},
+        )
 
     def test_activation_blocks_all_accounts_unhealthy_reason(self):
         class ActivationClient:
