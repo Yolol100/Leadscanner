@@ -40,6 +40,17 @@ class InstantlyWebhookTests(unittest.TestCase):
         )
         self.assertEqual(second["after"][4], "unsubscribed")
 
+    def test_closed_status_is_terminal_against_later_campaign_complete(self):
+        first = plan_registry_event_update(
+            {"event_type": "lead_closed", "lead_email": "info@acme.nl", "timestamp": "t1"},
+            [HEADERS, row()],
+        )
+        second = plan_registry_event_update(
+            {"event_type": "campaign_completed", "lead_email": "info@acme.nl", "timestamp": "t2"},
+            [HEADERS, first["after"]],
+        )
+        self.assertEqual(second["after"][4], "closed")
+
     def test_interest_status_supported(self):
         event = normalize_event({
             "event_type": "lead_interested",
