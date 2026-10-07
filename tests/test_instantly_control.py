@@ -645,6 +645,37 @@ class InstantlyControlTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "draft_or_paused_before_update"):
             execute_command(command, config(), ActiveCampaignClient())
 
+    def test_mark_account_fixed_requires_active_readback(self):
+        class AccountClient:
+            def __init__(self, readback_status):
+                self.readback_status = readback_status
+                self.calls = []
+
+            def _request(self, method, path, **kwargs):
+                self.calls.append((method, path, kwargs))
+                if method == "POST" and path.endswith("/mark-fixed"):
+                    return {"status": "success"}
+                if method == "GET" and path == "/accounts/sender%40example.com":
+                    return {"email": "sender@example.com", "status": self.readback_status}
+                raise AssertionError((method, path, kwargs))
+
+        args = {"email": "sender@example.com"}
+        command = {
+            "schema_version": "leadscanner-instantly-command/1.0",
+            "command_id": "mark-account-fixed-001",
+            "action": "mark_account_fixed",
+            "args": args,
+            "confirm": "EXECUTE mark_account_fixed sender@example.com",
+            "requested_by": "chatgpt",
+        }
+        result = execute_command(command, config(), AccountClient(1))
+        self.assertEqual(result["mode"], "write")
+        self.assertFalse(result["send_action"])
+        self.assertEqual(result["result"]["readback"]["status"], 1)
+
+        with self.assertRaisesRegex(RuntimeError, "account_mark_fixed_readback_not_active"):
+            execute_command(command, config(), AccountClient(-1))
+
     def test_activation_rejects_boolean_sender_status(self):
         class ActivationClient:
             def get_campaign(self, campaign_id):
