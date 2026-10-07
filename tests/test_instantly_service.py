@@ -80,6 +80,7 @@ class InstantlyServiceTests(unittest.TestCase):
         self, resolve_mock, preflight_mock, update_mock
     ):
         resolve_mock.return_value = resolved()
+        preflight_mock.return_value = {"status": "green"}
         update_mock.return_value = {"exact_readback": True}
         client = FakeInstantlyClient()
 
@@ -99,8 +100,11 @@ class InstantlyServiceTests(unittest.TestCase):
         update_mock.assert_not_called()
 
     @patch("instantly_service.update_registry")
+    @patch("instantly_service.check_registry_access")
     @patch("instantly_service.resolve_exact_approval")
-    def test_stage_requires_readback_then_registry_exact_write(self, resolve_mock, update_mock):
+    def test_stage_requires_readback_then_registry_exact_write(
+        self, resolve_mock, preflight_mock, update_mock
+    ):
         resolve_mock.return_value = resolved()
         update_mock.return_value = {"exact_readback": True}
         client = FakeInstantlyClient()
@@ -120,6 +124,7 @@ class InstantlyServiceTests(unittest.TestCase):
         self.assertTrue(result["registry_exact_readback"])
         self.assertFalse(result["automatic_send"])
         self.assertFalse(result["campaign_activation_available"])
+        preflight_mock.assert_called_once()
         update_mock.assert_called_once()
 
 
