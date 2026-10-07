@@ -35,6 +35,8 @@ def build_manifest(
     approved_batch: dict | None = None,
     revalidation: dict | None = None,
     source_preview_snapshot: dict | None = None,
+    funnel: dict | None = None,
+    coverage: dict | None = None,
     draft_readback: dict | None = None,
     registry_update: dict | None = None,
 ) -> dict:
@@ -45,6 +47,8 @@ def build_manifest(
     approved_batch = approved_batch or {}
     revalidation = revalidation or {}
     source_preview_snapshot = source_preview_snapshot or {}
+    funnel = funnel or {}
+    coverage = coverage or {}
     draft_readback = draft_readback or {}
     registry_update = registry_update or {}
     draft_count = int(draft_batch.get("draft_candidate_count") or 0)
@@ -107,6 +111,13 @@ def build_manifest(
             "registry_appended": int(registry_update.get("appended_count") or 0),
             "registry_already_present": int(registry_update.get("already_present_count") or 0),
         },
+        "diagnostics": {
+            "drop_reasons": funnel.get("drop_reasons") or {},
+            "ready_signal_types": funnel.get("ready_signal_types") or {},
+            "coverage_source_status": coverage.get("source_status"),
+            "coverage_operational_pool_status": coverage.get("operational_pool_status"),
+            "second_source_decision": coverage.get("second_source_decision"),
+        },
         "provenance": {
             "source_preview_id": source_preview_snapshot.get("preview_id"),
             "source_preview_run_id": (source_preview_snapshot.get("source") or {}).get("run_id"),
@@ -140,6 +151,8 @@ def main() -> int:
     parser.add_argument("--revalidation")
     parser.add_argument("--source-preview-manifest")
     parser.add_argument("--source-preview-snapshot")
+    parser.add_argument("--funnel")
+    parser.add_argument("--coverage")
     parser.add_argument("--draft-readback")
     parser.add_argument("--registry-update")
     parser.add_argument("--output", required=True)
@@ -195,6 +208,8 @@ def main() -> int:
         approved_batch=_load(args.approved_batch),
         revalidation=_load(args.revalidation),
         source_preview_snapshot=_load(args.source_preview_snapshot),
+        funnel=_load(args.funnel),
+        coverage=_load(args.coverage),
         draft_readback=_load(args.draft_readback),
         registry_update=_load(args.registry_update),
     )
