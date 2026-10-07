@@ -87,6 +87,35 @@ class PreviewSnapshotTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "run_id_mismatch"):
             validate_snapshot(item, run_id=999)
 
+    def test_snapshot_rejects_preview_manifest_with_mutation_or_count_drift(self):
+        item = snapshot()
+        manifest = json.loads(json.dumps(item["preview_manifest"]))
+        batch = item["review_draft_batch"]
+        queue = item["review_queue"]
+        source = item["source"]
+        request = item["request"]
+
+        manifest["closure"]["mailbox_mutation"] = True
+        with self.assertRaisesRegex(ValueError, "preview_manifest_must_be_mutation_free"):
+            build_snapshot(
+                request=request,
+                batch=batch,
+                queue=queue,
+                manifest=manifest,
+                source=source,
+            )
+
+        manifest = json.loads(json.dumps(item["preview_manifest"]))
+        manifest["counts"]["review_queue_candidates"] = 0
+        with self.assertRaisesRegex(ValueError, "preview_manifest_review_count_mismatch"):
+            build_snapshot(
+                request=request,
+                batch=batch,
+                queue=queue,
+                manifest=manifest,
+                source=source,
+            )
+
     def test_snapshot_rejects_review_token_drift(self):
         item = snapshot()
         item["review_queue"]["items"][0]["approval_token"] = "growth-" + "0" * 20 + "@" + "0" * 16
