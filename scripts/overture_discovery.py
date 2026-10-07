@@ -227,7 +227,7 @@ def download_overture_places(
 ) -> None:
     executable = shutil.which("overturemaps")
     if not executable:
-        raise RuntimeError("overturemaps CLI is not installed; install requirements-discovery.txt")
+        raise RuntimeError("overturemaps CLI is not installed; install requirements-cold.txt")
 
     bbox_arg = ",".join(str(value) for value in bbox)
 
