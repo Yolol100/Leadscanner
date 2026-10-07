@@ -4,8 +4,8 @@
 - Build a fast cold-lead pipeline from a clean slate.
 - Treat legacy repository code as implementation material, never as requirements by default.
 - The Google Sheet Lead Dedupe Registry is the only retained historical lead source and is suppression-only.
-- The active phases are discovery/filter -> historical dedupe -> identity/domain/contact verification -> bounded first-party research.
-- Copy, offer selection, draft creation and mailbox execution are not active yet.
+- The active phases are discovery/filter -> historical dedupe -> identity/domain/contact verification -> bounded first-party research -> one evidence-backed outreach reason -> one proposed value-first action -> short validated cold mail.
+- Draft creation and mailbox execution are not active yet.
 
 ## Execution rules
 - Work on `main` unless the user explicitly requests another branch.
@@ -14,6 +14,9 @@
 - Discovery data is a locator only, not prospect fact evidence.
 - Verify official domain and public business email from the official site before research.
 - Research only candidates with `ready_for_research=true` and fetch at most two extra first-party pages per candidate.
+- After research, select exactly one first-party outreach reason or hold the lead.
+- Map that reason to exactly one small proposed example; never claim an artifact already exists.
+- Generate at most one short cold mail with one CTA, no meeting pressure, no price/ROI/result claim, and no mailbox write.
 - Preserve bounded concurrency and same-domain URL safety.
 - Prefer one workflow/job chain over repeated setup and artifact handoffs.
 
