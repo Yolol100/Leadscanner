@@ -36,7 +36,7 @@ class OutreachStagesTests(unittest.TestCase):
         self.assertEqual(result["ready_count"], 0)
         self.assertEqual(
             result["candidates"][0]["outreach_hold_reason"],
-            "no_outreach_worthy_first_party_signal",
+            "weak_generic_marketing_signal",
         )
 
     def test_stronger_process_signal_beats_generic_service_signal(self):
