@@ -140,6 +140,8 @@ def audit_exact_readback(batch: dict, report: dict) -> dict:
 
     seen: set[str] = set()
     registry_rows: list[list[str]] = []
+    actual_created = 0
+    actual_existing = 0
     for item in items:
         lead_id = _text(item.get("lead_id"))
         if lead_id in seen or lead_id not in expected:
@@ -147,8 +149,13 @@ def audit_exact_readback(batch: dict, report: dict) -> dict:
         seen.add(lead_id)
         row = expected[lead_id]
 
-        if item.get("outcome") not in {"created", "existing"}:
+        outcome = item.get("outcome")
+        if outcome not in {"created", "existing"}:
             raise ValueError("draft_outcome_not_idempotent")
+        if outcome == "created":
+            actual_created += 1
+        else:
+            actual_existing += 1
         if _text(item.get("review_status")) != "contact-basis":
             raise ValueError("review_status_mismatch")
         if _text(item.get("to")).casefold() != _text(row.get("email")).casefold():
@@ -173,6 +180,11 @@ def audit_exact_readback(batch: dict, report: dict) -> dict:
 
     if seen != set(expected):
         raise ValueError("readback_lead_set_mismatch")
+    if (
+        report.get("created_count") != actual_created
+        or report.get("existing_count") != actual_existing
+    ):
+        raise ValueError("draft_outcome_count_mismatch")
 
     return {
         "schema_version": "leadscanner-review-readback/1.0",
