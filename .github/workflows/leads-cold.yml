@@ -6,25 +6,36 @@ on:
   workflow_dispatch:
     inputs:
       execution_mode:
-        description: 'preview = research/review; draft = resume exact preview and store approved drafts'
+        description: 'preview = research/review; instantly_stage = approved leads naar Instantly; draft = optionele mijn.host fallback'
         required: true
         default: preview
         type: choice
         options:
           - preview
+          - instantly_stage
           - draft
+      confirm_instantly_stage:
+        description: 'Alleen aanvinken bij execution_mode=instantly_stage'
+        required: true
+        default: false
+        type: boolean
       confirm_review_drafts:
         description: 'Alleen aanvinken bij execution_mode=draft'
         required: true
         default: false
         type: boolean
       approved_review_tokens:
-        description: 'Draft mode: approval tokens uit de gekozen preview'
+        description: 'Instantly-stage/draft: approval tokens uit de gekozen preview'
         required: false
         default: ''
         type: string
       preview_run_id:
-        description: 'Draft mode: GitHub Actions run ID van de goedgekeurde preview'
+        description: 'Instantly-stage/draft: GitHub Actions run ID van de goedgekeurde preview'
+        required: false
+        default: ''
+        type: string
+      instantly_campaign_id:
+        description: 'Instantly-stage: doelcampagne-ID; campagne moet Draft of Paused zijn'
         required: false
         default: ''
         type: string
