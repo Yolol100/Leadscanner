@@ -1,0 +1,10 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "preflight-20261008-campaign-leads",
+  "action": "list_leads",
+  "args": {
+    "campaign_id": "827b1b45-6a7e-45ba-88de-d89db2a47d6a",
+    "limit": 100
+  },
+  "requested_by": "chatgpt"
+}
