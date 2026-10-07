@@ -46,7 +46,7 @@ STATUS_BY_KIND = {
     "campaign_completed_no_reply": "campaign_completed_no_reply",
 }
 
-TERMINAL_STATUSES = {"unsubscribed", "bounced"}
+TERMINAL_STATUSES = {"unsubscribed", "bounced", "closed", "lost", "not_interested", "wrong_person"}
 
 
 def _text(value) -> str:
