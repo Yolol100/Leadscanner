@@ -70,6 +70,28 @@ class InstantlySyncTests(unittest.TestCase):
                 )
                 self.assertEqual(event["event_type"], event_type)
 
+    def test_lost_and_skipped_states_are_reconciled(self):
+        lost = event_from_lead(
+            {
+                "id": "lost",
+                "email": "lost@example.com",
+                "status": 1,
+                "lt_interest_status": -3,
+                "timestamp_last_interest_change": "2026-10-07T14:00:00Z",
+            }
+        )
+        skipped = event_from_lead(
+            {
+                "id": "skipped",
+                "email": "skipped@example.com",
+                "status": -3,
+                "lt_interest_status": 999,
+                "timestamp_updated": "2026-10-07T14:05:00Z",
+            }
+        )
+        self.assertEqual(lost["event_type"], "lead_lost")
+        self.assertEqual(skipped["event_type"], "lead_skipped")
+
     def test_unsubscribe_wins_when_same_email_has_multiple_leads(self):
         events = select_events(
             [
