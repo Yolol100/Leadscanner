@@ -218,6 +218,29 @@ class InstantlyControlTests(unittest.TestCase):
                 "growth-aaaaaaaaaaaaaaaaaaaa@1111111111111111",
             )
 
+    def test_stage_confirmation_binds_preview_token_and_campaign(self):
+        args = {
+            "preview_run_id": 123,
+            "approval_token": "growth-aaaaaaaaaaaaaaaaaaaa@1111111111111111",
+            "campaign_id": "campaign-1",
+        }
+        expected = (
+            "EXECUTE stage_approved_lead "
+            "123|growth-aaaaaaaaaaaaaaaaaaaa@1111111111111111|campaign-1"
+        )
+        self.assertEqual(expected_confirmation("stage_approved_lead", args), expected)
+
+        command = {
+            "schema_version": "leadscanner-instantly-command/1.0",
+            "command_id": "stage-approved-confirm-001",
+            "action": "stage_approved_lead",
+            "args": args,
+            "confirm": "EXECUTE stage_approved_lead campaign-1",
+            "requested_by": "chatgpt",
+        }
+        with self.assertRaisesRegex(ValueError, "exact_confirmation_required"):
+            execute_command(command, config(), FakeClient())
+
     def test_result_writer_redacts_nested_credentials(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "result.json"
