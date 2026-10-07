@@ -5,7 +5,7 @@
 - Keep only the active cold-pipeline dependency closure. Legacy Google Maps adapters, remediation scripts, old mailbox bridges, pricing/scoring code and their tests have been removed.
 - The Google Sheet Lead Dedupe Registry is the only retained historical lead source and is suppression-only.
 - The active phases are preview discovery/filter -> historical dedupe -> identity/domain/contact verification -> bounded first-party research -> one evidence-backed outreach reason -> one proposed value-first action -> short validated cold mail -> human review queue -> immutable preview snapshot -> draft resume from that exact snapshot -> exact approval selection -> live dedupe revalidation -> strict review-draft storage -> exact mailbox readback -> canonical dedupe-registry append/readback -> provenance-bound run manifest.
-- Commercial sending is not active and must not be added to this workflow.
+- The cold discovery/review pipeline must never auto-send. A separate GitHub Instantly control plane in this same workflow may execute only explicit user-confirmed Instantly actions from immutable command files; it must not bypass Leadscanner approval or live dedupe gates for Leadscanner-sourced prospects.
 
 ## Execution rules
 - Work on `main` unless the user explicitly requests another branch.
@@ -32,11 +32,18 @@
 - Preflight Google Sheets write access before any non-empty draft batch, then append/read back the canonical DedupeRegistry only after mailbox readback is green.
 - Preserve bounded concurrency and same-domain URL safety.
 - Prefer one workflow/job chain over repeated setup and artifact handoffs.
+- Keep the ChatGPT web control boundary repository-native: new immutable JSON commands under `instantly-commands/inbox/` -> allowlisted executor -> Actions result artifact.
+- Instantly write commands require exact target-bound confirmation and must fail closed on a GitHub Actions re-run; intentional retries require a fresh command file.
+- Do not expose a generic Instantly HTTP method/path escape hatch. Add named operations with focused validation instead.
+- Campaign activation, replies, forwards and test sends are explicit send-capable actions; they require the send gate plus exact confirmation, and activation must re-read campaign, sender and lead state before activation.
+- Never commit Instantly, SMTP/IMAP, OAuth, Google service-account or other credential material in command JSON. Keep secrets in GitHub Actions Secrets.
+- Scheduled Instantly reconciliation is read-only toward Instantly and may update only an already-existing canonical dedupe row. It must never create a registry identity or send outreach.
 
 ## Safety
 - Never infer an email address, company identity, prospect fact, pain point or commercial outcome.
 - Never use dedupe-history content as new prospect research.
-- Never automatically send commercial outreach. The active route exposes no SMTP/send action.
+- Never automatically send commercial outreach. Send-capable Instantly actions are user-triggered only and require the repository command gates described above.
+- Never let scheduled synchronization, a workflow re-run, or a repository code push become an implicit send trigger.
 
 ## Validation
 - Run focused tests for every active-path change.
