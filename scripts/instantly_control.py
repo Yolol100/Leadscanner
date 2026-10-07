@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 from urllib.parse import quote
 
-from instantly_client import InstantlyClient, SAFE_CAMPAIGN_STATUSES
+from instantly_client import InstantlyClient, InstantlyError, SAFE_CAMPAIGN_STATUSES
 from instantly_service import DEFAULT_REGISTRY_URL, DEFAULT_REPOSITORY, stage_exact_approved_lead
 
 SCHEMA_VERSION = "leadscanner-instantly-command/1.0"
@@ -325,12 +325,20 @@ def _activate(client: InstantlyClient, campaign_id: str) -> dict:
         raise ValueError("campaign_must_be_draft_or_paused_before_activation")
     if campaign.get("allow_risky_contacts") is True:
         raise ValueError("activation_blocks_allow_risky_contacts_true")
-    sending_status = _api(
-        client,
-        "GET",
-        f"/campaigns/{_id(campaign_id, 'campaign_id')}/sending-status",
-        params={"with_ai_summary": False},
-    ) or {}
+    try:
+        sending_status = _api(
+            client,
+            "GET",
+            f"/campaigns/{_id(campaign_id, 'campaign_id')}/sending-status",
+            params={"with_ai_summary": False},
+        ) or {}
+    except InstantlyError as exc:
+        if "status=400" not in str(exc):
+            raise
+        sending_status = {
+            "state": "unavailable_before_activation",
+            "http_status": 400,
+        }
     senders = [str(x).strip().casefold() for x in (campaign.get("email_list") or []) if str(x).strip()]
     if not senders:
         raise ValueError("activation_requires_sender_accounts")
