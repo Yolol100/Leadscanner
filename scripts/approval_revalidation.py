@@ -18,8 +18,19 @@ def revalidate_approved(batch: dict, registry_rows: list[dict]) -> dict:
         raise ValueError("approved_rows_must_be_list")
     if len(rows) > MAX_APPROVALS:
         raise ValueError("approval_limit_exceeded")
-    if int(approval.get("approved_count") or len(rows)) != len(rows):
+    if "approved_count" not in approval:
+        raise ValueError("approved_count_required")
+    approved_count = approval.get("approved_count")
+    if isinstance(approved_count, bool):
         raise ValueError("approved_count_mismatch")
+    try:
+        approved_count = int(approved_count)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("approved_count_mismatch") from exc
+    if approved_count != len(rows):
+        raise ValueError("approved_count_mismatch")
+    if approval.get("automatic_send") is not False:
+        raise ValueError("automatic_send_must_be_false")
 
     remaining: list[dict] = []
     suppressed: list[dict] = []
