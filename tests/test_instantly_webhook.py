@@ -55,22 +55,22 @@ class InstantlyWebhookTests(unittest.TestCase):
 
     def test_unsubscribe_is_terminal_against_later_campaign_complete(self):
         first = plan_registry_event_update(
-            {"event_type": "lead_unsubscribed", "lead_email": "info@acme.nl", "timestamp": "t1"},
+            {"event_type": "lead_unsubscribed", "lead_email": "info@acme.nl", "timestamp": "2026-10-07T10:00:00Z"},
             [HEADERS, row()],
         )
         second = plan_registry_event_update(
-            {"event_type": "campaign_completed", "lead_email": "info@acme.nl", "timestamp": "t2"},
+            {"event_type": "campaign_completed", "lead_email": "info@acme.nl", "timestamp": "2026-10-07T11:00:00Z"},
             [HEADERS, first["after"]],
         )
         self.assertEqual(second["after"][4], "unsubscribed")
 
     def test_closed_status_is_terminal_against_later_campaign_complete(self):
         first = plan_registry_event_update(
-            {"event_type": "lead_closed", "lead_email": "info@acme.nl", "timestamp": "t1"},
+            {"event_type": "lead_closed", "lead_email": "info@acme.nl", "timestamp": "2026-10-07T10:00:00Z"},
             [HEADERS, row()],
         )
         second = plan_registry_event_update(
-            {"event_type": "campaign_completed", "lead_email": "info@acme.nl", "timestamp": "t2"},
+            {"event_type": "campaign_completed", "lead_email": "info@acme.nl", "timestamp": "2026-10-07T11:00:00Z"},
             [HEADERS, first["after"]],
         )
         self.assertEqual(second["after"][4], "closed")
@@ -79,7 +79,7 @@ class InstantlyWebhookTests(unittest.TestCase):
         event = normalize_event({
             "event_type": "lead_interested",
             "lead_email": "info@acme.nl",
-            "timestamp": "t",
+            "timestamp": "2026-10-07T12:00:00Z",
         })
         self.assertEqual(event["kind"], "interested")
 
@@ -87,7 +87,7 @@ class InstantlyWebhookTests(unittest.TestCase):
         event = normalize_event({
             "event_type": "lead_meeting_booked",
             "lead_email": "info@acme.nl",
-            "timestamp": "t",
+            "timestamp": "2026-10-07T12:00:00Z",
         })
         self.assertEqual(event["kind"], "meeting_booked")
 
@@ -108,12 +108,12 @@ class InstantlyWebhookTests(unittest.TestCase):
         lost = normalize_event({
             "event_type": "lead_lost",
             "lead_email": "info@acme.nl",
-            "timestamp": "t",
+            "timestamp": "2026-10-07T12:00:00Z",
         })
         skipped = normalize_event({
             "event_type": "lead_skipped",
             "lead_email": "info@acme.nl",
-            "timestamp": "t",
+            "timestamp": "2026-10-07T12:00:00Z",
         })
         self.assertEqual(lost["kind"], "lost")
         self.assertEqual(skipped["kind"], "skipped")
