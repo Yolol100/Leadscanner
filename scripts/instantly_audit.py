@@ -67,10 +67,8 @@ def evaluate(root: str | Path = ".") -> dict:
             "name": "async_mutation_readback",
             "ok": (
                 "_wait_background_job" in control
-                and "warmup_enable_readback_mismatch" in control
-                and "warmup_disable_readback_mismatch" in control
-                and "account_pause_readback_mismatch" in control
-                and "account_resume_readback_mismatch" in control
+                and "warmup_{verb}_readback_mismatch" in control
+                and "account_{verb}_readback_mismatch" in control
             ),
         },
         {
