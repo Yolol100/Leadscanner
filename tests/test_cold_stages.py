@@ -110,6 +110,26 @@ class ColdStagesTests(unittest.TestCase):
         self.assertEqual(result["contact_status"], "hold_identity_not_proven")
         self.assertFalse(result["ready_for_research"])
 
+    @patch("cold_stages.is_public_http_url", return_value=True)
+    def test_verify_rejects_third_party_footer_email(self, _safe):
+        home = FakeResponse(
+            "https://acmefietsen.nl/",
+            """<html><head><title>Acme Fietsen</title></head><body>
+            <p>Acme Fietsen verkoopt stadsfietsen en e-bikes vanuit Rotterdam.</p>
+            <p>Website en online marketing door partner.</p>
+            <a href='mailto:hello@webagency.nl'>Site partner</a>
+            </body></html>""",
+        )
+        session = FakeSession([home])
+        result = verify_candidate(
+            {"name_hint": "Acme Fietsen", "website_hint": "https://acmefietsen.nl/"},
+            session_factory=lambda: session,
+        )
+        self.assertEqual(result["identity_status"], "verified")
+        self.assertFalse(result["excluded_competitor"])
+        self.assertEqual(result["contact_status"], "hold_no_public_business_email")
+        self.assertIsNone(result["public_business_email"])
+
     def test_verify_limit_is_hard_bounded(self):
         with self.assertRaisesRegex(ValueError, "verify_limit"):
             verify_candidates({"kept": [{}]}, limit=101)
