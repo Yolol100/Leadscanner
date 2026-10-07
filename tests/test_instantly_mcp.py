@@ -62,7 +62,7 @@ class InstantlyMcpTests(unittest.TestCase):
             os.environ,
             {
                 "INSTANTLY_API_KEY": "key",
-                "GITHUB_TOKEN": "gh",
+                "LEADSCANNER_GITHUB_TOKEN": "gh",
                 "GITHUB_REPOSITORY": "Yolol100/Leadscanner",
             },
             clear=False,
