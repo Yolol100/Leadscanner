@@ -293,7 +293,7 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
     elif action == "get_account":
         data = _api(client, "GET", f"/accounts/{_id(args.get('email'), 'email')}")
     elif action == "warmup_analytics":
-        data = _api(client, "POST", "/accounts/warmup-analytics", payload={"emails": list(args.get("emails") or [])})
+        data = _api(client, "POST", "/accounts/warmup-analytics", payload={"emails": list(args.get("emails") or [])}, retry_safe=True)
     elif action == "daily_account_analytics":
         data = _api(client, "GET", "/accounts/analytics/daily", params={k: v for k, v in {"emails": args.get("emails"), "start_date": args.get("start_date"), "end_date": args.get("end_date")}.items() if v})
     elif action == "list_blocklist":
