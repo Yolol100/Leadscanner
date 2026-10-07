@@ -88,6 +88,8 @@ def evaluate(root: str | Path = ".") -> dict:
                 and "[REDACTED]" in control
                 and "instantly_api_error status=" in client
                 and "response.text" not in client
+                and "GITHUB_REPOSITORY_PRIVATE" not in control
+                and "GITHUB_REPOSITORY_PRIVATE" not in workflow
             ),
         },
         {
