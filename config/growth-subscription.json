@@ -1,8 +1,0 @@
-{
-  "schema_version": "webactueel-growth-subscription/4.0",
-  "product_id": "growth_subscription",
-  "monthly_price_eur": {
-    "min": 250,
-    "max": 500
-  }
-}
