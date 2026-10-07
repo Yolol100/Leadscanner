@@ -15,9 +15,11 @@
 - Discovery data is a locator only, not prospect fact evidence.
 - Verify official domain and public business email from the official site before research.
 - Research only candidates with `ready_for_research=true` and fetch at most two extra first-party pages per candidate.
-- After research, select exactly one first-party outreach reason or hold the lead.
+- After research, select exactly one concrete first-party customer-action signal (appointment/booking, quote request, reservation or ordering) or hold the lead. Generic quality, service, catalog or brand language never qualifies.
 - Map that reason to exactly one small proposed example; never claim an artifact already exists.
 - Generate at most one short cold mail with one CTA, no meeting pressure, and no price/ROI/result claim.
+- Every preview must emit privacy-safe `funnel-metrics.json` with stage rejection totals and `coverage-audit.json` with Overture operational-supply status.
+- Do not add a second discovery source from a single thin/gap run; broaden the current query first and require repeated independent gap evidence before deliberate source expansion.
 - Default every manual execution to `preview`; preview must not require mailbox or Google write credentials and must not mutate either system.
 - Every preview must emit `review-queue.json`, `review-queue.md`, and `review-queue.csv` with one approval token per reviewable lead.
 - Bind each approval token to the exact lead ID, subject, body, evidence and proposed value action; changed copy must invalidate the token.
