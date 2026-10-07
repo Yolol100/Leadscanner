@@ -223,7 +223,7 @@ def sync_registry(*, api_key: str, max_leads: int = 10000) -> dict:
         "registry_identity_missing_count": missing,
         "registry_identity_ambiguous_count": ambiguous,
         "errors": errors,
-        "service_account": service_account,
+        "registry_authenticated": bool(service_account),
         "automatic_send": False,
         "instantly_mutation": False,
         "creates_registry_identity": False,
