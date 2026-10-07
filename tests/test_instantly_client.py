@@ -88,11 +88,14 @@ class InstantlyClientTests(unittest.TestCase):
         session = FakeSession([])
         client = InstantlyClient("secret", session=session)
         registry = [{
-            "company": "Acme",
-            "domain": "acme.nl",
-            "emails": {"info@acme.nl"},
-            "lead_ids": set(),
-            "exclude": True,
+            "identity": {
+                "company": "acme",
+                "domains": {"acme.nl"},
+                "emails": {"info@acme.nl"},
+                "lead_ids": set(),
+            },
+            "status": "concept",
+            "row_number": 2,
         }]
         with self.assertRaisesRegex(ValueError, "live_dedupe_match"):
             client.add_approved_lead_to_campaign(
