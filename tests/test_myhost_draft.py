@@ -191,6 +191,32 @@ class DraftTests(unittest.TestCase):
         self.assertEqual(actual.get("Subject"), original["subject"])
         self.assertEqual(actual.get_content().strip(), original["body"])
 
+    def test_strict_batch_rolls_back_prior_created_drafts_on_later_failure(self):
+        class FailSecondAppendIMAP(FakeIMAP):
+            def append(self, folder, flags, date_time, raw):
+                self.append_calls += 1
+                if self.append_calls == 2:
+                    return "NO", [b"synthetic append failure"]
+                self.messages.append(raw)
+                return "OK", [b"APPEND completed"]
+
+        client = FailSecondAppendIMAP()
+        first = self.row()
+        second = {
+            **self.row(),
+            "lead_id": "growth-1123456789abcdefabcd",
+            "email": "ander@voorbeeld.nl",
+            "subject": "Idee voor ander",
+        }
+        with patch("myhost_draft.connect_imap", return_value=client):
+            with self.assertRaisesRegex(RuntimeError, "IMAP APPEND failed"):
+                create_drafts(
+                    {"rows": [first, second]},
+                    reject_changed_existing=True,
+                )
+
+        self.assertEqual(client.messages, [])
+
     def test_create_readback_and_idempotency(self):
         client = FakeIMAP()
         with patch("myhost_draft.connect_imap", return_value=client):
