@@ -151,7 +151,10 @@ def _confirmation_target(action: str, args: dict) -> str:
     if action in {"enable_warmup", "disable_warmup"}:
         return ",".join(sorted({_text(email).casefold() for email in (args.get("emails") or []) if _text(email)}))
     if action == "update_interest":
-        return _text(payload.get("lead_id") or payload.get("id") or payload.get("lead"))
+        email = _text(payload.get("lead_email")).casefold()
+        value = payload.get("interest_value") if "interest_value" in payload else ""
+        value_text = "null" if value is None and "interest_value" in payload else _text(value)
+        return "|".join(part for part in (email, value_text) if part)
     return _text(args.get(direct.get(action, ""))) if action in direct else ""
 
 
@@ -233,6 +236,37 @@ def _wait_background_job(
     return {"state": "pending", "job": last}
 
 
+def _wait_interest_status(
+    client: InstantlyClient,
+    *,
+    lead_email: str,
+    interest_value,
+    campaign_id: str = "",
+    list_id: str = "",
+    max_polls: int = 10,
+    sleep_fn=time.sleep,
+) -> dict:
+    email = _text(lead_email).casefold()
+    last: list[dict] = []
+    for index in range(max(int(max_polls), 1)):
+        page = client.list_leads(
+            campaign=_text(campaign_id) or None,
+            list_id=_text(list_id) or None,
+            contacts=[email],
+            limit=100,
+        ) or {}
+        rows = [
+            row for row in (page.get("items") or [])
+            if isinstance(row, dict) and _text(row.get("email")).casefold() == email
+        ]
+        last = rows
+        if rows and all(row.get("lt_interest_status") == interest_value for row in rows):
+            return {"state": "completed", "leads": rows}
+        if index + 1 < max_polls:
+            sleep_fn(1.0)
+    return {"state": "pending", "leads": last}
+
+
 def _campaign_leads(client: InstantlyClient, campaign_id: str, max_leads: int = 2000) -> list[dict]:
     rows, cursor = [], None
     while len(rows) < max_leads:
@@ -273,6 +307,11 @@ def _activate(client: InstantlyClient, campaign_id: str) -> dict:
         raise ValueError("activation_requires_leads")
     if any(lead.get("verification_status") in {-1, -2, -3, -4, 11, 12} for lead in leads):
         raise ValueError("activation_requires_non_pending_non_risky_verification")
+    diagnostics = sending_status.get("diagnostics") or {}
+    summary = sending_status.get("summary") or {}
+    reason = _text(diagnostics.get("status") or summary.get("status")).casefold()
+    if reason == "all_accounts_unhealthy":
+        raise ValueError("activation_sending_status_all_accounts_unhealthy")
     operation = _api(client, "POST", f"/campaigns/{_id(campaign_id, 'campaign_id')}/activate", payload={})
     observed = client.get_campaign(campaign_id) or {}
     if int(observed.get("status")) not in {1, 4}:
@@ -364,11 +403,50 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
     elif action == "delete_lead":
         data = _api(client, "DELETE", f"/leads/{_id(args.get('lead_id'), 'lead_id')}")
     elif action == "update_interest":
-        data = _api(client, "POST", "/leads/update-interest-status", payload=dict(args.get("payload") or {}))
+        payload = dict(args.get("payload") or {})
+        email = _text(payload.get("lead_email")).casefold()
+        if not email or email.count("@") != 1:
+            raise ValueError("interest_lead_email_required")
+        if "interest_value" not in payload:
+            raise ValueError("interest_value_required")
+        interest_value = payload.get("interest_value")
+        if interest_value is not None and (
+            isinstance(interest_value, bool) or not isinstance(interest_value, (int, float))
+        ):
+            raise ValueError("interest_value_must_be_number_or_null")
+        operation = _api(client, "POST", "/leads/update-interest-status", payload=payload)
+        observed = _wait_interest_status(
+            client,
+            lead_email=email,
+            interest_value=interest_value,
+            campaign_id=_text(payload.get("campaign_id")),
+            list_id=_text(payload.get("list_id")),
+        )
+        data = {
+            "operation": operation,
+            "completion_state": observed["state"],
+            "readback": observed["leads"],
+        }
     elif action in {"reply_email", "forward_email", "send_test_email"}:
         payload = dict(args.get("payload") or {})
+        if not _text(payload.get("eaccount")):
+            raise ValueError("sending_account_required")
+        if not _text(payload.get("subject")):
+            raise ValueError("email_subject_required")
         if action in {"reply_email", "forward_email"} and not _text(payload.get("reply_to_uuid")):
             raise ValueError("reply_to_uuid_required")
+        if action == "reply_email" and not isinstance(payload.get("body"), dict):
+            raise ValueError("reply_body_required")
+        if action == "forward_email":
+            if not _text(payload.get("to_address_email_list")):
+                raise ValueError("forward_recipient_required")
+            if not isinstance(payload.get("body"), dict) and payload.get("include_original_body") is not True:
+                raise ValueError("forward_body_or_original_required")
+        if action == "send_test_email":
+            if not _text(payload.get("to_address_email_list")):
+                raise ValueError("test_recipient_required")
+            if not isinstance(payload.get("body"), dict):
+                raise ValueError("test_body_required")
         path = {"reply_email": "/emails/reply", "forward_email": "/emails/forward", "send_test_email": "/emails/test"}[action]
         data = _api(client, "POST", path, payload=payload)
         if action == "send_test_email" and isinstance(data, dict) and data.get("error"):
