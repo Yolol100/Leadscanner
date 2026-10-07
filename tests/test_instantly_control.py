@@ -3,6 +3,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from instantly_control import (
     command_paths_from_push_event,
@@ -24,8 +25,20 @@ def config(**overrides):
 
 
 class FakeClient:
+    def __init__(self):
+        self.calls = []
+
     def list_campaigns(self, **kwargs):
-        return {"items": [{"id": "c1"}], "kwargs": kwargs}
+        self.calls.append(("list_campaigns", kwargs))
+        return {
+            "items": [{
+                "id": "c1",
+                "name": "Draft",
+                "status": 0,
+                "sequences": [{"steps": [{"body": "must-not-leak"}]}],
+            }],
+            "next_starting_after": None,
+        }
 
 
 class InstantlyControlTests(unittest.TestCase):
@@ -38,10 +51,13 @@ class InstantlyControlTests(unittest.TestCase):
             "confirm": "",
             "requested_by": "chatgpt",
         }
-        result = execute_command(command, config(), FakeClient())
+        client = FakeClient()
+        result = execute_command(command, config(), client)
         self.assertEqual(result["status"], "green")
         self.assertEqual(result["mode"], "read")
-        self.assertEqual(result["result"]["kwargs"]["limit"], 10)
+        self.assertEqual(client.calls[0][1]["limit"], 10)
+        self.assertEqual(result["result"]["items"][0]["id"], "c1")
+        self.assertNotIn("sequences", result["result"]["items"][0])
 
     def test_write_requires_exact_target_bound_confirmation(self):
         command = {
@@ -52,8 +68,9 @@ class InstantlyControlTests(unittest.TestCase):
             "confirm": "yes",
             "requested_by": "chatgpt",
         }
-        with self.assertRaisesRegex(ValueError, "exact_confirmation_required:EXECUTE pause_campaign c1"):
-            execute_command(command, config(), FakeClient())
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY_PRIVATE": "true"}, clear=False):
+            with self.assertRaisesRegex(ValueError, "exact_confirmation_required:EXECUTE pause_campaign c1"):
+                execute_command(command, config(), FakeClient())
 
     def test_workflow_rerun_blocks_every_write(self):
         command = {
@@ -64,8 +81,9 @@ class InstantlyControlTests(unittest.TestCase):
             "confirm": "EXECUTE pause_campaign c1",
             "requested_by": "chatgpt",
         }
-        with self.assertRaisesRegex(RuntimeError, "cannot_run_on_workflow_rerun"):
-            execute_command(command, config(), FakeClient(), run_attempt="2")
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY_PRIVATE": "true"}, clear=False):
+            with self.assertRaisesRegex(RuntimeError, "cannot_run_on_workflow_rerun"):
+                execute_command(command, config(), FakeClient(), run_attempt="2")
 
     def test_account_secret_material_is_rejected_from_committed_command(self):
         command = {
@@ -79,8 +97,22 @@ class InstantlyControlTests(unittest.TestCase):
             "confirm": "EXECUTE update_account sender@example.com",
             "requested_by": "chatgpt",
         }
-        with self.assertRaisesRegex(ValueError, "secret_material"):
-            execute_command(command, config(), FakeClient())
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY_PRIVATE": "true"}, clear=False):
+            with self.assertRaisesRegex(ValueError, "secret_material"):
+                execute_command(command, config(), FakeClient())
+
+    def test_sensitive_control_requires_private_repository(self):
+        command = {
+            "schema_version": "leadscanner-instantly-command/1.0",
+            "command_id": "get-lead-private-001",
+            "action": "get_lead",
+            "args": {"lead_id": "lead-1"},
+            "confirm": "",
+            "requested_by": "chatgpt",
+        }
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY_PRIVATE": "false"}, clear=False):
+            with self.assertRaisesRegex(RuntimeError, "private_repository_required"):
+                execute_command(command, config(), FakeClient())
 
     def test_push_event_executes_only_new_inbox_json_files(self):
         event = {
