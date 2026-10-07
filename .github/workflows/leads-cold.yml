@@ -70,6 +70,8 @@ on:
       - 'scripts/myhost_draft.py'
       - 'scripts/update_dedupe_registry.py'
       - 'scripts/url_safety.py'
+      - 'scripts/instantly_client.py'
+      - 'scripts/instantly_webhook.py'
       - 'tests/test_dedupe_preflight.py'
       - 'tests/test_cold_stages.py'
       - 'tests/test_outreach_stages.py'
@@ -84,6 +86,8 @@ on:
       - 'tests/test_myhost_draft.py'
       - 'tests/test_update_dedupe_registry.py'
       - 'tests/test_url_safety.py'
+      - 'tests/test_instantly_client.py'
+      - 'tests/test_instantly_webhook.py'
       - 'AGENTS.md'
       - 'README.md'
   pull_request:
@@ -104,6 +108,8 @@ on:
       - 'scripts/myhost_draft.py'
       - 'scripts/update_dedupe_registry.py'
       - 'scripts/url_safety.py'
+      - 'scripts/instantly_client.py'
+      - 'scripts/instantly_webhook.py'
       - 'tests/test_dedupe_preflight.py'
       - 'tests/test_cold_stages.py'
       - 'tests/test_outreach_stages.py'
@@ -118,6 +124,8 @@ on:
       - 'tests/test_myhost_draft.py'
       - 'tests/test_update_dedupe_registry.py'
       - 'tests/test_url_safety.py'
+      - 'tests/test_instantly_client.py'
+      - 'tests/test_instantly_webhook.py'
       - 'AGENTS.md'
       - 'README.md'
 
@@ -165,7 +173,9 @@ jobs:
             scripts/myhost_draft.py \
             scripts/update_dedupe_registry.py \
             scripts/overture_discovery.py \
-            scripts/url_safety.py
+            scripts/url_safety.py \
+            scripts/instantly_client.py \
+            scripts/instantly_webhook.py
           python3 -m unittest \
             tests.test_dedupe_preflight \
             tests.test_cold_stages \
@@ -180,7 +190,9 @@ jobs:
             tests.test_approval_revalidation \
             tests.test_myhost_draft \
             tests.test_update_dedupe_registry \
-            tests.test_url_safety -v
+            tests.test_url_safety \
+            tests.test_instantly_client \
+            tests.test_instantly_webhook -v
 
   execute:
     if: github.event_name == 'workflow_dispatch'
