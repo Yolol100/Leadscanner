@@ -9,7 +9,7 @@ The only active GitHub workflow is `.github/workflows/leads-cold.yml`.
 Manual dispatch has two modes:
 
 - `preview` (default): runs research and mail generation, then exports `review-queue.md`, `review-queue.csv`, and `review-queue.json`. Each reviewable lead receives an approval token bound to the exact reviewed copy. Preview performs zero mailbox or Google Sheet mutations and needs no mutation credentials.
-- `draft`: requires `execution_mode=draft`, `confirm_review_drafts=true`, and one or more exact `approved_review_tokens` copied from a preview. Only those approved leads may become mijn.host review drafts and enter the canonical dedupe registry.
+- `draft`: requires `execution_mode=draft`, `confirm_review_drafts=true`, the GitHub Actions `preview_run_id` of the reviewed preview, and one or more exact `approved_review_tokens`. Draft mode downloads that exact successful preview artifact instead of repeating discovery/research.
 
 Current manual run:
 
@@ -23,11 +23,14 @@ Current manual run:
 8. **Mail generation + semantic QA** — create one short NL/EN cold email with one observation, one proposed example, one low-friction CTA and an easy no. Subject <=8 words; body <=100 words; no meeting pressure, price, ROI, percentage or unsupported result claim.
 9. **Review-draft preparation** — create a deterministic `growth-<20 hex>` lead ID from official domain + verified public email and build only `review_draft` / `review_required` rows.
 10. **Human review queue** — export every reviewable lead with company, domain, verified email, signal, evidence URL, proposed value, subject, body and an approval token. The token fingerprint includes the exact copy/evidence, so a changed rerun becomes stale and is rejected.
-11. **Exact approval selection** — draft mode accepts only the preview tokens explicitly pasted into `approved_review_tokens`; there is no `all` wildcard and unknown/stale tokens fail closed.
-12. **Registry access preflight + approved mijn.host draft storage** — before the approved batch is written, prove Google Sheets write access. Then append only approved drafts through IMAP. Exact retries are allowed; changed existing drafts are rejected instead of overwritten.
-13. **Exact mailbox readback** — require an exact match on recipient, subject, body, lead ID and review status. SMTP/send remains unavailable.
-14. **Canonical dedupe closure** — in confirmed draft mode, append only successfully read-back approved identities to `DedupeRegistry` in one Google Sheets batch and verify the new rows by an exact API readback.
-15. **Run manifest** — emit `run-manifest.json` with mode, stage counts, review-queue count, approved count, operator-rejected count, mutation state and safety flags. Preview ends as `preview_ready`; a successful draft run ends as `closed`.
+11. **Immutable preview snapshot** — seal request, review batch, review queue and preview manifest into `preview-snapshot.json` with a content digest and source run/commit provenance. Preview artifacts are retained for 7 days.
+12. **Fast draft resume** — draft mode loads the exact artifact from `preview_run_id`, verifies the successful workflow-dispatch run, repository, `main` branch, commit SHA and snapshot digest, then materializes only the snapshot-bound review batch. Discovery, verification, research and copy generation are not repeated.
+13. **Exact approval selection** — draft mode accepts only preview tokens explicitly pasted into `approved_review_tokens`; there is no `all` wildcard and unknown/stale tokens fail closed.
+14. **Live dedupe revalidation** — immediately before mutation, re-check every approved lead against the current canonical registry. Anything added since the preview is suppressed and cannot become a new draft.
+15. **Registry access preflight + approved mijn.host draft storage** — before the still-current approved batch is written, prove Google Sheets write access. Then append only those drafts through IMAP. Exact retries are allowed; changed existing drafts are rejected instead of overwritten.
+16. **Exact mailbox readback** — require an exact match on recipient, subject, body, lead ID and review status. SMTP/send remains unavailable.
+17. **Canonical dedupe closure** — append only successfully read-back, still-current approved identities to `DedupeRegistry` in one Google Sheets batch and verify the new rows by an exact API readback.
+18. **Run manifest** — emit `run-manifest.json` with mode, stage counts, review-queue count, approved count, operator-rejected count, post-preview suppression count, source preview ID/run/commit, mutation state and safety flags. Preview ends as `preview_ready`; a successful draft run ends as `closed`.
 
 Preview is the default and is mutation-free. Confirmed draft mode creates review drafts only; neither mode sends commercial email.
 
@@ -41,8 +44,11 @@ Preview is the default and is mutation-free. Confirmed draft mode creates review
 - Homepage content is passed from verification to research, so research does not fetch it again.
 - Phases 7-9 are deterministic local transformations over already-fetched evidence and add no extra prospect network requests.
 - Preview runs skip Google write preflight, IMAP and registry mutation entirely while still producing human-readable review artifacts.
-- A draft rerun can use the same search inputs, but approval tokens fail closed if the corresponding exact reviewed copy is no longer present.
-- A confirmed approved draft batch is not written unless canonical Google Sheets write access succeeds first.
+- Draft mode does not rerun discovery, site verification, research or copy generation; it resumes the exact reviewed preview artifact by run ID.
+- The snapshot and each approval token are content-bound, so modified preview data or copy fails closed.
+- Immediately before mutation, approved leads are rechecked against the live dedupe registry; leads that became suppressed after preview are skipped and reported.
+- Draft mode installs only `requests` + `google-auth`; Overture dependencies are preview-only.
+- A confirmed still-current approved draft batch is not written unless canonical Google Sheets write access succeeds first.
 - Manual execution runs are never auto-cancelled by a newer manual run, avoiding an interruption between draft storage and registry closure.
 - Only the cold runtime dependencies are installed and pip caching is enabled.
 
