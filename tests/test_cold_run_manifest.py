@@ -78,6 +78,32 @@ class ColdRunManifestTests(unittest.TestCase):
         self.assertEqual(result["counts"]["registry_already_present"], 1)
         self.assertFalse(result["safety"]["automatic_send"])
 
+    def test_manifest_reports_review_and_operator_approval_counts(self):
+        kwargs = base_inputs()
+        kwargs["review_queue"] = {"review_candidate_count": 5}
+        kwargs["approved_batch"] = {
+            "approval": {
+                "approved_count": 2,
+                "rejected_by_operator_count": 3,
+            }
+        }
+        kwargs["draft_batch"] = {"draft_candidate_count": 2}
+        kwargs["draft_readback"] = {
+            "status": "green",
+            "created_count": 2,
+            "existing_count": 0,
+        }
+        kwargs["registry_update"] = {
+            "status": "green",
+            "appended_count": 2,
+            "already_present_count": 0,
+            "exact_readback": True,
+        }
+        result = build_manifest(mode="draft", **kwargs)
+        self.assertEqual(result["counts"]["review_queue_candidates"], 5)
+        self.assertEqual(result["counts"]["approved_for_draft"], 2)
+        self.assertEqual(result["counts"]["operator_rejected"], 3)
+
     def test_zero_draft_draft_mode_can_close_without_external_mutation(self):
         kwargs = base_inputs()
         kwargs["draft_batch"] = {"draft_candidate_count": 0}
