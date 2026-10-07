@@ -82,7 +82,8 @@ def build_review_queue(batch: dict) -> dict:
         "review_candidate_count": len(items),
         "items": items,
         "instructions": {
-            "draft_input": "approved_review_tokens",
+            "approval_input": "approved_review_tokens",
+            "primary_next_step": "instantly_stage",
             "approval_rule": "Only exact approval tokens from this preview are accepted.",
             "stale_copy_policy": "reject",
             "automatic_send": False,
@@ -96,7 +97,7 @@ def render_markdown(queue: dict) -> str:
         "",
         f"Review candidates: **{int(queue.get('review_candidate_count') or 0)}**",
         "",
-        "Copy only the approval tokens for leads you want stored as review drafts.",
+        "Copy only the approval tokens for leads you approve for the next mutation step (normally Instantly staging).",
         "A token is bound to the exact reviewed subject/body/evidence; changed copy produces a different token.",
         "",
     ]
