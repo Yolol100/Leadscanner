@@ -34,6 +34,7 @@ WRITE_ACTIONS = {
     "delete_campaign", "update_lead", "delete_lead", "update_interest", "reply_email",
     "forward_email", "send_test_email", "mark_thread_read", "update_account",
     "mark_account_fixed", "pause_account", "resume_account", "enable_warmup", "disable_warmup",
+    "verify_email",
     "block_email", "block_domain", "delete_blocklist_entry", "stage_approved_lead",
 }
 SEND_ACTIONS = {"activate_campaign", "reply_email", "forward_email", "send_test_email"}
@@ -132,6 +133,7 @@ def _confirmation_target(action: str, args: dict) -> str:
         "activate_campaign": "campaign_id", "delete_campaign": "campaign_id",
         "update_lead": "lead_id", "delete_lead": "lead_id", "mark_thread_read": "thread_id",
         "update_account": "email", "mark_account_fixed": "email", "pause_account": "email", "resume_account": "email",
+        "verify_email": "email",
         "block_email": "email", "block_domain": "domain", "delete_blocklist_entry": "entry_id",
         "stage_approved_lead": "campaign_id",
     }
@@ -231,6 +233,44 @@ def _redact_sensitive(value):
     if isinstance(value, tuple):
         return [_redact_sensitive(item) for item in value]
     return value
+
+
+def _verify_email(
+    client: InstantlyClient,
+    email: str,
+    *,
+    max_polls: int = 12,
+    sleep_fn=time.sleep,
+) -> dict:
+    address = _text(email).casefold()
+    if "@" not in address:
+        raise ValueError("valid_email_required")
+    observed = _api(
+        client,
+        "POST",
+        "/email-verification",
+        payload={"email": address},
+    ) or {}
+    for index in range(max(int(max_polls), 1) + 1):
+        status = _text(observed.get("verification_status")).casefold()
+        catch_all = observed.get("catch_all")
+        if status == "verified":
+            if catch_all is True or catch_all == "pending":
+                raise ValueError("email_verification_catch_all_blocked")
+            return observed
+        if status == "invalid":
+            raise ValueError("email_verification_invalid")
+        if status not in {"pending", ""}:
+            raise RuntimeError("email_verification_unknown_status")
+        if index >= max(int(max_polls), 1):
+            break
+        sleep_fn(1.0)
+        observed = _api(
+            client,
+            "GET",
+            f"/email-verification/{_id(address, 'email')}",
+        ) or {}
+    raise RuntimeError("email_verification_pending")
 
 
 def _wait_background_job(
@@ -350,12 +390,26 @@ def _activate(client: InstantlyClient, campaign_id: str) -> dict:
     leads = _campaign_leads(client, campaign_id)
     if not leads:
         raise ValueError("activation_requires_leads")
-    if any(
-        type(lead.get("verification_status")) is not int
-        or lead.get("verification_status") != 1
-        for lead in leads
-    ):
-        raise ValueError("activation_requires_verified_leads_only")
+    for lead in leads:
+        verification_status = lead.get("verification_status")
+        if type(verification_status) is int and verification_status == 1:
+            continue
+        if verification_status is not None:
+            raise ValueError("activation_requires_verified_leads_only")
+        email = _text(lead.get("email")).casefold()
+        if not email:
+            raise ValueError("activation_requires_verified_leads_only")
+        direct = _api(
+            client,
+            "GET",
+            f"/email-verification/{_id(email, 'email')}",
+        ) or {}
+        if (
+            _text(direct.get("verification_status")).casefold() != "verified"
+            or direct.get("catch_all") is True
+            or direct.get("catch_all") == "pending"
+        ):
+            raise ValueError("activation_requires_verified_leads_only")
     diagnostics = sending_status.get("diagnostics") or {}
     summary = sending_status.get("summary") or {}
     reason = _text(diagnostics.get("status") or summary.get("status")).casefold()
@@ -426,6 +480,8 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
             payload={"accounts": accounts},
             retry_safe=True,
         )
+    elif action == "verify_email":
+        data = _verify_email(client, _text(args.get("email")))
     elif action == "warmup_analytics":
         data = _api(client, "POST", "/accounts/warmup-analytics", payload={"emails": list(args.get("emails") or [])}, retry_safe=True)
     elif action == "daily_account_analytics":
