@@ -4,6 +4,7 @@ from update_dedupe_registry import (
     HEADERS,
     exact_rows_present,
     plan_registry_update,
+    update_registry,
 )
 
 
@@ -99,6 +100,17 @@ class RegistryUpdateTests(unittest.TestCase):
         changed = list(expected)
         changed[4] = "sent"
         self.assertFalse(exact_rows_present([expected], [HEADERS, changed]))
+
+    def test_zero_draft_still_validates_readback_contract(self):
+        invalid_status = self.readback([])
+        invalid_status["status"] = "red"
+        with self.assertRaisesRegex(ValueError, "readback_must_be_green"):
+            update_registry(invalid_status, spreadsheet_id="sheet", sheet_name="tab")
+
+        inconsistent = self.readback([self.row()])
+        inconsistent["draft_count"] = 0
+        with self.assertRaisesRegex(ValueError, "registry_intent_count_mismatch"):
+            update_registry(inconsistent, spreadsheet_id="sheet", sheet_name="tab")
 
     def test_bad_live_headers_fail_closed(self):
         expected = self.row()
