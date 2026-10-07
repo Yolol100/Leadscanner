@@ -295,7 +295,7 @@ def body_for(candidate: dict) -> str:
             f"Op jullie site viel me dit op: {observation}\n\n"
             f"Ik kan vrijblijvend {action} maken om te laten zien hoe ik dit online zou aanpakken.\n\n"
             "Zal ik die sturen?\n\n"
-            "Geen interesse? Laat het gerust weten.\n\n"
+            "Geen interesse, laat het gerust weten.\n\n"
             "Groet,\nAndrew"
         )
     return (
@@ -303,7 +303,7 @@ def body_for(candidate: dict) -> str:
         f"This stood out to me on your site: {observation}\n\n"
         f"I can create {action} with no obligation to show how I would approach this online.\n\n"
         "Want me to send it?\n\n"
-        "Not interested? Just let me know.\n\n"
+        "If this is not relevant, just let me know.\n\n"
         "Best,\nAndrew"
     )
 
