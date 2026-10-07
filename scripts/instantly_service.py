@@ -1,0 +1,188 @@
+#!/usr/bin/env python3
+"""Fail-closed orchestration for the Leadscanner -> Instantly boundary."""
+from __future__ import annotations
+
+import os
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+
+import requests
+
+from approval_revalidation import revalidate_approved
+from dedupe_preflight import load_registry
+from instantly_client import InstantlyClient
+from preview_snapshot import fetch_snapshot
+from review_selection import select_approved
+from update_dedupe_registry import HEADERS, update_registry
+
+DEFAULT_REPOSITORY = "Yolol100/Leadscanner"
+DEFAULT_REGISTRY_URL = (
+    "https://docs.google.com/spreadsheets/d/"
+    "1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI/export?format=csv&gid=1354777664"
+)
+
+
+def _text(value: object) -> str:
+    return str(value or "").strip()
+
+
+def _enabled(name: str) -> bool:
+    return os.getenv(name, "").strip().casefold() in {"1", "true", "yes", "on"}
+
+
+def require_instantly_writes_enabled() -> None:
+    if not _enabled("LEADSCANNER_INSTANTLY_WRITES_ENABLED"):
+        raise RuntimeError("instantly_writes_disabled")
+
+
+def fetch_live_registry(
+    *,
+    registry_url: str,
+    session=requests,
+) -> list[dict]:
+    url = _text(registry_url)
+    if not url.startswith("https://docs.google.com/spreadsheets/"):
+        raise ValueError("registry_url_must_be_canonical_google_sheets_export")
+    response = session.get(url, timeout=30)
+    if response.status_code != 200 or not response.content:
+        raise RuntimeError(f"registry_fetch_failed status={response.status_code}")
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "dedupe-registry.csv"
+        path.write_bytes(response.content)
+        return load_registry(path)
+
+
+def resolve_exact_approval(
+    *,
+    preview_run_id: int,
+    approval_token: str,
+    github_token: str,
+    repository: str = DEFAULT_REPOSITORY,
+    registry_url: str = DEFAULT_REGISTRY_URL,
+    github_session=requests,
+    registry_session=requests,
+) -> dict:
+    token = _text(approval_token).casefold()
+    if not token:
+        raise ValueError("approval_token_required")
+    snapshot = fetch_snapshot(
+        repository=repository,
+        run_id=int(preview_run_id),
+        token=_text(github_token),
+        session=github_session,
+    )
+    selected = select_approved(snapshot["review_draft_batch"], token)
+    registry_rows = fetch_live_registry(
+        registry_url=registry_url,
+        session=registry_session,
+    )
+    current = revalidate_approved(selected, registry_rows)
+    if current.get("remaining_count") != 1:
+        raise ValueError("approved_lead_no_longer_eligible")
+    row = current["rows"][0]
+    return {
+        "snapshot": snapshot,
+        "approved_current": current,
+        "row": row,
+        "registry_rows": registry_rows,
+    }
+
+
+def _registry_readback_for_staged(row: dict, campaign_id: str) -> dict:
+    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    registry_row = [
+        _text(row.get("company")),
+        _text(row.get("website")),
+        _text(row.get("official_domain")),
+        _text(row.get("email")).casefold(),
+        "instantly_staged",
+        "instantly_staged",
+        _text(row.get("lead_id")),
+        now,
+        f"instantly:campaign:{_text(campaign_id)}",
+        "TRUE",
+    ]
+    return {
+        "status": "green",
+        "automatic_send": False,
+        "draft_count": 1,
+        "registry_headers": HEADERS,
+        "registry_rows": [registry_row],
+    }
+
+
+def _verify_instantly_readback(observed: dict, *, row: dict, campaign_id: str) -> None:
+    if not isinstance(observed, dict):
+        raise RuntimeError("instantly_lead_readback_must_be_object")
+    expected_email = _text(row.get("email")).casefold()
+    observed_email = _text(observed.get("email")).casefold()
+    if observed_email != expected_email:
+        raise RuntimeError("instantly_lead_readback_email_mismatch")
+    observed_campaign = _text(observed.get("campaign") or observed.get("campaign_id"))
+    if observed_campaign != _text(campaign_id):
+        raise RuntimeError("instantly_lead_readback_campaign_mismatch")
+
+
+def stage_exact_approved_lead(
+    *,
+    preview_run_id: int,
+    approval_token: str,
+    campaign_id: str,
+    instantly_api_key: str,
+    github_token: str,
+    repository: str = DEFAULT_REPOSITORY,
+    registry_url: str = DEFAULT_REGISTRY_URL,
+    instantly_client: InstantlyClient | None = None,
+    github_session=requests,
+    registry_session=requests,
+    spreadsheet_id: str | None = None,
+    sheet_name: str | None = None,
+) -> dict:
+    require_instantly_writes_enabled()
+    resolved = resolve_exact_approval(
+        preview_run_id=preview_run_id,
+        approval_token=approval_token,
+        github_token=github_token,
+        repository=repository,
+        registry_url=registry_url,
+        github_session=github_session,
+        registry_session=registry_session,
+    )
+    row = resolved["row"]
+    client = instantly_client or InstantlyClient(instantly_api_key)
+    created = client.add_approved_lead_to_campaign(
+        approved_batch=resolved["approved_current"],
+        lead_id=_text(row.get("lead_id")),
+        campaign_id=_text(campaign_id),
+        registry_rows=resolved["registry_rows"],
+    )
+    instantly_id = _text((created or {}).get("id"))
+    if not instantly_id:
+        raise RuntimeError("instantly_create_lead_missing_id")
+    observed = client.get_lead(instantly_id)
+    _verify_instantly_readback(observed, row=row, campaign_id=campaign_id)
+
+    kwargs = {}
+    if spreadsheet_id:
+        kwargs["spreadsheet_id"] = spreadsheet_id
+    if sheet_name:
+        kwargs["sheet_name"] = sheet_name
+    registry_result = update_registry(
+        _registry_readback_for_staged(row, campaign_id),
+        **kwargs,
+    )
+
+    return {
+        "schema_version": "leadscanner-instantly-stage/1.0",
+        "status": "green",
+        "preview_run_id": int(preview_run_id),
+        "preview_id": resolved["snapshot"]["preview_id"],
+        "lead_id": _text(row.get("lead_id")),
+        "campaign_id": _text(campaign_id),
+        "instantly_lead_id": instantly_id,
+        "instantly_readback": True,
+        "registry_exact_readback": bool(registry_result.get("exact_readback")),
+        "automatic_send": False,
+        "campaign_activation_available": False,
+    }
