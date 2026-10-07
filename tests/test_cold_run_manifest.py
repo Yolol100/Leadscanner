@@ -145,6 +145,7 @@ class ColdRunManifestTests(unittest.TestCase):
         }
         kwargs["revalidation"] = {
             "suppressed_after_preview_count": 1,
+            "remaining_count": 2,
         }
         kwargs["source_preview_snapshot"] = {
             "preview_id": "preview-1234567890abcdef12345678",
