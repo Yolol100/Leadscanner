@@ -694,6 +694,21 @@ class InstantlyControlTests(unittest.TestCase):
             ],
         )
 
+    def test_command_args_wrong_type_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "bad-args-001.json"
+            path.write_text(
+                json.dumps({
+                    "schema_version": "leadscanner-instantly-command/1.0",
+                    "command_id": "bad-args-001",
+                    "action": "list_campaigns",
+                    "args": [],
+                }),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "command_args_must_be_object"):
+                load_command(path)
+
     def test_command_id_must_match_file_name(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "right-name-001.json"
