@@ -31,15 +31,22 @@ def build_manifest(
     values: dict,
     mail: dict,
     draft_batch: dict,
+    review_queue: dict | None = None,
+    approved_batch: dict | None = None,
     draft_readback: dict | None = None,
     registry_update: dict | None = None,
 ) -> dict:
     if mode not in {"preview", "draft"}:
         raise ValueError("mode_must_be_preview_or_draft")
 
+    review_queue = review_queue or {}
+    approved_batch = approved_batch or {}
     draft_readback = draft_readback or {}
     registry_update = registry_update or {}
     draft_count = int(draft_batch.get("draft_candidate_count") or 0)
+    review_queue_count = int(review_queue.get("review_candidate_count") or 0)
+    approved_count = int((approved_batch.get("approval") or {}).get("approved_count") or 0)
+    operator_rejected_count = int((approved_batch.get("approval") or {}).get("rejected_by_operator_count") or 0)
 
     if mode == "preview":
         if draft_readback or registry_update:
@@ -85,6 +92,9 @@ def build_manifest(
             "outreach_reason_ready": int(reasons.get("ready_count") or 0),
             "value_action_ready": int(values.get("ready_count") or 0),
             "mail_ready_for_human_review": int(mail.get("ready_for_human_review_count") or 0),
+            "review_queue_candidates": review_queue_count,
+            "approved_for_draft": approved_count,
+            "operator_rejected": operator_rejected_count,
             "review_draft_candidates": draft_count,
             "draft_created": int(draft_readback.get("created_count") or 0),
             "draft_existing_exact": int(draft_readback.get("existing_count") or 0),
@@ -114,6 +124,8 @@ def main() -> int:
     parser.add_argument("--values", required=True)
     parser.add_argument("--mail", required=True)
     parser.add_argument("--draft-batch", required=True)
+    parser.add_argument("--review-queue")
+    parser.add_argument("--approved-batch")
     parser.add_argument("--draft-readback")
     parser.add_argument("--registry-update")
     parser.add_argument("--output", required=True)
@@ -130,6 +142,8 @@ def main() -> int:
         values=_load(args.values),
         mail=_load(args.mail),
         draft_batch=_load(args.draft_batch),
+        review_queue=_load(args.review_queue),
+        approved_batch=_load(args.approved_batch),
         draft_readback=_load(args.draft_readback),
         registry_update=_load(args.registry_update),
     )
