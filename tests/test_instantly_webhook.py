@@ -158,6 +158,14 @@ class InstantlyWebhookTests(unittest.TestCase):
         self.assertEqual(plan["before"], fresh_row)
         self.assertEqual(session.put_calls, [])
 
+    def test_malformed_timestamp_fails_closed_before_registry_change(self):
+        with self.assertRaisesRegex(ValueError, "webhook_timestamp_invalid"):
+            normalize_event({
+                "event_type": "reply_received",
+                "lead_email": "info@acme.nl",
+                "timestamp": "not-a-timestamp",
+            })
+
     def test_unknown_event_fails_closed(self):
         with self.assertRaisesRegex(ValueError, "unsupported_instantly_event"):
             normalize_event({"event_type": "email_opened", "lead_email": "info@acme.nl"})
