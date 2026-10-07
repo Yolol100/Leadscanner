@@ -57,6 +57,15 @@ def build_manifest(
     operator_rejected_count = int((approved_batch.get("approval") or {}).get("rejected_by_operator_count") or 0)
     suppressed_after_preview = int(revalidation.get("suppressed_after_preview_count") or 0)
 
+    if mode == "draft":
+        if approved_batch:
+            if approved_count + operator_rejected_count != review_queue_count:
+                raise ValueError("draft_mode_review_approval_count_mismatch")
+        if revalidation:
+            remaining_count = int(revalidation.get("remaining_count") or 0)
+            if approved_count - suppressed_after_preview != draft_count or remaining_count != draft_count:
+                raise ValueError("draft_mode_approval_revalidation_count_mismatch")
+
     if mode == "preview":
         if draft_readback or registry_update:
             raise ValueError("preview_must_not_include_mutation_results")
