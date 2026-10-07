@@ -14,7 +14,12 @@ from dedupe_preflight import load_registry
 from instantly_client import InstantlyClient
 from preview_snapshot import fetch_snapshot
 from review_selection import select_approved
-from update_dedupe_registry import (\n    DEFAULT_SHEET_NAME,\n    DEFAULT_SPREADSHEET_ID,\n    HEADERS,\n    update_registry,\n)
+from update_dedupe_registry import (
+    DEFAULT_SHEET_NAME,
+    DEFAULT_SPREADSHEET_ID,
+    HEADERS,
+    update_registry,
+)
 
 DEFAULT_REPOSITORY = "Yolol100/Leadscanner"
 DEFAULT_REGISTRY_URL = (
