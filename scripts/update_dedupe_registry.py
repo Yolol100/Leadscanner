@@ -223,7 +223,24 @@ def check_registry_access(*, spreadsheet_id: str, sheet_name: str) -> dict:
 
 
 def update_registry(readback: dict, *, spreadsheet_id: str, sheet_name: str) -> dict:
-    if int(readback.get("draft_count") or 0) == 0:
+    if readback.get("status") != "green":
+        raise ValueError("readback_must_be_green")
+    if readback.get("automatic_send") is not False:
+        raise ValueError("automatic_send_must_be_false")
+    if readback.get("registry_headers") != HEADERS:
+        raise ValueError("registry_header_contract_mismatch")
+    registry_rows = readback.get("registry_rows")
+    draft_count = readback.get("draft_count")
+    if (
+        not isinstance(registry_rows, list)
+        or isinstance(draft_count, bool)
+        or not isinstance(draft_count, int)
+        or draft_count < 0
+        or len(registry_rows) != draft_count
+    ):
+        raise ValueError("registry_intent_count_mismatch")
+
+    if draft_count == 0:
         return {
             "schema_version": "leadscanner-dedupe-registry-update/1.0",
             "status": "green",
