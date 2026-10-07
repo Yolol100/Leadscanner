@@ -115,6 +115,7 @@ def evaluate(root: str | Path = ".") -> dict:
             "ok": (
                 "cancel-in-progress: false" in workflow
                 and "immutable_instantly_command_modified_or_deleted" in workflow
+                and "mixed_instantly_command_and_control_change_forbidden" in workflow
                 and workflow.count("group: leadscanner-instantly-registry") == 2
                 and '"automatic_send": False' in sync
                 and '"instantly_mutation": False' in sync
