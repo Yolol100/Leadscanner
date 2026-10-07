@@ -60,6 +60,7 @@ def evaluate(root: str | Path = ".") -> dict:
                 "/sending-status" in control
                 and "activation_requires_all_sender_accounts_active" in control
                 and "activation_requires_non_pending_non_risky_verification" in control
+                and "activation_sending_status_all_accounts_unhealthy" in control
                 and "{-1, -2, -3, -4, 11, 12}" in control
             ),
         },
@@ -67,6 +68,10 @@ def evaluate(root: str | Path = ".") -> dict:
             "name": "async_mutation_readback",
             "ok": (
                 "_wait_background_job" in control
+                and "_wait_interest_status" in control
+                and "interest_lead_email_required" in control
+                and "interest_value_required" in control
+                and "completion_state" in control
                 and "warmup_{verb}_readback_mismatch" in control
                 and "account_{verb}_readback_mismatch" in control
             ),
@@ -75,6 +80,7 @@ def evaluate(root: str | Path = ".") -> dict:
             "name": "stale_event_and_registry_race_protection",
             "ok": (
                 "stale_event_ignored" in webhook
+                and "webhook_timestamp_invalid" in webhook
                 and "registry_event_fresh_read_failed" in webhook
                 and "fresh_values" in webhook
                 and "TERMINAL_STATUSES" in webhook
@@ -90,6 +96,9 @@ def evaluate(root: str | Path = ".") -> dict:
                 and "response.text" not in client
                 and "GITHUB_REPOSITORY_PRIVATE" not in control
                 and "GITHUB_REPOSITORY_PRIVATE" not in workflow
+                and "reply_body_required" in control
+                and "forward_body_or_original_required" in control
+                and "test_body_required" in control
             ),
         },
         {
