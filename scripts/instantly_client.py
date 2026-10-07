@@ -200,6 +200,8 @@ class InstantlyClient:
             "custom_variables": {
                 "leadscanner_lead_id": lead_id,
                 "leadscanner_review_status": "approved",
+                "leadscanner_subject": str(row.get("subject") or "").strip(),
+                "leadscanner_body": str(row.get("body") or "").strip(),
             },
         }
         if not payload["email"]:
