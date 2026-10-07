@@ -1,14 +1,9 @@
 {
   "region": "Rotterdam",
-  "radius_km": 10,
+  "radius_km": 15,
   "target_candidates": 30,
   "verify_limit": 20,
   "keywords": [
-    "schilder",
-    "restaurant",
-    "tandarts",
-    "fietsenwinkel",
-    "makelaar",
-    "kapsalon"
+    "fietsenwinkel"
   ]
 }
