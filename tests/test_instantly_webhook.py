@@ -69,6 +69,20 @@ class InstantlyWebhookTests(unittest.TestCase):
         self.assertIn("instantly:poll", plan["after"][8])
         self.assertNotIn("instantly:webhook", plan["after"][8])
 
+    def test_polled_terminal_events_are_supported(self):
+        lost = normalize_event({
+            "event_type": "lead_lost",
+            "lead_email": "info@acme.nl",
+            "timestamp": "t",
+        })
+        skipped = normalize_event({
+            "event_type": "lead_skipped",
+            "lead_email": "info@acme.nl",
+            "timestamp": "t",
+        })
+        self.assertEqual(lost["kind"], "lost")
+        self.assertEqual(skipped["kind"], "skipped")
+
     def test_unknown_event_fails_closed(self):
         with self.assertRaisesRegex(ValueError, "unsupported_instantly_event"):
             normalize_event({"event_type": "email_opened", "lead_email": "info@acme.nl"})
