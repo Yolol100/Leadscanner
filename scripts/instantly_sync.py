@@ -121,8 +121,8 @@ def _timestamp_rank(value: object) -> str:
         return ""
     try:
         return datetime.fromisoformat(text.replace("Z", "+00:00")).astimezone(timezone.utc).isoformat()
-    except ValueError:
-        return text
+    except ValueError as exc:
+        raise ValueError("instantly_lead_timestamp_invalid") from exc
 
 
 def select_events(leads: list[dict]) -> list[dict]:
