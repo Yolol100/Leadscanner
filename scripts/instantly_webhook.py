@@ -76,6 +76,8 @@ def normalize_event(payload: dict) -> dict:
     timestamp = _text(payload.get("timestamp"))
     if not timestamp:
         timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    elif _timestamp(timestamp) is None:
+        raise ValueError("webhook_timestamp_invalid")
     return {
         "kind": kind,
         "event_type": raw_type,
