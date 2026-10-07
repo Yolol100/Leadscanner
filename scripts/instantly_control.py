@@ -139,6 +139,7 @@ def _confirmation_target(action: str, args: dict) -> str:
             part for part in (
                 _text(payload.get("reply_to_uuid")),
                 _text(payload.get("to_address_email_list")),
+                _text(payload.get("eaccount")),
             ) if part
         )
     if action == "send_test_email":
@@ -305,8 +306,8 @@ def _activate(client: InstantlyClient, campaign_id: str) -> dict:
     leads = _campaign_leads(client, campaign_id)
     if not leads:
         raise ValueError("activation_requires_leads")
-    if any(lead.get("verification_status") in {-1, -2, -3, -4, 11, 12} for lead in leads):
-        raise ValueError("activation_requires_non_pending_non_risky_verification")
+    if any(lead.get("verification_status") != 1 for lead in leads):
+        raise ValueError("activation_requires_verified_leads_only")
     diagnostics = sending_status.get("diagnostics") or {}
     summary = sending_status.get("summary") or {}
     reason = _text(diagnostics.get("status") or summary.get("status")).casefold()
@@ -385,7 +386,16 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
         data = {"operation": created, "readback": observed}
     elif action == "update_campaign":
         cid = _text(args.get("campaign_id"))
-        data = {"operation": _api(client, "PATCH", f"/campaigns/{_id(cid, 'campaign_id')}", payload=dict(args.get("payload") or {})), "readback": client.get_campaign(cid)}
+        current = client.get_campaign(cid) or {}
+        if int(current.get("status")) not in SAFE_CAMPAIGN_STATUSES:
+            raise ValueError("campaign_must_be_draft_or_paused_before_update")
+        operation = _api(
+            client,
+            "PATCH",
+            f"/campaigns/{_id(cid, 'campaign_id')}",
+            payload=dict(args.get("payload") or {}),
+        )
+        data = {"operation": operation, "readback": client.get_campaign(cid)}
     elif action == "pause_campaign":
         cid = _text(args.get("campaign_id"))
         operation = _api(client, "POST", f"/campaigns/{_id(cid, 'campaign_id')}/pause", payload={})
