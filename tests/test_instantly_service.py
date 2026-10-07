@@ -74,6 +74,31 @@ class InstantlyServiceTests(unittest.TestCase):
             )
 
     @patch("instantly_service.update_registry")
+    @patch("instantly_service.check_registry_access", side_effect=RuntimeError("registry_preflight_failed"), create=True)
+    @patch("instantly_service.resolve_exact_approval")
+    def test_stage_preflights_registry_before_instantly_mutation(
+        self, resolve_mock, preflight_mock, update_mock
+    ):
+        resolve_mock.return_value = resolved()
+        update_mock.return_value = {"exact_readback": True}
+        client = FakeInstantlyClient()
+
+        with patch.dict(os.environ, {"LEADSCANNER_INSTANTLY_WRITES_ENABLED": "true"}, clear=False):
+            with self.assertRaisesRegex(RuntimeError, "registry_preflight_failed"):
+                stage_exact_approved_lead(
+                    preview_run_id=123,
+                    approval_token="growth-aaaaaaaaaaaaaaaaaaaa@1111111111111111",
+                    campaign_id="campaign-1",
+                    instantly_api_key="key",
+                    github_token="gh",
+                    instantly_client=client,
+                )
+
+        self.assertEqual(client.calls, [])
+        preflight_mock.assert_called_once()
+        update_mock.assert_not_called()
+
+    @patch("instantly_service.update_registry")
     @patch("instantly_service.resolve_exact_approval")
     def test_stage_requires_readback_then_registry_exact_write(self, resolve_mock, update_mock):
         resolve_mock.return_value = resolved()
