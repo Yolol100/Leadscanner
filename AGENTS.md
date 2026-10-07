@@ -4,8 +4,8 @@
 - Build a fast cold-lead pipeline from a clean slate.
 - Keep only the active cold-pipeline dependency closure. Legacy Google Maps adapters, remediation scripts, old mailbox bridges, pricing/scoring code and their tests have been removed.
 - The Google Sheet Lead Dedupe Registry is the only retained historical lead source and is suppression-only.
-- The active phases are preview discovery/filter -> historical dedupe -> identity/domain/contact verification -> bounded first-party research -> one evidence-backed outreach reason -> one proposed value-first action -> short validated cold mail -> human review queue -> immutable preview snapshot -> draft resume from that exact snapshot -> exact approval selection -> live dedupe revalidation -> strict review-draft storage -> exact mailbox readback -> canonical dedupe-registry append/readback -> provenance-bound run manifest.
-- The cold discovery/review pipeline must never auto-send. A separate GitHub Instantly control plane in this same workflow may execute only explicit user-confirmed Instantly actions from immutable command files; it must not bypass Leadscanner approval or live dedupe gates for Leadscanner-sourced prospects.
+- The primary active phases are preview discovery/filter -> historical dedupe -> identity/domain/contact verification -> bounded first-party research -> one evidence-backed outreach reason -> one proposed value-first action -> short validated cold mail -> human review queue -> immutable preview snapshot -> exact approval selection -> fresh live dedupe revalidation -> Instantly staging into a Draft/Paused campaign -> exact Instantly readback -> canonical dedupe-registry closure -> explicit separate campaign activation -> scheduled Instantly reconciliation.
+- The cold discovery/review pipeline and Instantly staging must never auto-send. Campaign activation is a separate user-confirmed send-capable action. The optional mijn.host draft path is fallback-only and not part of the primary outbound route.
 
 ## Execution rules
 - Work on `main` unless the user explicitly requests another branch.
@@ -24,12 +24,13 @@
 - Every preview must emit `review-queue.json`, `review-queue.md`, and `review-queue.csv` with one approval token per reviewable lead.
 - Bind each approval token to the exact lead ID, subject, body, evidence and proposed value action; changed copy must invalidate the token.
 - Seal every preview into a digest-bound `preview-snapshot.json` containing source repository/run/commit, the review batch, review queue, request and preview manifest.
-- Enter mutation mode only when `execution_mode=draft`, `confirm_review_drafts=true`, a numeric `preview_run_id`, and at least one exact `approved_review_tokens` value are all explicit.
-- Draft mode must resume the exact successful, non-expired preview artifact from `main`; it must not rerun discovery, verification, research or copy generation.
-- Revalidate approved snapshot leads against the current dedupe registry immediately before any mailbox mutation; suppress anything that appeared in the registry after preview.
-- Store only the remaining exact approved subset as `review_draft` mail through the dedicated IMAP draft writer; allow exact retries but reject changed existing drafts.
-- Require exact To/Subject/body/lead-ID/review-status readback before updating the registry.
-- Preflight Google Sheets write access before any non-empty draft batch, then append/read back the canonical DedupeRegistry only after mailbox readback is green.
+- The primary mutation mode is `execution_mode=instantly_stage`. It requires `confirm_instantly_stage=true`, a numeric `preview_run_id`, at least one exact `approved_review_tokens` value, and an explicit `instantly_campaign_id`.
+- Instantly stage mode must resume the exact successful, non-expired preview artifact from `main`; it must not rerun discovery, verification, research or copy generation.
+- Revalidate each approved snapshot lead against the current dedupe registry immediately before its Instantly mutation; suppress anything that appeared after preview.
+- Stage only into an Instantly campaign that is Draft or Paused. Pass the exact reviewed subject/body as `leadscanner_subject` and `leadscanner_body` custom variables and require exact lead/campaign readback.
+- Write `instantly_staged` to the canonical registry only after exact Instantly readback succeeds. A failed later lead must not invalidate already-closed prior staged leads; a retry reuses fresh dedupe to skip them safely.
+- Campaign activation remains separate from staging and requires the existing exact confirmation, sender health, lead verification and sending-status preflight.
+- Optional `draft` mode may still create mijn.host review drafts when explicitly requested; it is not the default outbound path.
 - Preserve bounded concurrency and same-domain URL safety.
 - Prefer one workflow/job chain over repeated setup and artifact handoffs.
 - Keep the ChatGPT web control boundary repository-native: new immutable JSON commands under `instantly-commands/inbox/` -> allowlisted executor -> Actions result artifact.
@@ -43,7 +44,7 @@
 ## Safety
 - Never infer an email address, company identity, prospect fact, pain point or commercial outcome.
 - Never use dedupe-history content as new prospect research.
-- Never automatically send commercial outreach. Send-capable Instantly actions are user-triggered only and require the repository command gates described above.
+- Never automatically send commercial outreach. Instantly staging is non-sending; send-capable activation/reply/forward/test actions are user-triggered only and require the repository command gates described above.
 - Never let scheduled synchronization, a workflow re-run, or a repository code push become an implicit send trigger.
 
 ## Validation
