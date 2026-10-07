@@ -197,6 +197,24 @@ def check_registry_access(*, spreadsheet_id: str, sheet_name: str) -> dict:
     current = read_live_values(session, spreadsheet_id, sheet_name)
     if not current or normalize_row(current[0]) != HEADERS:
         raise RuntimeError("live_registry_headers_mismatch")
+
+    header_range = quote(f"{sheet_name}!A1:J1", safe="")
+    header_url = (
+        f"https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values/{header_range}"
+        "?valueInputOption=RAW"
+    )
+    response = session.put(
+        header_url,
+        json={"majorDimension": "ROWS", "values": [HEADERS]},
+        timeout=20,
+    )
+    if response.status_code not in {200, 201}:
+        raise RuntimeError(
+            f"registry_write_preflight_failed status={response.status_code} body={response.text[:300]}"
+        )
+    confirmed = read_live_values(session, spreadsheet_id, sheet_name)
+    if not confirmed or normalize_row(confirmed[0]) != HEADERS:
+        raise RuntimeError("registry_write_preflight_readback_mismatch")
     return {
         "schema_version": "leadscanner-dedupe-registry-access/1.0",
         "status": "green",
