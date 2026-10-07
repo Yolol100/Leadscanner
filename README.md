@@ -77,3 +77,10 @@ The previous Google Maps CSV adapters and remediation-era code were removed from
 ## Quality diagnostics
 
 Every preview now emits `funnel-metrics.json` and `coverage-audit.json` in addition to the review artifacts. The funnel file explains why leads were rejected at each stage without storing prospect copy or contact details. The coverage file measures whether Overture supplies enough candidates for the requested verification capacity. A second discovery source is not added automatically; first broaden the query/radius, and require repeated independent gap evidence before introducing another source.
+
+## Quality tuning evidence
+
+- Rotterdam painter preview `37625580078`: 30 Overture candidates, 28 after dedupe, 9 research-ready, 0 review mails. Funnel reasons were 5 weak generic marketing signals and 4 cases with no outreach-worthy customer action. This confirms generic quality/service copy is now held instead of mailed.
+- Rotterdam physiotherapy preview `37626656135`: 30 Overture candidates, 13 research-ready, 2 concrete appointment signals and 2 review mails. This confirms the stricter gate still passes real customer-action evidence.
+- Overture coverage benchmark at 10 km found sufficient supply for painter, restaurant, dentist, real-estate and hair-salon searches. Bicycle stores were thin at 17 candidates; widening to 15 km produced 30 and removed the gap.
+- Current decision: **do not add a second discovery source**. Broaden Overture query/radius first; only deliberate source expansion after repeated independent gap evidence.
