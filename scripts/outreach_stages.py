@@ -46,55 +46,59 @@ SIGNALS = (
     (
         "appointment",
         100,
-        ("afspraak", "afspraken", "appointment", "appointments", "booking", "book an appointment"),
+        (
+            r"\\b(?:online\\s+)?(?:een\\s+)?afspraak(?:en)?\\s+(?:aanvragen|maken|plannen|boeken)\\b",
+            r"\\b(?:maak|plan|boek|vraag)\\b.{0,50}\\bafspraak\\b",
+            r"\\b(?:book|schedule|request)\\b.{0,50}\\bappointment\\b",
+            r"\\bbook an appointment\\b",
+        ),
         {"nl": "afspraakroute", "en": "booking flow"},
     ),
     (
         "quote_request",
         95,
-        ("offerte", "offerteaanvraag", "quote request", "request a quote", "quotation"),
+        (
+            r"\\b(?:offerte|offerteaanvraag)\\b.{0,60}\\b(?:aanvragen|aanvraag|formulier|online)\\b",
+            r"\\b(?:vraag|aanvragen)\\b.{0,50}\\bofferte\\b",
+            r"\\b(?:request|get)\\b.{0,50}\\b(?:a\\s+)?quote\\b",
+            r"\\bquote request\\b",
+        ),
         {"nl": "offerte-aanvraag", "en": "quote-request flow"},
     ),
     (
         "reservation",
         90,
-        ("reserver", "reservation", "reserveer", "reserve a table", "book a table"),
+        (
+            r"\\b(?:reserveer|reserveren|reservering)\\b",
+            r"\\b(?:book|reserve)\\b.{0,50}\\b(?:table|reservation)\\b",
+        ),
         {"nl": "reserveringsroute", "en": "reservation flow"},
     ),
     (
         "ordering",
         85,
-        ("bestel", "bestellen", "order online", "online order", "ordering", "online bestellen"),
+        (
+            r"\\b(?:online\\s+)?bestel(?:len|t|d)?\\b",
+            r"\\b(?:order online|online order|place an order)\\b",
+        ),
         {"nl": "bestelroute", "en": "ordering flow"},
     ),
-    (
-        "treatment_offer",
-        72,
-        ("behandeling", "behandelingen", "treatment", "treatments"),
-        {"nl": "behandelingsaanbod", "en": "treatment section"},
-    ),
-    (
-        "service_offer",
-        65,
-        ("dienst", "diensten", "service", "services", "werkwijze", "how we work"),
-        {"nl": "dienstenpresentatie", "en": "services section"},
-    ),
-    (
-        "product_offer",
-        60,
-        ("product", "producten", "assortiment", "menu", "collection", "range"),
-        {"nl": "aanbodpresentatie", "en": "offer section"},
-    ),
 )
+
+WEAK_OUTREACH_TERMS = (
+    "kwaliteit", "quality", "goede service", "great service", "service staat centraal",
+    "maatwerk", "customized", "tailor-made", "vakmanschap", "craftsmanship",
+    "persoonlijke aandacht", "personal attention", "betrouwbaar", "reliable",
+    "jarenlange ervaring", "years of experience", "tevreden klant", "happy customer",
+    "professioneel", "professional", "passie", "passion",
+)
+
 
 SUBJECTS = {
     "appointment": {"nl": "idee voor jullie afspraakroute", "en": "idea for your booking flow"},
     "quote_request": {"nl": "idee voor jullie offerte-aanvraag", "en": "idea for your quote flow"},
     "reservation": {"nl": "idee voor jullie reserveringsroute", "en": "idea for your reservation flow"},
     "ordering": {"nl": "idee voor jullie bestelroute", "en": "idea for your ordering flow"},
-    "treatment_offer": {"nl": "idee voor jullie behandelingsaanbod", "en": "idea for your treatment section"},
-    "service_offer": {"nl": "idee voor jullie dienstenpagina", "en": "idea for your services section"},
-    "product_offer": {"nl": "idee voor jullie aanbod", "en": "idea for your offer section"},
 }
 
 
@@ -145,15 +149,11 @@ def classify_evidence(item: dict) -> dict | None:
     text = normalize_text(item.get("text"))
     page_type = _text(item.get("page_type")).casefold()
     best = None
-    for signal_type, base_score, terms, labels in SIGNALS:
-        hits = [term for term in terms if normalize_text(term) in text]
+    for signal_type, base_score, patterns, labels in SIGNALS:
+        hits = [pattern for pattern in patterns if re.search(pattern, text, flags=re.I)]
         if not hits:
             continue
-        score = base_score
-        if page_type == "process" and signal_type in {"appointment", "quote_request", "reservation", "ordering"}:
-            score += 15
-        elif page_type in {"services", "products"} and signal_type in {"treatment_offer", "service_offer", "product_offer"}:
-            score += 8
+        score = base_score + (15 if page_type == "process" else 0)
         candidate = {
             "signal_type": signal_type,
             "signal_score": score,
@@ -185,7 +185,15 @@ def select_one_reason(candidate: dict) -> dict:
         if classification:
             ranked.append((-classification["signal_score"], index, item, classification))
     if not ranked:
-        result["outreach_hold_reason"] = "no_outreach_worthy_first_party_signal"
+        evidence_text = " ".join(
+            normalize_text(item.get("text"))
+            for item in candidate.get("evidence_candidates") or []
+            if isinstance(item, dict)
+        )
+        if any(term in evidence_text for term in WEAK_OUTREACH_TERMS):
+            result["outreach_hold_reason"] = "weak_generic_marketing_signal"
+        else:
+            result["outreach_hold_reason"] = "no_outreach_worthy_first_party_signal"
         return result
 
     ranked.sort(key=lambda entry: (entry[0], entry[1]))
