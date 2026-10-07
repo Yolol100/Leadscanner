@@ -224,6 +224,24 @@ class DraftTests(unittest.TestCase):
         self.assertEqual(client.messages[0], old_raw)
         self.assertFalse(client.deleted)
 
+    def test_strict_mode_rejects_changed_existing_without_overwrite(self):
+        client = FakeIMAP()
+        with patch("myhost_draft.connect_imap", return_value=client):
+            create_drafts({"rows": [self.row()]})
+
+        original_raw = client.messages[0]
+        updated = self.row()
+        updated["body"] = "Handmatig gewijzigde of afwijkende inhoud."
+        with patch("myhost_draft.connect_imap", return_value=client):
+            with self.assertRaisesRegex(RuntimeError, "automatic replacement is disabled"):
+                create_drafts(
+                    {"rows": [updated]},
+                    reject_changed_existing=True,
+                )
+
+        self.assertEqual(len(client.messages), 1)
+        self.assertEqual(client.messages[0], original_raw)
+
     def test_changed_existing_draft_without_uidplus_blocks_before_append(self):
         client = FakeIMAP()
         with patch("myhost_draft.connect_imap", return_value=client):
