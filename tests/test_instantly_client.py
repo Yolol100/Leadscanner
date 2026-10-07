@@ -1,5 +1,7 @@
 import unittest
 
+import requests
+
 from instantly_client import FORBIDDEN_TOOL_NAMES, InstantlyClient, InstantlyError
 
 
@@ -81,6 +83,15 @@ class InstantlyClientTests(unittest.TestCase):
                 registry_rows=[],
             )
         self.assertEqual(len(session.calls), 2)
+
+    def test_write_timeout_reports_unknown_outcome(self):
+        class TimeoutSession:
+            def request(self, method, url, **kwargs):
+                raise requests.Timeout("synthetic timeout")
+
+        client = InstantlyClient("secret", session=TimeoutSession())
+        with self.assertRaisesRegex(InstantlyError, "write_outcome_unknown"):
+            client._request("POST", "/leads", json={"email": "lead@example.com"})
 
     def test_api_error_does_not_include_response_body(self):
         session = FakeSession([
