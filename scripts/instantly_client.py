@@ -105,12 +105,21 @@ class InstantlyClient:
     def get_lead(self, lead_id: str):
         return self._request("GET", f"/leads/{quote(str(lead_id), safe='')}", retry_safe=True)
 
-    def get_emails(self, *, campaign_id: str | None = None, received_only: bool = True, limit: int = 50):
+    def get_emails(
+        self,
+        *,
+        campaign_id: str | None = None,
+        received_only: bool = True,
+        limit: int = 50,
+        starting_after: str | None = None,
+    ):
         params = {"limit": min(max(int(limit), 1), 100)}
         if campaign_id:
             params["campaign_id"] = campaign_id
         if received_only:
             params["email_type"] = "received"
+        if starting_after:
+            params["starting_after"] = starting_after
         return self._request("GET", "/emails", params=params, retry_safe=True)
 
     def get_campaign_analytics(self, *, campaign_id: str | None = None):
