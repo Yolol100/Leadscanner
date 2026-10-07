@@ -69,6 +69,26 @@ class ColdStagesTests(unittest.TestCase):
         self.assertNotIn("discovery_email_candidates", result["candidates"][0])
         self.assertEqual(result["excluded_count"], 3)
 
+    def test_filter_deduplicates_parent_and_subdomain_identity(self):
+        payload = {
+            "candidates": [
+                {
+                    "overture_id": "1",
+                    "name_hint": "Acme",
+                    "website_hint": "https://acme.nl/",
+                },
+                {
+                    "overture_id": "2",
+                    "name_hint": "Acme Shop",
+                    "website_hint": "https://shop.acme.nl/",
+                },
+            ]
+        }
+        result = filter_discovery(payload)
+        self.assertEqual(result["candidate_count"], 1)
+        self.assertEqual(result["excluded_count"], 1)
+        self.assertEqual(result["excluded"][0]["reason"], "duplicate_domain_in_discovery")
+
     @patch("cold_stages.is_public_http_url", return_value=True)
     def test_redirect_to_other_domain_is_blocked(self, _safe):
         response = FakeResponse(
