@@ -339,6 +339,9 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
             raise ValueError("reply_to_uuid_required")
         path = {"reply_email": "/emails/reply", "forward_email": "/emails/forward", "send_test_email": "/emails/test"}[action]
         data = _api(client, "POST", path, payload=payload)
+        if action == "send_test_email" and isinstance(data, dict) and data.get("error"):
+            code = re.sub(r"[^A-Za-z0-9_.:-]+", "_", _text(data.get("error")))[:80] or "unknown"
+            raise RuntimeError(f"instantly_test_send_error:{code}")
     elif action == "mark_thread_read":
         data = _api(client, "POST", f"/emails/threads/{_id(args.get('thread_id'), 'thread_id')}/mark-as-read", payload={})
     elif action == "update_account":
