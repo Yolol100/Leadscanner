@@ -29,12 +29,17 @@ def evaluate(root: str | Path = ".") -> dict:
         },
         {
             "name": "approval_and_live_dedupe_boundary",
-            "ok": all(token in service for token in (
-                "resolve_exact_approval",
-                "revalidate_approved",
-                "approved_lead_no_longer_eligible",
-                "update_registry",
-            )) and "match_candidate" in client,
+            "ok": (
+                all(token in service for token in (
+                    "resolve_exact_approval",
+                    "revalidate_approved",
+                    "approved_lead_no_longer_eligible",
+                    "check_registry_access",
+                    "update_registry",
+                ))
+                and "match_candidate" in client
+                and "Phase 21 - Refresh live dedupe registry immediately before draft storage" in workflow
+            ),
         },
         {
             "name": "allowlisted_immutable_commands",
