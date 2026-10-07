@@ -104,6 +104,47 @@ class ColdRunManifestTests(unittest.TestCase):
         self.assertEqual(result["counts"]["approved_for_draft"], 2)
         self.assertEqual(result["counts"]["operator_rejected"], 3)
 
+    def test_draft_manifest_carries_source_preview_provenance_and_revalidation(self):
+        kwargs = base_inputs()
+        kwargs["review_queue"] = {"review_candidate_count": 5}
+        kwargs["approved_batch"] = {
+            "approval": {
+                "approved_count": 3,
+                "rejected_by_operator_count": 2,
+            }
+        }
+        kwargs["revalidation"] = {
+            "suppressed_after_preview_count": 1,
+        }
+        kwargs["source_preview_snapshot"] = {
+            "preview_id": "preview-1234567890abcdef12345678",
+            "source": {
+                "run_id": 999,
+                "head_sha": "a" * 40,
+            },
+        }
+        kwargs["draft_batch"] = {"draft_candidate_count": 2}
+        kwargs["draft_readback"] = {
+            "status": "green",
+            "created_count": 2,
+            "existing_count": 0,
+        }
+        kwargs["registry_update"] = {
+            "status": "green",
+            "appended_count": 2,
+            "already_present_count": 0,
+            "exact_readback": True,
+        }
+        result = build_manifest(mode="draft", **kwargs)
+        self.assertEqual(result["counts"]["approved_for_draft"], 3)
+        self.assertEqual(result["counts"]["suppressed_after_preview"], 1)
+        self.assertEqual(result["counts"]["review_draft_candidates"], 2)
+        self.assertEqual(result["provenance"]["source_preview_run_id"], 999)
+        self.assertEqual(
+            result["provenance"]["source_preview_id"],
+            "preview-1234567890abcdef12345678",
+        )
+
     def test_zero_draft_draft_mode_can_close_without_external_mutation(self):
         kwargs = base_inputs()
         kwargs["draft_batch"] = {"draft_candidate_count": 0}
