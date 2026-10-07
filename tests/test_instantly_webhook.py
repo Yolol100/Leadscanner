@@ -1,6 +1,6 @@
 import unittest
 
-from instantly_webhook import normalize_event, plan_registry_event_update
+from instantly_webhook import apply_registry_event, normalize_event, plan_registry_event_update
 from update_dedupe_registry import HEADERS
 
 
@@ -10,6 +10,30 @@ def row(status="sent"):
         status, "drafted", "growth-aaaaaaaaaaaaaaaaaaaa", "",
         "cold_pipeline_review_draft", "TRUE",
     ]
+
+
+class FakeResponse:
+    def __init__(self, status_code=200, payload=None):
+        self.status_code = status_code
+        self._payload = payload or {}
+        self.text = str(self._payload)
+
+    def json(self):
+        return self._payload
+
+
+class FakeSheetSession:
+    def __init__(self, live_row):
+        self.live_row = list(live_row)
+        self.put_calls = []
+
+    def get(self, url, timeout=20):
+        return FakeResponse(payload={"values": [list(self.live_row)]})
+
+    def put(self, url, json, timeout=20):
+        self.put_calls.append((url, json))
+        self.live_row = list(json["values"][0])
+        return FakeResponse(payload={"updatedRows": 1})
 
 
 class InstantlyWebhookTests(unittest.TestCase):
@@ -93,6 +117,46 @@ class InstantlyWebhookTests(unittest.TestCase):
         })
         self.assertEqual(lost["kind"], "lost")
         self.assertEqual(skipped["kind"], "skipped")
+
+    def test_older_event_cannot_roll_back_newer_registry_state(self):
+        current = row("interested")
+        current[7] = "2026-10-07T15:00:00Z"
+        plan = plan_registry_event_update(
+            {
+                "event_type": "reply_received",
+                "lead_email": "info@acme.nl",
+                "timestamp": "2026-10-07T14:00:00Z",
+            },
+            [HEADERS, current],
+            source_marker="instantly:poll",
+        )
+        self.assertTrue(plan["safety"]["stale_event_ignored"])
+        self.assertEqual(plan["after"], plan["before"])
+
+    def test_apply_rechecks_fresh_row_before_write(self):
+        stale_snapshot = row("sent")
+        stale_snapshot[7] = "2026-10-07T12:00:00Z"
+        fresh_row = row("unsubscribed")
+        fresh_row[5] = "drafted;instantly:lead_unsubscribed"
+        fresh_row[7] = "2026-10-07T15:00:00Z"
+        session = FakeSheetSession(fresh_row)
+
+        plan = apply_registry_event(
+            session,
+            "sheet-1",
+            "DedupeRegistry",
+            {
+                "event_type": "reply_received",
+                "lead_email": "info@acme.nl",
+                "timestamp": "2026-10-07T14:00:00Z",
+            },
+            [HEADERS, stale_snapshot],
+            source_marker="instantly:poll",
+        )
+
+        self.assertTrue(plan["safety"]["stale_event_ignored"])
+        self.assertEqual(plan["before"], fresh_row)
+        self.assertEqual(session.put_calls, [])
 
     def test_unknown_event_fails_closed(self):
         with self.assertRaisesRegex(ValueError, "unsupported_instantly_event"):
