@@ -4,8 +4,8 @@
   "approved_review_tokens": "",
   "preview_run_id": "",
   "region": "Rotterdam",
-  "keywords": "restaurant",
-  "target_candidates": 20,
-  "verify_limit": 12,
-  "radius_km": 5
+  "keywords": "schilder",
+  "target_candidates": 30,
+  "verify_limit": 20,
+  "radius_km": 10
 }
