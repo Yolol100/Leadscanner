@@ -192,7 +192,36 @@ def append_values(session, spreadsheet_id: str, sheet_name: str, rows: list[list
         )
 
 
+def check_registry_access(*, spreadsheet_id: str, sheet_name: str) -> dict:
+    session, client_email = _authorized_session()
+    current = read_live_values(session, spreadsheet_id, sheet_name)
+    if not current or normalize_row(current[0]) != HEADERS:
+        raise RuntimeError("live_registry_headers_mismatch")
+    return {
+        "schema_version": "leadscanner-dedupe-registry-access/1.0",
+        "status": "green",
+        "spreadsheet_id": spreadsheet_id,
+        "sheet_name": sheet_name,
+        "service_account": client_email,
+        "write_intent": "validated_before_draft_creation",
+        "automatic_send": False,
+    }
+
+
 def update_registry(readback: dict, *, spreadsheet_id: str, sheet_name: str) -> dict:
+    if int(readback.get("draft_count") or 0) == 0:
+        return {
+            "schema_version": "leadscanner-dedupe-registry-update/1.0",
+            "status": "green",
+            "spreadsheet_id": spreadsheet_id,
+            "sheet_name": sheet_name,
+            "service_account": None,
+            "requested_count": 0,
+            "appended_count": 0,
+            "already_present_count": 0,
+            "exact_readback": True,
+            "automatic_send": False,
+        }
     session, client_email = _authorized_session()
     current = read_live_values(session, spreadsheet_id, sheet_name)
     plan = plan_registry_update(readback, current)
@@ -217,8 +246,9 @@ def update_registry(readback: dict, *, spreadsheet_id: str, sheet_name: str) -> 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--readback", required=True)
+    parser.add_argument("--readback")
     parser.add_argument("--output", required=True)
+    parser.add_argument("--check-only", action="store_true")
     parser.add_argument(
         "--spreadsheet-id",
         default=os.getenv("LEAD_REGISTRY_SPREADSHEET_ID", DEFAULT_SPREADSHEET_ID),
@@ -229,20 +259,31 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    readback = json.loads(Path(args.readback).read_text(encoding="utf-8"))
-    result = update_registry(
-        readback,
-        spreadsheet_id=args.spreadsheet_id,
-        sheet_name=args.sheet_name,
-    )
+    if args.check_only:
+        result = check_registry_access(
+            spreadsheet_id=args.spreadsheet_id,
+            sheet_name=args.sheet_name,
+        )
+    else:
+        if not args.readback:
+            raise SystemExit("--readback is required unless --check-only is used")
+        readback = json.loads(Path(args.readback).read_text(encoding="utf-8"))
+        result = update_registry(
+            readback,
+            spreadsheet_id=args.spreadsheet_id,
+            sheet_name=args.sheet_name,
+        )
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    print(
-        "DEDUPE_REGISTRY_UPDATE=green "
-        f"requested={result['requested_count']} appended={result['appended_count']} "
-        f"already_present={result['already_present_count']} exact_readback=true"
-    )
+    if args.check_only:
+        print("DEDUPE_REGISTRY_ACCESS=green write_intent=validated_before_draft_creation")
+    else:
+        print(
+            "DEDUPE_REGISTRY_UPDATE=green "
+            f"requested={result['requested_count']} appended={result['appended_count']} "
+            f"already_present={result['already_present_count']} exact_readback=true"
+        )
     return 0
 
 
