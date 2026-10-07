@@ -65,6 +65,15 @@ def _limit(args: dict, default: int = 50) -> int:
     return min(max(int(args.get("limit", default)), 1), 100)
 
 
+def _payload(args: dict) -> dict:
+    value = args.get("payload", {})
+    if value is None:
+        value = {}
+    if not isinstance(value, dict):
+        raise ValueError("payload_must_be_object")
+    return dict(value)
+
+
 def _contains_sensitive_key(value: object) -> bool:
     if isinstance(value, dict):
         for key, nested in value.items():
@@ -103,6 +112,8 @@ def load_command(path: str | Path) -> dict:
     args = raw["args"] if "args" in raw else {}
     if not isinstance(args, dict):
         raise ValueError("command_args_must_be_object")
+    if "payload" in args and args.get("payload") is not None and not isinstance(args.get("payload"), dict):
+        raise ValueError("payload_must_be_object")
     if _contains_sensitive_key(args):
         raise ValueError("command_secret_material_forbidden")
     return {
@@ -269,7 +280,11 @@ def _wait_interest_status(
             if isinstance(row, dict) and _text(row.get("email")).casefold() == email
         ]
         last = rows
-        if rows and all(row.get("lt_interest_status") == interest_value for row in rows):
+        if rows and all(
+            not isinstance(row.get("lt_interest_status"), bool)
+            and row.get("lt_interest_status") == interest_value
+            for row in rows
+        ):
             return {"state": "completed", "leads": rows}
         if index + 1 < max_polls:
             sleep_fn(1.0)
@@ -284,10 +299,14 @@ def _campaign_leads(client: InstantlyClient, campaign_id: str, max_leads: int = 
         batch = page.get("items")
         if not isinstance(batch, list):
             raise RuntimeError("instantly_lead_page_items_must_be_list")
-        if not batch:
-            break
-        rows.extend(batch)
         next_cursor = _text(page.get("next_starting_after")) or None
+        if not batch:
+            if next_cursor:
+                raise RuntimeError("instantly_lead_page_empty_with_cursor")
+            break
+        if any(not isinstance(item, dict) for item in batch):
+            raise RuntimeError("instantly_lead_page_item_must_be_object")
+        rows.extend(batch)
         if next_cursor:
             if next_cursor == cursor or next_cursor in seen_cursors:
                 raise RuntimeError("instantly_lead_pagination_cursor_loop")
@@ -317,12 +336,17 @@ def _activate(client: InstantlyClient, campaign_id: str) -> dict:
         raise ValueError("activation_requires_sender_accounts")
     for email in senders:
         account = _api(client, "GET", f"/accounts/{quote(email, safe='')}") or {}
-        if int(account.get("status") or 0) != 1:
+        account_status = account.get("status")
+        if type(account_status) is not int or account_status != 1:
             raise ValueError("activation_requires_all_sender_accounts_active")
     leads = _campaign_leads(client, campaign_id)
     if not leads:
         raise ValueError("activation_requires_leads")
-    if any(lead.get("verification_status") != 1 for lead in leads):
+    if any(
+        type(lead.get("verification_status")) is not int
+        or lead.get("verification_status") != 1
+        for lead in leads
+    ):
         raise ValueError("activation_requires_verified_leads_only")
     diagnostics = sending_status.get("diagnostics") or {}
     summary = sending_status.get("summary") or {}
@@ -391,7 +415,7 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
     elif action == "get_background_job":
         data = _api(client, "GET", f"/background-jobs/{_id(args.get('job_id'), 'job_id')}")
     elif action == "create_campaign_draft":
-        payload = dict(args.get("payload") or {})
+        payload = _payload(args)
         if not _text(payload.get("name")) or not isinstance(payload.get("campaign_schedule"), dict):
             raise ValueError("campaign_name_and_schedule_required")
         payload.setdefault("allow_risky_contacts", False)
@@ -409,7 +433,7 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
             client,
             "PATCH",
             f"/campaigns/{_id(cid, 'campaign_id')}",
-            payload=dict(args.get("payload") or {}),
+            payload=_payload(args),
         )
         data = {"operation": operation, "readback": client.get_campaign(cid)}
     elif action == "pause_campaign":
@@ -425,11 +449,11 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
         data = _api(client, "DELETE", f"/campaigns/{_id(args.get('campaign_id'), 'campaign_id')}")
     elif action == "update_lead":
         lid = _text(args.get("lead_id"))
-        data = {"operation": _api(client, "PATCH", f"/leads/{_id(lid, 'lead_id')}", payload=dict(args.get("payload") or {})), "readback": client.get_lead(lid)}
+        data = {"operation": _api(client, "PATCH", f"/leads/{_id(lid, 'lead_id')}", payload=_payload(args)), "readback": client.get_lead(lid)}
     elif action == "delete_lead":
         data = _api(client, "DELETE", f"/leads/{_id(args.get('lead_id'), 'lead_id')}")
     elif action == "update_interest":
-        payload = dict(args.get("payload") or {})
+        payload = _payload(args)
         email = _text(payload.get("lead_email")).casefold()
         if not email or email.count("@") != 1:
             raise ValueError("interest_lead_email_required")
@@ -454,7 +478,7 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
             "readback": observed["leads"],
         }
     elif action in {"reply_email", "forward_email", "send_test_email"}:
-        payload = dict(args.get("payload") or {})
+        payload = _payload(args)
         if not _text(payload.get("eaccount")):
             raise ValueError("sending_account_required")
         if not _text(payload.get("subject")):
@@ -481,7 +505,7 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
     elif action == "mark_thread_read":
         data = _api(client, "POST", f"/emails/threads/{_id(args.get('thread_id'), 'thread_id')}/mark-as-read", payload={})
     elif action == "update_account":
-        payload = dict(args.get("payload") or {})
+        payload = _payload(args)
         if _contains_sensitive_key(payload):
             raise ValueError("account_secret_material_must_not_be_committed_to_command_file")
         email = _text(args.get("email"))
@@ -497,7 +521,10 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
         data = {"operation": operation, "readback": readback}
     elif action in {"enable_warmup", "disable_warmup"}:
         verb = "enable" if action == "enable_warmup" else "disable"
-        emails = sorted({_text(email).casefold() for email in (args.get("emails") or []) if _text(email)})
+        raw_emails = args.get("emails")
+        if not isinstance(raw_emails, list):
+            raise ValueError("emails_must_be_list")
+        emails = sorted({_text(email).casefold() for email in raw_emails if _text(email)})
         if not emails:
             raise ValueError("warmup_accounts_required")
         operation = _api(client, "POST", f"/accounts/warmup/{verb}", payload={"emails": emails})
