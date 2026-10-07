@@ -46,9 +46,13 @@ CHEAP_COMPETITOR_PHRASES = (
     "no-code agency", "nocode agency", "wordpress bureau", "woocommerce specialist",
     "elementor agency", "hosting provider", "hostingbedrijf", "internetbureau",
 )
-STRONG_SITE_COMPETITOR_PHRASES = CHEAP_COMPETITOR_PHRASES + (
-    "wij bouwen websites", "we build websites", "zoekmachine optimalisatie voor klanten",
-    "managed hosting", "marketing voor bedrijven",
+STRONG_SITE_COMPETITOR_PHRASES = (
+    "marketingbureau", "marketing agency", "reclamebureau", "digital agency", "digitaal bureau",
+    "webbureau", "web agency", "webdesign bureau", "webdesign agency", "seo bureau", "seo agency",
+    "social media bureau", "content agency", "ai agency", "ai bureau", "automation agency",
+    "no-code agency", "nocode agency", "wordpress bureau", "elementor agency",
+    "hosting provider", "internetbureau", "wij bouwen websites", "we build websites",
+    "zoekmachine optimalisatie voor klanten", "marketing voor bedrijven",
 )
 SOFT_SITE_COMPETITOR_TERMS = (
     "webdesign", "web development", "website bouwen", "seo", "online marketing",
@@ -359,12 +363,17 @@ def extract_emails(parsed: dict) -> list[str]:
     return found
 
 
+def email_fits_official_context(email: str, official_domain: str) -> bool:
+    _, domain = email.rsplit("@", 1)
+    same_domain = domain == official_domain or domain.endswith("." + official_domain)
+    return same_domain or domain in PUBLIC_MAIL_DOMAINS
+
+
 def email_priority(email: str, official_domain: str) -> tuple[int, int, str]:
     local, domain = email.rsplit("@", 1)
     same_domain = domain == official_domain or domain.endswith("." + official_domain)
     preferred = PREFERRED_LOCAL_PARTS.index(local) if local in PREFERRED_LOCAL_PARTS else len(PREFERRED_LOCAL_PARTS)
-    public_penalty = 1 if domain in PUBLIC_MAIL_DOMAINS else 0
-    return (0 if same_domain else 1 + public_penalty, preferred, email)
+    return (0 if same_domain else 1, preferred, email)
 
 
 def internal_links(parsed: dict, base_url: str, domain: str, hints: tuple[str, ...], *, exclude: tuple[str, ...] = (), limit: int) -> list[str]:
@@ -456,7 +465,8 @@ def verify_candidate(candidate: dict, *, session_factory=requests.Session) -> di
 
     email_sources: dict[str, str] = {}
     for email in extract_emails(parsed):
-        email_sources.setdefault(email, final_url)
+        if email_fits_official_context(email, domain):
+            email_sources.setdefault(email, final_url)
 
     if not email_sources:
         contact_links = internal_links(
@@ -469,7 +479,8 @@ def verify_candidate(candidate: dict, *, session_factory=requests.Session) -> di
             result["verification_pages"].append(linked_url)
             linked = parse_html(linked_html)
             for email in extract_emails(linked):
-                email_sources.setdefault(email, linked_url)
+                if email_fits_official_context(email, domain):
+                    email_sources.setdefault(email, linked_url)
             if email_sources:
                 break
 
