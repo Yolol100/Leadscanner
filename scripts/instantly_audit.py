@@ -38,7 +38,11 @@ def evaluate(root: str | Path = ".") -> dict:
                     "update_registry",
                 ))
                 and "match_candidate" in client
-                and "Phase 21 - Refresh live dedupe registry immediately before draft storage" in workflow
+                and "Phase 21 - Revalidate approved leads against live registry" in workflow
+                and "approval_revalidation.py" in workflow
+                and "approved-current-batch.json" in workflow
+                and "fresh_registry_rows = fetch_live_registry" in service
+                and "approved_lead_no_longer_eligible_after_registry_preflight" in service
             ),
         },
         {
