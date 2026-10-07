@@ -225,12 +225,12 @@ def _wait_background_job(
         last = _api(client, "GET", f"/background-jobs/{_id(job_id, 'job_id')}") or {}
         status = _text(last.get("status")).casefold()
         if status in {"completed", "success"}:
-            return last
+            return {"state": "completed", "job": last}
         if status in {"failed", "error"}:
             raise RuntimeError(f"instantly_background_job_failed:{status}")
         if index + 1 < max_polls:
             sleep_fn(1.0)
-    raise RuntimeError("instantly_background_job_timeout")
+    return {"state": "pending", "job": last}
 
 
 def _campaign_leads(client: InstantlyClient, campaign_id: str, max_leads: int = 2000) -> list[dict]:
@@ -397,15 +397,21 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
         if not emails:
             raise ValueError("warmup_accounts_required")
         operation = _api(client, "POST", f"/accounts/warmup/{verb}", payload={"emails": emails})
-        job = _wait_background_job(client, operation or {})
-        expected_warmup = 1 if action == "enable_warmup" else 0
+        job_result = _wait_background_job(client, operation or {})
         readback = []
-        for email in emails:
-            observed = _api(client, "GET", f"/accounts/{_id(email, 'email')}") or {}
-            if int(observed.get("warmup_status")) != expected_warmup:
-                raise RuntimeError(f"warmup_{verb}_readback_mismatch")
-            readback.append(observed)
-        data = {"operation": operation, "background_job": job, "readback": readback}
+        if job_result["state"] == "completed":
+            expected_warmup = 1 if action == "enable_warmup" else 0
+            for email in emails:
+                observed = _api(client, "GET", f"/accounts/{_id(email, 'email')}") or {}
+                if int(observed.get("warmup_status")) != expected_warmup:
+                    raise RuntimeError(f"warmup_{verb}_readback_mismatch")
+                readback.append(observed)
+        data = {
+            "operation": operation,
+            "background_job": job_result["job"],
+            "completion_state": job_result["state"],
+            "readback": readback,
+        }
     elif action == "block_email":
         data = client.block_email(_text(args.get("email")))
     elif action == "block_domain":
