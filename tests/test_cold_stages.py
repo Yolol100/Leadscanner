@@ -5,6 +5,7 @@ from cold_stages import (
     filter_discovery,
     research_candidate,
     research_candidates,
+    safe_fetch_html,
     verify_candidate,
     verify_candidates,
 )
@@ -67,6 +68,28 @@ class ColdStagesTests(unittest.TestCase):
         self.assertEqual(result["candidates"][0]["domain_hint"], "acme.nl")
         self.assertNotIn("discovery_email_candidates", result["candidates"][0])
         self.assertEqual(result["excluded_count"], 3)
+
+    @patch("cold_stages.is_public_http_url", return_value=True)
+    def test_redirect_to_other_domain_is_blocked(self, _safe):
+        response = FakeResponse(
+            "https://acmefietsen.nl/",
+            "",
+            status=302,
+            headers={
+                "content-type": "text/html; charset=utf-8",
+                "location": "https://other.example/contact",
+            },
+        )
+        session = FakeSession([response])
+        html, final_url, status = safe_fetch_html(
+            session,
+            "https://acmefietsen.nl/",
+            "acmefietsen.nl",
+        )
+        self.assertIsNone(html)
+        self.assertEqual(final_url, "https://other.example/contact")
+        self.assertEqual(status, 302)
+        self.assertEqual(session.calls, ["https://acmefietsen.nl/"])
 
     @patch("cold_stages.is_public_http_url", return_value=True)
     def test_verify_proves_identity_and_official_site_email(self, _safe):
