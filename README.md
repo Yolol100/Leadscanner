@@ -6,6 +6,11 @@ Leadscanner is being rebuilt as a fast, cold-only lead pipeline.
 
 The only active GitHub workflow is `.github/workflows/leads-cold.yml`.
 
+Manual dispatch has two modes:
+
+- `preview` (default): runs research, mail generation and review-draft preparation, then stops with zero mailbox or Google Sheet mutations. No mutation credentials are required.
+- `draft`: requires both `execution_mode=draft` and `confirm_review_drafts=true`; only then may the workflow create mijn.host review drafts and close them into the canonical dedupe registry.
+
 Current manual run:
 
 1. **Discovery** — resolve one region through PDOK and query Overture Maps Places; keep only candidates with a website.
@@ -19,9 +24,10 @@ Current manual run:
 9. **Review-draft preparation** — create a deterministic `growth-<20 hex>` lead ID from official domain + verified public email and build only `review_draft` / `review_required` rows.
 10. **Registry access preflight + mijn.host draft storage** — before a non-empty draft batch, prove Google Sheets write access. Then append drafts through IMAP only. Exact retries are allowed; changed existing drafts are rejected instead of overwritten.
 11. **Exact mailbox readback** — require an exact match on recipient, subject, body, lead ID and review status. SMTP/send remains unavailable.
-12. **Canonical dedupe closure** — append the successfully read-back identities to `DedupeRegistry` in one Google Sheets batch and verify the new rows by an exact API readback.
+12. **Canonical dedupe closure** — in confirmed draft mode, append the successfully read-back identities to `DedupeRegistry` in one Google Sheets batch and verify the new rows by an exact API readback.
+13. **Run manifest** — emit `run-manifest.json` with mode, stage counts, mutation state and safety flags. Preview ends as `preview_ready`; a successful draft run ends as `closed`.
 
-The workflow ends after registry closure. It creates review drafts only; it never sends commercial email.
+Preview is the default and is mutation-free. Confirmed draft mode creates review drafts only; neither mode sends commercial email.
 
 ## Speed design
 
@@ -32,7 +38,8 @@ The workflow ends after registry closure. It creates review drafts only; it neve
 - Research is capped at 100 verified candidates with at most 6 workers and two extra pages each.
 - Homepage content is passed from verification to research, so research does not fetch it again.
 - Phases 7-9 are deterministic local transformations over already-fetched evidence and add no extra prospect network requests.
-- A non-empty draft batch is not written unless canonical Google Sheets write access succeeds first.
+- Preview runs skip Google write preflight, IMAP and registry mutation entirely.
+- A confirmed non-empty draft batch is not written unless canonical Google Sheets write access succeeds first.
 - Manual execution runs are never auto-cancelled by a newer manual run, avoiding an interruption between draft storage and registry closure.
 - Only the cold runtime dependencies are installed and pip caching is enabled.
 
