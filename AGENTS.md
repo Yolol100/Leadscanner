@@ -2,13 +2,14 @@
 
 ## Current scope
 - Build a fast cold-lead pipeline from a clean slate.
-- Treat legacy repository code as implementation material, never as requirements by default.
+- Keep only the active cold-pipeline dependency closure. Legacy Google Maps adapters, remediation scripts, old mailbox bridges, pricing/scoring code and their tests have been removed.
 - The Google Sheet Lead Dedupe Registry is the only retained historical lead source and is suppression-only.
 - The active phases are preview discovery/filter -> historical dedupe -> identity/domain/contact verification -> bounded first-party research -> one evidence-backed outreach reason -> one proposed value-first action -> short validated cold mail -> human review queue -> immutable preview snapshot -> draft resume from that exact snapshot -> exact approval selection -> live dedupe revalidation -> strict review-draft storage -> exact mailbox readback -> canonical dedupe-registry append/readback -> provenance-bound run manifest.
 - Commercial sending is not active and must not be added to this workflow.
 
 ## Execution rules
 - Work on `main` unless the user explicitly requests another branch.
+- Active discovery is PDOK + Overture Maps Places only; do not silently reintroduce Google Maps scraping.
 - Put cheap gates before network-heavy research: website presence/category -> competitor hint -> historical dedupe -> official-site verification -> research.
 - Pass explicit JSON contracts between stages; never rely on hidden state from a previous stage.
 - Discovery data is a locator only, not prospect fact evidence.
