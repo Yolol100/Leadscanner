@@ -26,7 +26,7 @@ COMMAND_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{5,120}$")
 READ_ACTIONS = {
     "list_campaigns", "get_campaign", "campaign_sending_status", "campaign_analytics",
     "list_leads", "get_lead", "list_emails", "get_email", "count_unread_emails",
-    "list_accounts", "get_account", "warmup_analytics", "daily_account_analytics",
+    "list_accounts", "get_account", "test_account_vitals", "warmup_analytics", "daily_account_analytics",
     "list_blocklist", "get_blocklist_entry", "get_background_job",
 }
 WRITE_ACTIONS = {
@@ -412,6 +412,20 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
         data = _api(client, "GET", "/accounts", params={"limit": _limit(args), **({"starting_after": args["starting_after"]} if args.get("starting_after") else {})})
     elif action == "get_account":
         data = _api(client, "GET", f"/accounts/{_id(args.get('email'), 'email')}")
+    elif action == "test_account_vitals":
+        raw_accounts = args.get("accounts")
+        if not isinstance(raw_accounts, list):
+            raise ValueError("accounts_must_be_list")
+        accounts = sorted({_text(email).casefold() for email in raw_accounts if _text(email)})
+        if not accounts:
+            raise ValueError("accounts_required")
+        data = _api(
+            client,
+            "POST",
+            "/accounts/test/vitals",
+            payload={"accounts": accounts},
+            retry_safe=True,
+        )
     elif action == "warmup_analytics":
         data = _api(client, "POST", "/accounts/warmup-analytics", payload={"emails": list(args.get("emails") or [])}, retry_safe=True)
     elif action == "daily_account_analytics":
