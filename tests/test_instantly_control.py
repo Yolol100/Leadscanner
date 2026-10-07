@@ -1,13 +1,13 @@
 import json
-import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 from instantly_control import (
+    _activate,
     command_paths_from_push_event,
     execute_command,
+    expected_confirmation,
     load_command,
 )
 
@@ -68,9 +68,8 @@ class InstantlyControlTests(unittest.TestCase):
             "confirm": "yes",
             "requested_by": "chatgpt",
         }
-        with patch.dict(os.environ, {"GITHUB_REPOSITORY_PRIVATE": "true"}, clear=False):
-            with self.assertRaisesRegex(ValueError, "exact_confirmation_required:EXECUTE pause_campaign c1"):
-                execute_command(command, config(), FakeClient())
+        with self.assertRaisesRegex(ValueError, "exact_confirmation_required:EXECUTE pause_campaign c1"):
+            execute_command(command, config(), FakeClient())
 
     def test_workflow_rerun_blocks_every_write(self):
         command = {
@@ -81,9 +80,8 @@ class InstantlyControlTests(unittest.TestCase):
             "confirm": "EXECUTE pause_campaign c1",
             "requested_by": "chatgpt",
         }
-        with patch.dict(os.environ, {"GITHUB_REPOSITORY_PRIVATE": "true"}, clear=False):
-            with self.assertRaisesRegex(RuntimeError, "cannot_run_on_workflow_rerun"):
-                execute_command(command, config(), FakeClient(), run_attempt="2")
+        with self.assertRaisesRegex(RuntimeError, "cannot_run_on_workflow_rerun"):
+            execute_command(command, config(), FakeClient(), run_attempt="2")
 
     def test_account_secret_material_is_rejected_from_committed_command(self):
         command = {
@@ -97,22 +95,81 @@ class InstantlyControlTests(unittest.TestCase):
             "confirm": "EXECUTE update_account sender@example.com",
             "requested_by": "chatgpt",
         }
-        with patch.dict(os.environ, {"GITHUB_REPOSITORY_PRIVATE": "true"}, clear=False):
-            with self.assertRaisesRegex(ValueError, "secret_material"):
-                execute_command(command, config(), FakeClient())
+        with self.assertRaisesRegex(ValueError, "secret_material"):
+            execute_command(command, config(), FakeClient())
 
-    def test_sensitive_control_requires_private_repository(self):
+    def test_send_and_warmup_confirmations_are_bound_to_targets(self):
+        self.assertEqual(
+            expected_confirmation(
+                "send_test_email",
+                {"payload": {
+                    "eaccount": "sender@example.com",
+                    "to_address_email_list": "target@example.com",
+                }},
+            ),
+            "EXECUTE send_test_email sender@example.com|target@example.com",
+        )
+        self.assertEqual(
+            expected_confirmation(
+                "enable_warmup",
+                {"emails": ["B@example.com", "a@example.com"]},
+            ),
+            "EXECUTE enable_warmup a@example.com,b@example.com",
+        )
+
+    def test_nested_account_secret_material_is_rejected(self):
         command = {
             "schema_version": "leadscanner-instantly-command/1.0",
-            "command_id": "get-lead-private-001",
-            "action": "get_lead",
-            "args": {"lead_id": "lead-1"},
-            "confirm": "",
+            "command_id": "account-update-002",
+            "action": "update_account",
+            "args": {
+                "email": "sender@example.com",
+                "payload": {"advanced": {"smtp_password": "must-not-be-committed"}},
+            },
+            "confirm": "EXECUTE update_account sender@example.com",
             "requested_by": "chatgpt",
         }
-        with patch.dict(os.environ, {"GITHUB_REPOSITORY_PRIVATE": "false"}, clear=False):
-            with self.assertRaisesRegex(RuntimeError, "private_repository_required"):
-                execute_command(command, config(), FakeClient())
+        with self.assertRaisesRegex(ValueError, "secret_material"):
+            execute_command(command, config(), FakeClient())
+
+    def test_activation_blocks_documented_nonverified_statuses(self):
+        class ActivationClient:
+            def __init__(self, verification_status):
+                self.verification_status = verification_status
+                self.activated = False
+
+            def get_campaign(self, campaign_id):
+                return {
+                    "id": campaign_id,
+                    "status": 0,
+                    "allow_risky_contacts": False,
+                    "email_list": ["sender@example.com"],
+                }
+
+            def list_leads(self, **kwargs):
+                return {
+                    "items": [{
+                        "id": "l1",
+                        "email": "lead@example.com",
+                        "verification_status": self.verification_status,
+                    }],
+                    "next_starting_after": None,
+                }
+
+            def _request(self, method, path, **kwargs):
+                if method == "GET" and path == "/accounts/sender%40example.com":
+                    return {"email": "sender@example.com", "status": 1}
+                if method == "POST" and path.endswith("/activate"):
+                    self.activated = True
+                    return {}
+                raise AssertionError((method, path, kwargs))
+
+        for status in (-1, -2, -3, -4, 11, 12):
+            with self.subTest(status=status):
+                client = ActivationClient(status)
+                with self.assertRaisesRegex(ValueError, "requires_non_pending_non_risky_verification"):
+                    _activate(client, "c1")
+                self.assertFalse(client.activated)
 
     def test_push_event_executes_only_new_inbox_json_files(self):
         event = {
