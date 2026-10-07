@@ -63,6 +63,8 @@ class InstantlyClient:
                 if retry_safe and attempt + 1 < attempts:
                     self.sleep_fn(1.0)
                     continue
+                if not retry_safe and method.upper() in {"POST", "PATCH", "PUT", "DELETE"}:
+                    raise InstantlyError("instantly_write_outcome_unknown") from exc
                 raise InstantlyError("instantly_network_error") from exc
 
             if 200 <= response.status_code < 300:
