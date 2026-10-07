@@ -41,6 +41,7 @@ def resolved():
         "snapshot": {"preview_id": "preview-abc"},
         "approved_current": {
             "schema_version": "leadscanner-approved-revalidation/1.0",
+            "remaining_count": 1,
             "rows": [row],
             "safety": {
                 "automatic_send": False,
@@ -100,14 +101,20 @@ class InstantlyServiceTests(unittest.TestCase):
         update_mock.assert_not_called()
 
     @patch("instantly_service.update_registry")
+    @patch("instantly_service.revalidate_approved")
+    @patch("instantly_service.fetch_live_registry")
     @patch("instantly_service.check_registry_access")
     @patch("instantly_service.resolve_exact_approval")
-    def test_registry_access_preflight_precedes_fresh_approval_resolution(
-        self, resolve_mock, preflight_mock, update_mock
+    def test_registry_access_preflight_is_followed_by_fresh_dedupe_revalidation(
+        self, resolve_mock, preflight_mock, fetch_registry_mock, revalidate_mock, update_mock
     ):
         events = []
-        preflight_mock.side_effect = lambda **kwargs: events.append("preflight") or {"status": "green"}
         resolve_mock.side_effect = lambda **kwargs: events.append("resolve") or resolved()
+        preflight_mock.side_effect = lambda **kwargs: events.append("preflight") or {"status": "green"}
+        fetch_registry_mock.side_effect = lambda **kwargs: events.append("refresh") or []
+        revalidate_mock.side_effect = (
+            lambda approved, registry: events.append("revalidate") or resolved()["approved_current"]
+        )
         update_mock.return_value = {"exact_readback": True}
 
         class OrderedClient(FakeInstantlyClient):
@@ -125,15 +132,19 @@ class InstantlyServiceTests(unittest.TestCase):
                 instantly_client=OrderedClient(),
             )
 
-        self.assertEqual(events[:3], ["preflight", "resolve", "add"])
+        self.assertEqual(events[:5], ["resolve", "preflight", "refresh", "revalidate", "add"])
 
     @patch("instantly_service.update_registry")
+    @patch("instantly_service.revalidate_approved")
+    @patch("instantly_service.fetch_live_registry")
     @patch("instantly_service.check_registry_access")
     @patch("instantly_service.resolve_exact_approval")
     def test_stage_requires_readback_then_registry_exact_write(
-        self, resolve_mock, preflight_mock, update_mock
+        self, resolve_mock, preflight_mock, fetch_registry_mock, revalidate_mock, update_mock
     ):
         resolve_mock.return_value = resolved()
+        fetch_registry_mock.return_value = []
+        revalidate_mock.return_value = resolved()["approved_current"]
         update_mock.return_value = {"exact_readback": True}
         client = FakeInstantlyClient()
 
