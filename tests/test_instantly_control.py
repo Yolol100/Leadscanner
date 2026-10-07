@@ -167,6 +167,8 @@ class InstantlyControlTests(unittest.TestCase):
                     return {"summary": {"status": "campaign_draft"}}
                 if method == "GET" and path == "/accounts/sender%40example.com":
                     return {"email": "sender@example.com", "status": 1}
+                if method == "GET" and path == "/email-verification/lead%40example.com":
+                    return {"verification_status": "invalid", "catch_all": False}
                 if method == "POST" and path.endswith("/activate"):
                     self.activated = True
                     return {}
