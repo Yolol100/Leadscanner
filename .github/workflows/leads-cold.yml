@@ -250,7 +250,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     concurrency:
-      group: ${{ inputs.execution_mode == 'draft' && 'leadscanner-instantly-registry' || format('leadscanner-preview-{0}', github.run_id) }}
+      group: ${{ (inputs.execution_mode == 'draft' || inputs.execution_mode == 'instantly_stage') && 'leadscanner-instantly-registry' || format('leadscanner-preview-{0}', github.run_id) }}
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -264,16 +264,18 @@ jobs:
       - name: Install preview runtime
         if: inputs.execution_mode == 'preview'
         run: python3 -m pip install --disable-pip-version-check -r requirements-cold.txt
-      - name: Install resumed-draft runtime
-        if: inputs.execution_mode == 'draft'
+      - name: Install mutation runtime
+        if: inputs.execution_mode == 'draft' || inputs.execution_mode == 'instantly_stage'
         run: python3 -m pip install --disable-pip-version-check 'requests>=2,<3' 'google-auth>=2,<3'
 
       - name: Validate request
         env:
           INPUT_EXECUTION_MODE: ${{ inputs.execution_mode }}
+          INPUT_CONFIRM_INSTANTLY_STAGE: ${{ inputs.confirm_instantly_stage }}
           INPUT_CONFIRM_REVIEW_DRAFTS: ${{ inputs.confirm_review_drafts }}
           INPUT_APPROVED_REVIEW_TOKENS: ${{ inputs.approved_review_tokens }}
           INPUT_PREVIEW_RUN_ID: ${{ inputs.preview_run_id }}
+          INPUT_INSTANTLY_CAMPAIGN_ID: ${{ inputs.instantly_campaign_id }}
           INPUT_REGION: ${{ inputs.region }}
           INPUT_KEYWORDS: ${{ inputs.keywords }}
           INPUT_TARGET: ${{ inputs.target_candidates }}
@@ -287,19 +289,21 @@ jobs:
           from pathlib import Path
 
           mode = os.environ['INPUT_EXECUTION_MODE'].strip()
-          confirm = os.environ['INPUT_CONFIRM_REVIEW_DRAFTS'].strip().casefold() == 'true'
+          confirm_stage = os.environ['INPUT_CONFIRM_INSTANTLY_STAGE'].strip().casefold() == 'true'
+          confirm_draft = os.environ['INPUT_CONFIRM_REVIEW_DRAFTS'].strip().casefold() == 'true'
           approved_tokens = os.environ['INPUT_APPROVED_REVIEW_TOKENS'].strip()
           preview_run_id = os.environ['INPUT_PREVIEW_RUN_ID'].strip()
+          campaign_id = os.environ['INPUT_INSTANTLY_CAMPAIGN_ID'].strip()
           region = os.environ['INPUT_REGION'].strip()
           raw_keywords = os.environ['INPUT_KEYWORDS'].strip()
 
-          if mode not in {'preview', 'draft'}:
-              raise SystemExit('execution_mode must be preview or draft')
+          if mode not in {'preview', 'instantly_stage', 'draft'}:
+              raise SystemExit('execution_mode must be preview, instantly_stage or draft')
 
           request = {'execution_mode': mode}
           if mode == 'preview':
-              if confirm:
-                  raise SystemExit('confirm_review_drafts must remain false in preview mode')
+              if confirm_stage or confirm_draft:
+                  raise SystemExit('mutation confirmations must remain false in preview mode')
               if approved_tokens:
                   raise SystemExit('approved_review_tokens must remain empty in preview mode')
               if preview_run_id:
@@ -326,9 +330,24 @@ jobs:
                   'verify_limit': verify_limit,
                   'radius_km': radius,
               })
+          elif mode == 'instantly_stage':
+              if not confirm_stage:
+                  raise SystemExit('instantly_stage requires confirm_instantly_stage=true')
+              if confirm_draft:
+                  raise SystemExit('confirm_review_drafts must remain false in instantly_stage mode')
+              if not approved_tokens:
+                  raise SystemExit('instantly_stage requires one or more approved_review_tokens')
+              if not re.fullmatch(r'[1-9][0-9]*', preview_run_id):
+                  raise SystemExit('instantly_stage requires numeric preview_run_id')
+              if not campaign_id or len(campaign_id) > 200:
+                  raise SystemExit('instantly_stage requires a campaign_id of <=200 characters')
+              request['source_preview_run_id'] = int(preview_run_id)
+              request['instantly_campaign_id'] = campaign_id
           else:
-              if not confirm:
+              if not confirm_draft:
                   raise SystemExit('draft mode requires confirm_review_drafts=true')
+              if confirm_stage:
+                  raise SystemExit('confirm_instantly_stage must remain false in draft mode')
               if not approved_tokens:
                   raise SystemExit('draft mode requires one or more approved_review_tokens')
               if not re.fullmatch(r'[1-9][0-9]*', preview_run_id):
