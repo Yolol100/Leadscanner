@@ -39,6 +39,8 @@ def approved_batch():
             "status": "review_draft",
             "contact_basis_status": "review_required",
             "automatic_send": False,
+            "subject": "idee voor afspraakroute",
+            "body": "Hoi, ik zag jullie afspraakroute. Ik heb een klein voorstel.",
         }],
         "safety": {
             "automatic_send": False,
@@ -164,6 +166,14 @@ class InstantlyClientTests(unittest.TestCase):
         self.assertEqual((method, url), ("POST", "https://api.instantly.ai/api/v2/leads"))
         self.assertTrue(kwargs["json"]["skip_if_in_workspace"])
         self.assertTrue(kwargs["json"]["skip_if_in_campaign"])
+        self.assertEqual(
+            kwargs["json"]["custom_variables"]["leadscanner_subject"],
+            approved_batch()["rows"][0].get("subject", ""),
+        )
+        self.assertEqual(
+            kwargs["json"]["custom_variables"]["leadscanner_body"],
+            approved_batch()["rows"][0].get("body", ""),
+        )
 
     def test_live_registry_match_blocks_write(self):
         session = FakeSession([])
