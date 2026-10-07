@@ -757,7 +757,13 @@ jobs:
           else
             git diff --name-only "$BEFORE_SHA" "$AFTER_SHA" > results/push-changed-paths.txt
           fi
-          OTHER="$(grep -Ev '^instantly-commands/inbox/[^/]+\.json        env:
+          OTHER="$(grep -Ev '^instantly-commands/inbox/[^/]+[.]json$' results/push-changed-paths.txt || true)"
+          if [ -n "$OTHER" ]; then
+            printf 'mixed_instantly_command_and_control_change_forbidden\n%s\n' "$OTHER" >&2
+            exit 1
+          fi
+      - name: Execute only newly-added immutable Instantly commands
+        env:
           PYTHONPATH: scripts
           INSTANTLY_API_KEY: ${{ secrets.INSTANTLY_API_KEY }}
           LEADSCANNER_GITHUB_TOKEN: ${{ secrets.LEADSCANNER_GITHUB_TOKEN }}
