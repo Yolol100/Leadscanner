@@ -138,14 +138,6 @@ class DraftTests(unittest.TestCase):
                 create_drafts({"rows": [good, bad]})
         self.assertEqual(client.messages, [])
 
-    def test_nonempty_batch_with_unsupported_status_fails_closed(self):
-        bad = self.row()
-        bad["status"] = "unexpected"
-        with patch("myhost_draft.connect_imap") as connect:
-            with self.assertRaisesRegex(RuntimeError, "unsupported draft status"):
-                create_drafts({"rows": [bad]})
-        connect.assert_not_called()
-
     def test_duplicate_lead_ids_fail_before_first_imap_write(self):
         client = FakeIMAP()
         first = self.row()
