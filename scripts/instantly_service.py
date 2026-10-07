@@ -14,7 +14,7 @@ from dedupe_preflight import load_registry
 from instantly_client import InstantlyClient
 from preview_snapshot import fetch_snapshot
 from review_selection import select_approved
-from update_dedupe_registry import HEADERS, update_registry
+from update_dedupe_registry import (\n    DEFAULT_SHEET_NAME,\n    DEFAULT_SPREADSHEET_ID,\n    HEADERS,\n    update_registry,\n)
 
 DEFAULT_REPOSITORY = "Yolol100/Leadscanner"
 DEFAULT_REGISTRY_URL = (
@@ -163,14 +163,20 @@ def stage_exact_approved_lead(
     observed = client.get_lead(instantly_id)
     _verify_instantly_readback(observed, row=row, campaign_id=campaign_id)
 
-    kwargs = {}
-    if spreadsheet_id:
-        kwargs["spreadsheet_id"] = spreadsheet_id
-    if sheet_name:
-        kwargs["sheet_name"] = sheet_name
+    resolved_spreadsheet_id = (
+        spreadsheet_id
+        or os.getenv("LEAD_REGISTRY_SPREADSHEET_ID", "").strip()
+        or DEFAULT_SPREADSHEET_ID
+    )
+    resolved_sheet_name = (
+        sheet_name
+        or os.getenv("LEAD_REGISTRY_SHEET_NAME", "").strip()
+        or DEFAULT_SHEET_NAME
+    )
     registry_result = update_registry(
         _registry_readback_for_staged(row, campaign_id),
-        **kwargs,
+        spreadsheet_id=resolved_spreadsheet_id,
+        sheet_name=resolved_sheet_name,
     )
 
     return {
