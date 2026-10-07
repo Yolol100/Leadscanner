@@ -130,6 +130,117 @@ def _verify_instantly_readback(observed: dict, *, row: dict, campaign_id: str) -
         raise RuntimeError("instantly_lead_readback_campaign_mismatch")
 
 
+def stage_approved_batch(
+    *,
+    approved_batch: dict,
+    campaign_id: str,
+    instantly_api_key: str,
+    registry_url: str = DEFAULT_REGISTRY_URL,
+    instantly_client: InstantlyClient | None = None,
+    registry_session=requests,
+    spreadsheet_id: str | None = None,
+    sheet_name: str | None = None,
+) -> dict:
+    require_instantly_writes_enabled()
+    campaign = _text(campaign_id)
+    if not campaign:
+        raise ValueError("campaign_id_required")
+    if approved_batch.get("schema_version") != "leadscanner-approved-review-draft-batch/1.0":
+        raise ValueError("approved_review_batch_required")
+
+    rows = approved_batch.get("rows")
+    approval = approved_batch.get("approval") or {}
+    if not isinstance(rows, list):
+        raise ValueError("approved_rows_must_be_list")
+    if approval.get("automatic_send") is not False:
+        raise ValueError("automatic_send_must_be_false")
+    if isinstance(approval.get("approved_count"), bool) or approval.get("approved_count") != len(rows):
+        raise ValueError("approved_count_mismatch")
+
+    resolved_spreadsheet_id = (
+        spreadsheet_id
+        or os.getenv("LEAD_REGISTRY_SPREADSHEET_ID", "").strip()
+        or DEFAULT_SPREADSHEET_ID
+    )
+    resolved_sheet_name = (
+        sheet_name
+        or os.getenv("LEAD_REGISTRY_SHEET_NAME", "").strip()
+        or DEFAULT_SHEET_NAME
+    )
+    check_registry_access(
+        spreadsheet_id=resolved_spreadsheet_id,
+        sheet_name=resolved_sheet_name,
+    )
+
+    client = instantly_client or InstantlyClient(instantly_api_key)
+    staged: list[dict] = []
+    suppressed = 0
+
+    for row in rows:
+        one_batch = {
+            "schema_version": approved_batch["schema_version"],
+            "rows": [row],
+            "approval": {
+                **approval,
+                "requested_count": 1,
+                "approved_count": 1,
+                "rejected_by_operator_count": 0,
+                "automatic_send": False,
+            },
+            "safety": {
+                **(approved_batch.get("safety") or {}),
+                "automatic_send": False,
+            },
+        }
+        fresh_registry_rows = fetch_live_registry(
+            registry_url=registry_url,
+            session=registry_session,
+        )
+        refreshed = revalidate_approved(one_batch, fresh_registry_rows)
+        if refreshed.get("remaining_count") != 1:
+            suppressed += 1
+            continue
+
+        current_row = refreshed["rows"][0]
+        created = client.add_approved_lead_to_campaign(
+            approved_batch=refreshed,
+            lead_id=_text(current_row.get("lead_id")),
+            campaign_id=campaign,
+            registry_rows=fresh_registry_rows,
+        )
+        instantly_id = _text((created or {}).get("id"))
+        if not instantly_id:
+            raise RuntimeError("instantly_create_lead_missing_id")
+        observed = client.get_lead(instantly_id)
+        _verify_instantly_readback(observed, row=current_row, campaign_id=campaign)
+
+        registry_result = update_registry(
+            _registry_readback_for_staged(current_row, campaign),
+            spreadsheet_id=resolved_spreadsheet_id,
+            sheet_name=resolved_sheet_name,
+        )
+        if not registry_result.get("exact_readback"):
+            raise RuntimeError("instantly_stage_registry_readback_failed")
+        staged.append({
+            "lead_id": _text(current_row.get("lead_id")),
+            "instantly_lead_id": instantly_id,
+            "email": _text(current_row.get("email")).casefold(),
+            "registry_exact_readback": True,
+        })
+
+    return {
+        "schema_version": "leadscanner-instantly-stage-batch/1.0",
+        "status": "green",
+        "campaign_id": campaign,
+        "requested_count": len(rows),
+        "staged_count": len(staged),
+        "suppressed_count": suppressed,
+        "staged": staged,
+        "automatic_send": False,
+        "campaign_activation_required": True,
+    }
+
+
 def stage_exact_approved_lead(
     *,
     preview_run_id: int,
