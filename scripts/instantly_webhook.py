@@ -22,6 +22,8 @@ EVENT_ALIASES = {
     "lead_out_of_office": "out_of_office",
     "lead_wrong_person": "wrong_person",
     "lead_no_show": "no_show",
+    "lead_lost": "lost",
+    "lead_skipped": "skipped",
     "campaign_completed": "campaign_completed",
     "campaign_completed_for_lead_without_reply": "campaign_completed_no_reply",
 }
@@ -38,6 +40,8 @@ STATUS_BY_KIND = {
     "out_of_office": "out_of_office",
     "wrong_person": "wrong_person",
     "no_show": "no_show",
+    "lost": "lost",
+    "skipped": "skipped",
     "campaign_completed": "campaign_completed",
     "campaign_completed_no_reply": "campaign_completed_no_reply",
 }
