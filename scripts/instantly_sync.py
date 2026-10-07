@@ -89,12 +89,12 @@ def event_from_lead(lead: dict) -> dict | None:
     elif status == -1:
         event_type = "email_bounced"
         timestamp = _stable_timestamp(lead)
-    elif status == -3:
-        event_type = "lead_skipped"
-        timestamp = _stable_timestamp(lead)
     elif interest in INTEREST_EVENTS:
         event_type = INTEREST_EVENTS[interest]
         timestamp = _stable_timestamp(lead, "timestamp_last_interest_change")
+    elif status == -3:
+        event_type = "lead_skipped"
+        timestamp = _stable_timestamp(lead)
     elif _int(lead.get("email_reply_count"), 0) > 0 or _text(lead.get("timestamp_last_reply")):
         event_type = "reply_received"
         timestamp = _stable_timestamp(lead, "timestamp_last_reply")
