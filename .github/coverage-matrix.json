@@ -1,9 +1,0 @@
-{
-  "region": "Rotterdam",
-  "radius_km": 15,
-  "target_candidates": 30,
-  "verify_limit": 20,
-  "keywords": [
-    "fietsenwinkel"
-  ]
-}
