@@ -381,8 +381,12 @@ def create_drafts(batch: dict, *, rewrite_existing_only: bool = False, reject_ch
         raise RuntimeError(f"At most {MAX_DRAFTS_PER_RUN} drafts may be created per run")
 
     prepared: list[tuple[dict, str, EmailMessage]] = []
+    seen_lead_ids: set[str] = set()
     for row in rows:
         lead_id, msg = build_message(row)
+        if lead_id in seen_lead_ids:
+            raise RuntimeError(f"duplicate draft lead_id: {lead_id}")
+        seen_lead_ids.add(lead_id)
         prepared.append((row, lead_id, msg))
 
     if not prepared:
