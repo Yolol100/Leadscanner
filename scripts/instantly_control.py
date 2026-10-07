@@ -100,6 +100,8 @@ def load_command(path: str | Path) -> dict:
     args = raw.get("args") or {}
     if not isinstance(args, dict):
         raise ValueError("command_args_must_be_object")
+    if _contains_sensitive_key(args):
+        raise ValueError("command_secret_material_forbidden")
     return {
         "schema_version": SCHEMA_VERSION,
         "command_id": command_id,
