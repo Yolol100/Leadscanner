@@ -1,0 +1,11 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "vitals-20261008-andrewbaeten",
+  "action": "test_account_vitals",
+  "args": {
+    "accounts": [
+      "info@andrewbaeten.nl"
+    ]
+  },
+  "requested_by": "chatgpt"
+}
