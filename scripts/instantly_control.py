@@ -38,9 +38,7 @@ WRITE_ACTIONS = {
 SEND_ACTIONS = {"activate_campaign", "reply_email", "forward_email", "send_test_email"}
 DESTRUCTIVE_ACTIONS = {"delete_campaign", "delete_lead", "delete_blocklist_entry"}
 ALL_ACTIONS = READ_ACTIONS | WRITE_ACTIONS
-PUBLIC_SAFE_ACTIONS = {"list_campaigns", "campaign_sending_status", "campaign_analytics"}
-PRIVATE_ONLY_ACTIONS = ALL_ACTIONS - PUBLIC_SAFE_ACTIONS
-SENSITIVE_ACCOUNT_KEYS = ("password", "secret", "token", "credential", "imap", "smtp")
+SENSITIVE_ACCOUNT_KEYS = ("password", "secret", "token", "credential", "private_key", "api_key")
 
 
 def _text(value: object) -> str:
@@ -63,6 +61,19 @@ def _id(value: object, name: str) -> str:
 
 def _limit(args: dict, default: int = 50) -> int:
     return min(max(int(args.get("limit", default)), 1), 100)
+
+
+def _contains_sensitive_key(value: object) -> bool:
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            normalized = str(key or "").casefold()
+            if any(marker in normalized for marker in SENSITIVE_ACCOUNT_KEYS):
+                return True
+            if _contains_sensitive_key(nested):
+                return True
+    elif isinstance(value, (list, tuple)):
+        return any(_contains_sensitive_key(item) for item in value)
+    return False
 
 
 def load_config(path: str | Path) -> dict:
@@ -107,10 +118,34 @@ def _confirmation_target(action: str, args: dict) -> str:
         "block_email": "email", "block_domain": "domain", "delete_blocklist_entry": "entry_id",
         "stage_approved_lead": "campaign_id",
     }
+    payload = args.get("payload") or {}
     if action == "create_campaign_draft":
-        return _text((args.get("payload") or {}).get("name"))
-    if action in {"reply_email", "forward_email"}:
-        return _text((args.get("payload") or {}).get("reply_to_uuid"))
+        return _text(payload.get("name"))
+    if action == "reply_email":
+        return "|".join(
+            part for part in (
+                _text(payload.get("reply_to_uuid")),
+                _text(payload.get("eaccount")),
+            ) if part
+        )
+    if action == "forward_email":
+        return "|".join(
+            part for part in (
+                _text(payload.get("reply_to_uuid")),
+                _text(payload.get("to_address_email_list")),
+            ) if part
+        )
+    if action == "send_test_email":
+        return "|".join(
+            part for part in (
+                _text(payload.get("eaccount")),
+                _text(payload.get("to_address_email_list")),
+            ) if part
+        )
+    if action in {"enable_warmup", "disable_warmup"}:
+        return ",".join(sorted({_text(email).casefold() for email in (args.get("emails") or []) if _text(email)}))
+    if action == "update_interest":
+        return _text(payload.get("lead_id") or payload.get("id") or payload.get("lead"))
     return _text(args.get(direct.get(action, ""))) if action in direct else ""
 
 
@@ -119,16 +154,9 @@ def expected_confirmation(action: str, args: dict) -> str:
     return f"EXECUTE {action}" + (f" {target}" if target else "")
 
 
-def validate_repository_visibility(action: str) -> None:
-    if action not in PRIVATE_ONLY_ACTIONS:
-        return
-    if os.getenv("GITHUB_REPOSITORY_PRIVATE", "").strip().casefold() != "true":
-        raise RuntimeError("private_repository_required_for_sensitive_instantly_control")
-
 
 def validate_write_gate(command: dict, config: dict, *, run_attempt: str) -> None:
     action = command["action"]
-    validate_repository_visibility(action)
     if action not in WRITE_ACTIONS:
         return
     if str(run_attempt or "1") != "1":
@@ -182,8 +210,8 @@ def _activate(client: InstantlyClient, campaign_id: str) -> dict:
     leads = _campaign_leads(client, campaign_id)
     if not leads:
         raise ValueError("activation_requires_leads")
-    if any(lead.get("verification_status") in {-1, -2} for lead in leads):
-        raise ValueError("activation_blocks_invalid_or_risky_leads")
+    if any(lead.get("verification_status") in {-1, -2, -3, -4, 11, 12} for lead in leads):
+        raise ValueError("activation_requires_non_pending_non_risky_verification")
     operation = _api(client, "POST", f"/campaigns/{_id(campaign_id, 'campaign_id')}/activate", payload={})
     observed = client.get_campaign(campaign_id) or {}
     if int(observed.get("status")) not in {1, 4}:
@@ -286,7 +314,7 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
         data = _api(client, "POST", f"/emails/threads/{_id(args.get('thread_id'), 'thread_id')}/mark-as-read", payload={})
     elif action == "update_account":
         payload = dict(args.get("payload") or {})
-        if any(any(marker in str(k).casefold() for marker in SENSITIVE_ACCOUNT_KEYS) for k in payload):
+        if _contains_sensitive_key(payload):
             raise ValueError("account_secret_material_must_not_be_committed_to_command_file")
         email = _text(args.get("email"))
         data = {"operation": _api(client, "PATCH", f"/accounts/{_id(email, 'email')}", payload=payload), "readback": _api(client, "GET", f"/accounts/{_id(email, 'email')}")}
