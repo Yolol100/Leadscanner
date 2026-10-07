@@ -581,7 +581,7 @@ jobs:
             --output results/preview-snapshot.json
 
       - name: Phase 20 - Resume exact successful preview artifact
-        if: inputs.execution_mode == 'draft'
+        if: inputs.execution_mode == 'draft' || inputs.execution_mode == 'instantly_stage'
         env:
           PYTHONPATH: scripts
           GITHUB_TOKEN: ${{ github.token }}
@@ -593,7 +593,7 @@ jobs:
             --output-dir results
 
       - name: Phase 20 - Select exact approved review tokens from snapshot
-        if: inputs.execution_mode == 'draft'
+        if: inputs.execution_mode == 'draft' || inputs.execution_mode == 'instantly_stage'
         env:
           PYTHONPATH: scripts
           INPUT_APPROVED_REVIEW_TOKENS: ${{ inputs.approved_review_tokens }}
@@ -603,6 +603,100 @@ jobs:
             --batch results/review-draft-batch.json \
             --approved-tokens-env INPUT_APPROVED_REVIEW_TOKENS \
             --output results/approved-review-draft-batch.json
+
+      - name: Phase 21 - Stage exact approved leads into Instantly
+        if: inputs.execution_mode == 'instantly_stage'
+        env:
+          PYTHONPATH: scripts
+          INSTANTLY_API_KEY: ${{ secrets.INSTANTLY_API_KEY }}
+          LEADSCANNER_INSTANTLY_WRITES_ENABLED: 'true'
+          INPUT_INSTANTLY_CAMPAIGN_ID: ${{ inputs.instantly_campaign_id }}
+          LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON || secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          from instantly_service import stage_approved_batch
+
+          batch = json.loads(Path('results/approved-review-draft-batch.json').read_text(encoding='utf-8'))
+          result = stage_approved_batch(
+              approved_batch=batch,
+              campaign_id=os.environ['INPUT_INSTANTLY_CAMPAIGN_ID'],
+              instantly_api_key=os.environ['INSTANTLY_API_KEY'],
+              registry_url=os.environ['DEDUPE_REGISTRY_CSV_URL'],
+          )
+          if result['staged_count'] + result['suppressed_count'] != result['requested_count']:
+              raise SystemExit('instantly_stage_count_mismatch')
+          Path('results/instantly-stage.json').write_text(
+              json.dumps(result, indent=2, ensure_ascii=False) + '\n',
+              encoding='utf-8',
+          )
+          print(
+              'INSTANTLY_STAGE=green '
+              f"requested={result['requested_count']} "
+              f"staged={result['staged_count']} "
+              f"suppressed={result['suppressed_count']} "
+              'automatic_send=false activation_required=true'
+          )
+          PY
+
+      - name: Build Instantly stage closure manifest
+        if: inputs.execution_mode == 'instantly_stage'
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          request = json.loads(Path('results/request.json').read_text(encoding='utf-8'))
+          snapshot = json.loads(Path('results/preview-snapshot.json').read_text(encoding='utf-8'))
+          selected = json.loads(Path('results/approved-review-draft-batch.json').read_text(encoding='utf-8'))
+          queue = json.loads(Path('results/review-queue.json').read_text(encoding='utf-8'))
+          stage = json.loads(Path('results/instantly-stage.json').read_text(encoding='utf-8'))
+          manifest = {
+              'schema_version': 'leadscanner-cold-run-manifest/1.0',
+              'execution_mode': 'instantly_stage',
+              'request': {
+                  'source_preview_run_id': request.get('source_preview_run_id'),
+                  'instantly_campaign_id': request.get('instantly_campaign_id'),
+              },
+              'counts': {
+                  'review_queue_candidates': int(queue.get('review_candidate_count') or 0),
+                  'approved_for_instantly': int((selected.get('approval') or {}).get('approved_count') or 0),
+                  'instantly_staged': int(stage.get('staged_count') or 0),
+                  'suppressed_after_preview': int(stage.get('suppressed_count') or 0),
+              },
+              'provenance': {
+                  'source_preview_id': snapshot.get('preview_id'),
+                  'source_preview_run_id': (snapshot.get('source') or {}).get('run_id'),
+                  'source_preview_head_sha': (snapshot.get('source') or {}).get('head_sha'),
+              },
+              'safety': {
+                  'human_review_required': True,
+                  'automatic_send': False,
+                  'campaign_activation_required': True,
+                  'historical_registry_role': 'suppression_only',
+              },
+              'closure': {
+                  'status': 'instantly_staged',
+                  'instantly_mutation': bool(stage.get('staged_count')),
+                  'registry_mutation': bool(stage.get('staged_count')),
+                  'automatic_send': False,
+                  'campaign_activation_required': True,
+              },
+          }
+          Path('results/run-manifest.json').write_text(
+              json.dumps(manifest, indent=2, ensure_ascii=False) + '\n',
+              encoding='utf-8',
+          )
+          print(
+              'COLD_RUN_MANIFEST=green mode=instantly_stage '
+              f"staged={manifest['counts']['instantly_staged']} "
+              'automatic_send=false activation_required=true'
+          )
+          PY
 
       - name: Phase 21 - Preflight canonical registry write access
         if: inputs.execution_mode == 'draft'
@@ -737,6 +831,7 @@ jobs:
             results/source-preview-request.json
             results/approved-review-draft-batch.json
             results/approved-current-batch.json
+            results/instantly-stage.json
             results/run-manifest.json
             results/myhost-drafts.json
             results/myhost-drafts.txt
