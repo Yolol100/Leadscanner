@@ -293,7 +293,7 @@ def _rollback_appended_uid(client, folder: str, uid: bytes, lead_id: str, cause:
         ) from cause
 
 
-def append_and_verify(client, folder: str, lead_id: str, msg: EmailMessage) -> str:
+def append_and_verify(client, folder: str, lead_id: str, msg: EmailMessage, *, reject_changed_existing: bool = False) -> str:
     existing = find_message_ids(client, folder, lead_id)
     if len(existing) > 1:
         raise RuntimeError(f"Expected at most one existing draft for {lead_id}, found {len(existing)}")
@@ -307,6 +307,10 @@ def append_and_verify(client, folder: str, lead_id: str, msg: EmailMessage) -> s
         actual = fetch_message(client, existing[0])
         if exact_message_matches(actual, msg):
             return "existing"
+        if reject_changed_existing:
+            raise RuntimeError(
+                f"Changed existing draft for {lead_id}; automatic replacement is disabled"
+            )
         existing_uid = uid_for_message_id(client, existing[0])
         existing_snapshot = actual
 
@@ -367,7 +371,7 @@ def append_and_verify(client, folder: str, lead_id: str, msg: EmailMessage) -> s
         raise
 
 
-def create_drafts(batch: dict, *, rewrite_existing_only: bool = False) -> dict:
+def create_drafts(batch: dict, *, rewrite_existing_only: bool = False, reject_changed_existing: bool = False) -> dict:
     rows = [
         row
         for row in (batch.get("rows") or [])
@@ -392,6 +396,7 @@ def create_drafts(batch: dict, *, rewrite_existing_only: bool = False) -> dict:
             "items": [],
             "smtp_send": "not_available",
             "rewrite_existing_only": rewrite_existing_only,
+            "reject_changed_existing": reject_changed_existing,
         }
 
     client = connect_imap()
@@ -404,7 +409,7 @@ def create_drafts(batch: dict, *, rewrite_existing_only: bool = False) -> dict:
         replaced = 0
         items = []
         for row, lead_id, msg in prepared:
-            outcome = append_and_verify(client, folder, lead_id, msg)
+            outcome = append_and_verify(client, folder, lead_id, msg, reject_changed_existing=reject_changed_existing)
             if outcome == "created":
                 created += 1
             elif outcome == "replaced":
@@ -442,6 +447,7 @@ def create_drafts(batch: dict, *, rewrite_existing_only: bool = False) -> dict:
             "items": items,
             "smtp_send": "not_available",
             "rewrite_existing_only": rewrite_existing_only,
+            "reject_changed_existing": reject_changed_existing,
         }
     finally:
         try:
@@ -459,10 +465,19 @@ def main() -> int:
         action="store_true",
         help="Require one matching draft for every lead before writing; never create missing drafts.",
     )
+    parser.add_argument(
+        "--reject-changed-existing",
+        action="store_true",
+        help="Allow exact retries but reject any changed existing draft instead of replacing it.",
+    )
     args = parser.parse_args()
 
     batch = json.loads(Path(args.batch).read_text(encoding="utf-8"))
-    result = create_drafts(batch, rewrite_existing_only=args.rewrite_existing_only)
+    result = create_drafts(
+        batch,
+        rewrite_existing_only=args.rewrite_existing_only,
+        reject_changed_existing=args.reject_changed_existing,
+    )
     report = Path(args.report)
     report.parent.mkdir(parents=True, exist_ok=True)
     report.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -474,6 +489,7 @@ def main() -> int:
         f"replaced={result['replaced_count']} "
         f"review_required={result['review_required_count']} "
         f"rewrite_existing_only={str(result['rewrite_existing_only']).lower()} "
+        f"reject_changed_existing={str(result['reject_changed_existing']).lower()} "
         "smtp_send=not_available"
     )
     return 0
