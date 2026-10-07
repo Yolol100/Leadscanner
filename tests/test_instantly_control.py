@@ -6,6 +6,7 @@ from pathlib import Path
 from instantly_control import (
     _activate,
     _wait_background_job,
+    _wait_interest_status,
     _write,
     command_paths_from_push_event,
     execute_command,
@@ -246,6 +247,8 @@ class InstantlyControlTests(unittest.TestCase):
                 "payload": {
                     "eaccount": "sender@example.com",
                     "to_address_email_list": "target@example.com",
+                    "subject": "Test",
+                    "body": {"html": "<p>Test</p>"},
                 }
             },
             "confirm": "EXECUTE send_test_email sender@example.com|target@example.com",
@@ -286,6 +289,137 @@ class InstantlyControlTests(unittest.TestCase):
         )
         self.assertEqual(result["state"], "pending")
         self.assertEqual(result["job"]["status"], "processing")
+
+    def test_update_interest_confirmation_binds_email_and_value(self):
+        self.assertEqual(
+            expected_confirmation(
+                "update_interest",
+                {"payload": {"lead_email": "Lead@Example.com", "interest_value": 2}},
+            ),
+            "EXECUTE update_interest lead@example.com|2",
+        )
+
+    def test_update_interest_async_readback_can_complete(self):
+        class InterestClient:
+            def __init__(self):
+                self.reads = 0
+
+            def _request(self, method, path, **kwargs):
+                if (method, path) == ("POST", "/leads/update-interest-status"):
+                    return {"message": "accepted"}
+                raise AssertionError((method, path, kwargs))
+
+            def list_leads(self, **kwargs):
+                self.reads += 1
+                return {
+                    "items": [{
+                        "id": "l1",
+                        "email": "lead@example.com",
+                        "lt_interest_status": 0 if self.reads == 1 else 2,
+                    }]
+                }
+
+        command = {
+            "schema_version": "leadscanner-instantly-command/1.0",
+            "command_id": "interest-update-001",
+            "action": "update_interest",
+            "args": {"payload": {"lead_email": "lead@example.com", "interest_value": 2}},
+            "confirm": "EXECUTE update_interest lead@example.com|2",
+            "requested_by": "chatgpt",
+        }
+        result = execute_command(command, config(), InterestClient())
+        self.assertEqual(result["result"]["completion_state"], "completed")
+        self.assertEqual(result["result"]["readback"][0]["lt_interest_status"], 2)
+
+    def test_interest_readback_is_bounded_and_can_remain_pending(self):
+        class PendingClient:
+            def list_leads(self, **kwargs):
+                return {"items": [{"email": "lead@example.com", "lt_interest_status": 0}]}
+
+        result = _wait_interest_status(
+            PendingClient(),
+            lead_email="lead@example.com",
+            interest_value=1,
+            max_polls=2,
+            sleep_fn=lambda _: None,
+        )
+        self.assertEqual(result["state"], "pending")
+
+    def test_update_interest_rejects_invalid_payload_before_api_call(self):
+        class NoCall:
+            def _request(self, *args, **kwargs):
+                raise AssertionError("unexpected API call")
+
+        command = {
+            "schema_version": "leadscanner-instantly-command/1.0",
+            "command_id": "interest-invalid-001",
+            "action": "update_interest",
+            "args": {"payload": {"lead_email": "lead@example.com"}},
+            "confirm": "EXECUTE update_interest lead@example.com",
+            "requested_by": "chatgpt",
+        }
+        with self.assertRaisesRegex(ValueError, "interest_value_required"):
+            execute_command(command, config(), NoCall())
+
+    def test_email_write_contracts_fail_closed_on_missing_required_fields(self):
+        class NoCall:
+            def _request(self, *args, **kwargs):
+                raise AssertionError("unexpected API call")
+
+        reply = {
+            "schema_version": "leadscanner-instantly-command/1.0",
+            "command_id": "reply-invalid-001",
+            "action": "reply_email",
+            "args": {"payload": {
+                "reply_to_uuid": "email-1",
+                "eaccount": "sender@example.com",
+                "subject": "Re: hi",
+            }},
+            "confirm": "EXECUTE reply_email email-1|sender@example.com",
+            "requested_by": "chatgpt",
+        }
+        with self.assertRaisesRegex(ValueError, "reply_body_required"):
+            execute_command(reply, config(), NoCall())
+
+        test_send = {
+            "schema_version": "leadscanner-instantly-command/1.0",
+            "command_id": "test-invalid-001",
+            "action": "send_test_email",
+            "args": {"payload": {
+                "eaccount": "sender@example.com",
+                "to_address_email_list": "target@example.com",
+                "subject": "Test",
+            }},
+            "confirm": "EXECUTE send_test_email sender@example.com|target@example.com",
+            "requested_by": "chatgpt",
+        }
+        with self.assertRaisesRegex(ValueError, "test_body_required"):
+            execute_command(test_send, config(), NoCall())
+
+    def test_activation_blocks_all_accounts_unhealthy_reason(self):
+        class ActivationClient:
+            def get_campaign(self, campaign_id):
+                return {
+                    "id": campaign_id,
+                    "status": 0,
+                    "allow_risky_contacts": False,
+                    "email_list": ["sender@example.com"],
+                }
+
+            def list_leads(self, **kwargs):
+                return {"items": [{"email": "lead@example.com", "verification_status": 1}]}
+
+            def _request(self, method, path, **kwargs):
+                if method == "GET" and path.endswith("/sending-status"):
+                    return {"diagnostics": {"status": "all_accounts_unhealthy"}}
+                if method == "GET" and path == "/accounts/sender%40example.com":
+                    return {"status": 1}
+                if method == "POST" and path.endswith("/activate"):
+                    raise AssertionError("activation must be blocked")
+                raise AssertionError((method, path, kwargs))
+
+        with self.assertRaisesRegex(ValueError, "all_accounts_unhealthy"):
+            _activate(ActivationClient(), "c1")
 
     def test_push_event_executes_only_new_inbox_json_files(self):
         event = {
