@@ -59,9 +59,9 @@ def evaluate(root: str | Path = ".") -> dict:
             "ok": (
                 "/sending-status" in control
                 and "activation_requires_all_sender_accounts_active" in control
-                and "activation_requires_non_pending_non_risky_verification" in control
+                and "activation_requires_verified_leads_only" in control
                 and "activation_sending_status_all_accounts_unhealthy" in control
-                and "{-1, -2, -3, -4, 11, 12}" in control
+                and 'lead.get("verification_status") != 1' in control
             ),
         },
         {
