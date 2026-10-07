@@ -55,6 +55,8 @@ def revalidate_approved(batch: dict, registry_rows: list[dict]) -> dict:
         "schema_version": "leadscanner-approved-revalidation/1.0",
         "status": "green",
         "input_approved_count": len(rows),
+        "draft_candidate_count": len(remaining),
+        "review_draft_count": len(remaining),
         "remaining_count": len(remaining),
         "suppressed_after_preview_count": len(suppressed),
         "suppressed_after_preview": suppressed,
