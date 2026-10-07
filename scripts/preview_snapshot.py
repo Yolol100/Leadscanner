@@ -53,10 +53,22 @@ def preview_id_for(snapshot: dict) -> str:
 def build_snapshot(*, request: dict, batch: dict, queue: dict, manifest: dict, source: dict) -> dict:
     if manifest.get("execution_mode") != "preview":
         raise ValueError("snapshot_requires_preview_manifest")
-    if (manifest.get("closure") or {}).get("status") != "preview_ready":
+    closure = manifest.get("closure") or {}
+    if closure.get("status") != "preview_ready":
         raise ValueError("snapshot_requires_preview_ready_closure")
+    if (
+        closure.get("mailbox_mutation") is not False
+        or closure.get("registry_mutation") is not False
+        or closure.get("automatic_send") is not False
+        or closure.get("smtp_send") != "not_available"
+    ):
+        raise ValueError("preview_manifest_must_be_mutation_free")
     if batch.get("draft_candidate_count") != queue.get("review_candidate_count"):
         raise ValueError("snapshot_review_count_mismatch")
+    if int((manifest.get("counts") or {}).get("review_queue_candidates") or 0) != int(
+        queue.get("review_candidate_count") or 0
+    ):
+        raise ValueError("preview_manifest_review_count_mismatch")
 
     rows = batch.get("rows") or []
     items = queue.get("items") or []
