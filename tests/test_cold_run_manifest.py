@@ -175,6 +175,40 @@ class ColdRunManifestTests(unittest.TestCase):
             "preview-1234567890abcdef12345678",
         )
 
+    def test_draft_manifest_rejects_approval_revalidation_count_drift(self):
+        kwargs = base_inputs()
+        kwargs["review_queue"] = {"review_candidate_count": 5}
+        kwargs["approved_batch"] = {
+            "approval": {
+                "approved_count": 3,
+                "rejected_by_operator_count": 2,
+            }
+        }
+        kwargs["revalidation"] = {
+            "suppressed_after_preview_count": 0,
+        }
+        kwargs["draft_batch"] = {"draft_candidate_count": 2}
+        kwargs["draft_readback"] = {
+            "status": "green",
+            "created_count": 2,
+            "existing_count": 0,
+        }
+        kwargs["registry_update"] = {
+            "status": "green",
+            "appended_count": 2,
+            "already_present_count": 0,
+            "exact_readback": True,
+        }
+        with self.assertRaisesRegex(ValueError, "approval_revalidation_count_mismatch"):
+            build_manifest(mode="draft", **kwargs)
+
+        kwargs["draft_batch"] = {"draft_candidate_count": 3}
+        kwargs["draft_readback"]["created_count"] = 3
+        kwargs["registry_update"]["appended_count"] = 3
+        kwargs["approved_batch"]["approval"]["rejected_by_operator_count"] = 1
+        with self.assertRaisesRegex(ValueError, "review_approval_count_mismatch"):
+            build_manifest(mode="draft", **kwargs)
+
     def test_manifest_includes_quality_and_coverage_diagnostics(self):
         kwargs = base_inputs()
         kwargs["funnel"] = {
