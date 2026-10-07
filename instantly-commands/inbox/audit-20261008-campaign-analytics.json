@@ -1,0 +1,7 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "audit-20261008-campaign-analytics",
+  "action": "campaign_analytics",
+  "args": {},
+  "requested_by": "chatgpt"
+}

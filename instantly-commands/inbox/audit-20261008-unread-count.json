@@ -1,0 +1,7 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "audit-20261008-unread-count",
+  "action": "count_unread_emails",
+  "args": {},
+  "requested_by": "chatgpt"
+}
