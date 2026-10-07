@@ -78,6 +78,36 @@ class ColdRunManifestTests(unittest.TestCase):
         self.assertEqual(result["counts"]["registry_already_present"], 1)
         self.assertFalse(result["safety"]["automatic_send"])
 
+    def test_draft_manifest_rejects_incoherent_mailbox_or_registry_counts(self):
+        kwargs = base_inputs()
+        kwargs["draft_readback"] = {
+            "status": "green",
+            "created_count": 1,
+            "existing_count": 0,
+        }
+        kwargs["registry_update"] = {
+            "status": "green",
+            "appended_count": 3,
+            "already_present_count": 0,
+            "exact_readback": True,
+        }
+        with self.assertRaisesRegex(ValueError, "mailbox_count_mismatch"):
+            build_manifest(mode="draft", **kwargs)
+
+        kwargs["draft_readback"] = {
+            "status": "green",
+            "created_count": 2,
+            "existing_count": 1,
+        }
+        kwargs["registry_update"] = {
+            "status": "green",
+            "appended_count": 1,
+            "already_present_count": 0,
+            "exact_readback": True,
+        }
+        with self.assertRaisesRegex(ValueError, "registry_count_mismatch"):
+            build_manifest(mode="draft", **kwargs)
+
     def test_manifest_reports_review_and_operator_approval_counts(self):
         kwargs = base_inputs()
         kwargs["review_queue"] = {"review_candidate_count": 5}
