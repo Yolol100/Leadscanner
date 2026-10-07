@@ -412,35 +412,57 @@ def create_drafts(batch: dict, *, rewrite_existing_only: bool = False, reject_ch
         existing = 0
         replaced = 0
         items = []
-        for row, lead_id, msg in prepared:
-            outcome = append_and_verify(client, folder, lead_id, msg, reject_changed_existing=reject_changed_existing)
-            if outcome == "created":
-                created += 1
-            elif outcome == "replaced":
-                replaced += 1
-            else:
-                existing += 1
+        created_targets: list[tuple[str, bytes]] = []
+        try:
+            for row, lead_id, msg in prepared:
+                outcome = append_and_verify(client, folder, lead_id, msg, reject_changed_existing=reject_changed_existing)
+                if outcome == "created":
+                    created += 1
+                elif outcome == "replaced":
+                    replaced += 1
+                else:
+                    existing += 1
 
-            final_ids = find_message_ids(client, folder, lead_id)
-            if len(final_ids) != 1:
-                raise RuntimeError(
-                    f"Expected exactly one final draft for readback {lead_id}, found {len(final_ids)}"
+                final_ids = find_message_ids(client, folder, lead_id)
+                if len(final_ids) != 1:
+                    raise RuntimeError(
+                        f"Expected exactly one final draft for readback {lead_id}, found {len(final_ids)}"
+                    )
+                if outcome == "created":
+                    created_targets.append((lead_id, uid_for_message_id(client, final_ids[0])))
+                actual = fetch_message(client, final_ids[0])
+                if not exact_message_matches(actual, msg):
+                    raise RuntimeError(f"Final exact readback mismatch for {lead_id}")
+                items.append(
+                    {
+                        "lead_id": lead_id,
+                        "to": normalize_text(actual.get("To", "")),
+                        "subject": normalize_text(actual.get("Subject", "")),
+                        "body": plain_body(actual),
+                        "review_status": normalize_text(
+                            actual.get("X-Webactueel-Review-Required", "")
+                        ) or "not-required",
+                        "outcome": outcome,
+                    }
                 )
-            actual = fetch_message(client, final_ids[0])
-            if not exact_message_matches(actual, msg):
-                raise RuntimeError(f"Final exact readback mismatch for {lead_id}")
-            items.append(
-                {
-                    "lead_id": lead_id,
-                    "to": normalize_text(actual.get("To", "")),
-                    "subject": normalize_text(actual.get("Subject", "")),
-                    "body": plain_body(actual),
-                    "review_status": normalize_text(
-                        actual.get("X-Webactueel-Review-Required", "")
-                    ) or "not-required",
-                    "outcome": outcome,
-                }
-            )
+        except Exception as exc:
+            if reject_changed_existing and created_targets:
+                rollback_errors = []
+                for created_lead_id, created_uid in reversed(created_targets):
+                    try:
+                        uid_expunge_only(
+                            client,
+                            folder,
+                            created_uid,
+                            operation=f"strict batch rollback for {created_lead_id}",
+                        )
+                    except Exception as rollback_exc:
+                        rollback_errors.append(f"{created_lead_id}:{rollback_exc}")
+                if rollback_errors:
+                    raise RuntimeError(
+                        f"{exc}; strict batch rollback failed: {'; '.join(rollback_errors)}"
+                    ) from exc
+            raise
         return {
             "eligible_count": len(rows),
             "created_count": created,
