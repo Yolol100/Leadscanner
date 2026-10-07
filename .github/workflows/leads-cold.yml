@@ -3,6 +3,19 @@ name: Leads Cold Pipeline
 on:
   workflow_dispatch:
     inputs:
+      execution_mode:
+        description: 'preview = alleen resultaten; draft = review-concepten + dedupe closure'
+        required: true
+        default: preview
+        type: choice
+        options:
+          - preview
+          - draft
+      confirm_review_drafts:
+        description: 'Alleen aanvinken bij execution_mode=draft'
+        required: true
+        default: false
+        type: boolean
       region:
         description: 'Plaats/regio voor cold discovery'
         required: true
@@ -35,6 +48,7 @@ on:
       - 'scripts/cold_stages.py'
       - 'scripts/overture_discovery.py'
       - 'scripts/outreach_stages.py'
+      - 'scripts/cold_run_manifest.py'
       - 'scripts/review_draft_stages.py'
       - 'scripts/myhost_draft.py'
       - 'scripts/update_dedupe_registry.py'
@@ -42,6 +56,7 @@ on:
       - 'tests/test_dedupe_preflight.py'
       - 'tests/test_cold_stages.py'
       - 'tests/test_outreach_stages.py'
+      - 'tests/test_cold_run_manifest.py'
       - 'tests/test_review_draft_stages.py'
       - 'tests/test_myhost_draft.py'
       - 'tests/test_update_dedupe_registry.py'
@@ -56,6 +71,7 @@ on:
       - 'scripts/cold_stages.py'
       - 'scripts/overture_discovery.py'
       - 'scripts/outreach_stages.py'
+      - 'scripts/cold_run_manifest.py'
       - 'scripts/review_draft_stages.py'
       - 'scripts/myhost_draft.py'
       - 'scripts/update_dedupe_registry.py'
@@ -63,6 +79,7 @@ on:
       - 'tests/test_dedupe_preflight.py'
       - 'tests/test_cold_stages.py'
       - 'tests/test_outreach_stages.py'
+      - 'tests/test_cold_run_manifest.py'
       - 'tests/test_review_draft_stages.py'
       - 'tests/test_myhost_draft.py'
       - 'tests/test_update_dedupe_registry.py'
@@ -99,8 +116,8 @@ jobs:
           PYTHONPATH: scripts
         run: |
           set -euo pipefail
-          python3 -m compileall -q scripts/dedupe_preflight.py scripts/cold_stages.py scripts/outreach_stages.py scripts/review_draft_stages.py scripts/myhost_draft.py scripts/update_dedupe_registry.py scripts/overture_discovery.py scripts/url_safety.py
-          python3 -m unittest tests.test_dedupe_preflight tests.test_cold_stages tests.test_outreach_stages tests.test_review_draft_stages tests.test_myhost_draft tests.test_update_dedupe_registry tests.test_url_safety -v
+          python3 -m compileall -q scripts/dedupe_preflight.py scripts/cold_stages.py scripts/outreach_stages.py scripts/cold_run_manifest.py scripts/review_draft_stages.py scripts/myhost_draft.py scripts/update_dedupe_registry.py scripts/overture_discovery.py scripts/url_safety.py
+          python3 -m unittest tests.test_dedupe_preflight tests.test_cold_stages tests.test_outreach_stages tests.test_cold_run_manifest tests.test_review_draft_stages tests.test_myhost_draft tests.test_update_dedupe_registry tests.test_url_safety -v
 
   execute:
     if: github.event_name == 'workflow_dispatch'
@@ -120,6 +137,8 @@ jobs:
 
       - name: Validate request
         env:
+          INPUT_EXECUTION_MODE: ${{ inputs.execution_mode }}
+          INPUT_CONFIRM_REVIEW_DRAFTS: ${{ inputs.confirm_review_drafts }}
           INPUT_REGION: ${{ inputs.region }}
           INPUT_KEYWORDS: ${{ inputs.keywords }}
           INPUT_TARGET: ${{ inputs.target_candidates }}
@@ -131,6 +150,15 @@ jobs:
           python3 - <<'PY'
           import json, os, re
           from pathlib import Path
+
+          mode = os.environ['INPUT_EXECUTION_MODE'].strip()
+          confirm = os.environ['INPUT_CONFIRM_REVIEW_DRAFTS'].strip().casefold() == 'true'
+          if mode not in {'preview', 'draft'}:
+              raise SystemExit('execution_mode must be preview or draft')
+          if mode == 'draft' and not confirm:
+              raise SystemExit('draft mode requires confirm_review_drafts=true')
+          if mode == 'preview' and confirm:
+              raise SystemExit('confirm_review_drafts must remain false in preview mode')
 
           region = os.environ['INPUT_REGION'].strip()
           if not region or len(region) > 120:
@@ -149,6 +177,7 @@ jobs:
           if not 0.5 <= radius <= 50:
               raise SystemExit('radius_km must be 0.5-50')
           request = {
+              'execution_mode': mode,
               'region': region,
               'keywords': keywords,
               'target_candidates': target,
@@ -287,6 +316,7 @@ jobs:
             --output results/review-draft-batch.json
 
       - name: Phase 10 - Preflight canonical registry write access
+        if: inputs.execution_mode == 'draft'
         env:
           PYTHONPATH: scripts
           LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON }}
@@ -302,6 +332,7 @@ jobs:
           fi
 
       - name: Phase 10 - Store mijn.host review drafts only
+        if: inputs.execution_mode == 'draft'
         env:
           PYTHONPATH: scripts
           OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
@@ -322,6 +353,7 @@ jobs:
           grep -q 'smtp_send=not_available' results/myhost-drafts.txt
 
       - name: Phase 11 - Exact mailbox readback gate
+        if: inputs.execution_mode == 'draft'
         env:
           PYTHONPATH: scripts
         run: |
@@ -332,6 +364,7 @@ jobs:
             --output results/review-draft-readback.json
 
       - name: Phase 12 - Append canonical dedupe registry and read back
+        if: inputs.execution_mode == 'draft'
         env:
           PYTHONPATH: scripts
           LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON }}
@@ -341,40 +374,34 @@ jobs:
             --readback results/review-draft-readback.json \
             --output results/registry-update.json
 
-      - name: Summarize phase handoffs
+      - name: Phase 15 - Build run preview or closure manifest
+        env:
+          PYTHONPATH: scripts
+          INPUT_EXECUTION_MODE: ${{ inputs.execution_mode }}
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          filtered = json.loads(Path('results/discovery-filtered.json').read_text())
-          dedupe = json.loads(Path('results/dedupe-preflight.json').read_text())
-          verified = json.loads(Path('results/verification.json').read_text())
-          research = json.loads(Path('results/research.json').read_text())
-          reasons = json.loads(Path('results/outreach-reasons.json').read_text())
-          values = json.loads(Path('results/value-actions.json').read_text())
-          mail = json.loads(Path('results/mail-review.json').read_text())
-          drafts = json.loads(Path('results/review-draft-readback.json').read_text())
-          registry = json.loads(Path('results/registry-update.json').read_text())
-          print(
-              'COLD_PHASES=green '
-              f"discovery={filtered['candidate_count']} "
-              f"dedupe_kept={dedupe['kept_count']} "
-              f"verified_for_research={verified['ready_for_research_count']} "
-              f"research_ready={research['research_ready_count']} "
-              f"outreach_reason_ready={reasons['ready_count']} "
-              f"value_action_ready={values['ready_count']} "
-              f"mail_ready={mail['ready_for_human_review_count']} "
-              f"drafts={drafts['draft_count']} "
-              f"registry_appended={registry['appended_count']} "
-              f"registry_existing={registry['already_present_count']} "
-              'automatic_send=false smtp_send=not_available'
-          )
-          PY
+          EXTRA_ARGS=()
+          if [ "$INPUT_EXECUTION_MODE" = "draft" ]; then
+            EXTRA_ARGS+=(--draft-readback results/review-draft-readback.json)
+            EXTRA_ARGS+=(--registry-update results/registry-update.json)
+          fi
+          python3 scripts/cold_run_manifest.py \
+            --mode "$INPUT_EXECUTION_MODE" \
+            --request results/request.json \
+            --filtered results/discovery-filtered.json \
+            --dedupe results/dedupe-preflight.json \
+            --verified results/verification.json \
+            --research results/research.json \
+            --reasons results/outreach-reasons.json \
+            --values results/value-actions.json \
+            --mail results/mail-review.json \
+            --draft-batch results/review-draft-batch.json \
+            "${EXTRA_ARGS[@]}" \
+            --output results/run-manifest.json
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: leads-cold-phases-4-12-${{ github.run_number }}
+          name: leads-cold-${{ inputs.execution_mode }}-${{ github.run_number }}
           path: |
             results/request.json
             results/discovery-raw.json
@@ -386,6 +413,7 @@ jobs:
             results/value-actions.json
             results/mail-review.json
             results/review-draft-batch.json
+            results/run-manifest.json
             results/myhost-drafts.json
             results/myhost-drafts.txt
             results/review-draft-readback.json
