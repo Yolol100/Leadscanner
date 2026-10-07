@@ -60,6 +60,8 @@ on:
       - 'scripts/cold_stages.py'
       - 'scripts/overture_discovery.py'
       - 'scripts/outreach_stages.py'
+      - 'scripts/funnel_metrics.py'
+      - 'scripts/coverage_audit.py'
       - 'scripts/cold_run_manifest.py'
       - 'scripts/review_draft_stages.py'
       - 'scripts/review_selection.py'
@@ -71,6 +73,8 @@ on:
       - 'tests/test_dedupe_preflight.py'
       - 'tests/test_cold_stages.py'
       - 'tests/test_outreach_stages.py'
+      - 'tests/test_funnel_metrics.py'
+      - 'tests/test_coverage_audit.py'
       - 'tests/test_overture_discovery.py'
       - 'tests/test_cold_run_manifest.py'
       - 'tests/test_review_draft_stages.py'
@@ -90,6 +94,8 @@ on:
       - 'scripts/cold_stages.py'
       - 'scripts/overture_discovery.py'
       - 'scripts/outreach_stages.py'
+      - 'scripts/funnel_metrics.py'
+      - 'scripts/coverage_audit.py'
       - 'scripts/cold_run_manifest.py'
       - 'scripts/review_draft_stages.py'
       - 'scripts/review_selection.py'
@@ -101,6 +107,8 @@ on:
       - 'tests/test_dedupe_preflight.py'
       - 'tests/test_cold_stages.py'
       - 'tests/test_outreach_stages.py'
+      - 'tests/test_funnel_metrics.py'
+      - 'tests/test_coverage_audit.py'
       - 'tests/test_overture_discovery.py'
       - 'tests/test_cold_run_manifest.py'
       - 'tests/test_review_draft_stages.py'
@@ -147,6 +155,8 @@ jobs:
             scripts/dedupe_preflight.py \
             scripts/cold_stages.py \
             scripts/outreach_stages.py \
+            scripts/funnel_metrics.py \
+            scripts/coverage_audit.py \
             scripts/cold_run_manifest.py \
             scripts/review_draft_stages.py \
             scripts/review_selection.py \
@@ -160,6 +170,8 @@ jobs:
             tests.test_dedupe_preflight \
             tests.test_cold_stages \
             tests.test_outreach_stages \
+            tests.test_funnel_metrics \
+            tests.test_coverage_audit \
             tests.test_overture_discovery \
             tests.test_cold_run_manifest \
             tests.test_review_draft_stages \
@@ -397,6 +409,35 @@ jobs:
             --input results/value-actions.json \
             --output results/mail-review.json
 
+      - name: Phase 25 - Measure funnel drop reasons
+        if: inputs.execution_mode == 'preview'
+        env:
+          PYTHONPATH: scripts
+        run: |
+          set -euo pipefail
+          python3 scripts/funnel_metrics.py \
+            --raw results/discovery-raw.json \
+            --filtered results/discovery-filtered.json \
+            --dedupe results/dedupe-preflight.json \
+            --verified results/verification.json \
+            --research results/research.json \
+            --reasons results/outreach-reasons.json \
+            --mail results/mail-review.json \
+            --output results/funnel-metrics.json
+
+      - name: Phase 26 - Audit Overture operational coverage
+        if: inputs.execution_mode == 'preview'
+        env:
+          PYTHONPATH: scripts
+        run: |
+          set -euo pipefail
+          python3 scripts/coverage_audit.py \
+            --request results/request.json \
+            --raw results/discovery-raw.json \
+            --filtered results/discovery-filtered.json \
+            --dedupe results/dedupe-preflight.json \
+            --output results/coverage-audit.json
+
       - name: Phase 10 - Prepare strict review-draft batch
         if: inputs.execution_mode == 'preview'
         env:
@@ -437,6 +478,8 @@ jobs:
             --mail results/mail-review.json \
             --draft-batch results/review-draft-batch.json \
             --review-queue results/review-queue.json \
+            --funnel results/funnel-metrics.json \
+            --coverage results/coverage-audit.json \
             --output results/run-manifest.json
 
       - name: Phase 19 - Seal immutable preview snapshot
@@ -577,6 +620,8 @@ jobs:
             results/outreach-reasons.json
             results/value-actions.json
             results/mail-review.json
+            results/funnel-metrics.json
+            results/coverage-audit.json
             results/review-draft-batch.json
             results/review-queue.json
             results/review-queue.md
