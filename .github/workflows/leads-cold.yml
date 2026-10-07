@@ -728,6 +728,7 @@ jobs:
           LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON || secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          GITHUB_REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
         run: |
           set -euo pipefail
           python3 scripts/instantly_control.py run-paths \
@@ -741,7 +742,7 @@ jobs:
           name: instantly-control-${{ github.run_id }}
           path: results/instantly-control/
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 1
 
   instantly_sync:
     if: github.event_name == 'schedule'
@@ -774,4 +775,4 @@ jobs:
           name: instantly-sync-${{ github.run_id }}
           path: results/instantly-sync.json
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 1
