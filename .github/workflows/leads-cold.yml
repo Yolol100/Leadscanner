@@ -181,7 +181,12 @@ jobs:
           python-version: '3.12'
           cache: pip
           cache-dependency-path: requirements-cold.txt
-      - run: python3 -m pip install --disable-pip-version-check -r requirements-cold.txt
+      - name: Install preview runtime
+        if: inputs.execution_mode == 'preview'
+        run: python3 -m pip install --disable-pip-version-check -r requirements-cold.txt
+      - name: Install resumed-draft runtime
+        if: inputs.execution_mode == 'draft'
+        run: python3 -m pip install --disable-pip-version-check 'requests>=2,<3' 'google-auth>=2,<3'
 
       - name: Validate request
         env:
