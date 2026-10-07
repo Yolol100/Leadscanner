@@ -422,6 +422,7 @@ jobs:
             --verified results/verification.json \
             --research results/research.json \
             --reasons results/outreach-reasons.json \
+            --values results/value-actions.json \
             --mail results/mail-review.json \
             --output results/funnel-metrics.json
 
