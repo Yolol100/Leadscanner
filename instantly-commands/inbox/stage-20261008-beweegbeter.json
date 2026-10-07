@@ -1,0 +1,12 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "stage-20261008-beweegbeter",
+  "action": "stage_approved_lead",
+  "args": {
+    "preview_run_id": 37626656135,
+    "approval_token": "growth-0e2e5757987a0d54a0fe@968ed9c8f7b759c8",
+    "campaign_id": "827b1b45-6a7e-45ba-88de-d89db2a47d6a"
+  },
+  "confirm": "EXECUTE stage_approved_lead 37626656135|growth-0e2e5757987a0d54a0fe@968ed9c8f7b759c8|827b1b45-6a7e-45ba-88de-d89db2a47d6a",
+  "requested_by": "chatgpt"
+}
