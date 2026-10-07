@@ -170,7 +170,7 @@ class InstantlyControlTests(unittest.TestCase):
                     return {}
                 raise AssertionError((method, path, kwargs))
 
-        for status in (-1, -2, -3, -4, 11, 12, None):
+        for status in (-1, -2, -3, -4, 11, 12, None, True):
             with self.subTest(status=status):
                 client = ActivationClient(status)
                 with self.assertRaisesRegex(ValueError, "verified_leads_only"):
@@ -447,6 +447,69 @@ class InstantlyControlTests(unittest.TestCase):
 
         with self.assertRaisesRegex(RuntimeError, "items_must_be_list"):
             _campaign_leads(BadShapeClient(), "c1")
+
+    def test_activation_lead_scan_rejects_empty_page_with_cursor(self):
+        class EmptyCursorClient:
+            def list_leads(self, **kwargs):
+                return {
+                    "items": [],
+                    "next_starting_after": "cursor-still-present",
+                }
+
+        with self.assertRaisesRegex(RuntimeError, "empty_page_with_cursor"):
+            _campaign_leads(EmptyCursorClient(), "c1")
+
+    def test_activation_lead_scan_rejects_non_object_item(self):
+        class BadItemClient:
+            def list_leads(self, **kwargs):
+                return {
+                    "items": [{"id": "ok", "verification_status": 1}, "bad-item"],
+                    "next_starting_after": None,
+                }
+
+        with self.assertRaisesRegex(RuntimeError, "item_must_be_object"):
+            _campaign_leads(BadItemClient(), "c1")
+
+    def test_write_payload_must_be_object_before_api_call(self):
+        class CampaignClient:
+            def get_campaign(self, campaign_id):
+                return {"id": campaign_id, "status": 0}
+
+            def _request(self, *args, **kwargs):
+                raise AssertionError("malformed payload must not reach API")
+
+        args = {
+            "campaign_id": "c1",
+            "payload": [["name", "Changed"]],
+        }
+        command = {
+            "schema_version": "leadscanner-instantly-command/1.0",
+            "command_id": "payload-type-invalid-001",
+            "action": "update_campaign",
+            "args": args,
+            "confirm": expected_confirmation("update_campaign", args),
+            "requested_by": "chatgpt",
+        }
+        with self.assertRaisesRegex(ValueError, "payload_must_be_object"):
+            execute_command(command, config(), CampaignClient())
+
+    def test_warmup_email_targets_must_be_list(self):
+        args = {"emails": "sender@example.com"}
+        command = {
+            "schema_version": "leadscanner-instantly-command/1.0",
+            "command_id": "warmup-type-invalid-001",
+            "action": "enable_warmup",
+            "args": args,
+            "confirm": expected_confirmation("enable_warmup", args),
+            "requested_by": "chatgpt",
+        }
+
+        class NoCall:
+            def _request(self, *args, **kwargs):
+                raise AssertionError("malformed email targets must not reach API")
+
+        with self.assertRaisesRegex(ValueError, "emails_must_be_list"):
+            execute_command(command, config(), NoCall())
 
     def test_activation_blocks_all_accounts_unhealthy_reason(self):
         class ActivationClient:
