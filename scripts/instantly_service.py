@@ -171,12 +171,21 @@ def stage_exact_approved_lead(
         sheet_name=resolved_sheet_name,
     )
 
+    fresh_registry_rows = fetch_live_registry(
+        registry_url=registry_url,
+        session=registry_session,
+    )
+    refreshed = revalidate_approved(resolved["approved_current"], fresh_registry_rows)
+    if refreshed.get("remaining_count") != 1:
+        raise ValueError("approved_lead_no_longer_eligible_after_registry_preflight")
+    row = refreshed["rows"][0]
+
     client = instantly_client or InstantlyClient(instantly_api_key)
     created = client.add_approved_lead_to_campaign(
-        approved_batch=resolved["approved_current"],
+        approved_batch=refreshed,
         lead_id=_text(row.get("lead_id")),
         campaign_id=_text(campaign_id),
-        registry_rows=resolved["registry_rows"],
+        registry_rows=fresh_registry_rows,
     )
     instantly_id = _text((created or {}).get("id"))
     if not instantly_id:
