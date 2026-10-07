@@ -27,6 +27,7 @@ EVENT_PRIORITY = {
     "email_bounced": 95,
     "lead_closed": 90,
     "lead_meeting_completed": 85,
+    "lead_lost": 83,
     "lead_no_show": 82,
     "lead_meeting_booked": 80,
     "lead_wrong_person": 75,
@@ -34,6 +35,7 @@ EVENT_PRIORITY = {
     "lead_interested": 65,
     "lead_out_of_office": 60,
     "reply_received": 50,
+    "lead_skipped": 30,
     "campaign_completed_for_lead_without_reply": 10,
 }
 INTEREST_EVENTS = {
@@ -44,6 +46,7 @@ INTEREST_EVENTS = {
     0: "lead_out_of_office",
     -1: "lead_not_interested",
     -2: "lead_wrong_person",
+    -3: "lead_lost",
     -4: "lead_no_show",
 }
 
@@ -85,6 +88,9 @@ def event_from_lead(lead: dict) -> dict | None:
         timestamp = _stable_timestamp(lead)
     elif status == -1:
         event_type = "email_bounced"
+        timestamp = _stable_timestamp(lead)
+    elif status == -3:
+        event_type = "lead_skipped"
         timestamp = _stable_timestamp(lead)
     elif interest in INTEREST_EVENTS:
         event_type = INTEREST_EVENTS[interest]
