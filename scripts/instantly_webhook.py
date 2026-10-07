@@ -53,6 +53,16 @@ def _text(value) -> str:
     return str(value or "").strip()
 
 
+def _timestamp(value: object):
+    text = _text(value)
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).astimezone(timezone.utc)
+    except ValueError:
+        return None
+
+
 def normalize_event(payload: dict) -> dict:
     if not isinstance(payload, dict):
         raise ValueError("webhook_payload_must_be_object")
@@ -111,14 +121,22 @@ def plan_registry_event_update(
     after = list(before)
     incoming = STATUS_BY_KIND[event["kind"]]
     current_status = after[4].casefold()
-    if current_status not in TERMINAL_STATUSES or incoming in TERMINAL_STATUSES:
-        after[4] = incoming
+    previous_timestamp = _timestamp(after[7])
+    incoming_timestamp = _timestamp(event["timestamp"])
+    stale_event = bool(
+        previous_timestamp
+        and incoming_timestamp
+        and incoming_timestamp < previous_timestamp
+    )
 
-    event_marker = f"instantly:{event['event_type']}"
-    after[5] = _merge_semicolon(after[5], event_marker)
-    after[7] = event["timestamp"]
-    after[8] = _merge_semicolon(after[8], _text(source_marker))
-    after[9] = "TRUE"
+    if not stale_event:
+        if current_status not in TERMINAL_STATUSES or incoming in TERMINAL_STATUSES:
+            after[4] = incoming
+        event_marker = f"instantly:{event['event_type']}"
+        after[5] = _merge_semicolon(after[5], event_marker)
+        after[7] = event["timestamp"]
+        after[8] = _merge_semicolon(after[8], _text(source_marker))
+        after[9] = "TRUE"
 
     return {
         "schema_version": "leadscanner-instantly-registry-event/1.0",
@@ -135,6 +153,7 @@ def plan_registry_event_update(
             "creates_new_registry_row": False,
             "preserves_suppression": True,
             "automatic_send": False,
+            "stale_event_ignored": stale_event,
         },
     }
 
@@ -151,27 +170,37 @@ def apply_registry_event(
     """Update exactly one existing A:J row and verify exact readback."""
     from urllib.parse import quote
 
-    plan = plan_registry_event_update(payload, current_values, source_marker=source_marker)
-    row_number = plan["sheet_row"]
+    initial = plan_registry_event_update(payload, current_values, source_marker=source_marker)
+    row_number = initial["sheet_row"]
     range_name = quote(f"{sheet_name}!A{row_number}:J{row_number}", safe="")
-    url = (
-        f"https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values/{range_name}"
-        "?valueInputOption=RAW"
+    read_url = f"https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values/{range_name}"
+
+    fresh = session.get(read_url, timeout=20)
+    if fresh.status_code != 200:
+        raise RuntimeError(f"registry_event_fresh_read_failed status={fresh.status_code}")
+    fresh_values = fresh.json().get("values") or []
+    if len(fresh_values) != 1:
+        raise RuntimeError("registry_event_fresh_row_missing")
+    plan = plan_registry_event_update(
+        payload,
+        [HEADERS, fresh_values[0]],
+        source_marker=source_marker,
     )
+    plan["sheet_row"] = row_number
+
+    if plan["after"] == plan["before"]:
+        return plan
+
+    url = read_url + "?valueInputOption=RAW"
     response = session.put(
         url,
         json={"majorDimension": "ROWS", "values": [plan["after"]]},
         timeout=20,
     )
     if response.status_code not in {200, 201}:
-        raise RuntimeError(
-            f"registry_event_write_failed status={response.status_code} body={response.text[:300]}"
-        )
+        raise RuntimeError(f"registry_event_write_failed status={response.status_code}")
 
-    readback = session.get(
-        f"https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values/{range_name}",
-        timeout=20,
-    )
+    readback = session.get(read_url, timeout=20)
     if readback.status_code != 200:
         raise RuntimeError(f"registry_event_readback_failed status={readback.status_code}")
     values = readback.json().get("values") or []
