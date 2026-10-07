@@ -59,3 +59,15 @@ The Google Sheet **Lead Dedupe Registry** is the only retained historical lead s
 ## Safety
 
 The active path may generate and store validated review drafts, but it never sends email. Discovery hints are not treated as verified company facts. Public business email addresses are accepted only when observed on the official site. Draft storage requires `OUTREACH_MAIL_PASSWORD`; canonical registry writes require the GitHub Actions secret `LEAD_REGISTRY_SERVICE_ACCOUNT_JSON` for a service account that can edit the retained Google Sheet.
+
+## Active data sources
+
+The active discovery path does not use Google Maps scraping.
+
+- **PDOK Locatieserver** resolves a requested Dutch place/municipality to `pdok_id`, resolved name/type, longitude and latitude. No authentication is used.
+- **Overture Maps Places** supplies discovery candidates. The active handoff keeps only `overture_id`, business name hint, category/taxonomy hint, website hint, longitude, latitude, confidence and bounded discovery email candidates when Overture contains public email data. Phone numbers and social profiles are deliberately not emitted by discovery.
+- **Official business websites** are the verification and research source. They supply the verified official domain/URL, identity evidence, HTTP status, public business email + source URL, verification/research URLs and bounded first-party text evidence.
+- **Lead Dedupe Registry** is suppression-only historical state: company, website/domain, email(s), status/history, lead IDs, source and `exclude_from_new_leads`.
+- **mijn.host** stores human-review drafts only. SMTP/send is not part of the active workflow.
+
+The previous Google Maps CSV adapters and remediation-era code were removed from the repository. If Google Maps is ever reintroduced, it must be a deliberate new source with its own current verification, tests and evidence contract; no deleted legacy behavior is implicitly restored.
