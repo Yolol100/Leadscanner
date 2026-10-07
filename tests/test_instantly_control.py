@@ -169,10 +169,10 @@ class InstantlyControlTests(unittest.TestCase):
                     return {}
                 raise AssertionError((method, path, kwargs))
 
-        for status in (-1, -2, -3, -4, 11, 12):
+        for status in (-1, -2, -3, -4, 11, 12, None):
             with self.subTest(status=status):
                 client = ActivationClient(status)
-                with self.assertRaisesRegex(ValueError, "requires_non_pending_non_risky_verification"):
+                with self.assertRaisesRegex(ValueError, "verified_leads_only"):
                     _activate(client, "c1")
                 self.assertFalse(client.activated)
 
@@ -420,6 +420,29 @@ class InstantlyControlTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "all_accounts_unhealthy"):
             _activate(ActivationClient(), "c1")
+
+    def test_update_campaign_rejects_active_campaign_before_patch(self):
+        class ActiveCampaignClient:
+            def __init__(self):
+                self.calls = 0
+
+            def get_campaign(self, campaign_id):
+                self.calls += 1
+                return {"id": campaign_id, "status": 1}
+
+            def _request(self, *args, **kwargs):
+                raise AssertionError("active campaign must not be patched")
+
+        command = {
+            "schema_version": "leadscanner-instantly-command/1.0",
+            "command_id": "campaign-update-active-001",
+            "action": "update_campaign",
+            "args": {"campaign_id": "c1", "payload": {"name": "Changed"}},
+            "confirm": "EXECUTE update_campaign c1",
+            "requested_by": "chatgpt",
+        }
+        with self.assertRaisesRegex(ValueError, "draft_or_paused_before_update"):
+            execute_command(command, config(), ActiveCampaignClient())
 
     def test_push_event_executes_only_new_inbox_json_files(self):
         event = {
