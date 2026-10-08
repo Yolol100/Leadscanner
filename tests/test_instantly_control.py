@@ -65,6 +65,57 @@ class InstantlyControlTests(unittest.TestCase):
         self.assertEqual(result["result"]["items"][0]["id"], "c1")
         self.assertNotIn("sequences", result["result"]["items"][0])
 
+    def test_read_only_sequence_audit_reports_counts_without_email_copy(self):
+        class SequenceClient:
+            def __init__(self):
+                self.calls = []
+
+            def get_campaign(self, campaign_id):
+                self.calls.append(("get_campaign", campaign_id))
+                return {
+                    "id": campaign_id,
+                    "status": 2,
+                    "sequences": [{"steps": [
+                        {"type": "email", "variants": [
+                            {"subject": "PRIVATE SUBJECT", "body": "PRIVATE BODY {{aiIdeas}}"}
+                        ]} for _ in range(3)
+                    ]}],
+                }
+
+        command = {
+            "schema_version": "leadscanner-instantly-command/1.0",
+            "command_id": "audit-sequence-001",
+            "action": "audit_campaign_sequence",
+            "args": {"campaign_id": "c1"},
+            "confirm": "",
+            "requested_by": "chatgpt",
+        }
+        client = SequenceClient()
+        result = execute_command(command, config(), client)
+        self.assertEqual(client.calls, [("get_campaign", "c1")])
+        self.assertEqual(result["mode"], "read")
+        self.assertFalse(result["send_action"])
+        self.assertEqual(result["result"]["email_step_count"], 3)
+        self.assertEqual(result["result"]["decision"], "not_linked_to_leadscanner")
+        self.assertNotIn("PRIVATE SUBJECT", str(result))
+        self.assertNotIn("PRIVATE BODY", str(result))
+
+    def test_sequence_audit_fails_closed_on_mismatched_campaign(self):
+        class WrongCampaignClient:
+            def get_campaign(self, campaign_id):
+                return {"id": "other-campaign", "status": 0, "sequences": []}
+
+        command = {
+            "schema_version": "leadscanner-instantly-command/1.0",
+            "command_id": "audit-sequence-002",
+            "action": "audit_campaign_sequence",
+            "args": {"campaign_id": "c1"},
+            "confirm": "",
+            "requested_by": "chatgpt",
+        }
+        with self.assertRaisesRegex(RuntimeError, "campaign_readback_id_mismatch"):
+            execute_command(command, config(), WrongCampaignClient())
+
     def test_write_requires_exact_target_bound_confirmation(self):
         command = {
             "schema_version": "leadscanner-instantly-command/1.0",

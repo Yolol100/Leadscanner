@@ -28,6 +28,7 @@
 - Instantly stage mode must resume the exact successful, non-expired preview artifact from `main`; it must not rerun discovery, verification, research or copy generation.
 - Revalidate each approved snapshot lead against the current dedupe registry immediately before its Instantly mutation; suppress anything that appeared after preview.
 - Stage only into an Instantly campaign that is Draft or Paused. Preserve exact reviewed `leadscanner_subject`/`leadscanner_body` for the current one-step sequence; additionally expose verified first-party observation, evidence URL and proposed action as separate custom variables for a future Instantly-owned multi-step sequence. Reject missing campaign merge fields, and require exact lead/campaign/custom-variable readback before registry closure.
+- Before changing sequence/copy contracts, use the read-only `audit_campaign_sequence` command. Its report must never contain subject/body text; a three-step count alone does not prove that required merge fields exist or that an active campaign is safe to mutate.
 - Write `instantly_staged` to the canonical registry only after exact Instantly readback succeeds. A failed later lead must not invalidate already-closed prior staged leads; a retry reuses fresh dedupe to skip them safely.
 - Campaign activation remains separate from staging and requires the existing exact confirmation, sender health, lead verification and sending-status preflight.
 - Optional `draft` mode may still create mijn.host review drafts when explicitly requested; it is not the default outbound path.

@@ -2,7 +2,7 @@ import unittest
 
 import requests
 
-from instantly_client import FORBIDDEN_TOOL_NAMES, InstantlyClient, InstantlyError
+from instantly_client import FORBIDDEN_TOOL_NAMES, InstantlyClient, InstantlyError, inspect_campaign_sequence
 
 
 class FakeResponse:
@@ -293,6 +293,53 @@ class InstantlyClientTests(unittest.TestCase):
                 registry_rows=[],
             )
         self.assertEqual(len(session.calls), 1)
+
+    def test_sequence_audit_shows_legacy_copy_dependency_without_email_text(self):
+        report = inspect_campaign_sequence(campaign())
+        self.assertEqual(report["email_step_count"], 1)
+        self.assertEqual(report["email_variant_count"], 1)
+        self.assertTrue(report["reviewed_copy_required"])
+        self.assertEqual(report["decision"], "reviewed_mail_copy_still_required")
+        self.assertNotIn("Hoi", str(report))
+
+    def test_sequence_audit_detects_original_three_step_ai_template(self):
+        steps = [
+            {"type": "email", "variants": [
+                {"subject": "Vraagje", "body": "Hi {{firstName}}, {{aiIdeas}}"},
+                {"subject": "Voorstel", "body": "Hallo {{companyName}}, {{aiIdeas}}"},
+            ]} for _ in range(3)
+        ]
+        report = inspect_campaign_sequence(campaign(steps=steps))
+        self.assertEqual(report["email_step_count"], 3)
+        self.assertEqual(report["email_variant_count"], 6)
+        self.assertEqual(report["leadscanner_variables"], [])
+        self.assertIn("aiIdeas", report["other_template_variables"])
+        self.assertEqual(report["decision"], "not_linked_to_leadscanner")
+        self.assertFalse(report["evidence_only_template_candidate"])
+
+    def test_sequence_audit_marks_evidence_only_template_as_candidate(self):
+        steps = [
+            {"type": "email", "variants": [
+                {"subject": "Vraag", "body": "{{leadscanner_observation}}"},
+            ]},
+            {"type": "email", "variants": [
+                {"subject": "Idee", "body": "{{leadscanner_value_action}}"},
+            ]},
+            {"type": "email", "variants": [
+                {"subject": "Vervolg", "body": "Kan ik dit toelichten?"},
+            ]},
+        ]
+        report = inspect_campaign_sequence(campaign(steps=steps))
+        self.assertEqual(report["email_step_count"], 3)
+        self.assertEqual(report["decision"], "evidence_only_template_candidate")
+        self.assertTrue(report["evidence_only_template_candidate"])
+        self.assertFalse(report["reviewed_copy_required"])
+
+    def test_sequence_audit_rejects_malformed_variant(self):
+        with self.assertRaisesRegex(ValueError, "campaign_email_body_required"):
+            inspect_campaign_sequence(campaign(steps=[
+                {"type": "email", "variants": [{"subject": "Vraag", "body": ""}]},
+            ]))
 
     def test_live_registry_match_blocks_write(self):
         session = FakeSession([])

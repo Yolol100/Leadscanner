@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 from urllib.parse import quote
 
-from instantly_client import InstantlyClient, InstantlyError, SAFE_CAMPAIGN_STATUSES
+from instantly_client import InstantlyClient, InstantlyError, SAFE_CAMPAIGN_STATUSES, inspect_campaign_sequence
 from instantly_service import DEFAULT_REGISTRY_URL, DEFAULT_REPOSITORY, stage_exact_approved_lead
 
 SCHEMA_VERSION = "leadscanner-instantly-command/1.0"
@@ -24,7 +24,7 @@ COMMAND_PREFIX = "instantly-commands/inbox/"
 COMMAND_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{5,120}$")
 
 READ_ACTIONS = {
-    "list_campaigns", "get_campaign", "campaign_sending_status", "campaign_analytics",
+    "list_campaigns", "get_campaign", "audit_campaign_sequence", "campaign_sending_status", "campaign_analytics",
     "list_leads", "get_lead", "list_emails", "get_email", "count_unread_emails",
     "list_accounts", "get_account", "test_account_vitals", "warmup_analytics", "daily_account_analytics",
     "list_blocklist", "get_blocklist_entry", "get_background_job",
@@ -448,6 +448,14 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
         }
     elif action == "get_campaign":
         data = client.get_campaign(_text(args.get("campaign_id")))
+    elif action == "audit_campaign_sequence":
+        campaign_id = _text(args.get("campaign_id"))
+        if not campaign_id:
+            raise ValueError("campaign_id_required")
+        campaign = client.get_campaign(campaign_id)
+        if not isinstance(campaign, dict) or _text(campaign.get("id")) != campaign_id:
+            raise RuntimeError("campaign_readback_id_mismatch")
+        data = inspect_campaign_sequence(campaign)
     elif action == "campaign_sending_status":
         data = _api(client, "GET", f"/campaigns/{_id(args.get('campaign_id'), 'campaign_id')}/sending-status", params={"with_ai_summary": bool(args.get("with_ai_summary", False))})
     elif action == "campaign_analytics":

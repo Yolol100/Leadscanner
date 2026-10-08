@@ -24,6 +24,14 @@ reused.
 
 The file name must be exactly `<command_id>.json`.
 
+For a compact, copy-free decision on the current Instantly sequence, use
+`action: "audit_campaign_sequence"` with `args: {"campaign_id": "..."}`.
+This read-only action returns step/variant counts, referenced merge-field names,
+whether reviewed Leadscanner mail copy is still required, and whether the
+campaign is Draft/Paused. It does not return email subjects, bodies or leads.
+An `evidence_only_template_candidate` decision is structural only: it is not
+permission to change the campaign, bypass review or send email.
+
 ## Write command
 
 Every write needs an exact confirmation string bound to the action and its main
@@ -48,7 +56,7 @@ idempotency-key mechanism. Create a fresh command file for an intentional retry.
 ## Allowed actions
 
 Read:
-`list_campaigns`, `get_campaign`, `campaign_sending_status`,
+`list_campaigns`, `get_campaign`, `audit_campaign_sequence`, `campaign_sending_status`,
 `campaign_analytics`, `list_leads`, `get_lead`, `list_emails`,
 `get_email`, `count_unread_emails`, `list_accounts`, `get_account`,
 `warmup_analytics`, `daily_account_analytics`, `list_blocklist`,

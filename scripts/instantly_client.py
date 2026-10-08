@@ -63,13 +63,15 @@ def approved_custom_variables(row: dict) -> dict[str, str]:
     return variables
 
 
-def validate_campaign_personalization(campaign: dict, variables: dict[str, str]) -> None:
-    """Never stage into a sequence with missing Leadscanner merge fields."""
+def inspect_campaign_sequence(campaign: dict) -> dict:
+    """Audit sequence shape and merge-field names without exposing email copy."""
     sequences = campaign.get("sequences") if isinstance(campaign, dict) else None
     if not isinstance(sequences, list) or not sequences:
         raise ValueError("campaign_email_sequence_required")
 
-    referenced: set[str] = set()
+    template_variables: set[str] = set()
+    leadscanner_variables: set[str] = set()
+    email_step_count = 0
     email_variant_count = 0
     for sequence in sequences:
         if not isinstance(sequence, dict) or not isinstance(sequence.get("steps"), list):
@@ -82,6 +84,7 @@ def validate_campaign_personalization(campaign: dict, variables: dict[str, str])
             variants = step.get("variants")
             if not isinstance(variants, list) or not variants:
                 raise ValueError("campaign_email_variants_required")
+            email_step_count += 1
             for variant in variants:
                 if not isinstance(variant, dict):
                     raise ValueError("campaign_email_variant_invalid")
@@ -91,10 +94,60 @@ def validate_campaign_personalization(campaign: dict, variables: dict[str, str])
                     raise ValueError("campaign_email_body_required")
                 email_variant_count += 1
                 for name in VARIABLE_RE.findall(subject + "\n" + body):
+                    template_variables.add(name)
                     if name.casefold().startswith("leadscanner_"):
-                        referenced.add(name)
+                        leadscanner_variables.add(name)
 
-    if not email_variant_count or not referenced:
+    supported = {
+        "leadscanner_lead_id", "leadscanner_review_status",
+        "leadscanner_subject", "leadscanner_body",
+        "leadscanner_observation", "leadscanner_evidence_url",
+        "leadscanner_value_action", "leadscanner_signal_type",
+    }
+    unsupported = sorted(leadscanner_variables - supported)
+    reviewed_copy_required = bool(
+        {"leadscanner_subject", "leadscanner_body"} & leadscanner_variables
+    )
+    evidence_used = bool(
+        {"leadscanner_observation", "leadscanner_value_action"} & leadscanner_variables
+    )
+    if not email_step_count:
+        decision = "no_email_steps"
+    elif unsupported:
+        decision = "unsupported_leadscanner_fields"
+    elif not leadscanner_variables:
+        decision = "not_linked_to_leadscanner"
+    elif reviewed_copy_required:
+        decision = "reviewed_mail_copy_still_required"
+    elif evidence_used:
+        decision = "evidence_only_template_candidate"
+    else:
+        decision = "insufficient_first_party_personalization"
+
+    status = campaign.get("status")
+    return {
+        "schema_version": "leadscanner-campaign-sequence-audit/1.0",
+        "campaign_id": str(campaign.get("id") or "").strip(),
+        "campaign_status": status,
+        "staging_state_safe": type(status) is int and status in SAFE_CAMPAIGN_STATUSES,
+        "sequence_count": len(sequences),
+        "email_step_count": email_step_count,
+        "email_variant_count": email_variant_count,
+        "leadscanner_variables": sorted(leadscanner_variables),
+        "other_template_variables": sorted(template_variables - leadscanner_variables),
+        "unsupported_leadscanner_variables": unsupported,
+        "reviewed_copy_required": reviewed_copy_required,
+        "first_party_evidence_used": evidence_used,
+        "evidence_only_template_candidate": decision == "evidence_only_template_candidate",
+        "decision": decision,
+    }
+
+
+def validate_campaign_personalization(campaign: dict, variables: dict[str, str]) -> None:
+    """Never stage into a sequence with missing Leadscanner merge fields."""
+    report = inspect_campaign_sequence(campaign)
+    referenced = report["leadscanner_variables"]
+    if not report["email_variant_count"] or not referenced:
         raise ValueError("campaign_leadscanner_personalization_required")
     if any(not variables.get(name) for name in referenced):
         raise ValueError("campaign_personalization_variable_missing")
