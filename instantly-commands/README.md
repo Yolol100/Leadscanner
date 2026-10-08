@@ -27,7 +27,8 @@ The file name must be exactly `<command_id>.json`.
 For a compact, copy-free decision on the current Instantly sequence, use
 `action: "audit_campaign_sequence"` with `args: {"campaign_id": "..."}`.
 This read-only action returns step/variant counts, referenced merge-field names,
-whether reviewed Leadscanner mail copy is still required, and whether the
+whether reviewed Leadscanner mail copy is still required, the SHA-256
+sequence fingerprint, unmapped template variable names, and whether the
 campaign is Draft/Paused. It does not return email subjects, bodies or leads.
 An `evidence_only_template_candidate` decision is structural only: it is not
 permission to change the campaign, bypass review or send email.

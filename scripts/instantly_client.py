@@ -6,6 +6,8 @@ forward, test-send, warmup mutation, or sequence mutation operation.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import time
 from urllib.parse import quote, urlparse
@@ -18,6 +20,8 @@ BASE_URL = "https://api.instantly.ai/api/v2"
 SAFE_CAMPAIGN_STATUSES = {0, 2}  # Draft, Paused
 LEAD_ID_RE = re.compile(r"^growth-[0-9a-f]{20}$")
 VARIABLE_RE = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
+# Only these fields are guaranteed by the lead payload, not by Instantly enrichment.
+GUARANTEED_STANDARD_VARIABLES = frozenset({"email", "companyName", "website"})
 
 
 def approved_custom_variables(row: dict) -> dict[str, str]:
@@ -98,6 +102,9 @@ def inspect_campaign_sequence(campaign: dict) -> dict:
                     if name.casefold().startswith("leadscanner_"):
                         leadscanner_variables.add(name)
 
+    sequence_fingerprint = hashlib.sha256(
+        json.dumps(sequences, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
     supported = {
         "leadscanner_lead_id", "leadscanner_review_status",
         "leadscanner_subject", "leadscanner_body",
@@ -105,6 +112,7 @@ def inspect_campaign_sequence(campaign: dict) -> dict:
         "leadscanner_value_action", "leadscanner_signal_type",
     }
     unsupported = sorted(leadscanner_variables - supported)
+    unresolved = sorted(template_variables - leadscanner_variables - GUARANTEED_STANDARD_VARIABLES)
     reviewed_copy_required = bool(
         {"leadscanner_subject", "leadscanner_body"} & leadscanner_variables
     )
@@ -119,6 +127,8 @@ def inspect_campaign_sequence(campaign: dict) -> dict:
         decision = "not_linked_to_leadscanner"
     elif reviewed_copy_required:
         decision = "reviewed_mail_copy_still_required"
+    elif unresolved:
+        decision = "unresolved_template_fields"
     elif evidence_used:
         decision = "evidence_only_template_candidate"
     else:
@@ -131,11 +141,13 @@ def inspect_campaign_sequence(campaign: dict) -> dict:
         "campaign_status": status,
         "staging_state_safe": type(status) is int and status in SAFE_CAMPAIGN_STATUSES,
         "sequence_count": len(sequences),
+        "sequence_fingerprint": sequence_fingerprint,
         "email_step_count": email_step_count,
         "email_variant_count": email_variant_count,
         "leadscanner_variables": sorted(leadscanner_variables),
         "other_template_variables": sorted(template_variables - leadscanner_variables),
         "unsupported_leadscanner_variables": unsupported,
+        "unresolved_template_variables": unresolved,
         "reviewed_copy_required": reviewed_copy_required,
         "first_party_evidence_used": evidence_used,
         "evidence_only_template_candidate": decision == "evidence_only_template_candidate",
@@ -150,6 +162,8 @@ def validate_campaign_personalization(campaign: dict, variables: dict[str, str])
     if not report["email_variant_count"] or not referenced:
         raise ValueError("campaign_leadscanner_personalization_required")
     if any(not variables.get(name) for name in referenced):
+        raise ValueError("campaign_personalization_variable_missing")
+    if report["unresolved_template_variables"]:
         raise ValueError("campaign_personalization_variable_missing")
 
 
@@ -321,8 +335,10 @@ class InstantlyClient:
             raise ValueError("live_dedupe_match_blocks_instantly_mutation")
 
         campaign = self.get_campaign(campaign_id)
-        campaign_status = int(campaign.get("status"))
-        if campaign_status not in SAFE_CAMPAIGN_STATUSES:
+        if not isinstance(campaign, dict) or str(campaign.get("id") or "").strip() != str(campaign_id):
+            raise RuntimeError("campaign_readback_id_mismatch")
+        campaign_status = campaign.get("status")
+        if type(campaign_status) is not int or campaign_status not in SAFE_CAMPAIGN_STATUSES:
             raise ValueError("campaign_must_be_draft_or_paused")
 
         variables = approved_custom_variables(row)

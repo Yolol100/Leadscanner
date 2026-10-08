@@ -226,6 +226,57 @@ class InstantlyClientTests(unittest.TestCase):
             "appointment",
         )
 
+    def test_unmapped_ai_ideas_field_blocks_lead_write(self):
+        steps = [{"type": "email", "variants": [{
+            "subject": "Vraag", "body": "{{leadscanner_observation}} {{aiIdeas}}",
+        }]}]
+        report = inspect_campaign_sequence(campaign(steps=steps))
+        self.assertEqual(report["decision"], "unresolved_template_fields")
+        self.assertEqual(report["unresolved_template_variables"], ["aiIdeas"])
+        session = FakeSession([FakeResponse(payload=campaign(steps=steps))])
+        client = InstantlyClient("secret", session=session)
+        with self.assertRaisesRegex(ValueError, "campaign_personalization_variable_missing"):
+            client.add_approved_lead_to_campaign(
+                approved_batch=approved_batch(),
+                lead_id="growth-aaaaaaaaaaaaaaaaaaaa",
+                campaign_id="c1",
+                registry_rows=[],
+            )
+        self.assertEqual(len(session.calls), 1)
+
+    def test_unmapped_first_name_is_not_assumed_to_exist(self):
+        steps = [{"type": "email", "variants": [{
+            "subject": "Vraag", "body": "Hallo {{firstName}} {{leadscanner_observation}}",
+        }]}]
+        report = inspect_campaign_sequence(campaign(steps=steps))
+        self.assertEqual(report["unresolved_template_variables"], ["firstName"])
+
+    def test_sequence_fingerprint_changes_with_email_copy_not_campaign_state(self):
+        base = campaign()
+        report = inspect_campaign_sequence(base)
+        self.assertEqual(len(report["sequence_fingerprint"]), 64)
+        self.assertEqual(
+            report["sequence_fingerprint"],
+            inspect_campaign_sequence(campaign(status=0))["sequence_fingerprint"],
+        )
+        changed = campaign(steps=[{
+            "type": "email",
+            "variants": [{"subject": "{{leadscanner_subject}}", "body": "{{leadscanner_body}} extra"}],
+        }])
+        self.assertNotEqual(report["sequence_fingerprint"], inspect_campaign_sequence(changed)["sequence_fingerprint"])
+
+    def test_campaign_id_mismatch_blocks_lead_write(self):
+        session = FakeSession([FakeResponse(payload={**campaign(), "id": "wrong"})])
+        client = InstantlyClient("secret", session=session)
+        with self.assertRaisesRegex(RuntimeError, "campaign_readback_id_mismatch"):
+            client.add_approved_lead_to_campaign(
+                approved_batch=approved_batch(),
+                lead_id="growth-aaaaaaaaaaaaaaaaaaaa",
+                campaign_id="c1",
+                registry_rows=[],
+            )
+        self.assertEqual(len(session.calls), 1)
+
     def test_unknown_template_variable_blocks_lead_write(self):
         steps = [{"type": "email", "variants": [{
             "subject": "Hallo", "body": "{{leadscanner_not_supplied}}",
@@ -314,6 +365,7 @@ class InstantlyClientTests(unittest.TestCase):
         self.assertEqual(report["email_variant_count"], 6)
         self.assertEqual(report["leadscanner_variables"], [])
         self.assertIn("aiIdeas", report["other_template_variables"])
+        self.assertEqual(report["unresolved_template_variables"], ["aiIdeas", "firstName"])
         self.assertEqual(report["decision"], "not_linked_to_leadscanner")
         self.assertFalse(report["evidence_only_template_candidate"])
 
