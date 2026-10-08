@@ -1,0 +1,66 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "update-20261008-leadscanner-draft-three-step-sequence",
+  "action": "update_campaign",
+  "args": {
+    "campaign_id": "59c01c6e-86a6-4417-acab-76f114dca9c5",
+    "payload": {
+      "sequences": [
+        {
+          "steps": [
+            {
+              "type": "email",
+              "delay": 2,
+              "variants": [
+                {
+                  "subject": "Kleine websitekans",
+                  "body": "<div>Hallo,<br /><br />Op de website van {{companyName}} zag ik: {{leadscanner_observation}}<br /><br />Mijn voorstel is klein: {{leadscanner_value_action}}. Ik kan hiervan een kort voorbeeld uitwerken. Zal ik dat toesturen?<br /><br />Groet,<br />Andrew Baeten</div>"
+                },
+                {
+                  "subject": "Idee voor {{companyName}}",
+                  "body": "<div>Hallo,<br /><br />Bij het bekijken van {{companyName}} viel mij dit op: {{leadscanner_observation}}<br /><br />Ik kan een kleine voorbeeldvariant uitwerken rond {{leadscanner_value_action}}. Zal ik die met jullie delen?<br /><br />Groet,<br />Andrew Baeten</div>"
+                }
+              ],
+              "delay_unit": "days",
+              "pre_delay_unit": "days"
+            },
+            {
+              "type": "email",
+              "delay": 2,
+              "variants": [
+                {
+                  "subject": "Uw website, kort bekeken",
+                  "body": "<div>Hallo,<br /><br />Een korte aanvulling op mijn vorige bericht aan {{companyName}}. Ik kan één praktische websitevariant laten zien: {{leadscanner_value_action}}. Geen brede analyse, alleen een klein voorbeeld. Is dat welkom?<br /><br />Groet,<br />Andrew Baeten</div>"
+                },
+                {
+                  "subject": "Eén UX-idee",
+                  "body": "<div>Hallo,<br /><br />Nog één gedachte bij {{companyName}}: {{leadscanner_observation}}<br /><br />Daar kan ik een kleine verbetering als voorbeeld bij uitwerken: {{leadscanner_value_action}}. Zal ik die toesturen?<br /><br />Groet,<br />Andrew Baeten</div>"
+                }
+              ],
+              "delay_unit": "days",
+              "pre_delay_unit": "days"
+            },
+            {
+              "type": "email",
+              "delay": 3,
+              "variants": [
+                {
+                  "subject": "Zal ik dit sluiten?",
+                  "body": "<div>Hallo,<br /><br />Dit is mijn laatste bericht over {{companyName}}. Als {{leadscanner_value_action}} nu niet relevant is, laat ik het hierbij. Als een kort voorbeeld welkom is, stuur ik het graag toe.<br /><br />Groet,<br />Andrew Baeten</div>"
+                },
+                {
+                  "subject": "Laatste website-idee",
+                  "body": "<div>Hallo,<br /><br />Laatste bericht van mijn kant. Ik kan één klein websitevoorbeeld uitwerken op basis van {{leadscanner_observation}}. Als dit niet past, is een kort nee voldoende.<br /><br />Groet,<br />Andrew Baeten</div>"
+                }
+              ],
+              "delay_unit": "days",
+              "pre_delay_unit": "days"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "confirm": "EXECUTE update_campaign 59c01c6e-86a6-4417-acab-76f114dca9c5",
+  "requested_by": "chatgpt"
+}
