@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 
 from approval_revalidation import revalidate_approved
 from dedupe_preflight import candidate_identity
@@ -8,6 +9,14 @@ from review_selection import build_review_queue, select_approved
 
 
 class PipelineContractScenarioTests(unittest.TestCase):
+    def test_workflow_routes_fact_only_approval_to_fingerprint_guard(self):
+        workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/leads-cold.yml").read_text(encoding="utf-8")
+        self.assertIn("INPUT_INSTANTLY_SEQUENCE_APPROVAL: ${{ inputs.instantly_sequence_approval }}", workflow)
+        self.assertIn("sequence_approval=os.environ.get('INPUT_INSTANTLY_SEQUENCE_APPROVAL', '')", workflow)
+        self.assertIn("if: inputs.execution_mode == 'draft'\n        run: |", workflow)
+        self.assertIn("instantly_sequence_cannot_be_stored_as_mailbox_drafts", workflow)
+
+
     def candidate(self, *, source_type="official_site", evidence_text=None):
         return {
             "name_hint": "Acme Fietsen",

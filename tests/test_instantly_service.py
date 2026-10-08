@@ -75,12 +75,73 @@ class InstantlyServiceTests(unittest.TestCase):
         }
         client = FakeInstantlyClient()
         with patch.dict(os.environ, {"LEADSCANNER_INSTANTLY_WRITES_ENABLED": "true"}, clear=False):
-            with self.assertRaisesRegex(ValueError, "instantly_sequence_staging_not_yet_enabled"):
+            with self.assertRaisesRegex(ValueError, "instantly_sequence_approval_required"):
                 stage_approved_batch(
                     approved_batch=selected,
                     campaign_id="campaign-1",
                     instantly_api_key="key",
                     instantly_client=client,
+                )
+        self.assertEqual(client.calls, [])
+
+    @patch("instantly_service.update_registry")
+    @patch("instantly_service.revalidate_approved")
+    @patch("instantly_service.fetch_live_registry")
+    @patch("instantly_service.check_registry_access")
+    def test_fact_only_batch_passes_fingerprint_and_preserves_readback(
+        self, preflight_mock, fetch_registry_mock, revalidate_mock, update_mock
+    ):
+        row = {
+            **resolved()["row"],
+            "review_mode": "instantly_sequence",
+            "status": "sequence_facts_review",
+            "subject": "",
+            "body": "",
+        }
+        batch = {
+            "schema_version": "leadscanner-approved-review-draft-batch/1.0",
+            "rows": [row],
+            "approval": {"approved_count": 1, "automatic_send": False},
+        }
+        revalidate_mock.return_value = {
+            **resolved()["approved_current"],
+            "rows": [row],
+        }
+        fetch_registry_mock.return_value = []
+        update_mock.return_value = {"exact_readback": True}
+        client = FakeInstantlyClient()
+        sequence_approval = "APPROVE_INSTANTLY_SEQUENCE campaign-1 " + "a" * 64
+        with patch.dict(os.environ, {"LEADSCANNER_INSTANTLY_WRITES_ENABLED": "true"}, clear=False):
+            result = stage_approved_batch(
+                approved_batch=batch,
+                campaign_id="campaign-1",
+                instantly_api_key="key",
+                instantly_client=client,
+                sequence_approval=sequence_approval,
+            )
+        self.assertEqual(result["staged_count"], 1)
+        self.assertEqual(client.calls[0][1]["sequence_approval"], sequence_approval)
+        self.assertNotIn("leadscanner_subject", approved_custom_variables(row))
+        self.assertNotIn("leadscanner_body", approved_custom_variables(row))
+        update_mock.assert_called_once()
+
+    def test_mixed_review_modes_rejected_before_mutation(self):
+        legacy = resolved()["row"]
+        fact = {**legacy, "review_mode": "instantly_sequence", "status": "sequence_facts_review", "subject": "", "body": ""}
+        batch = {
+            "schema_version": "leadscanner-approved-review-draft-batch/1.0",
+            "rows": [legacy, fact],
+            "approval": {"approved_count": 2, "automatic_send": False},
+        }
+        client = FakeInstantlyClient()
+        with patch.dict(os.environ, {"LEADSCANNER_INSTANTLY_WRITES_ENABLED": "true"}, clear=False):
+            with self.assertRaisesRegex(ValueError, "mixed_or_unknown_review_modes_forbidden"):
+                stage_approved_batch(
+                    approved_batch=batch,
+                    campaign_id="campaign-1",
+                    instantly_api_key="key",
+                    instantly_client=client,
+                    sequence_approval="APPROVE_INSTANTLY_SEQUENCE campaign-1 " + "a" * 64,
                 )
         self.assertEqual(client.calls, [])
 

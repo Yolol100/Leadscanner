@@ -146,6 +146,7 @@ def stage_approved_batch(
     registry_url: str = DEFAULT_REGISTRY_URL,
     instantly_client: InstantlyClient | None = None,
     registry_session=requests,
+    sequence_approval: str = "",
     spreadsheet_id: str | None = None,
     sheet_name: str | None = None,
 ) -> dict:
@@ -160,8 +161,13 @@ def stage_approved_batch(
     approval = approved_batch.get("approval") or {}
     if not isinstance(rows, list):
         raise ValueError("approved_rows_must_be_list")
-    if any(isinstance(row, dict) and row.get("review_mode") == "instantly_sequence" for row in rows):
-        raise ValueError("instantly_sequence_staging_not_yet_enabled")
+    review_modes = {str(row.get("review_mode") or "reviewed_mail").strip() for row in rows if isinstance(row, dict)}
+    if not review_modes <= {"instantly_sequence", "reviewed_mail"} or len(review_modes) > 1:
+        raise ValueError("mixed_or_unknown_review_modes_forbidden")
+    if "instantly_sequence" in review_modes and not sequence_approval:
+        raise ValueError("instantly_sequence_approval_required")
+    if "instantly_sequence" not in review_modes and sequence_approval:
+        raise ValueError("sequence_approval_not_applicable_to_reviewed_mail")
     if approval.get("automatic_send") is not False:
         raise ValueError("automatic_send_must_be_false")
     if isinstance(approval.get("approved_count"), bool) or approval.get("approved_count") != len(rows):
@@ -217,6 +223,7 @@ def stage_approved_batch(
             lead_id=_text(current_row.get("lead_id")),
             campaign_id=campaign,
             registry_rows=fresh_registry_rows,
+            sequence_approval=sequence_approval,
         )
         instantly_id = _text((created or {}).get("id"))
         if not instantly_id:
@@ -242,6 +249,7 @@ def stage_approved_batch(
         "schema_version": "leadscanner-instantly-stage-batch/1.0",
         "status": "green",
         "campaign_id": campaign,
+        "approved_sequence_fingerprint": sequence_approval.rsplit(" ", 1)[-1] if sequence_approval else None,
         "requested_count": len(rows),
         "staged_count": len(staged),
         "suppressed_count": suppressed,
@@ -263,6 +271,7 @@ def stage_exact_approved_lead(
     instantly_client: InstantlyClient | None = None,
     github_session=requests,
     registry_session=requests,
+    sequence_approval: str = "",
     spreadsheet_id: str | None = None,
     sheet_name: str | None = None,
 ) -> dict:
@@ -277,8 +286,10 @@ def stage_exact_approved_lead(
         registry_session=registry_session,
     )
     row = resolved["row"]
-    if row.get("review_mode") == "instantly_sequence":
-        raise ValueError("instantly_sequence_staging_not_yet_enabled")
+    if row.get("review_mode") == "instantly_sequence" and not sequence_approval:
+        raise ValueError("instantly_sequence_approval_required")
+    if row.get("review_mode") != "instantly_sequence" and sequence_approval:
+        raise ValueError("sequence_approval_not_applicable_to_reviewed_mail")
     resolved_spreadsheet_id = (
         spreadsheet_id
         or os.getenv("LEAD_REGISTRY_SPREADSHEET_ID", "").strip()
@@ -309,6 +320,7 @@ def stage_exact_approved_lead(
         lead_id=_text(row.get("lead_id")),
         campaign_id=_text(campaign_id),
         registry_rows=fresh_registry_rows,
+        sequence_approval=sequence_approval,
     )
     instantly_id = _text((created or {}).get("id"))
     if not instantly_id:
@@ -331,6 +343,7 @@ def stage_exact_approved_lead(
         "preview_id": resolved["snapshot"]["preview_id"],
         "lead_id": _text(row.get("lead_id")),
         "campaign_id": _text(campaign_id),
+        "approved_sequence_fingerprint": sequence_approval.rsplit(" ", 1)[-1] if sequence_approval else None,
         "instantly_lead_id": instantly_id,
         "instantly_readback": True,
         "registry_exact_readback": True,

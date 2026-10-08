@@ -29,20 +29,35 @@ def approved_custom_variables(row: dict) -> dict[str, str]:
     lead_id = str(row.get("lead_id") or "").strip()
     subject = str(row.get("subject") or "").strip()
     body = str(row.get("body") or "").strip()
-    if not lead_id or not subject or not body:
+    mode = str(row.get("review_mode") or "reviewed_mail").strip()
+    if mode not in {"reviewed_mail", "instantly_sequence"}:
+        raise ValueError("unsupported_review_mode")
+    if mode == "instantly_sequence":
+        if not lead_id:
+            raise ValueError("approved_lead_id_required")
+        if row.get("status") != "sequence_facts_review" or subject or body:
+            raise ValueError("sequence_facts_must_not_include_mail_copy")
+    elif not lead_id or not subject or not body:
         raise ValueError("reviewed_lead_copy_required")
     variables = {
         "leadscanner_lead_id": lead_id,
         "leadscanner_review_status": "approved",
-        "leadscanner_subject": subject,
-        "leadscanner_body": body,
     }
+    if mode == "reviewed_mail":
+        variables.update({
+            "leadscanner_subject": subject,
+            "leadscanner_body": body,
+        })
 
     observation = str(row.get("verified_observation") or "").strip()
     evidence_url = str(row.get("verified_observation_source_url") or "").strip()
     source_type = str(row.get("verified_observation_source_type") or "").strip()
     value_action = str(row.get("value_first_action") or "").strip()
     signal_type = str(row.get("signal_type") or "").strip()
+    if mode == "instantly_sequence" and not all((
+        observation, evidence_url, value_action, signal_type,
+    )):
+        raise ValueError("sequence_facts_require_verified_personalization")
     if any((observation, evidence_url, source_type, value_action, signal_type)):
         if not all((observation, evidence_url, value_action)) or source_type != "official_site":
             raise ValueError("verified_first_party_personalization_required")
@@ -160,16 +175,43 @@ def inspect_campaign_sequence(campaign: dict) -> dict:
     }
 
 
-def validate_campaign_personalization(campaign: dict, variables: dict[str, str]) -> None:
-    """Never stage into a sequence with missing Leadscanner merge fields."""
+def validate_campaign_personalization(
+    campaign: dict,
+    variables: dict[str, str],
+    *,
+    review_mode: str = "reviewed_mail",
+    sequence_approval: str = "",
+) -> None:
+    """Require a reviewed three-step Draft sequence before fact-only staging."""
     report = inspect_campaign_sequence(campaign)
-    referenced = report["leadscanner_variables"]
+    referenced = set(report["leadscanner_variables"])
     if not report["email_variant_count"] or not referenced:
         raise ValueError("campaign_leadscanner_personalization_required")
     if any(not variables.get(name) for name in referenced):
         raise ValueError("campaign_personalization_variable_missing")
     if report["unresolved_template_variables"]:
         raise ValueError("campaign_personalization_variable_missing")
+    if review_mode == "instantly_sequence":
+        if (
+            report["sequence_count"] != 1
+            or report["email_step_count"] != 3
+            or report["decision"] != "evidence_only_template_candidate"
+            or not {"leadscanner_observation", "leadscanner_value_action"} <= referenced
+            or {"leadscanner_subject", "leadscanner_body"} & referenced
+        ):
+            raise ValueError("approved_three_step_evidence_sequence_required")
+        if report["campaign_status"] != 0 or type(report["campaign_status"]) is not int:
+            raise ValueError("sequence_campaign_must_be_draft")
+        expected = (
+            "APPROVE_INSTANTLY_SEQUENCE "
+            + report["campaign_id"] + " " + report["sequence_fingerprint"]
+        )
+        if sequence_approval != expected:
+            raise ValueError("instantly_sequence_approval_fingerprint_mismatch")
+    elif review_mode != "reviewed_mail":
+        raise ValueError("unsupported_review_mode")
+    elif sequence_approval:
+        raise ValueError("sequence_approval_not_applicable_to_reviewed_mail")
 
 
 
@@ -308,6 +350,7 @@ class InstantlyClient:
         lead_id: str,
         campaign_id: str,
         registry_rows: list[dict],
+        sequence_approval: str = "",
     ):
         """Add one exact approved lead, but only to a non-sending campaign state."""
         if approved_batch.get("schema_version") != "leadscanner-approved-revalidation/1.0":
@@ -324,8 +367,16 @@ class InstantlyClient:
         row = rows[0]
         if not LEAD_ID_RE.fullmatch(str(lead_id or "")):
             raise ValueError("invalid_leadscanner_lead_id")
-        if row.get("status") != "review_draft" or row.get("contact_basis_status") != "review_required":
+        review_mode = str(row.get("review_mode") or "reviewed_mail").strip()
+        required_status = "sequence_facts_review" if review_mode == "instantly_sequence" else "review_draft"
+        if (
+            review_mode not in {"instantly_sequence", "reviewed_mail"}
+            or row.get("status") != required_status
+            or row.get("contact_basis_status") != "review_required"
+        ):
             raise ValueError("review_approval_contract_required")
+        if review_mode == "instantly_sequence" and not sequence_approval:
+            raise ValueError("instantly_sequence_approval_required")
         if row.get("automatic_send") is not False:
             raise ValueError("automatic_send_must_be_false")
 
@@ -347,7 +398,11 @@ class InstantlyClient:
             raise ValueError("campaign_must_be_draft_or_paused")
 
         variables = approved_custom_variables(row)
-        validate_campaign_personalization(campaign, variables)
+        validate_campaign_personalization(
+            campaign, variables,
+            review_mode=review_mode,
+            sequence_approval=sequence_approval,
+        )
         payload = {
             "campaign": campaign_id,
             "email": str(row.get("email") or "").strip(),

@@ -652,6 +652,7 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
             repository=os.getenv("GITHUB_REPOSITORY", DEFAULT_REPOSITORY).strip() or DEFAULT_REPOSITORY,
             registry_url=os.getenv("DEDUPE_REGISTRY_CSV_URL", DEFAULT_REGISTRY_URL).strip() or DEFAULT_REGISTRY_URL,
             instantly_client=client,
+            sequence_approval=_text(args.get("sequence_approval")),
         )
     else:
         raise ValueError("unsupported_instantly_action")

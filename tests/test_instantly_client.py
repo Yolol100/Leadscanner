@@ -63,7 +63,144 @@ def campaign(*, steps=None, status=2):
     return {"id": "c1", "status": status, "sequences": [{"steps": steps}]}
 
 
+def approved_facts_batch():
+    batch = approved_batch()
+    batch["rows"][0].update({
+        "review_mode": "instantly_sequence",
+        "status": "sequence_facts_review",
+        "subject": "",
+        "body": "",
+    })
+    return batch
+
+
+def evidence_three_steps():
+    return [
+        {"type": "email", "variants": [{
+            "subject": "Vraag", "body": "Ik zag {{leadscanner_observation}}.",
+        }]},
+        {"type": "email", "variants": [{
+            "subject": "Een voorstel", "body": "Een idee: {{leadscanner_value_action}}.",
+        }]},
+        {"type": "email", "variants": [{
+            "subject": "Vervolg", "body": "Laat gerust weten als dit niet relevant is.",
+        }]},
+    ]
+
+
+def approval_for(target):
+    return (
+        "APPROVE_INSTANTLY_SEQUENCE "
+        + target["id"] + " " + inspect_campaign_sequence(target)["sequence_fingerprint"]
+    )
+
+
 class InstantlyClientTests(unittest.TestCase):
+    def test_fact_only_draft_three_step_stages_without_email_copy(self):
+        target = campaign(steps=evidence_three_steps(), status=0)
+        session = FakeSession([
+            FakeResponse(payload=target),
+            FakeResponse(payload={"id": "instantly-lead-1"}),
+        ])
+        client = InstantlyClient("secret", session=session)
+        client.add_approved_lead_to_campaign(
+            approved_batch=approved_facts_batch(),
+            lead_id="growth-aaaaaaaaaaaaaaaaaaaa",
+            campaign_id="c1",
+            registry_rows=[],
+            sequence_approval=approval_for(target),
+        )
+        self.assertEqual([call[0] for call in session.calls], ["GET", "POST"])
+        vars = session.calls[1][2]["json"]["custom_variables"]
+        self.assertNotIn("leadscanner_subject", vars)
+        self.assertNotIn("leadscanner_body", vars)
+        self.assertEqual(vars["leadscanner_observation"], approved_batch()["rows"][0]["verified_observation"])
+        self.assertEqual(vars["leadscanner_value_action"], approved_batch()["rows"][0]["value_first_action"])
+
+    def test_fact_only_requires_explicit_campaign_fingerprint_approval(self):
+        target = campaign(steps=evidence_three_steps(), status=0)
+        session = FakeSession([FakeResponse(payload=target)])
+        client = InstantlyClient("secret", session=session)
+        with self.assertRaisesRegex(ValueError, "instantly_sequence_approval_required"):
+            client.add_approved_lead_to_campaign(
+                approved_batch=approved_facts_batch(),
+                lead_id="growth-aaaaaaaaaaaaaaaaaaaa",
+                campaign_id="c1",
+                registry_rows=[],
+            )
+        self.assertEqual(session.calls, [])
+
+    def test_fact_only_rejects_changed_campaign_fingerprint(self):
+        target = campaign(steps=evidence_three_steps(), status=0)
+        changed = campaign(steps=evidence_three_steps(), status=0)
+        changed["sequences"][0]["steps"][2]["variants"][0]["body"] += " gewijzigd"
+        session = FakeSession([FakeResponse(payload=changed)])
+        client = InstantlyClient("secret", session=session)
+        with self.assertRaisesRegex(ValueError, "instantly_sequence_approval_fingerprint_mismatch"):
+            client.add_approved_lead_to_campaign(
+                approved_batch=approved_facts_batch(),
+                lead_id="growth-aaaaaaaaaaaaaaaaaaaa",
+                campaign_id="c1",
+                registry_rows=[],
+                sequence_approval=approval_for(target),
+            )
+        self.assertEqual(len(session.calls), 1)
+
+    def test_fact_only_rejects_paused_and_active_campaigns(self):
+        for status in (1, 2):
+            target = campaign(steps=evidence_three_steps(), status=status)
+            session = FakeSession([FakeResponse(payload=target)])
+            client = InstantlyClient("secret", session=session)
+            with self.assertRaisesRegex(ValueError, "campaign_must_be_draft_or_paused|sequence_campaign_must_be_draft"):
+                client.add_approved_lead_to_campaign(
+                    approved_batch=approved_facts_batch(),
+                    lead_id="growth-aaaaaaaaaaaaaaaaaaaa",
+                    campaign_id="c1",
+                    registry_rows=[],
+                    sequence_approval=approval_for(target),
+                )
+            self.assertEqual(len(session.calls), 1)
+
+    def test_fact_only_rejects_one_step_and_unmapped_variables(self):
+        for steps in (
+            evidence_three_steps()[:1],
+            [
+                {**step, "variants": [dict(step["variants"][0])]}
+                for step in evidence_three_steps()
+            ],
+        ):
+            if len(steps) == 3:
+                steps[0]["variants"][0]["body"] += " {{aiIdeas}}"
+            target = campaign(steps=steps, status=0)
+            session = FakeSession([FakeResponse(payload=target)])
+            client = InstantlyClient("secret", session=session)
+            with self.assertRaisesRegex(ValueError, "approved_three_step_evidence_sequence_required|campaign_personalization_variable_missing"):
+                client.add_approved_lead_to_campaign(
+                    approved_batch=approved_facts_batch(),
+                    lead_id="growth-aaaaaaaaaaaaaaaaaaaa",
+                    campaign_id="c1",
+                    registry_rows=[],
+                    sequence_approval=approval_for(target),
+                )
+            self.assertEqual(len(session.calls), 1)
+
+    def test_fact_only_rejects_unapproved_generated_copy(self):
+        batch = approved_facts_batch()
+        batch["rows"][0]["body"] = "Unapproved mail"
+        target = campaign(steps=evidence_three_steps(), status=0)
+        session = FakeSession([FakeResponse(payload=target)])
+        client = InstantlyClient("secret", session=session)
+        with self.assertRaisesRegex(ValueError, "sequence_facts_must_not_include_mail_copy"):
+            client.add_approved_lead_to_campaign(
+                approved_batch=batch,
+                lead_id="growth-aaaaaaaaaaaaaaaaaaaa",
+                campaign_id="c1",
+                registry_rows=[],
+                sequence_approval=approval_for(target),
+            )
+        self.assertEqual(len(session.calls), 1)
+
+
     def test_read_methods_use_v2_and_bearer(self):
         session = FakeSession([FakeResponse(payload={"items": []})])
         client = InstantlyClient("secret", session=session)

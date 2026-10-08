@@ -33,6 +33,18 @@ campaign is Draft/Paused. It does not return email subjects, bodies or leads.
 An `evidence_only_template_candidate` decision is structural only: it is not
 permission to change the campaign, bypass review or send email.
 
+## Evidence-only three-email campaign approval
+
+A default `instantly_sequence` preview does not generate a separate email. To stage an approved lead, first audit a **Draft** campaign using `audit_campaign_sequence`. The audit must show exactly one sequence and **three email steps**, no unresolved template fields, no `leadscanner_subject` or `leadscanner_body`, and both `leadscanner_observation` and `leadscanner_value_action` in the template. Review the actual subjects, bodies, variants and legal/contact basis in Instantly independently; the copy-free audit does not certify those.
+
+The command `stage_approved_lead` accepts an additional `args.sequence_approval` value:
+
+```text
+APPROVE_INSTANTLY_SEQUENCE <campaign_id> <sequence_fingerprint>
+```
+
+Use the exact fingerprint returned by the read-only audit. The existing exact command confirmation and exact lead approval token are **also required**. Each lead write re-reads the campaign and rejects changed fingerprints, unsafe campaign status or missing variables. A fact-only review can never stage into an Active or Paused campaign. No campaign is activated or email sent by staging.
+
 ## Write command
 
 Every write needs an exact confirmation string bound to the action and its main

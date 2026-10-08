@@ -2,6 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from instantly_client import InstantlyError
 from instantly_control import (
@@ -296,6 +297,29 @@ class InstantlyControlTests(unittest.TestCase):
         }
         with self.assertRaisesRegex(ValueError, "exact_confirmation_required"):
             execute_command(command, config(), FakeClient())
+
+    @patch("instantly_control.stage_exact_approved_lead")
+    @patch("instantly_control._env")
+    def test_stage_command_passes_exact_sequence_approval(self, env_mock, stage_mock):
+        env_mock.side_effect = lambda key: {"INSTANTLY_API_KEY": "key", "LEADSCANNER_GITHUB_TOKEN": "gh"}[key]
+        stage_mock.return_value = {"status": "green", "automatic_send": False}
+        args = {
+            "preview_run_id": 123,
+            "approval_token": "growth-aaaaaaaaaaaaaaaaaaaa@1111111111111111",
+            "campaign_id": "campaign-1",
+            "sequence_approval": "APPROVE_INSTANTLY_SEQUENCE campaign-1 " + "a" * 64,
+        }
+        command = {
+            "schema_version": "leadscanner-instantly-command/1.0",
+            "command_id": "stage-approved-confirm-002",
+            "action": "stage_approved_lead",
+            "args": args,
+            "confirm": expected_confirmation("stage_approved_lead", args),
+            "requested_by": "chatgpt",
+        }
+        result = execute_command(command, config(), FakeClient())
+        self.assertEqual(result["status"], "green")
+        self.assertEqual(stage_mock.call_args.kwargs["sequence_approval"], args["sequence_approval"])
 
     def test_result_writer_redacts_nested_credentials(self):
         with tempfile.TemporaryDirectory() as tmp:
