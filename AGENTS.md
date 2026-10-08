@@ -4,7 +4,7 @@
 - Build a fast cold-lead pipeline from a clean slate.
 - Keep only the active cold-pipeline dependency closure. Legacy Google Maps adapters, remediation scripts, old mailbox bridges, pricing/scoring code and their tests have been removed.
 - The Google Sheet Lead Dedupe Registry is the only retained historical lead source and is suppression-only.
-- The primary active phases are preview discovery/filter -> historical dedupe -> identity/domain/contact verification -> bounded first-party research -> one evidence-backed outreach reason -> one proposed value-first action -> short validated cold mail -> human review queue -> immutable preview snapshot -> exact approval selection -> fresh live dedupe revalidation -> Instantly staging into a Draft/Paused campaign -> exact Instantly readback -> canonical dedupe-registry closure -> explicit separate campaign activation -> scheduled Instantly reconciliation.
+- The primary active phases are preview discovery/filter -> historical dedupe -> identity/domain/contact verification -> bounded first-party research -> one evidence-backed outreach reason -> one proposed value-first action -> verified-facts-only review (default; no per-lead email) or legacy validated mail -> human review queue -> immutable preview snapshot -> exact approval selection -> fresh live dedupe revalidation -> Instantly staging into a Draft/Paused campaign -> exact Instantly readback -> canonical dedupe-registry closure -> explicit separate campaign activation -> scheduled Instantly reconciliation.
 - The cold discovery/review pipeline and Instantly staging must never auto-send. Campaign activation is a separate user-confirmed send-capable action. The optional mijn.host draft path is fallback-only and not part of the primary outbound route.
 
 ## Execution rules
@@ -17,18 +17,18 @@
 - Research only candidates with `ready_for_research=true` and fetch at most two extra first-party pages per candidate.
 - After research, select exactly one concrete first-party customer-action signal (appointment/booking, quote request, reservation or ordering) or hold the lead. Generic quality, service, catalog or brand language never qualifies.
 - Map that reason to exactly one small proposed example; never claim an artifact already exists.
-- Generate at most one short cold mail with one CTA, no meeting pressure, and no price/ROI/result claim.
+- Default `preview_copy_mode=instantly_sequence` must not generate a per-lead email; it reviews verified official-site facts only. Use `preview_copy_mode=reviewed_mail` only for the legacy Instantly template or optional mijn.host fallback. If generating legacy copy, use one CTA, no meeting pressure, and no price/ROI/result claim.
 - Every preview must emit privacy-safe `funnel-metrics.json` with stage rejection totals and `coverage-audit.json` with Overture operational-supply status.
 - Do not add a second discovery source from a single thin/gap run; broaden the current query first and require repeated independent gap evidence before deliberate source expansion.
 - Default every manual execution to `preview`; preview must not require mailbox or Google write credentials and must not mutate either system.
 - Every preview must emit `review-queue.json`, `review-queue.md`, and `review-queue.csv` with one approval token per reviewable lead.
-- Bind each approval token to the exact lead ID, subject, body, evidence and proposed value action; changed copy must invalidate the token.
+- Bind each approval token to the exact lead ID, verified evidence and proposed action; bind subject/body as well in legacy mail mode. Changed reviewed content must invalidate the token.
 - Seal every preview into a digest-bound `preview-snapshot.json` containing source repository/run/commit, the review batch, review queue, request and preview manifest.
 - The primary mutation mode is `execution_mode=instantly_stage`. It requires `confirm_instantly_stage=true`, a numeric `preview_run_id`, at least one exact `approved_review_tokens` value, and an explicit `instantly_campaign_id`.
 - Instantly stage mode must resume the exact successful, non-expired preview artifact from `main`; it must not rerun discovery, verification, research or copy generation.
 - Revalidate each approved snapshot lead against the current dedupe registry immediately before its Instantly mutation; suppress anything that appeared after preview.
 - Stage only into an Instantly campaign that is Draft or Paused. Preserve exact reviewed `leadscanner_subject`/`leadscanner_body` for the current one-step sequence; additionally expose verified first-party observation, evidence URL and proposed action as separate custom variables for a future Instantly-owned multi-step sequence. Reject missing campaign merge fields, and require exact lead/campaign/custom-variable readback before registry closure.
-- Before changing sequence/copy contracts, use the read-only `audit_campaign_sequence` command. Its report must never contain subject/body text; a three-step count alone does not prove that required merge fields exist or that an active campaign is safe to mutate.
+- Before changing sequence/copy contracts, use the read-only `audit_campaign_sequence` command. Its report must never contain subject/body text; a three-step count alone does not prove that required merge fields exist or that an active campaign is safe to mutate. Audit the sequence fingerprint and unmapped merge fields. Fact-only previews must never be staged or saved as mailbox drafts until a separately approved campaign-level contract and compliance gate exist.
 - Write `instantly_staged` to the canonical registry only after exact Instantly readback succeeds. A failed later lead must not invalidate already-closed prior staged leads; a retry reuses fresh dedupe to skip them safely.
 - Campaign activation remains separate from staging and requires the existing exact confirmation, sender health, lead verification and sending-status preflight.
 - Optional `draft` mode may still create mijn.host review drafts when explicitly requested; it is not the default outbound path.

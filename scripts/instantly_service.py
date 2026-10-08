@@ -160,6 +160,8 @@ def stage_approved_batch(
     approval = approved_batch.get("approval") or {}
     if not isinstance(rows, list):
         raise ValueError("approved_rows_must_be_list")
+    if any(isinstance(row, dict) and row.get("review_mode") == "instantly_sequence" for row in rows):
+        raise ValueError("instantly_sequence_staging_not_yet_enabled")
     if approval.get("automatic_send") is not False:
         raise ValueError("automatic_send_must_be_false")
     if isinstance(approval.get("approved_count"), bool) or approval.get("approved_count") != len(rows):
@@ -275,6 +277,8 @@ def stage_exact_approved_lead(
         registry_session=registry_session,
     )
     row = resolved["row"]
+    if row.get("review_mode") == "instantly_sequence":
+        raise ValueError("instantly_sequence_staging_not_yet_enabled")
     resolved_spreadsheet_id = (
         spreadsheet_id
         or os.getenv("LEAD_REGISTRY_SPREADSHEET_ID", "").strip()

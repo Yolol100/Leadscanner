@@ -2,7 +2,7 @@ import unittest
 
 from approval_revalidation import revalidate_approved
 from dedupe_preflight import candidate_identity
-from outreach_stages import choose_value_actions, generate_mails, select_reasons
+from outreach_stages import choose_value_actions, generate_mails, generate_sequence_facts, select_reasons
 from review_draft_stages import prepare_review_batch
 from review_selection import build_review_queue, select_approved
 
@@ -36,6 +36,23 @@ class PipelineContractScenarioTests(unittest.TestCase):
         queue = build_review_queue(batch)
         self.assertEqual(queue["review_candidate_count"], 1)
         return select_approved(batch, queue["items"][0]["approval_token"])
+
+    def test_evidence_only_path_approves_facts_without_generating_copy(self):
+        selected = select_reasons({"candidates": [self.candidate()]})
+        valued = choose_value_actions(selected)
+        facts = generate_sequence_facts(valued)
+        self.assertEqual(facts["ready_for_human_review_count"], 1)
+        batch = prepare_review_batch(facts)
+        queue = build_review_queue(batch)
+        self.assertEqual(queue["review_candidate_count"], 1)
+        approved = select_approved(batch, queue["items"][0]["approval_token"])
+        revalidated = revalidate_approved(approved, [])
+        self.assertEqual(revalidated["remaining_count"], 1)
+        row = revalidated["rows"][0]
+        self.assertEqual(row["review_mode"], "instantly_sequence")
+        self.assertEqual(row["subject"], "")
+        self.assertEqual(row["body"], "")
+        self.assertFalse(row["automatic_send"])
 
     def test_positive_signal_reaches_exact_approval_and_live_revalidation(self):
         approved = self.build_approved()

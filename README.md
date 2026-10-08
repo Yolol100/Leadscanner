@@ -8,7 +8,7 @@ The only active GitHub workflow is `.github/workflows/leads-cold.yml`.
 
 Manual dispatch has three modes:
 
-- `preview` (default): runs discovery, verification, research and mail generation, then exports the human review queue. Preview is mutation-free.
+- `preview` (default): runs discovery, verification and first-party research, then exports a human review queue. `preview_copy_mode=instantly_sequence` (default) reviews only verified facts and generates **no separate lead email**; `preview_copy_mode=reviewed_mail` retains the short-email fallback. Both are mutation-free.
 - `instantly_stage` (**primary outbound route**): requires `confirm_instantly_stage=true`, the reviewed `preview_run_id`, one or more exact `approved_review_tokens`, and an `instantly_campaign_id`. It resumes the sealed preview, revalidates dedupe immediately before each mutation, and stages approved leads into a Draft/Paused Instantly campaign. It never activates the campaign.
 - `draft` (optional fallback): keeps the existing mijn.host review-draft path for manual mailbox review. It is not the primary outbound route.
 
@@ -21,11 +21,11 @@ Current manual run:
 5. **Bounded research** — only for verified candidates with a public business email, reuse the homepage text already fetched during verification and visit at most two additional relevant first-party pages. Store sourced visible-text evidence only; add no inferred pain.
 6. **Outreach reason** — select exactly one concrete first-party customer action or hold. Only appointment/booking, quote-request, reservation or ordering flows qualify. Generic quality, service, craftsmanship, customization, company descriptions, service/product catalogs, opening hours, prices/percentages, reviews and directory evidence do not qualify.
 7. **Value-first action** — map the selected signal to one small proposed website example. The pipeline uses proposed-language only and never claims the artifact already exists.
-8. **Mail generation + semantic QA** — create one short NL/EN cold email only for a concrete customer-action signal, with one observation, one proposed example, one low-friction CTA and an easy no. Subject <=8 words; body <=100 words; no meeting pressure, price, ROI, percentage or unsupported result claim.
-9. **Review-draft preparation** — create a deterministic `growth-<20 hex>` lead ID from official domain + verified public email and build only `review_draft` / `review_required` rows.
+8. **Review content** — by default export the verified observation, official evidence URL and proposed action **without generating an email**. For `preview_copy_mode=reviewed_mail` only, generate and validate one short NL/EN cold email for the legacy or mijn.host draft path.
+9. **Review preparation** — create a deterministic `growth-<20 hex>` lead ID from official domain + verified public email. Evidence-only rows use `sequence_facts_review`; legacy rows use `review_draft`. Both require human review.
 10. **Funnel diagnostics** — emit privacy-safe stage counts and exact rejection-reason totals for cheap filters, dedupe, verification, research, outreach and mail QA. No prospect copy, company names or email addresses are included in the metrics artifact.
 11. **Overture coverage audit** — compare raw/filtered/deduped candidate supply with the requested verification capacity. Classify the run as sufficient, sufficient-with-buffer, thin, gap or configuration-limited. Never auto-add a second source from one run.
-12. **Human review queue** — export every reviewable lead with company, domain, verified email, signal, evidence URL, proposed value, subject, body and an approval token. The token fingerprint includes the exact copy/evidence, so a changed rerun becomes stale and is rejected.
+12. **Human review queue** — export company, domain, verified email, signal, evidence URL, proposed value and an exact approval token. Subject/body appear **only** in reviewed-mail mode. Tokens bind to the exact facts and, when applicable, copy; changed evidence or copy invalidates approval.
 13. **Immutable preview snapshot** — seal request, review batch, review queue and preview manifest into `preview-snapshot.json` with a content digest and source run/commit provenance. Preview artifacts are retained for 7 days.
 14. **Fast sealed-preview resume** — mutation modes load the exact artifact from `preview_run_id`, verify the successful workflow-dispatch run, repository, `main` branch, commit SHA and snapshot digest, and never repeat discovery/research.
 15. **Exact approval selection** — only explicitly pasted preview tokens are accepted; there is no `all` wildcard and unknown/stale tokens fail closed.
@@ -89,3 +89,9 @@ Every preview now emits `funnel-metrics.json` and `coverage-audit.json` in addit
 - Rotterdam physiotherapy preview `37626656135`: 30 Overture candidates, 13 research-ready, 2 concrete appointment signals and 2 review mails. This confirms the stricter gate still passes real customer-action evidence.
 - Overture coverage benchmark at 10 km found sufficient supply for painter, restaurant, dentist, real-estate and hair-salon searches. Bicycle stores were thin at 17 candidates; widening to 15 km produced 30 and removed the gap.
 - Current decision: **do not add a second discovery source**. Broaden Overture query/radius first; only deliberate source expansion after repeated independent gap evidence.
+
+## Three-step Instantly migration gate
+
+The existing live campaign currently has a one-step legacy template. Its active status means no new leads may be staged into it through Leadscanner. The read-only `audit_campaign_sequence` action reports the live step/variant count, referenced merge fields and SHA-256 sequence fingerprint without exposing email bodies. Unmapped variables such as `{{aiIdeas}}` are rejected rather than silently replaced with blank text.
+
+`preview_copy_mode=instantly_sequence` removes redundant per-lead email generation **in preview only**. Its fact-only approvals cannot yet be used with `instantly_stage` or `draft`: both fail closed before external mutation. Before enabling that handoff, the three Instantly steps/variants, compliance basis, exact sequence fingerprint, variable mapping and separate campaign approval must be verified on a Draft/Paused campaign. Do not activate, pause, edit or send from the active campaign as part of this migration without explicit authorization. The `reviewed_mail` path remains available for the current legacy template and the optional mijn.host draft fallback.

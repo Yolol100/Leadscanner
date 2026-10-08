@@ -43,6 +43,32 @@ class ReviewSelectionTests(unittest.TestCase):
             ]
         })
 
+    def test_sequence_facts_queue_has_no_mail_and_tokens_bind_to_evidence(self):
+        candidate = self.candidate()
+        candidate.update({
+            "review_mode": "instantly_sequence",
+            "mail_status": "ready_for_sequence_review",
+            "copy_validation_status": "not_applicable",
+            "subject": None,
+            "body": None,
+            "outreach_status": "ready",
+            "value_action_status": "proposed",
+        })
+        batch = prepare_review_batch({"candidates": [candidate]})
+        queue = build_review_queue(batch)
+        item = queue["items"][0]
+        self.assertEqual(item["review_mode"], "instantly_sequence")
+        self.assertEqual(item["subject"], "")
+        self.assertEqual(item["body"], "")
+        markdown = render_markdown(queue)
+        self.assertIn("no separate email written", markdown)
+        self.assertNotIn("### Body", markdown)
+        token = item["approval_token"]
+        self.assertEqual(select_approved(batch, token)["approval"]["approved_count"], 1)
+        batch["rows"][0]["verified_observation"] += " changed"
+        with self.assertRaisesRegex(ValueError, "unknown_or_stale_approval_token"):
+            select_approved(batch, token)
+
     def test_queue_exposes_exact_review_tokens_and_copy(self):
         batch = self.batch()
         queue = build_review_queue(batch)

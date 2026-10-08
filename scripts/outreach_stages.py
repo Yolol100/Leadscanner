@@ -384,6 +384,64 @@ def generate_one_mail(candidate: dict) -> dict:
     return result
 
 
+def prepare_one_sequence_fact(candidate: dict) -> dict:
+    """Review first-party facts only; Instantly owns the campaign emails."""
+    result = dict(candidate)
+    result.update({
+        "review_mode": "instantly_sequence",
+        "mail_status": "hold",
+        "subject": None,
+        "body": None,
+        "copy_validation_status": "not_applicable",
+        "copy_validation_reasons": [],
+        "draft_status": "not_created",
+        "automatic_send": False,
+    })
+    if candidate.get("outreach_status") != "ready" or candidate.get("value_action_status") != "proposed":
+        result["copy_validation_reasons"] = ["value_action_not_ready"]
+        return result
+    if (
+        _text(candidate.get("verified_observation_source_type")) != "official_site"
+        or not _text(candidate.get("verified_observation"))
+        or not _text(candidate.get("verified_observation_source_url"))
+        or not _text(candidate.get("value_first_action"))
+        or not _text(candidate.get("signal_type"))
+    ):
+        result["copy_validation_reasons"] = ["first_party_facts_required"]
+        return result
+    result["mail_status"] = "ready_for_sequence_review"
+    return result
+
+
+def generate_sequence_facts(payload: dict) -> dict:
+    candidates = payload.get("candidates") or []
+    if not isinstance(candidates, list):
+        raise ValueError("candidates_must_be_list")
+    if len(candidates) > MAX_CANDIDATES:
+        raise ValueError("candidate_limit_exceeded")
+    results = [prepare_one_sequence_fact(item) for item in candidates if isinstance(item, dict)]
+    return {
+        "schema_version": "leadscanner-cold-mail/1.0",
+        "review_mode": "instantly_sequence",
+        "candidate_count": len(results),
+        "ready_for_human_review_count": sum(
+            1 for item in results if item.get("mail_status") == "ready_for_sequence_review"
+        ),
+        "candidates": results,
+        "safety": {
+            "draft_created": False,
+            "mailbox_mutation": False,
+            "automatic_send": False,
+            "human_review_required": True,
+            "campaign_sequence_approval_required": True,
+        },
+        "handoff": {
+            "next": "review_verified_facts_only",
+            "instantly_staging": "blocked_until_campaign_sequence_approved",
+        },
+    }
+
+
 def generate_mails(payload: dict) -> dict:
     candidates = payload.get("candidates") or []
     if not isinstance(candidates, list):
@@ -424,7 +482,7 @@ def _write(path: str, payload: dict) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("select", "value", "mail"):
+    for name in ("select", "value", "mail", "facts"):
         child = sub.add_parser(name)
         child.add_argument("--input", required=True)
         child.add_argument("--output", required=True)
@@ -437,6 +495,9 @@ def main() -> int:
     elif args.command == "value":
         result = choose_value_actions(source)
         label = f"VALUE_ACTION=green ready={result['ready_count']}"
+    elif args.command == "facts":
+        result = generate_sequence_facts(source)
+        label = f"SEQUENCE_FACTS=green ready_for_human_review={result['ready_for_human_review_count']} mail_copy_generated=false send=false"
     else:
         result = generate_mails(source)
         label = f"COLD_MAIL=green ready_for_human_review={result['ready_for_human_review_count']} draft=false send=false"

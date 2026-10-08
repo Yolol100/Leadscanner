@@ -35,6 +35,16 @@ def review_token(row: dict) -> str:
         _text(row.get("signal_type")),
         _text(row.get("value_first_action")),
     ])
+    mode = _text(row.get("review_mode"))
+    if mode == "instantly_sequence":
+        canonical += "\0" + "\0".join([
+            mode,
+            _text(row.get("status")),
+            _text(row.get("website")),
+            _text(row.get("verified_observation_source_type")),
+        ])
+    elif mode not in {"", "reviewed_mail"}:
+        raise ValueError("unsupported_review_mode")
     digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
     return f"{lead_id}@{digest}"
 
@@ -51,7 +61,21 @@ def build_review_queue(batch: dict) -> dict:
     for row in rows:
         if not isinstance(row, dict):
             raise ValueError("review_row_must_be_object")
-        if row.get("status") != "review_draft":
+        sequence_facts = row.get("review_mode") == "instantly_sequence"
+        if sequence_facts:
+            if (
+                row.get("status") != "sequence_facts_review"
+                or _text(row.get("subject"))
+                or _text(row.get("body"))
+                or row.get("verified_observation_source_type") != "official_site"
+                or not all((
+                    _text(row.get("verified_observation")),
+                    _text(row.get("verified_observation_source_url")),
+                    _text(row.get("value_first_action")),
+                ))
+            ):
+                raise ValueError("review_queue_requires_verified_sequence_facts")
+        elif row.get("status") != "review_draft":
             raise ValueError("review_queue_requires_review_draft")
         if row.get("contact_basis_status") != "review_required":
             raise ValueError("review_queue_requires_review_required")
@@ -64,6 +88,7 @@ def build_review_queue(batch: dict) -> dict:
         seen_tokens.add(token)
         items.append({
             "approval_token": token,
+            "review_mode": "instantly_sequence" if sequence_facts else "reviewed_mail",
             "lead_id": _text(row.get("lead_id")),
             "company": _text(row.get("company")),
             "website": _text(row.get("website")),
@@ -97,8 +122,7 @@ def render_markdown(queue: dict) -> str:
         "",
         f"Review candidates: **{int(queue.get('review_candidate_count') or 0)}**",
         "",
-        "Copy only the approval tokens for leads you approve for the next mutation step (normally Instantly staging).",
-        "A token is bound to the exact reviewed subject/body/evidence; changed copy produces a different token.",
+        "Approve only the exact reviewed facts or email copy. Staging requires a separate campaign gate.",
         "",
     ]
     for index, item in enumerate(queue.get("items") or [], start=1):
@@ -112,16 +136,21 @@ def render_markdown(queue: dict) -> str:
             f"- Evidence: {_text(item.get('verified_observation'))}",
             f"- Evidence URL: {_text(item.get('verified_observation_source_url'))}",
             f"- Proposed value: {_text(item.get('value_first_action'))}",
-            f"- Subject: {_text(item.get('subject'))}",
-            "",
-            "### Body",
-            "",
         ])
-        body = _text(item.get("body"))
-        if body:
-            lines.extend([f"> {line}" if line else ">" for line in body.splitlines()])
+        if item.get("review_mode") == "instantly_sequence":
+            lines.extend([
+                "- Review mode: verified facts only (no separate email written)",
+                "- Instantly sequence: must be reviewed and approved separately; staging is blocked",
+            ])
         else:
-            lines.append("> ")
+            lines.extend([
+                f"- Subject: {_text(item.get('subject'))}",
+                "",
+                "### Body",
+                "",
+            ])
+            body = _text(item.get("body"))
+            lines.extend([f"> {line}" if line else ">" for line in body.splitlines()] if body else ["> "])
         lines.extend(["", "---", ""])
     return "\n".join(lines).rstrip() + "\n"
 
@@ -131,7 +160,7 @@ def render_csv(queue: dict) -> str:
     fields = [
         "approval_token", "lead_id", "company", "official_domain", "email",
         "signal_type", "verified_observation", "verified_observation_source_url",
-        "value_first_action", "subject", "body",
+        "value_first_action", "review_mode", "subject", "body",
     ]
     writer = csv.DictWriter(output, fieldnames=fields, extrasaction="ignore")
     writer.writeheader()

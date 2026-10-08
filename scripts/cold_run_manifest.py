@@ -111,6 +111,7 @@ def build_manifest(
             "target_candidates": request.get("target_candidates"),
             "verify_limit": request.get("verify_limit"),
             "radius_km": request.get("radius_km"),
+            "preview_copy_mode": request.get("preview_copy_mode", "reviewed_mail"),
         },
         "counts": {
             "discovery_after_cheap_filters": int(filtered.get("candidate_count") or 0),
@@ -146,6 +147,7 @@ def build_manifest(
             "human_review_required": True,
             "automatic_send": False,
             "smtp_send": "not_available",
+            "sequence_approval_required": request.get("preview_copy_mode") == "instantly_sequence",
             "changed_existing_draft_policy": "reject",
             "historical_registry_role": "suppression_only",
         },

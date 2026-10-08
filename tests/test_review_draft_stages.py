@@ -22,6 +22,47 @@ class ReviewDraftStagesTests(unittest.TestCase):
             "value_first_action": "een korte voorbeeldvariant voor de afspraakroute",
         }
 
+    def test_sequence_facts_review_requires_official_site_and_no_email_copy(self):
+        candidate = self.mail_candidate()
+        candidate.update({
+            "review_mode": "instantly_sequence",
+            "mail_status": "ready_for_sequence_review",
+            "copy_validation_status": "not_applicable",
+            "subject": None,
+            "body": None,
+            "outreach_status": "ready",
+            "value_action_status": "proposed",
+        })
+        batch = prepare_review_batch({"candidates": [candidate]})
+        self.assertEqual(batch["sequence_facts_review_count"], 1)
+        self.assertEqual(batch["review_draft_count"], 0)
+        row = batch["rows"][0]
+        self.assertEqual(row["status"], "sequence_facts_review")
+        self.assertEqual(row["subject"], "")
+        self.assertEqual(row["body"], "")
+        self.assertEqual(row["review_mode"], "instantly_sequence")
+        with self.assertRaisesRegex(ValueError, "sequence_facts_cannot_be_stored_as_mailbox_drafts"):
+            audit_exact_readback(batch, {"items": []})
+
+    def test_sequence_facts_reject_cross_domain_and_fake_copy(self):
+        candidate = self.mail_candidate()
+        candidate.update({
+            "review_mode": "instantly_sequence",
+            "mail_status": "ready_for_sequence_review",
+            "copy_validation_status": "not_applicable",
+            "subject": None,
+            "body": None,
+            "outreach_status": "ready",
+            "value_action_status": "proposed",
+            "verified_observation_source_url": "https://unrelated.example/afspraak",
+        })
+        with self.assertRaisesRegex(ValueError, "sequence_facts_require_verified_official_site_evidence"):
+            prepare_review_batch({"candidates": [candidate]})
+        candidate["verified_observation_source_url"] = "https://acmefietsen.nl/afspraak"
+        candidate["body"] = "unapproved generated mail"
+        with self.assertRaisesRegex(ValueError, "sequence_facts_require_verified_official_site_evidence"):
+            prepare_review_batch({"candidates": [candidate]})
+
     def test_stable_lead_id_is_deterministic(self):
         a = stable_lead_id("https://www.acmefietsen.nl/", "INFO@AcmeFietsen.nl")
         b = stable_lead_id("acmefietsen.nl", "info@acmefietsen.nl")

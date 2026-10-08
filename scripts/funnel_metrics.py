@@ -74,7 +74,7 @@ def build_funnel(
     for item in mail_candidates:
         if item.get("value_action_status") != "proposed":
             continue
-        if item.get("mail_status") == "ready_for_human_review":
+        if item.get("mail_status") in {"ready_for_human_review", "ready_for_sequence_review"}:
             continue
         reasons_list = item.get("copy_validation_reasons") or ["unknown"]
         mail_holds.extend(reasons_list)

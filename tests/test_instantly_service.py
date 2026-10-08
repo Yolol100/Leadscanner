@@ -66,6 +66,24 @@ def resolved():
 
 
 class InstantlyServiceTests(unittest.TestCase):
+    def test_sequence_facts_never_stage_without_campaign_level_approval(self):
+        row = {**resolved()["row"], "review_mode": "instantly_sequence", "status": "sequence_facts_review", "subject": "", "body": ""}
+        selected = {
+            "schema_version": "leadscanner-approved-review-draft-batch/1.0",
+            "rows": [row],
+            "approval": {"approved_count": 1, "automatic_send": False},
+        }
+        client = FakeInstantlyClient()
+        with patch.dict(os.environ, {"LEADSCANNER_INSTANTLY_WRITES_ENABLED": "true"}, clear=False):
+            with self.assertRaisesRegex(ValueError, "instantly_sequence_staging_not_yet_enabled"):
+                stage_approved_batch(
+                    approved_batch=selected,
+                    campaign_id="campaign-1",
+                    instantly_api_key="key",
+                    instantly_client=client,
+                )
+        self.assertEqual(client.calls, [])
+
     def test_writes_disabled_by_default(self):
         with patch.dict(os.environ, {}, clear=True):
             with self.assertRaisesRegex(RuntimeError, "writes_disabled"):

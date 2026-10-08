@@ -14,6 +14,14 @@ on:
           - preview
           - instantly_stage
           - draft
+      preview_copy_mode:
+        description: 'Instantly sequence = alleen geverifieerde feiten; reviewed_mail = aparte mail voor legacy/mijn.host'
+        required: true
+        default: instantly_sequence
+        type: choice
+        options:
+          - instantly_sequence
+          - reviewed_mail
       confirm_instantly_stage:
         description: 'Alleen aanvinken bij execution_mode=instantly_stage'
         required: true
@@ -271,6 +279,7 @@ jobs:
       - name: Validate request
         env:
           INPUT_EXECUTION_MODE: ${{ inputs.execution_mode }}
+          INPUT_PREVIEW_COPY_MODE: ${{ inputs.preview_copy_mode }}
           INPUT_CONFIRM_INSTANTLY_STAGE: ${{ inputs.confirm_instantly_stage }}
           INPUT_CONFIRM_REVIEW_DRAFTS: ${{ inputs.confirm_review_drafts }}
           INPUT_APPROVED_REVIEW_TOKENS: ${{ inputs.approved_review_tokens }}
@@ -289,6 +298,7 @@ jobs:
           from pathlib import Path
 
           mode = os.environ['INPUT_EXECUTION_MODE'].strip()
+          preview_copy_mode = os.environ['INPUT_PREVIEW_COPY_MODE'].strip()
           confirm_stage = os.environ['INPUT_CONFIRM_INSTANTLY_STAGE'].strip().casefold() == 'true'
           confirm_draft = os.environ['INPUT_CONFIRM_REVIEW_DRAFTS'].strip().casefold() == 'true'
           approved_tokens = os.environ['INPUT_APPROVED_REVIEW_TOKENS'].strip()
@@ -302,6 +312,8 @@ jobs:
 
           request = {'execution_mode': mode}
           if mode == 'preview':
+              if preview_copy_mode not in {'instantly_sequence', 'reviewed_mail'}:
+                  raise SystemExit('preview_copy_mode must be instantly_sequence or reviewed_mail')
               if confirm_stage or confirm_draft:
                   raise SystemExit('mutation confirmations must remain false in preview mode')
               if approved_tokens:
@@ -329,6 +341,7 @@ jobs:
                   'target_candidates': target,
                   'verify_limit': verify_limit,
                   'radius_km': radius,
+                  'preview_copy_mode': preview_copy_mode,
               })
           elif mode == 'instantly_stage':
               if not confirm_stage:
@@ -483,13 +496,23 @@ jobs:
             --input results/outreach-reasons.json \
             --output results/value-actions.json
 
-      - name: Phase 9 - Generate and validate short cold mail
-        if: inputs.execution_mode == 'preview'
+      - name: Phase 9 - Generate and validate short cold mail for optional legacy review
+        if: inputs.execution_mode == 'preview' && inputs.preview_copy_mode == 'reviewed_mail'
         env:
           PYTHONPATH: scripts
         run: |
           set -euo pipefail
           python3 scripts/outreach_stages.py mail \
+            --input results/value-actions.json \
+            --output results/mail-review.json
+
+      - name: Phase 9 - Review verified facts without generating separate emails
+        if: inputs.execution_mode == 'preview' && inputs.preview_copy_mode == 'instantly_sequence'
+        env:
+          PYTHONPATH: scripts
+        run: |
+          set -euo pipefail
+          python3 scripts/outreach_stages.py facts \
             --input results/value-actions.json \
             --output results/mail-review.json
 
@@ -603,6 +626,17 @@ jobs:
             --batch results/review-draft-batch.json \
             --approved-tokens-env INPUT_APPROVED_REVIEW_TOKENS \
             --output results/approved-review-draft-batch.json
+
+      - name: Reject unapproved Instantly sequence migration before any mutation
+        if: inputs.execution_mode == 'draft' || inputs.execution_mode == 'instantly_stage'
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          selected = json.loads(Path('results/approved-review-draft-batch.json').read_text(encoding='utf-8'))
+          if any(row.get('review_mode') == 'instantly_sequence' for row in selected.get('rows', [])):
+              raise SystemExit('instantly_sequence_staging_not_yet_enabled: campaign sequence, compliance and approval must be verified first')
+          PY
 
       - name: Phase 21 - Stage exact approved leads into Instantly
         if: inputs.execution_mode == 'instantly_stage'

@@ -55,9 +55,16 @@ def prepare_review_batch(payload: dict) -> dict:
     for candidate in candidates:
         if not isinstance(candidate, dict):
             continue
-        if candidate.get("mail_status") != "ready_for_human_review":
+        sequence_facts = candidate.get("mail_status") == "ready_for_sequence_review"
+        if candidate.get("mail_status") not in {"ready_for_human_review", "ready_for_sequence_review"}:
             continue
-        if candidate.get("copy_validation_status") != "green":
+        if sequence_facts:
+            if (
+                candidate.get("review_mode") != "instantly_sequence"
+                or candidate.get("copy_validation_status") != "not_applicable"
+            ):
+                raise ValueError("sequence_facts_review_contract_required")
+        elif candidate.get("copy_validation_status") != "green":
             raise ValueError("ready_mail_without_green_validation")
         if candidate.get("automatic_send") is not False:
             raise ValueError("automatic_send_must_be_false")
@@ -68,7 +75,27 @@ def prepare_review_batch(payload: dict) -> dict:
         company = _text(candidate.get("name_hint") or candidate.get("company"))
         subject = _text(candidate.get("subject"))
         body = _text(candidate.get("body"))
-        if not all((domain, email, website, company, subject, body)):
+        if not all((domain, email, website, company)):
+            raise ValueError("review_mail_missing_required_field")
+        if sequence_facts:
+            evidence_url = _text(candidate.get("verified_observation_source_url"))
+            evidence_parsed = urlparse(evidence_url)
+            if (
+                subject or body
+                or not _text(candidate.get("verified_observation"))
+                or not _text(candidate.get("value_first_action"))
+                or not _text(candidate.get("signal_type"))
+                or candidate.get("verified_observation_source_type") != "official_site"
+                or candidate.get("value_action_status") != "proposed"
+                or candidate.get("outreach_status") != "ready"
+                or evidence_parsed.scheme not in {"https", "http"}
+                or evidence_parsed.username is not None
+                or evidence_parsed.password is not None
+                or not domains_match(normalize_domain(evidence_url), domain)
+                or not domains_match(normalize_domain(website), domain)
+            ):
+                raise ValueError("sequence_facts_require_verified_official_site_evidence")
+        elif not all((subject, body)):
             raise ValueError("review_mail_missing_required_field")
         if email.count("@") != 1:
             raise ValueError("review_mail_invalid_email")
@@ -94,7 +121,8 @@ def prepare_review_batch(payload: dict) -> dict:
             "email": email,
             "subject": subject,
             "body": body,
-            "status": "review_draft",
+            "status": "sequence_facts_review" if sequence_facts else "review_draft",
+            "review_mode": "instantly_sequence" if sequence_facts else "reviewed_mail",
             "contact_basis_status": "review_required",
             "automatic_send": False,
             "verified_observation": _text(candidate.get("verified_observation")),
@@ -110,7 +138,8 @@ def prepare_review_batch(payload: dict) -> dict:
     return {
         "schema_version": "leadscanner-review-draft-batch/1.0",
         "draft_candidate_count": len(rows),
-        "review_draft_count": len(rows),
+        "review_draft_count": sum(1 for row in rows if row["status"] == "review_draft"),
+        "sequence_facts_review_count": sum(1 for row in rows if row["status"] == "sequence_facts_review"),
         "rows": rows,
         "safety": {
             "automatic_send": False,
@@ -128,6 +157,8 @@ def audit_exact_readback(batch: dict, report: dict) -> dict:
         raise ValueError("invalid_batch_or_report")
     if len(rows) > MAX_DRAFTS:
         raise ValueError("draft_limit_exceeded")
+    if any(row.get("status") != "review_draft" or row.get("review_mode") == "instantly_sequence" for row in rows):
+        raise ValueError("sequence_facts_cannot_be_stored_as_mailbox_drafts")
 
     expected = {_text(row.get("lead_id")): row for row in rows}
     if len(expected) != len(rows):
