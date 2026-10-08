@@ -90,6 +90,8 @@ Every preview now emits `funnel-metrics.json` and `coverage-audit.json` in addit
 - Overture coverage benchmark at 10 km found sufficient supply for painter, restaurant, dentist, real-estate and hair-salon searches. Bicycle stores were thin at 17 candidates; widening to 15 km produced 30 and removed the gap.
 - Current decision: **do not add a second discovery source**. Broaden Overture query/radius first; only deliberate source expansion after repeated independent gap evidence.
 
+Instantly campaign updates are checked against provider readback: a requested sequence change must preserve the exact step/variant subject and body content, sender-list updates must match, and changes to risky-contact permission must read back exactly. A successful HTTP PATCH without the requested effect is not reported as a successful update.
+
 ## Three-step Instantly migration gate
 
 The existing live campaign currently has a one-step legacy template. Its active status means no new leads may be staged into it through Leadscanner. The read-only `audit_campaign_sequence` action reports the live step/variant count, referenced merge fields and SHA-256 sequence fingerprint without exposing email bodies. Unmapped variables such as `{{aiIdeas}}` are rejected rather than silently replaced with blank text.

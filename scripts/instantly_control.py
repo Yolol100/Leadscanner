@@ -360,6 +360,34 @@ def _campaign_leads(client: InstantlyClient, campaign_id: str, max_leads: int = 
     return rows
 
 
+def _sequence_copy_signature(sequences: object) -> tuple:
+    """Compare actual subject/body variants without relying on provider IDs."""
+    if not isinstance(sequences, list):
+        raise ValueError("campaign_sequence_readback_invalid")
+    result = []
+    for sequence in sequences:
+        if not isinstance(sequence, dict) or not isinstance(sequence.get("steps"), list):
+            raise ValueError("campaign_sequence_readback_invalid")
+        steps = []
+        for step in sequence["steps"]:
+            if not isinstance(step, dict):
+                raise ValueError("campaign_sequence_readback_invalid")
+            if step.get("type") != "email":
+                steps.append((_text(step.get("type")), tuple()))
+                continue
+            variants = step.get("variants")
+            if not isinstance(variants, list):
+                raise ValueError("campaign_sequence_readback_invalid")
+            copies = []
+            for variant in variants:
+                if not isinstance(variant, dict):
+                    raise ValueError("campaign_sequence_readback_invalid")
+                copies.append((_text(variant.get("subject")), _text(variant.get("body"))))
+            steps.append((_text(step.get("type")), tuple(copies)))
+        result.append(tuple(steps))
+    return tuple(result)
+
+
 def _activation_leadset_fingerprint(leads: list[dict]) -> str:
     """Bind activation to the exact Instantly lead identities and payloads."""
     normalized = []
@@ -717,13 +745,31 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
         current_status = current.get("status")
         if type(current_status) is not int or current_status not in SAFE_CAMPAIGN_STATUSES:
             raise ValueError("campaign_must_be_draft_or_paused_before_update")
+        payload = _payload(args)
         operation = _api(
             client,
             "PATCH",
             f"/campaigns/{_id(cid, 'campaign_id')}",
-            payload=_payload(args),
+            payload=payload,
         )
-        data = {"operation": operation, "readback": client.get_campaign(cid)}
+        observed = client.get_campaign(cid)
+        if not isinstance(observed, dict) or _text(observed.get("id")) != cid:
+            raise RuntimeError("campaign_update_readback_id_mismatch")
+        if "sequences" in payload and (
+            _sequence_copy_signature(observed.get("sequences"))
+            != _sequence_copy_signature(payload["sequences"])
+        ):
+            raise RuntimeError("campaign_update_sequence_readback_mismatch")
+        if "email_list" in payload and (
+            not isinstance(observed.get("email_list"), list)
+            or sorted(observed["email_list"]) != sorted(payload["email_list"])
+        ):
+            raise RuntimeError("campaign_update_sender_readback_mismatch")
+        if "allow_risky_contacts" in payload and (
+            observed.get("allow_risky_contacts") is not payload["allow_risky_contacts"]
+        ):
+            raise RuntimeError("campaign_update_risky_contacts_readback_mismatch")
+        data = {"operation": operation, "readback": observed}
     elif action == "pause_campaign":
         cid = _text(args.get("campaign_id"))
         operation = _api(client, "POST", f"/campaigns/{_id(cid, 'campaign_id')}/pause", payload={})

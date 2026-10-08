@@ -356,6 +356,118 @@ class InstantlyControlTests(unittest.TestCase):
                     _activate(client, "c1")
                 self.assertEqual(client.posts, 0)
 
+    def test_update_campaign_rejects_silent_sequence_mutation_failure(self):
+        class IgnoringPatch:
+            def get_campaign(self, campaign_id):
+                return {
+                    "id": campaign_id, "status": 0,
+                    "sequences": [{"steps": [{
+                        "type": "email",
+                        "variants": [{"subject": "Old", "body": "Old body"}],
+                    }]}],
+                }
+
+            def _request(self, method, path, **kwargs):
+                if method == "PATCH" and path == "/campaigns/c1":
+                    return {"id": "c1"}
+                raise AssertionError("unexpected call")
+        command = {
+            "schema_version": "leadscanner-instantly-command/1.0",
+            "command_id": "campaign-ignored-sequence-001",
+            "action": "update_campaign",
+            "args": {"campaign_id": "c1", "payload": {"sequences": [{
+                "steps": [{"type": "email", "variants": [{
+                    "subject": "New", "body": "New body",
+                }]}],
+            }]}},
+            "confirm": "EXECUTE update_campaign c1",
+            "requested_by": "chatgpt",
+        }
+        with self.assertRaisesRegex(RuntimeError, "campaign_update_sequence_readback_mismatch"):
+            execute_command(command, config(), IgnoringPatch())
+
+    def test_update_campaign_rejects_silent_sender_change_failure(self):
+        class IgnoringPatch:
+            def get_campaign(self, campaign_id):
+                return {"id": campaign_id, "status": 0, "email_list": ["old@example.com"]}
+
+            def _request(self, method, path, **kwargs):
+                return {"id": "c1"}
+        command = {
+            "schema_version": "leadscanner-instantly-command/1.0",
+            "command_id": "campaign-ignored-sender-001",
+            "action": "update_campaign",
+            "args": {"campaign_id": "c1", "payload": {"email_list": ["new@example.com"]}},
+            "confirm": "EXECUTE update_campaign c1",
+            "requested_by": "chatgpt",
+        }
+        with self.assertRaisesRegex(RuntimeError, "campaign_update_sender_readback_mismatch"):
+            execute_command(command, config(), IgnoringPatch())
+
+    def test_update_campaign_accepts_verified_sequence_readback(self):
+        class EchoPatch:
+            def __init__(self):
+                self.sequences = [{"steps": [{
+                    "type": "email", "variants": [{
+                        "subject": "Old", "body": "Old body",
+                    }],
+                }]}]
+
+            def get_campaign(self, campaign_id):
+                return {"id": campaign_id, "status": 0, "sequences": self.sequences}
+
+            def _request(self, method, path, **kwargs):
+                self.sequences = kwargs["json"]["sequences"]
+                return {"id": "c1"}
+        command = {
+            "schema_version": "leadscanner-instantly-command/1.0",
+            "command_id": "campaign-verified-sequence-001",
+            "action": "update_campaign",
+            "args": {"campaign_id": "c1", "payload": {"sequences": [{
+                "steps": [{"type": "email", "variants": [{
+                    "subject": "New", "body": "New body",
+                }]}],
+            }]}},
+            "confirm": "EXECUTE update_campaign c1",
+            "requested_by": "chatgpt",
+        }
+        result = execute_command(command, config(), EchoPatch())
+        self.assertEqual(result["status"], "green")
+        self.assertEqual(result["result"]["readback"]["sequences"], command["args"]["payload"]["sequences"])
+
+    def test_update_campaign_readback_ignores_provider_ids_not_email_copy(self):
+        class NormalizingClient:
+            def __init__(self):
+                self.steps = [{"type": "email", "variants": [{"subject": "Old", "body": "Old"}]}]
+
+            def get_campaign(self, campaign_id):
+                return {"id": campaign_id, "status": 0, "sequences": [{
+                    "id": "provider-sequence-id",
+                    "steps": [
+                        {**step, "id": "provider-step-id"}
+                        for step in self.steps
+                    ],
+                }]}
+
+            def _request(self, method, path, **kwargs):
+                self.steps = kwargs["json"]["sequences"][0]["steps"]
+                return {"id": "c1"}
+        command = {
+            "schema_version": "leadscanner-instantly-command/1.0",
+            "command_id": "campaign-normalized-sequence-001",
+            "action": "update_campaign",
+            "args": {"campaign_id": "c1", "payload": {"sequences": [{
+                "steps": [
+                    {"type": "delay", "delay": 2},
+                    {"type": "email", "variants": [{"subject": "New", "body": "New body"}]},
+                ],
+            }]}},
+            "confirm": "EXECUTE update_campaign c1",
+            "requested_by": "chatgpt",
+        }
+        result = execute_command(command, config(), NormalizingClient())
+        self.assertEqual(result["status"], "green")
+
     def test_update_campaign_rejects_boolean_status_before_patch(self):
         class BooleanStatusClient:
             def get_campaign(self, campaign_id):
