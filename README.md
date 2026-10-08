@@ -30,14 +30,14 @@ Current manual run:
 14. **Fast sealed-preview resume** — mutation modes load the exact artifact from `preview_run_id`, verify the successful workflow-dispatch run, repository, `main` branch, commit SHA and snapshot digest, and never repeat discovery/research.
 15. **Exact approval selection** — only explicitly pasted preview tokens are accepted; there is no `all` wildcard and unknown/stale tokens fail closed.
 16. **Primary Instantly stage** — `instantly_stage` re-checks each approved lead against the current canonical registry immediately before mutation, requires a Draft/Paused Instantly campaign, and adds only still-current approved leads.
-17. **Personalized campaign variables** — every staged lead carries the exact reviewed `leadscanner_subject` and `leadscanner_body` custom variables plus the Leadscanner lead ID. Configure the Instantly campaign sequence to use `{{leadscanner_subject}}` in the subject and `{{leadscanner_body}}` in the body.
-18. **Canonical dedupe closure** — only after exact Instantly lead readback succeeds is the identity written as `instantly_staged` in the canonical registry.
+17. **Campaign-aware personalization** — the current single-step campaign still uses the exact approved `{{leadscanner_subject}}` and `{{leadscanner_body}}` variables. Staged leads additionally carry verified `{{leadscanner_observation}}`, `{{leadscanner_evidence_url}}`, `{{leadscanner_value_action}}` and (when present) `{{leadscanner_signal_type}}` for a future Instantly-owned multi-step template. Every referenced `leadscanner_*` variable must be supplied; missing fields block staging before any write.
+18. **Canonical dedupe closure** — only after exact Instantly lead, campaign and custom-variable readback succeeds is the identity written as `instantly_staged` in the canonical registry.
 19. **Separate activation gate** — staging never sends. Campaign activation remains a distinct explicit `activate_campaign` action with sender/lead/sending-status preflight and exact confirmation.
 20. **Scheduled reconciliation** — Instantly state is periodically read back and may update only already-existing registry identities; scheduled sync cannot create prospects or send mail.
 21. **Optional mailbox fallback** — `draft` mode remains available for manual mijn.host review drafts when explicitly requested, but is outside the primary Instantly outbound route.
 22. **Run manifest** — every manual run records provenance, counts, mutation state and safety flags. `instantly_stage` closes with `automatic_send=false` and `campaign_activation_required=true`.
 
-The primary route is now: **Leadscanner discovery/review → Instantly staging → explicit campaign activation → Instantly sending/replies → registry sync**.
+The primary route is now: **Leadscanner discovery/review → Instantly staging → explicit campaign activation → Instantly sending/replies → registry sync**. The last verified active campaign snapshot had one email step using full-copy placeholders, not a proven three-step template. This phase does not change campaign copy or stop legacy review-mail generation; removing it first would break the current sequence. Once a three-step Instantly template is verified, a separate reviewed migration can switch the preview/approval contract to personalization-only.
 
 ## Speed design
 

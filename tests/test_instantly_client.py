@@ -41,12 +41,26 @@ def approved_batch():
             "automatic_send": False,
             "subject": "idee voor afspraakroute",
             "body": "Hoi, ik zag jullie afspraakroute. Ik heb een klein voorstel.",
+            "verified_observation": "Klanten kunnen online een afspraak aanvragen voor onderhoud of reparatie.",
+            "verified_observation_source_url": "https://acme.nl/afspraak",
+            "verified_observation_source_type": "official_site",
+            "signal_type": "appointment",
+            "value_first_action": "een korte voorbeeldvariant voor de afspraakroute",
         }],
         "safety": {
             "automatic_send": False,
             "dedupe_rechecked_immediately_before_mutation": True,
         },
     }
+
+
+def campaign(*, steps=None, status=2):
+    if steps is None:
+        steps = [{
+            "type": "email",
+            "variants": [{"subject": "{{leadscanner_subject}}", "body": "{{leadscanner_body}}"}],
+        }]
+    return {"id": "c1", "status": status, "sequences": [{"steps": steps}]}
 
 
 class InstantlyClientTests(unittest.TestCase):
@@ -73,7 +87,7 @@ class InstantlyClientTests(unittest.TestCase):
 
     def test_write_does_not_retry_on_server_error(self):
         session = FakeSession([
-            FakeResponse(payload={"id": "c1", "status": 2}),
+            FakeResponse(payload=campaign()),
             FakeResponse(status_code=503, payload={"message": "do not repeat this write"}),
         ])
         client = InstantlyClient("secret", session=session, sleep_fn=lambda _: None)
@@ -151,7 +165,7 @@ class InstantlyClientTests(unittest.TestCase):
 
     def test_add_approved_lead_uses_workspace_dedupe_flags(self):
         session = FakeSession([
-            FakeResponse(payload={"id": "c1", "status": 2}),
+            FakeResponse(payload=campaign()),
             FakeResponse(payload={"id": "instantly-lead-1"}),
         ])
         client = InstantlyClient("secret", session=session)
@@ -174,6 +188,111 @@ class InstantlyClientTests(unittest.TestCase):
             kwargs["json"]["custom_variables"]["leadscanner_body"],
             approved_batch()["rows"][0].get("body", ""),
         )
+        self.assertEqual(
+            kwargs["json"]["custom_variables"]["leadscanner_observation"],
+            approved_batch()["rows"][0]["verified_observation"],
+        )
+        self.assertEqual(
+            kwargs["json"]["custom_variables"]["leadscanner_evidence_url"],
+            "https://acme.nl/afspraak",
+        )
+
+    def test_three_step_template_can_use_verified_variables(self):
+        steps = [
+            {"type": "email", "variants": [{
+                "subject": "Vraagje", "body": "Ik zag {{leadscanner_observation}}",
+            }]},
+            {"type": "email", "variants": [{
+                "subject": "", "body": "Een idee: {{leadscanner_value_action}}",
+            }]},
+            {"type": "email", "variants": [{
+                "subject": "", "body": "Laat gerust weten als dit niet relevant is.",
+            }]},
+        ]
+        session = FakeSession([
+            FakeResponse(payload=campaign(steps=steps)),
+            FakeResponse(payload={"id": "instantly-lead-1"}),
+        ])
+        client = InstantlyClient("secret", session=session)
+        client.add_approved_lead_to_campaign(
+            approved_batch=approved_batch(),
+            lead_id="growth-aaaaaaaaaaaaaaaaaaaa",
+            campaign_id="c1",
+            registry_rows=[],
+        )
+        self.assertEqual(len(session.calls), 2)
+        self.assertEqual(
+            session.calls[1][2]["json"]["custom_variables"]["leadscanner_signal_type"],
+            "appointment",
+        )
+
+    def test_unknown_template_variable_blocks_lead_write(self):
+        steps = [{"type": "email", "variants": [{
+            "subject": "Hallo", "body": "{{leadscanner_not_supplied}}",
+        }]}]
+        session = FakeSession([FakeResponse(payload=campaign(steps=steps))])
+        client = InstantlyClient("secret", session=session)
+        with self.assertRaisesRegex(ValueError, "campaign_personalization_variable_missing"):
+            client.add_approved_lead_to_campaign(
+                approved_batch=approved_batch(),
+                lead_id="growth-aaaaaaaaaaaaaaaaaaaa",
+                campaign_id="c1",
+                registry_rows=[],
+            )
+        self.assertEqual(len(session.calls), 1)
+
+    def test_generic_campaign_without_leadscanner_variable_is_blocked(self):
+        steps = [{"type": "email", "variants": [{"subject": "Hallo", "body": "Een algemeen aanbod."}]}]
+        session = FakeSession([FakeResponse(payload=campaign(steps=steps))])
+        client = InstantlyClient("secret", session=session)
+        with self.assertRaisesRegex(ValueError, "campaign_leadscanner_personalization_required"):
+            client.add_approved_lead_to_campaign(
+                approved_batch=approved_batch(),
+                lead_id="growth-aaaaaaaaaaaaaaaaaaaa",
+                campaign_id="c1",
+                registry_rows=[],
+            )
+        self.assertEqual(len(session.calls), 1)
+
+    def test_third_party_evidence_is_blocked_before_lead_write(self):
+        batch = approved_batch()
+        batch["rows"][0]["verified_observation_source_type"] = "directory"
+        session = FakeSession([FakeResponse(payload=campaign())])
+        client = InstantlyClient("secret", session=session)
+        with self.assertRaisesRegex(ValueError, "verified_first_party_personalization_required"):
+            client.add_approved_lead_to_campaign(
+                approved_batch=batch,
+                lead_id="growth-aaaaaaaaaaaaaaaaaaaa",
+                campaign_id="c1",
+                registry_rows=[],
+            )
+        self.assertEqual(len(session.calls), 1)
+
+    def test_off_domain_evidence_is_blocked_before_lead_write(self):
+        batch = approved_batch()
+        batch["rows"][0]["verified_observation_source_url"] = "https://unrelated.example/afspraak"
+        session = FakeSession([FakeResponse(payload=campaign())])
+        client = InstantlyClient("secret", session=session)
+        with self.assertRaisesRegex(ValueError, "personalization_evidence_domain_mismatch"):
+            client.add_approved_lead_to_campaign(
+                approved_batch=batch,
+                lead_id="growth-aaaaaaaaaaaaaaaaaaaa",
+                campaign_id="c1",
+                registry_rows=[],
+            )
+        self.assertEqual(len(session.calls), 1)
+
+    def test_campaign_without_sequences_blocks_lead_write(self):
+        session = FakeSession([FakeResponse(payload={"id": "c1", "status": 2})])
+        client = InstantlyClient("secret", session=session)
+        with self.assertRaisesRegex(ValueError, "campaign_email_sequence_required"):
+            client.add_approved_lead_to_campaign(
+                approved_batch=approved_batch(),
+                lead_id="growth-aaaaaaaaaaaaaaaaaaaa",
+                campaign_id="c1",
+                registry_rows=[],
+            )
+        self.assertEqual(len(session.calls), 1)
 
     def test_live_registry_match_blocks_write(self):
         session = FakeSession([])

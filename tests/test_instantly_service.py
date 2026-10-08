@@ -2,6 +2,7 @@ import os
 import unittest
 from unittest.mock import patch
 
+from instantly_client import approved_custom_variables
 from instantly_service import (
     _verify_instantly_readback,
     require_instantly_writes_enabled,
@@ -13,9 +14,11 @@ from instantly_service import (
 class FakeInstantlyClient:
     def __init__(self):
         self.calls = []
+        self.last_row = None
 
     def add_approved_lead_to_campaign(self, **kwargs):
         self.calls.append(("add", kwargs))
+        self.last_row = kwargs["approved_batch"]["rows"][0]
         return {"id": "instantly-1"}
 
     def get_lead(self, lead_id):
@@ -24,6 +27,7 @@ class FakeInstantlyClient:
             "id": lead_id,
             "email": "info@acme.nl",
             "campaign": "campaign-1",
+            "payload": approved_custom_variables(self.last_row),
         }
 
 
@@ -37,6 +41,13 @@ def resolved():
         "status": "review_draft",
         "contact_basis_status": "review_required",
         "automatic_send": False,
+        "subject": "idee voor afspraakroute",
+        "body": "Hallo, ik zag jullie afspraakroute.",
+        "verified_observation": "Klanten kunnen online een afspraak aanvragen voor onderhoud of reparatie.",
+        "verified_observation_source_url": "https://acme.nl/afspraak",
+        "verified_observation_source_type": "official_site",
+        "signal_type": "appointment",
+        "value_first_action": "een korte voorbeeldvariant voor de afspraakroute",
     }
     return {
         "snapshot": {"preview_id": "preview-abc"},
@@ -74,6 +85,46 @@ class InstantlyServiceTests(unittest.TestCase):
                 row=row,
                 campaign_id="campaign-1",
             )
+
+    def test_readback_rejects_missing_or_changed_custom_variables(self):
+        row = resolved()["row"]
+        observed = {"email": row["email"], "campaign": "campaign-1"}
+        with self.assertRaisesRegex(RuntimeError, "readback_variables_missing"):
+            _verify_instantly_readback(observed, row=row, campaign_id="campaign-1")
+        observed["payload"] = approved_custom_variables(row)
+        observed["payload"]["leadscanner_body"] = "changed after approval"
+        with self.assertRaisesRegex(RuntimeError, "readback_variable_mismatch:leadscanner_body"):
+            _verify_instantly_readback(observed, row=row, campaign_id="campaign-1")
+
+    @patch("instantly_service.update_registry")
+    @patch("instantly_service.revalidate_approved")
+    @patch("instantly_service.fetch_live_registry")
+    @patch("instantly_service.check_registry_access")
+    @patch("instantly_service.resolve_exact_approval")
+    def test_variable_readback_mismatch_blocks_registry_closure(
+        self, resolve_mock, preflight_mock, fetch_registry_mock, revalidate_mock, update_mock
+    ):
+        resolve_mock.return_value = resolved()
+        fetch_registry_mock.return_value = []
+        revalidate_mock.return_value = resolved()["approved_current"]
+
+        class TamperedClient(FakeInstantlyClient):
+            def get_lead(self, lead_id):
+                observed = super().get_lead(lead_id)
+                observed["payload"]["leadscanner_body"] = "not approved"
+                return observed
+
+        with patch.dict(os.environ, {"LEADSCANNER_INSTANTLY_WRITES_ENABLED": "true"}, clear=False):
+            with self.assertRaisesRegex(RuntimeError, "readback_variable_mismatch"):
+                stage_exact_approved_lead(
+                    preview_run_id=123,
+                    approval_token="growth-aaaaaaaaaaaaaaaaaaaa@1111111111111111",
+                    campaign_id="campaign-1",
+                    instantly_api_key="key",
+                    github_token="gh",
+                    instantly_client=TamperedClient(),
+                )
+        update_mock.assert_not_called()
 
     @patch("instantly_service.update_registry")
     @patch("instantly_service.check_registry_access", side_effect=RuntimeError("registry_preflight_failed"), create=True)

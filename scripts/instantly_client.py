@@ -8,15 +8,97 @@ from __future__ import annotations
 
 import re
 import time
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 import requests
 
-from dedupe_preflight import match_candidate
+from dedupe_preflight import domains_match, match_candidate, normalize_domain
 
 BASE_URL = "https://api.instantly.ai/api/v2"
 SAFE_CAMPAIGN_STATUSES = {0, 2}  # Draft, Paused
 LEAD_ID_RE = re.compile(r"^growth-[0-9a-f]{20}$")
+VARIABLE_RE = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
+
+
+def approved_custom_variables(row: dict) -> dict[str, str]:
+    """Keep reviewed legacy copy and expose only verified official-site facts."""
+    lead_id = str(row.get("lead_id") or "").strip()
+    subject = str(row.get("subject") or "").strip()
+    body = str(row.get("body") or "").strip()
+    if not lead_id or not subject or not body:
+        raise ValueError("reviewed_lead_copy_required")
+    variables = {
+        "leadscanner_lead_id": lead_id,
+        "leadscanner_review_status": "approved",
+        "leadscanner_subject": subject,
+        "leadscanner_body": body,
+    }
+
+    observation = str(row.get("verified_observation") or "").strip()
+    evidence_url = str(row.get("verified_observation_source_url") or "").strip()
+    source_type = str(row.get("verified_observation_source_type") or "").strip()
+    value_action = str(row.get("value_first_action") or "").strip()
+    signal_type = str(row.get("signal_type") or "").strip()
+    if any((observation, evidence_url, source_type, value_action, signal_type)):
+        if not all((observation, evidence_url, value_action)) or source_type != "official_site":
+            raise ValueError("verified_first_party_personalization_required")
+        parsed = urlparse(evidence_url)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or parsed.username is not None
+            or parsed.password is not None
+            or not domains_match(
+                normalize_domain(evidence_url),
+                normalize_domain(row.get("official_domain")),
+            )
+        ):
+            raise ValueError("personalization_evidence_domain_mismatch")
+        variables.update({
+            "leadscanner_observation": observation,
+            "leadscanner_evidence_url": evidence_url,
+            "leadscanner_value_action": value_action,
+        })
+        if signal_type:
+            variables["leadscanner_signal_type"] = signal_type
+    return variables
+
+
+def validate_campaign_personalization(campaign: dict, variables: dict[str, str]) -> None:
+    """Never stage into a sequence with missing Leadscanner merge fields."""
+    sequences = campaign.get("sequences") if isinstance(campaign, dict) else None
+    if not isinstance(sequences, list) or not sequences:
+        raise ValueError("campaign_email_sequence_required")
+
+    referenced: set[str] = set()
+    email_variant_count = 0
+    for sequence in sequences:
+        if not isinstance(sequence, dict) or not isinstance(sequence.get("steps"), list):
+            raise ValueError("campaign_sequence_invalid")
+        for step in sequence["steps"]:
+            if not isinstance(step, dict):
+                raise ValueError("campaign_sequence_invalid")
+            if step.get("type") != "email":
+                continue
+            variants = step.get("variants")
+            if not isinstance(variants, list) or not variants:
+                raise ValueError("campaign_email_variants_required")
+            for variant in variants:
+                if not isinstance(variant, dict):
+                    raise ValueError("campaign_email_variant_invalid")
+                subject = str(variant.get("subject") or "")
+                body = str(variant.get("body") or "")
+                if not body.strip():
+                    raise ValueError("campaign_email_body_required")
+                email_variant_count += 1
+                for name in VARIABLE_RE.findall(subject + "\n" + body):
+                    if name.casefold().startswith("leadscanner_"):
+                        referenced.add(name)
+
+    if not email_variant_count or not referenced:
+        raise ValueError("campaign_leadscanner_personalization_required")
+    if any(not variables.get(name) for name in referenced):
+        raise ValueError("campaign_personalization_variable_missing")
+
 
 
 class InstantlyError(RuntimeError):
@@ -190,6 +272,8 @@ class InstantlyClient:
         if campaign_status not in SAFE_CAMPAIGN_STATUSES:
             raise ValueError("campaign_must_be_draft_or_paused")
 
+        variables = approved_custom_variables(row)
+        validate_campaign_personalization(campaign, variables)
         payload = {
             "campaign": campaign_id,
             "email": str(row.get("email") or "").strip(),
@@ -197,12 +281,7 @@ class InstantlyClient:
             "website": str(row.get("website") or "").strip(),
             "skip_if_in_workspace": True,
             "skip_if_in_campaign": True,
-            "custom_variables": {
-                "leadscanner_lead_id": lead_id,
-                "leadscanner_review_status": "approved",
-                "leadscanner_subject": str(row.get("subject") or "").strip(),
-                "leadscanner_body": str(row.get("body") or "").strip(),
-            },
+            "custom_variables": variables,
         }
         if not payload["email"]:
             raise ValueError("approved_email_required")

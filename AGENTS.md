@@ -27,7 +27,7 @@
 - The primary mutation mode is `execution_mode=instantly_stage`. It requires `confirm_instantly_stage=true`, a numeric `preview_run_id`, at least one exact `approved_review_tokens` value, and an explicit `instantly_campaign_id`.
 - Instantly stage mode must resume the exact successful, non-expired preview artifact from `main`; it must not rerun discovery, verification, research or copy generation.
 - Revalidate each approved snapshot lead against the current dedupe registry immediately before its Instantly mutation; suppress anything that appeared after preview.
-- Stage only into an Instantly campaign that is Draft or Paused. Pass the exact reviewed subject/body as `leadscanner_subject` and `leadscanner_body` custom variables and require exact lead/campaign readback.
+- Stage only into an Instantly campaign that is Draft or Paused. Preserve exact reviewed `leadscanner_subject`/`leadscanner_body` for the current one-step sequence; additionally expose verified first-party observation, evidence URL and proposed action as separate custom variables for a future Instantly-owned multi-step sequence. Reject missing campaign merge fields, and require exact lead/campaign/custom-variable readback before registry closure.
 - Write `instantly_staged` to the canonical registry only after exact Instantly readback succeeds. A failed later lead must not invalidate already-closed prior staged leads; a retry reuses fresh dedupe to skip them safely.
 - Campaign activation remains separate from staging and requires the existing exact confirmation, sender health, lead verification and sending-status preflight.
 - Optional `draft` mode may still create mijn.host review drafts when explicitly requested; it is not the default outbound path.
@@ -43,6 +43,7 @@
 
 ## Safety
 - Never infer an email address, company identity, prospect fact, pain point or commercial outcome.
+- Do not remove legacy mail generation or rewrite an active Instantly sequence until the actual target campaign and its replacement merge fields have been independently verified; a one-step `{{leadscanner_subject}}`/`{{leadscanner_body}}` sequence still depends on that reviewed copy.
 - Never use dedupe-history content as new prospect research.
 - Never automatically send commercial outreach. Instantly staging is non-sending; send-capable activation/reply/forward/test actions are user-triggered only and require the repository command gates described above.
 - Never let scheduled synchronization, a workflow re-run, or a repository code push become an implicit send trigger.

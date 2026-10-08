@@ -11,7 +11,7 @@ import requests
 
 from approval_revalidation import revalidate_approved
 from dedupe_preflight import load_registry
-from instantly_client import InstantlyClient
+from instantly_client import InstantlyClient, approved_custom_variables
 from preview_snapshot import fetch_snapshot
 from review_selection import select_approved
 from update_dedupe_registry import (
@@ -128,6 +128,14 @@ def _verify_instantly_readback(observed: dict, *, row: dict, campaign_id: str) -
     observed_campaign = _text(observed.get("campaign") or observed.get("campaign_id"))
     if observed_campaign != _text(campaign_id):
         raise RuntimeError("instantly_lead_readback_campaign_mismatch")
+    observed_variables = observed.get("payload")
+    if not isinstance(observed_variables, dict):
+        observed_variables = observed.get("custom_variables")
+    if not isinstance(observed_variables, dict):
+        raise RuntimeError("instantly_lead_readback_variables_missing")
+    for name, expected in approved_custom_variables(row).items():
+        if observed_variables.get(name) != expected:
+            raise RuntimeError(f"instantly_lead_readback_variable_mismatch:{name}")
 
 
 def stage_approved_batch(
