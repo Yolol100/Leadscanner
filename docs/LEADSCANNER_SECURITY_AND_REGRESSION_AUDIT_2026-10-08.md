@@ -80,3 +80,15 @@ De 9/9 statische audit telt **geen** 9/9 voor juridische naleving of productiege
 - Instantly API v2: https://help.instantly.ai/en/articles/10432807-api-v2
 
 Geen automatische verzending, activatie of destructieve campagnehandeling maakt deel uit van deze audit.
+
+## Wijziging op verzoek — publieke-repositorypoort teruggedraaid en oude artifacts verwijderd
+
+Op 8 oktober 2026 is de extra `repository.private=true`-poort op verzoek teruggedraaid. Preview, Instantly-staging, optionele conceptverwerking en geplande synchronisatie zijn daardoor niet langer op basis van repositoryzichtbaarheid geblokkeerd. De bestaande toestemming-, dedupe-, campagne- en activatiecontroles zijn behouden.
+
+De drie specifiek geautoriseerde historische preview-artifacts zijn verwijderd via een eenmalige GitHub Actions-opruimactie en afzonderlijk gecontroleerd met een 404-readback. De GitHub Actions-artifactlijst van alle drie oorspronkelijke runs was daarna leeg:
+
+- Run `37626656135` — artifact `11484965013` verwijderd.
+- Run `37626374962` — artifact `11484053085` verwijderd.
+- Run `37625580078` — artifact `11484386122` verwijderd.
+
+De tijdelijke opruimjob is na succesvolle uitvoering weer uit de workflow verwijderd. Deze verwijdering maakt eventuele eerder gedownloade kopieën of oude logs niet ongedaan. **Resterend privacyrisico:** de repository is publiek en toekomstige preview-artifacts kunnen opnieuw gegevens tonen aan lezers van de repository. Dit risico is bewust niet door een blokkade afgedwongen. Voor productiegebruik blijven een passende opslag-/toegangsstrategie, inhoudelijke copy-review en aantoonbare contactgrondslag nodig. Commerciële verzending blijft **NO-GO** zonder die afzonderlijke controles.
