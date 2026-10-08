@@ -383,6 +383,48 @@ class InstantlyServiceTests(unittest.TestCase):
         preflight_mock.assert_called_once()
         update_mock.assert_called_once()
 
+    def test_staged_lead_readback_rejects_wrong_provider_id(self):
+        row = resolved()["row"]
+        observed = {
+            "id": "unexpected-lead-id",
+            "email": row["email"],
+            "campaign": "campaign-1",
+            "payload": approved_custom_variables(row),
+        }
+        with self.assertRaisesRegex(RuntimeError, "instantly_lead_readback_id_mismatch"):
+            _verify_instantly_readback(
+                observed, row=row, campaign_id="campaign-1",
+                instantly_lead_id="expected-lead-id",
+            )
+
+    @patch("instantly_service.update_registry")
+    @patch("instantly_service.revalidate_approved")
+    @patch("instantly_service.fetch_live_registry")
+    @patch("instantly_service.check_registry_access")
+    def test_batch_rejects_truthy_nonboolean_registry_readback(
+        self, preflight_mock, fetch_registry_mock, revalidate_mock, update_mock
+    ):
+        row = resolved()["row"]
+        batch = {
+            "schema_version": "leadscanner-approved-review-draft-batch/1.0",
+            "rows": [row],
+            "approval": {"approved_count": 1, "automatic_send": False},
+        }
+        fetch_registry_mock.return_value = []
+        revalidate_mock.return_value = resolved()["approved_current"]
+        update_mock.return_value = {"exact_readback": "false"}
+        client = FakeInstantlyClient()
+        with patch.dict(os.environ, {"LEADSCANNER_INSTANTLY_WRITES_ENABLED": "true"}, clear=False):
+            with self.assertRaisesRegex(RuntimeError, "instantly_stage_registry_readback_failed"):
+                stage_approved_batch(
+                    approved_batch=batch,
+                    campaign_id="campaign-1",
+                    instantly_api_key="key",
+                    instantly_client=client,
+                )
+        self.assertEqual([call[0] for call in client.calls], ["add", "get"])
+        update_mock.assert_called_once()
+
     @patch("instantly_service.update_registry")
     @patch("instantly_service.revalidate_approved")
     @patch("instantly_service.fetch_live_registry")

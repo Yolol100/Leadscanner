@@ -118,9 +118,13 @@ def _registry_readback_for_staged(row: dict, campaign_id: str) -> dict:
     }
 
 
-def _verify_instantly_readback(observed: dict, *, row: dict, campaign_id: str) -> None:
+def _verify_instantly_readback(
+    observed: dict, *, row: dict, campaign_id: str, instantly_lead_id: str = "",
+) -> None:
     if not isinstance(observed, dict):
         raise RuntimeError("instantly_lead_readback_must_be_object")
+    if instantly_lead_id and _text(observed.get("id")) != instantly_lead_id:
+        raise RuntimeError("instantly_lead_readback_id_mismatch")
     expected_email = _text(row.get("email")).casefold()
     observed_email = _text(observed.get("email")).casefold()
     if observed_email != expected_email:
@@ -229,14 +233,17 @@ def stage_approved_batch(
         if not instantly_id:
             raise RuntimeError("instantly_create_lead_missing_id")
         observed = client.get_lead(instantly_id)
-        _verify_instantly_readback(observed, row=current_row, campaign_id=campaign)
+        _verify_instantly_readback(
+            observed, row=current_row, campaign_id=campaign,
+            instantly_lead_id=instantly_id,
+        )
 
         registry_result = update_registry(
             _registry_readback_for_staged(current_row, campaign),
             spreadsheet_id=resolved_spreadsheet_id,
             sheet_name=resolved_sheet_name,
         )
-        if not registry_result.get("exact_readback"):
+        if not isinstance(registry_result, dict) or registry_result.get("exact_readback") is not True:
             raise RuntimeError("instantly_stage_registry_readback_failed")
         staged.append({
             "lead_id": _text(current_row.get("lead_id")),
@@ -326,7 +333,10 @@ def stage_exact_approved_lead(
     if not instantly_id:
         raise RuntimeError("instantly_create_lead_missing_id")
     observed = client.get_lead(instantly_id)
-    _verify_instantly_readback(observed, row=row, campaign_id=campaign_id)
+    _verify_instantly_readback(
+        observed, row=row, campaign_id=campaign_id,
+        instantly_lead_id=instantly_id,
+    )
 
     registry_result = update_registry(
         _registry_readback_for_staged(row, campaign_id),
