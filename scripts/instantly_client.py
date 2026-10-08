@@ -208,10 +208,13 @@ def validate_campaign_personalization(
         )
         if sequence_approval != expected:
             raise ValueError("instantly_sequence_approval_fingerprint_mismatch")
-    elif review_mode != "reviewed_mail":
+    elif review_mode == "reviewed_mail":
+        if not {"leadscanner_subject", "leadscanner_body"} <= referenced:
+            raise ValueError("reviewed_mail_campaign_must_use_approved_copy")
+        if sequence_approval:
+            raise ValueError("sequence_approval_not_applicable_to_reviewed_mail")
+    else:
         raise ValueError("unsupported_review_mode")
-    elif sequence_approval:
-        raise ValueError("sequence_approval_not_applicable_to_reviewed_mail")
 
 
 

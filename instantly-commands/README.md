@@ -43,7 +43,7 @@ The command `stage_approved_lead` accepts an additional `args.sequence_approval`
 APPROVE_INSTANTLY_SEQUENCE <campaign_id> <sequence_fingerprint>
 ```
 
-Use the exact fingerprint returned by the read-only audit. The existing exact command confirmation and exact lead approval token are **also required**. Each lead write re-reads the campaign and rejects changed fingerprints, unsafe campaign status or missing variables. A fact-only review can never stage into an Active or Paused campaign. No campaign is activated or email sent by staging.
+Use the exact fingerprint returned by the read-only audit. The existing exact command confirmation and exact lead approval token are **also required**. Each lead write re-reads the campaign and rejects changed fingerprints, unsafe campaign status or missing variables. A fact-only review can never stage into an Active or Paused campaign. Legacy reviewed-mail approvals also cannot stage into evidence-only campaigns without their approved copy placeholders, so they cannot bypass fingerprint approval. No campaign is activated or email sent by staging.
 
 ## Write command
 

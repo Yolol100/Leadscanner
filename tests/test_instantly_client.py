@@ -334,34 +334,32 @@ class InstantlyClientTests(unittest.TestCase):
             "https://acme.nl/afspraak",
         )
 
-    def test_three_step_template_can_use_verified_variables(self):
-        steps = [
-            {"type": "email", "variants": [{
-                "subject": "Vraagje", "body": "Ik zag {{leadscanner_observation}}",
-            }]},
-            {"type": "email", "variants": [{
-                "subject": "", "body": "Een idee: {{leadscanner_value_action}}",
-            }]},
-            {"type": "email", "variants": [{
-                "subject": "", "body": "Laat gerust weten als dit niet relevant is.",
-            }]},
-        ]
-        session = FakeSession([
-            FakeResponse(payload=campaign(steps=steps)),
-            FakeResponse(payload={"id": "instantly-lead-1"}),
-        ])
+    def test_legacy_reviewed_mail_cannot_bypass_sequence_fingerprint_approval(self):
+        session = FakeSession([FakeResponse(payload=campaign(steps=evidence_three_steps(), status=0))])
         client = InstantlyClient("secret", session=session)
-        client.add_approved_lead_to_campaign(
-            approved_batch=approved_batch(),
-            lead_id="growth-aaaaaaaaaaaaaaaaaaaa",
-            campaign_id="c1",
-            registry_rows=[],
-        )
-        self.assertEqual(len(session.calls), 2)
-        self.assertEqual(
-            session.calls[1][2]["json"]["custom_variables"]["leadscanner_signal_type"],
-            "appointment",
-        )
+        with self.assertRaisesRegex(ValueError, "reviewed_mail_campaign_must_use_approved_copy"):
+            client.add_approved_lead_to_campaign(
+                approved_batch=approved_batch(),
+                lead_id="growth-aaaaaaaaaaaaaaaaaaaa",
+                campaign_id="c1",
+                registry_rows=[],
+            )
+        self.assertEqual(len(session.calls), 1)
+
+    def test_legacy_reviewed_mail_requires_both_copy_placeholders(self):
+        steps = [{"type": "email", "variants": [{
+            "subject": "Static subject", "body": "{{leadscanner_body}}",
+        }]}]
+        session = FakeSession([FakeResponse(payload=campaign(steps=steps))])
+        client = InstantlyClient("secret", session=session)
+        with self.assertRaisesRegex(ValueError, "reviewed_mail_campaign_must_use_approved_copy"):
+            client.add_approved_lead_to_campaign(
+                approved_batch=approved_batch(),
+                lead_id="growth-aaaaaaaaaaaaaaaaaaaa",
+                campaign_id="c1",
+                registry_rows=[],
+            )
+        self.assertEqual(len(session.calls), 1)
 
     def test_uuid_named_template_variables_are_not_silently_ignored(self):
         uuid_variable = "f9e0556e-45ed-42ec-8494-1c5301628242_email_1"
