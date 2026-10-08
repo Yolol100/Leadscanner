@@ -1,0 +1,33 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "create-20261008-leadscanner-minimal-three-step-draft",
+  "action": "create_campaign_draft",
+  "args": {
+    "payload": {
+      "name": "Leadscanner - 3-staps websitevoorstel - CONCEPT 2026-10-08",
+      "campaign_schedule": {
+        "schedules": [
+          {
+            "name": "Kantoortijden Nederland",
+            "timing": {
+              "from": "09:00",
+              "to": "17:00"
+            },
+            "days": {
+              "0": false,
+              "1": true,
+              "2": true,
+              "3": true,
+              "4": true,
+              "5": true,
+              "6": false
+            },
+            "timezone": "Europe/Amsterdam"
+          }
+        ]
+      }
+    }
+  },
+  "confirm": "EXECUTE create_campaign_draft Leadscanner - 3-staps websitevoorstel - CONCEPT 2026-10-08",
+  "requested_by": "chatgpt"
+}
