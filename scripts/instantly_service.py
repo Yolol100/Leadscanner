@@ -317,6 +317,8 @@ def stage_exact_approved_lead(
         spreadsheet_id=resolved_spreadsheet_id,
         sheet_name=resolved_sheet_name,
     )
+    if not isinstance(registry_result, dict) or registry_result.get("exact_readback") is not True:
+        raise RuntimeError("instantly_stage_registry_readback_failed")
 
     return {
         "schema_version": "leadscanner-instantly-stage/1.0",
@@ -327,7 +329,7 @@ def stage_exact_approved_lead(
         "campaign_id": _text(campaign_id),
         "instantly_lead_id": instantly_id,
         "instantly_readback": True,
-        "registry_exact_readback": bool(registry_result.get("exact_readback")),
+        "registry_exact_readback": True,
         "automatic_send": False,
         "campaign_activation_available": False,
     }

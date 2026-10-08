@@ -304,6 +304,34 @@ class InstantlyServiceTests(unittest.TestCase):
         preflight_mock.assert_called_once()
         update_mock.assert_called_once()
 
+    @patch("instantly_service.update_registry")
+    @patch("instantly_service.revalidate_approved")
+    @patch("instantly_service.fetch_live_registry")
+    @patch("instantly_service.check_registry_access")
+    @patch("instantly_service.resolve_exact_approval")
+    def test_stage_never_reports_green_without_exact_registry_readback(
+        self, resolve_mock, preflight_mock, fetch_registry_mock, revalidate_mock, update_mock
+    ):
+        resolve_mock.return_value = resolved()
+        fetch_registry_mock.return_value = []
+        revalidate_mock.return_value = resolved()["approved_current"]
+        client = FakeInstantlyClient()
+        with patch.dict(os.environ, {"LEADSCANNER_INSTANTLY_WRITES_ENABLED": "true"}, clear=False):
+            for invalid_readback in (False, None, "true"):
+                with self.subTest(invalid_readback=invalid_readback):
+                    update_mock.return_value = {"exact_readback": invalid_readback}
+                    with self.assertRaisesRegex(RuntimeError, "instantly_stage_registry_readback_failed"):
+                        stage_exact_approved_lead(
+                            preview_run_id=123,
+                            approval_token="growth-aaaaaaaaaaaaaaaaaaaa@1111111111111111",
+                            campaign_id="campaign-1",
+                            instantly_api_key="key",
+                            github_token="gh",
+                            instantly_client=client,
+                        )
+        self.assertEqual(len(client.calls), 6)
+        self.assertEqual(update_mock.call_count, 3)
+
 
 if __name__ == "__main__":
     unittest.main()
