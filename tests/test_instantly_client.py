@@ -226,6 +226,32 @@ class InstantlyClientTests(unittest.TestCase):
             "appointment",
         )
 
+    def test_uuid_named_template_variables_are_not_silently_ignored(self):
+        uuid_variable = "f9e0556e-45ed-42ec-8494-1c5301628242_email_1"
+        steps = [{"type": "email", "variants": [{
+            "subject": "Vraag", "body": "{{leadscanner_observation}} {{" + uuid_variable + "}}",
+        }]}]
+        report = inspect_campaign_sequence(campaign(steps=steps))
+        self.assertEqual(report["decision"], "unresolved_template_fields")
+        self.assertEqual(report["unresolved_template_variables"], [uuid_variable])
+        session = FakeSession([FakeResponse(payload=campaign(steps=steps))])
+        client = InstantlyClient("secret", session=session)
+        with self.assertRaisesRegex(ValueError, "campaign_personalization_variable_missing"):
+            client.add_approved_lead_to_campaign(
+                approved_batch=approved_batch(),
+                lead_id="growth-aaaaaaaaaaaaaaaaaaaa",
+                campaign_id="c1",
+                registry_rows=[],
+            )
+        self.assertEqual(len(session.calls), 1)
+
+    def test_malformed_variable_syntax_fails_closed(self):
+        steps = [{"type": "email", "variants": [{
+            "subject": "Vraag", "body": "{{leadscanner_observation} extra",
+        }]}]
+        with self.assertRaisesRegex(ValueError, "campaign_template_syntax_unrecognized"):
+            inspect_campaign_sequence(campaign(steps=steps))
+
     def test_unmapped_ai_ideas_field_blocks_lead_write(self):
         steps = [{"type": "email", "variants": [{
             "subject": "Vraag", "body": "{{leadscanner_observation}} {{aiIdeas}}",

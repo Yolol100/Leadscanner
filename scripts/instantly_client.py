@@ -19,7 +19,7 @@ from dedupe_preflight import domains_match, match_candidate, normalize_domain
 BASE_URL = "https://api.instantly.ai/api/v2"
 SAFE_CAMPAIGN_STATUSES = {0, 2}  # Draft, Paused
 LEAD_ID_RE = re.compile(r"^growth-[0-9a-f]{20}$")
-VARIABLE_RE = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
+VARIABLE_RE = re.compile(r"\{\{\s*([^{}]+?)\s*\}\}")
 # Only these fields are guaranteed by the lead payload, not by Instantly enrichment.
 GUARANTEED_STANDARD_VARIABLES = frozenset({"email", "companyName", "website"})
 
@@ -97,7 +97,12 @@ def inspect_campaign_sequence(campaign: dict) -> dict:
                 if not body.strip():
                     raise ValueError("campaign_email_body_required")
                 email_variant_count += 1
-                for name in VARIABLE_RE.findall(subject + "\n" + body):
+                copy = subject + "\n" + body
+                matches = VARIABLE_RE.findall(copy)
+                if copy.count("{{") != len(matches):
+                    raise ValueError("campaign_template_syntax_unrecognized")
+                for raw_name in matches:
+                    name = raw_name.strip()
                     template_variables.add(name)
                     if name.casefold().startswith("leadscanner_"):
                         leadscanner_variables.add(name)
