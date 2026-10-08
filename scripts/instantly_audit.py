@@ -134,6 +134,7 @@ def evaluate(root: str | Path = ".") -> dict:
                 and "GITHUB_REPOSITORY_PRIVATE" not in control
                 and "GITHUB_REPOSITORY_PRIVATE" not in workflow
                 and workflow.count("scripts/repository_privacy_gate.py --repository-private") == 3
+                and workflow.count("- 'scripts/repository_privacy_gate.py'") == 2
                 and "github.event.repository.private" in workflow
                 and workflow.find("Block personal-data workflow in public repository") < workflow.find("Install preview runtime")
                 and workflow.find("Block provider commands with artifacts in public repository") < workflow.find("Execute only newly-added immutable Instantly commands")

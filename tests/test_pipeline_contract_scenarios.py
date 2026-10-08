@@ -18,6 +18,7 @@ class PipelineContractScenarioTests(unittest.TestCase):
         workflow = (root / ".github/workflows/leads-cold.yml").read_text(encoding="utf-8")
         self.assertEqual(workflow.count("scripts/repository_privacy_gate.py --repository-private"), 3)
         self.assertEqual(workflow.count("github.event.repository.private"), 3)
+        self.assertEqual(workflow.count("- 'scripts/repository_privacy_gate.py'"), 2)
         self.assertLess(
             workflow.index("Block personal-data workflow in public repository"),
             workflow.index("Install preview runtime"),

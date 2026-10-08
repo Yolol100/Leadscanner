@@ -80,3 +80,11 @@ De 9/9 statische audit telt **geen** 9/9 voor juridische naleving of productiege
 - Instantly API v2: https://help.instantly.ai/en/articles/10432807-api-v2
 
 Geen automatische verzending, activatie of destructieve campagnehandeling maakt deel uit van deze audit.
+
+## Aanvulling: privacybeveiliging voor toekomstige runs
+
+De repository is op 8 oktober 2026 publiek. GitHub Actions-artifacts met reviewgegevens zijn daardoor toegankelijk voor lezers van de repository. Vanaf commit `07d4ec60b70a283ec2436ba121a16f7081ea6d12` blokkeert een nieuwe preflight gevoelige preview-, staging-, concept-, sync- en Instantly-commandoruns zolang de GitHub-eventstatus niet exact `repository.private=true` is. Normale CI blijft actief; de preflight heeft negatieve en positieve regressietests.
+
+**Nog open:** de eigenaar moet de repository privé maken en eerdere artifacts en logs beoordelen. De codewijziging verwijdert geen historische gegevens en levert geen juridisch bewijs per ontvanger. Verzending blijft NO-GO en het eerdere cijfer blijft 8,2/10 totdat de overige acceptatiepunten zijn bewezen.
+
+GitHub-documentatie: https://docs.github.com/en/actions/how-tos/manage-workflow-runs/download-workflow-artifacts en https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/managing-repository-settings/setting-repository-visibility

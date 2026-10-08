@@ -105,6 +105,7 @@ on:
       - 'scripts/instantly_control.py'
       - 'scripts/instantly_sync.py'
       - 'scripts/instantly_audit.py'
+      - 'scripts/repository_privacy_gate.py'
       - 'tests/test_dedupe_preflight.py'
       - 'tests/test_cold_stages.py'
       - 'tests/test_outreach_stages.py'
@@ -156,6 +157,7 @@ on:
       - 'scripts/instantly_control.py'
       - 'scripts/instantly_sync.py'
       - 'scripts/instantly_audit.py'
+      - 'scripts/repository_privacy_gate.py'
       - 'tests/test_dedupe_preflight.py'
       - 'tests/test_cold_stages.py'
       - 'tests/test_outreach_stages.py'
@@ -232,7 +234,8 @@ jobs:
             scripts/instantly_service.py \
             scripts/instantly_control.py \
             scripts/instantly_sync.py \
-            scripts/instantly_audit.py
+            scripts/instantly_audit.py \
+            scripts/repository_privacy_gate.py
           python3 -m unittest \
             tests.test_dedupe_preflight \
             tests.test_cold_stages \
