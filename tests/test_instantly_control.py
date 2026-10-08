@@ -468,6 +468,32 @@ class InstantlyControlTests(unittest.TestCase):
         result = execute_command(command, config(), NormalizingClient())
         self.assertEqual(result["status"], "green")
 
+    def test_update_campaign_rejects_ignored_reply_stop_or_daily_limit(self):
+        class IgnoringSafety:
+            def get_campaign(self, campaign_id):
+                return {
+                    "id": campaign_id, "status": 0,
+                    "stop_on_reply": False, "daily_limit": 100,
+                }
+
+            def _request(self, method, path, **kwargs):
+                return {"id": "c1"}
+        for payload, expected in (
+            ({"stop_on_reply": True}, "campaign_update_safety_field_readback_mismatch"),
+            ({"daily_limit": 15}, "campaign_update_limit_readback_mismatch"),
+        ):
+            with self.subTest(payload=payload):
+                command = {
+                    "schema_version": "leadscanner-instantly-command/1.0",
+                    "command_id": "campaign-ignored-safety-001",
+                    "action": "update_campaign",
+                    "args": {"campaign_id": "c1", "payload": payload},
+                    "confirm": "EXECUTE update_campaign c1",
+                    "requested_by": "chatgpt",
+                }
+                with self.assertRaisesRegex(RuntimeError, expected):
+                    execute_command(command, config(), IgnoringSafety())
+
     def test_update_campaign_rejects_boolean_status_before_patch(self):
         class BooleanStatusClient:
             def get_campaign(self, campaign_id):

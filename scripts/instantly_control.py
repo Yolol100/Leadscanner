@@ -765,10 +765,22 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
             or sorted(observed["email_list"]) != sorted(payload["email_list"])
         ):
             raise RuntimeError("campaign_update_sender_readback_mismatch")
-        if "allow_risky_contacts" in payload and (
-            observed.get("allow_risky_contacts") is not payload["allow_risky_contacts"]
+        for field in (
+            "allow_risky_contacts", "stop_on_reply", "stop_on_auto_reply",
+            "open_tracking", "link_tracking", "insert_unsubscribe_header",
         ):
-            raise RuntimeError("campaign_update_risky_contacts_readback_mismatch")
+            if field in payload and (
+                type(payload[field]) is not bool
+                or observed.get(field) is not payload[field]
+            ):
+                raise RuntimeError(f"campaign_update_safety_field_readback_mismatch:{field}")
+        for field in ("daily_limit", "daily_max_leads", "email_gap"):
+            if field in payload and (
+                type(payload[field]) is not int
+                or type(observed.get(field)) is not int
+                or observed[field] != payload[field]
+            ):
+                raise RuntimeError(f"campaign_update_limit_readback_mismatch:{field}")
         data = {"operation": operation, "readback": observed}
     elif action == "pause_campaign":
         cid = _text(args.get("campaign_id"))

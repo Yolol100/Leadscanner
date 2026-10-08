@@ -94,6 +94,8 @@ def evaluate(root: str | Path = ".") -> dict:
                 and "campaign_changed_during_activation_preflight" in control
                 and "campaign_update_sequence_readback_mismatch" in control
                 and "campaign_update_sender_readback_mismatch" in control
+                and "campaign_update_safety_field_readback_mismatch" in control
+                and "campaign_update_limit_readback_mismatch" in control
                 and "activation_registry_suppression_or_identity_mismatch" in control
                 and "activation_blocks_suppressed_lead_status" in control
                 and "fetch_live_registry(registry_url=registry_url)" in control

@@ -90,7 +90,7 @@ Every preview now emits `funnel-metrics.json` and `coverage-audit.json` in addit
 - Overture coverage benchmark at 10 km found sufficient supply for painter, restaurant, dentist, real-estate and hair-salon searches. Bicycle stores were thin at 17 candidates; widening to 15 km produced 30 and removed the gap.
 - Current decision: **do not add a second discovery source**. Broaden Overture query/radius first; only deliberate source expansion after repeated independent gap evidence.
 
-Instantly campaign updates are checked against provider readback: a requested sequence change must preserve the exact step/variant subject and body content, sender-list updates must match, and changes to risky-contact permission must read back exactly. A successful HTTP PATCH without the requested effect is not reported as a successful update.
+Instantly campaign updates are checked against provider readback: a requested sequence change must preserve the exact step/variant subject and body content, sender-list updates must match, and changes to reply-stop, tracking, unsubscribe-header, risky-contact and daily sending limits must read back exactly. A successful HTTP PATCH without the requested effect is not reported as a successful update.
 
 ## Three-step Instantly migration gate
 
