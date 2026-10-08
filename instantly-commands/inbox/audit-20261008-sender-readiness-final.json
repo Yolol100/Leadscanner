@@ -1,0 +1,9 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "audit-20261008-sender-readiness-final",
+  "action": "get_account",
+  "args": {
+    "email": "info@andrewbaeten.nl"
+  },
+  "requested_by": "chatgpt"
+}

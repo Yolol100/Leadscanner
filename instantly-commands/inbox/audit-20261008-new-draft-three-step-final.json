@@ -1,0 +1,9 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "audit-20261008-new-draft-three-step-final",
+  "action": "audit_campaign_sequence",
+  "args": {
+    "campaign_id": "59c01c6e-86a6-4417-acab-76f114dca9c5"
+  },
+  "requested_by": "chatgpt"
+}
