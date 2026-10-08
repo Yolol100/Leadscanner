@@ -17,7 +17,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from instantly_client import InstantlyClient, InstantlyError, SAFE_CAMPAIGN_STATUSES, inspect_campaign_sequence
-from instantly_service import DEFAULT_REGISTRY_URL, DEFAULT_REPOSITORY, stage_exact_approved_lead
+from instantly_service import DEFAULT_REGISTRY_URL, DEFAULT_REPOSITORY, fetch_live_registry, stage_exact_approved_lead
 
 SCHEMA_VERSION = "leadscanner-instantly-command/1.0"
 RESULT_SCHEMA_VERSION = "leadscanner-instantly-command-result/1.0"
@@ -384,6 +384,9 @@ def _activation_leadset_fingerprint(leads: list[dict]) -> str:
             "id": lead_id, "email": email,
             "campaign": _text(lead.get("campaign") or lead.get("campaign_id")),
             "payload": variables,
+            "status": lead.get("status"),
+            "verification_status": lead.get("verification_status"),
+            "interest_status": lead.get("lt_interest_status"),
         })
     normalized.sort(key=lambda row: (row["email"], row["id"]))
     try:
@@ -444,6 +447,28 @@ def _require_leadscanner_activation_approval(
     return True
 
 
+def _require_registry_staged_for_activation(leads: list[dict], registry_rows: list[dict]) -> None:
+    """Reject missing, ambiguous or suppressed canonical lead identities."""
+    for lead in leads:
+        email = _text(lead.get("email")).casefold()
+        variables = lead.get("payload")
+        if not isinstance(variables, dict):
+            variables = lead.get("custom_variables")
+        lead_id = _text((variables or {}).get("leadscanner_lead_id"))
+        matching = [
+            item for item in registry_rows
+            if email in (item.get("identity") or {}).get("emails", set())
+        ]
+        if len(matching) != 1:
+            raise ValueError("activation_registry_identity_missing_or_ambiguous")
+        entry = matching[0]
+        if (
+            _text(entry.get("status")).casefold() != "instantly_staged"
+            or lead_id not in (entry.get("identity") or {}).get("lead_ids", set())
+        ):
+            raise ValueError("activation_registry_suppression_or_identity_mismatch")
+
+
 def _activate(
     client: InstantlyClient, campaign_id: str, *, activation_approval: str = "",
 ) -> dict:
@@ -481,6 +506,15 @@ def _activate(
     if not leads:
         raise ValueError("activation_requires_leads")
     for lead in leads:
+        lead_status = lead.get("status")
+        interest_status = lead.get("lt_interest_status")
+        if (
+            lead_status is not None and type(lead_status) is not int
+            or interest_status is not None and type(interest_status) is not int
+        ):
+            raise ValueError("activation_lead_status_invalid")
+        if lead_status in {-1, -2, -3} or interest_status in {-1, -2, -3, -4}:
+            raise ValueError("activation_blocks_suppressed_lead_status")
         verification_status = lead.get("verification_status")
         if type(verification_status) is int and verification_status == 1:
             continue
@@ -506,6 +540,11 @@ def _activate(
     if reason == "all_accounts_unhealthy":
         raise ValueError("activation_sending_status_all_accounts_unhealthy")
     leadscanner_campaign = _require_leadscanner_activation_approval(campaign, leads, activation_approval)
+    if leadscanner_campaign:
+        registry_url = os.getenv("DEDUPE_REGISTRY_CSV_URL", DEFAULT_REGISTRY_URL).strip() or DEFAULT_REGISTRY_URL
+        _require_registry_staged_for_activation(
+            leads, fetch_live_registry(registry_url=registry_url),
+        )
     # A campaign can be edited while sender/lead preflight is running.
     current = client.get_campaign(campaign_id)
     if not isinstance(current, dict) or _text(current.get("id")) != campaign_id:
@@ -519,11 +558,13 @@ def _activate(
         or current.get("sequences") != campaign.get("sequences")
     ):
         raise ValueError("campaign_changed_during_activation_preflight")
-    if leadscanner_campaign and (
-        _activation_leadset_fingerprint(_campaign_leads(client, campaign_id))
-        != _activation_leadset_fingerprint(leads)
-    ):
-        raise ValueError("activation_leadset_changed_during_preflight")
+    if leadscanner_campaign:
+        current_leads = _campaign_leads(client, campaign_id)
+        if _activation_leadset_fingerprint(current_leads) != _activation_leadset_fingerprint(leads):
+            raise ValueError("activation_leadset_changed_during_preflight")
+        _require_registry_staged_for_activation(
+            current_leads, fetch_live_registry(registry_url=registry_url),
+        )
     operation = _api(client, "POST", f"/campaigns/{_id(campaign_id, 'campaign_id')}/activate", payload={})
     observed = client.get_campaign(campaign_id) or {}
     if (

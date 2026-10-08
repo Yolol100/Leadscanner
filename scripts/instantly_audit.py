@@ -90,6 +90,9 @@ def evaluate(root: str | Path = ".") -> dict:
                 and "activation_leadset_changed_during_preflight" in control
                 and "audit_activation_readiness" in control
                 and "campaign_changed_during_activation_preflight" in control
+                and "activation_registry_suppression_or_identity_mismatch" in control
+                and "activation_blocks_suppressed_lead_status" in control
+                and "fetch_live_registry(registry_url=registry_url)" in control
             ),
         },
         {

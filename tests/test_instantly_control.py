@@ -114,6 +114,17 @@ class ActivationGuardClient:
         raise AssertionError((method, path, kwargs))
 
 
+def activation_registry_rows(status="instantly_staged"):
+    return [{
+        "identity": {
+            "emails": {"lead@example.com"},
+            "lead_ids": {"growth-aaaaaaaaaaaaaaaaaaaa"},
+        },
+        "status": status,
+        "row_number": 2,
+    }]
+
+
 def activation_approval_for(client):
     campaign = client.get_campaign("c1")
     report = inspect_campaign_sequence(campaign)
@@ -148,7 +159,9 @@ class InstantlyControlTests(unittest.TestCase):
                     _activate(client, "c1", activation_approval=approval)
                 self.assertEqual(client.posts, 0)
 
-    def test_activation_with_documented_basis_and_exact_fingerprint(self):
+    @patch("instantly_control.fetch_live_registry")
+    def test_activation_with_documented_basis_and_exact_fingerprint(self, registry_mock):
+        registry_mock.return_value = activation_registry_rows()
         for basis in ("consent_verified", "existing_customer_related_verified"):
             with self.subTest(basis=basis):
                 client = ActivationGuardClient(basis=basis, reference="crm:permission-2026-123")
@@ -157,7 +170,9 @@ class InstantlyControlTests(unittest.TestCase):
                 self.assertEqual(client.posts, 1)
                 self.assertEqual(result["readback"]["status"], 1)
 
-    def test_activation_rejects_sequence_mutation_during_preflight(self):
+    @patch("instantly_control.fetch_live_registry")
+    def test_activation_rejects_sequence_mutation_during_preflight(self, registry_mock):
+        registry_mock.return_value = activation_registry_rows()
         client = ActivationGuardClient(
             basis="consent_verified", reference="crm:consent-2026-123", mutate=True,
         )
@@ -185,7 +200,9 @@ class InstantlyControlTests(unittest.TestCase):
         self.assertEqual(wrong_id.posts, 0)
 
 
-    def test_activation_rejects_leadset_change_during_preflight(self):
+    @patch("instantly_control.fetch_live_registry")
+    def test_activation_rejects_leadset_change_during_preflight(self, registry_mock):
+        registry_mock.return_value = activation_registry_rows()
         class ChangingLeads(ActivationGuardClient):
             def __init__(self):
                 super().__init__(
@@ -272,7 +289,9 @@ class InstantlyControlTests(unittest.TestCase):
             _activate(client, "c1", activation_approval=approval)
         self.assertEqual(client.posts, 0)
 
-    def test_activation_blocks_campaign_status_change_during_preflight(self):
+    @patch("instantly_control.fetch_live_registry")
+    def test_activation_blocks_campaign_status_change_during_preflight(self, registry_mock):
+        registry_mock.return_value = activation_registry_rows()
         class ChangingStatus(ActivationGuardClient):
             def get_campaign(self, campaign_id):
                 target = super().get_campaign(campaign_id)
@@ -286,6 +305,56 @@ class InstantlyControlTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "campaign_changed_during_activation_preflight"):
             _activate(client, "c1", activation_approval=approval)
         self.assertEqual(client.posts, 0)
+
+
+    @patch("instantly_control.fetch_live_registry")
+    def test_activation_blocks_missing_or_suppressed_registry_identity(self, registry_mock):
+        for rows in ([], activation_registry_rows("unsubscribed"), activation_registry_rows("replied")):
+            with self.subTest(rows=rows):
+                registry_mock.return_value = rows
+                client = ActivationGuardClient(
+                    basis="consent_verified", reference="crm:consent-2026-123",
+                )
+                approval = activation_approval_for(client)
+                with self.assertRaisesRegex(ValueError, "activation_registry_identity_missing_or_ambiguous|activation_registry_suppression_or_identity_mismatch"):
+                    _activate(client, "c1", activation_approval=approval)
+                self.assertEqual(client.posts, 0)
+
+    @patch("instantly_control.fetch_live_registry")
+    def test_activation_blocks_registry_suppression_during_preflight(self, registry_mock):
+        registry_mock.side_effect = [
+            activation_registry_rows("instantly_staged"),
+            activation_registry_rows("unsubscribed"),
+        ]
+        client = ActivationGuardClient(
+            basis="consent_verified", reference="crm:consent-2026-123",
+        )
+        approval = activation_approval_for(client)
+        with self.assertRaisesRegex(ValueError, "activation_registry_suppression_or_identity_mismatch"):
+            _activate(client, "c1", activation_approval=approval)
+        self.assertEqual(client.posts, 0)
+        self.assertEqual(registry_mock.call_count, 2)
+
+    def test_activation_blocks_suppressed_provider_status_even_when_verified(self):
+        class SuppressedClient(ActivationGuardClient):
+            def __init__(self, status=None, interest=None):
+                super().__init__()
+                self.lead_status = status
+                self.interest = interest
+
+            def list_leads(self, **kwargs):
+                page = super().list_leads(**kwargs)
+                if self.lead_status is not None:
+                    page["items"][0]["status"] = self.lead_status
+                if self.interest is not None:
+                    page["items"][0]["lt_interest_status"] = self.interest
+                return page
+        for status, interest in ((-1, None), (-2, None), (-3, None), (None, -1), (None, -2), (None, -3), (None, -4)):
+            with self.subTest(status=status, interest=interest):
+                client = SuppressedClient(status, interest)
+                with self.assertRaisesRegex(ValueError, "activation_blocks_suppressed_lead_status"):
+                    _activate(client, "c1")
+                self.assertEqual(client.posts, 0)
 
     def test_update_campaign_rejects_boolean_status_before_patch(self):
         class BooleanStatusClient:
