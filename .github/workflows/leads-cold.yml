@@ -269,6 +269,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Block personal-data workflow in public repository
+        run: python3 scripts/repository_privacy_gate.py --repository-private "${{ github.event.repository.private }}"
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
@@ -948,6 +950,12 @@ jobs:
             printf 'mixed_instantly_command_and_control_change_forbidden\n%s\n' "$OTHER" >&2
             exit 1
           fi
+      - name: Block provider commands with artifacts in public repository
+        run: |
+          set -euo pipefail
+          if [ -s results/new-instantly-command-paths.txt ]; then
+            python3 scripts/repository_privacy_gate.py --repository-private "${{ github.event.repository.private }}"
+          fi
       - name: Execute only newly-added immutable Instantly commands
         env:
           PYTHONPATH: scripts
@@ -983,6 +991,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Block registry sync artifacts in public repository
+        run: python3 scripts/repository_privacy_gate.py --repository-private "${{ github.event.repository.private }}"
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'

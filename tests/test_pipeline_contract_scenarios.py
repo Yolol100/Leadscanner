@@ -1,5 +1,9 @@
+import subprocess
+import sys
 import unittest
 from pathlib import Path
+
+from repository_privacy_gate import require_private_repository
 
 from approval_revalidation import revalidate_approved
 from dedupe_preflight import candidate_identity
@@ -9,6 +13,44 @@ from review_selection import build_review_queue, select_approved
 
 
 class PipelineContractScenarioTests(unittest.TestCase):
+    def test_sensitive_actions_require_private_repository(self):
+        root = Path(__file__).resolve().parents[1]
+        workflow = (root / ".github/workflows/leads-cold.yml").read_text(encoding="utf-8")
+        self.assertEqual(workflow.count("scripts/repository_privacy_gate.py --repository-private"), 3)
+        self.assertEqual(workflow.count("github.event.repository.private"), 3)
+        self.assertLess(
+            workflow.index("Block personal-data workflow in public repository"),
+            workflow.index("Install preview runtime"),
+        )
+        self.assertLess(
+            workflow.index("Block provider commands with artifacts in public repository"),
+            workflow.index("Execute only newly-added immutable Instantly commands"),
+        )
+        self.assertLess(
+            workflow.index("Block registry sync artifacts in public repository"),
+            workflow.index("Reconcile Instantly states into existing registry rows"),
+        )
+        self.assertIn("if [ -s results/new-instantly-command-paths.txt ]; then", workflow)
+
+    def test_private_repository_gate_accepts_only_true(self):
+        require_private_repository("true")
+        for value in ("false", "True", "1", "", "unknown", " true "):
+            with self.subTest(value=value), self.assertRaisesRegex(
+                ValueError, "leadscanner_sensitive_workflow_requires_private_repository"
+            ):
+                require_private_repository(value)
+
+    def test_private_repository_gate_cli_fails_closed(self):
+        script = Path(__file__).resolve().parents[1] / "scripts/repository_privacy_gate.py"
+        for value, expected in (("true", 0), ("false", 1), ("", 1)):
+            with self.subTest(value=value):
+                proc = subprocess.run(
+                    [sys.executable, str(script), "--repository-private", value],
+                    capture_output=True, text=True, check=False,
+                )
+                self.assertEqual(proc.returncode, expected)
+                self.assertNotIn("traceback", proc.stderr.lower())
+
     def test_workflow_routes_fact_only_approval_to_fingerprint_guard(self):
         workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/leads-cold.yml").read_text(encoding="utf-8")
         self.assertIn("INPUT_INSTANTLY_SEQUENCE_APPROVAL: ${{ inputs.instantly_sequence_approval }}", workflow)

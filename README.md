@@ -2,7 +2,9 @@
 
 Leadscanner is being rebuilt as a fast, cold-only lead pipeline.
 
-**Current safety audit:** [8 October 2026 scenario, regression and Instantly report](docs/LEADSCANNER_SECURITY_AND_REGRESSION_AUDIT_2026-10-08.md). Commercial sending remains **NO-GO** until contact permission, campaign copy and public-artifact privacy have been reviewed.
+**Current safety audit:** [8 October 2026 scenario, regression and Instantly report](docs/LEADSCANNER_SECURITY_AND_REGRESSION_AUDIT_2026-10-08.md). Commercial sending remains **NO-GO** until contact permission and campaign copy have been reviewed.
+
+**Privacy preflight:** This repository is currently public. Preview, Instantly staging, mailbox draft and scheduled registry sync are deliberately **blocked until the repository is private**, because their artifacts can contain business-contact information. New Instantly control commands are blocked for the same reason; ordinary code tests and pushes without new commands still run. GitHub Actions artifacts already uploaded while public are **not** removed by this guard and must be reviewed/deleted separately. Change repository visibility only after reviewing GitHub's documented effects (public forks/history). Do not disable the preflight or put personal data in command files to work around it.
 
 ## Active execution path
 

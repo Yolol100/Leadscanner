@@ -21,6 +21,7 @@
 - Every preview must emit privacy-safe `funnel-metrics.json` with stage rejection totals and `coverage-audit.json` with Overture operational-supply status.
 - Do not add a second discovery source from a single thin/gap run; broaden the current query first and require repeated independent gap evidence before deliberate source expansion.
 - Default every manual execution to `preview`; preview must not require mailbox or Google write credentials and must not mutate either system.
+- Sensitive GitHub Actions jobs (all manual preview/stage/draft, scheduled sync and newly added Instantly control commands) require the exact GitHub event value `repository.private == true` before data processing; a public or unknown visibility fails closed. This gate does not delete historical public artifacts, and it must not be bypassed by a manually supplied env variable. Ordinary CI tests and pushes without new Instantly commands must remain functional.
 - Every preview must emit `review-queue.json`, `review-queue.md`, and `review-queue.csv` with one approval token per reviewable lead.
 - Bind each approval token to the exact lead ID, verified evidence and proposed action; bind subject/body as well in legacy mail mode. Changed reviewed content must invalidate the token.
 - Seal every preview into a digest-bound `preview-snapshot.json` containing source repository/run/commit, the review batch, review queue, request and preview manifest.

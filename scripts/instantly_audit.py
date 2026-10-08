@@ -133,6 +133,11 @@ def evaluate(root: str | Path = ".") -> dict:
                 and "response.text" not in client
                 and "GITHUB_REPOSITORY_PRIVATE" not in control
                 and "GITHUB_REPOSITORY_PRIVATE" not in workflow
+                and workflow.count("scripts/repository_privacy_gate.py --repository-private") == 3
+                and "github.event.repository.private" in workflow
+                and workflow.find("Block personal-data workflow in public repository") < workflow.find("Install preview runtime")
+                and workflow.find("Block provider commands with artifacts in public repository") < workflow.find("Execute only newly-added immutable Instantly commands")
+                and workflow.find("Block registry sync artifacts in public repository") < workflow.find("Reconcile Instantly states into existing registry rows")
                 and "reply_body_required" in control
                 and "forward_body_or_original_required" in control
                 and "test_body_required" in control
