@@ -85,6 +85,11 @@ def evaluate(root: str | Path = ".") -> dict:
                 and "verification_status = lead.get" in control
                 and "/email-verification/" in control
                 and "activation_requires_verified_leads_only" in control
+                and "activation_sequence_approval_required_or_stale" in control
+                and "activation_requires_documented_contact_permission" in control
+                and "activation_leadset_changed_during_preflight" in control
+                and "audit_activation_readiness" in control
+                and "campaign_changed_during_activation_preflight" in control
             ),
         },
         {

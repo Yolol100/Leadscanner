@@ -114,7 +114,9 @@ def inspect_campaign_sequence(campaign: dict) -> dict:
                 email_variant_count += 1
                 copy = subject + "\n" + body
                 matches = VARIABLE_RE.findall(copy)
-                if copy.count("{{") != len(matches):
+                # A stray closing brace is as unsafe as an unmatched opening one.
+                remainder = VARIABLE_RE.sub("", copy)
+                if "{{" in remainder or "}}" in remainder:
                     raise ValueError("campaign_template_syntax_unrecognized")
                 for raw_name in matches:
                     name = raw_name.strip()

@@ -548,6 +548,20 @@ class InstantlyClientTests(unittest.TestCase):
         self.assertTrue(report["evidence_only_template_candidate"])
         self.assertFalse(report["reviewed_copy_required"])
 
+    def test_sequence_audit_rejects_stray_closing_template_braces(self):
+        for body in (
+            "Hello }} without opening",
+            "Hello {{leadscanner_observation}} and }}",
+            "Hello {{leadscanner_observation}} and {{broken",
+        ):
+            with self.subTest(body=body):
+                target = campaign(steps=[{
+                    "type": "email",
+                    "variants": [{"subject": "Hello", "body": body}],
+                }])
+                with self.assertRaisesRegex(ValueError, "campaign_template_syntax_unrecognized"):
+                    inspect_campaign_sequence(target)
+
     def test_sequence_audit_rejects_malformed_variant(self):
         with self.assertRaisesRegex(ValueError, "campaign_email_body_required"):
             inspect_campaign_sequence(campaign(steps=[

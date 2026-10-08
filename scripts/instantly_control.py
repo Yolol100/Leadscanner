@@ -8,6 +8,7 @@ method/path command.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -24,7 +25,7 @@ COMMAND_PREFIX = "instantly-commands/inbox/"
 COMMAND_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{5,120}$")
 
 READ_ACTIONS = {
-    "list_campaigns", "get_campaign", "audit_campaign_sequence", "campaign_sending_status", "campaign_analytics",
+    "list_campaigns", "get_campaign", "audit_campaign_sequence", "audit_activation_readiness", "campaign_sending_status", "campaign_analytics",
     "list_leads", "get_lead", "list_emails", "get_email", "count_unread_emails",
     "list_accounts", "get_account", "test_account_vitals", "warmup_analytics", "daily_account_analytics",
     "list_blocklist", "get_blocklist_entry", "get_background_job",
@@ -359,9 +360,98 @@ def _campaign_leads(client: InstantlyClient, campaign_id: str, max_leads: int = 
     return rows
 
 
-def _activate(client: InstantlyClient, campaign_id: str) -> dict:
-    campaign = client.get_campaign(campaign_id) or {}
-    if int(campaign.get("status")) not in SAFE_CAMPAIGN_STATUSES:
+def _activation_leadset_fingerprint(leads: list[dict]) -> str:
+    """Bind activation to the exact Instantly lead identities and payloads."""
+    normalized = []
+    seen_ids, seen_emails = set(), set()
+    for lead in leads:
+        if not isinstance(lead, dict):
+            raise ValueError("activation_leadset_invalid")
+        lead_id = _text(lead.get("id"))
+        email = _text(lead.get("email")).casefold()
+        if not lead_id or email.count("@") != 1 or lead_id in seen_ids or email in seen_emails:
+            raise ValueError("activation_leadset_duplicate_or_invalid_identity")
+        seen_ids.add(lead_id)
+        seen_emails.add(email)
+        variables = lead.get("payload")
+        if not isinstance(variables, dict):
+            variables = lead.get("custom_variables")
+        if variables is None:
+            variables = {}
+        if not isinstance(variables, dict):
+            raise ValueError("activation_leadset_payload_invalid")
+        normalized.append({
+            "id": lead_id, "email": email,
+            "campaign": _text(lead.get("campaign") or lead.get("campaign_id")),
+            "payload": variables,
+        })
+    normalized.sort(key=lambda row: (row["email"], row["id"]))
+    try:
+        raw = json.dumps(normalized, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("activation_leadset_payload_invalid") from exc
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _require_leadscanner_activation_approval(
+    campaign: dict, leads: list[dict], approval: str,
+) -> bool:
+    """Do not turn reviewed Leadscanner facts into sends without a fresh gate."""
+    sequences = campaign.get("sequences")
+    report = inspect_campaign_sequence(campaign) if sequences else None
+    linked_template = bool(report and report["leadscanner_variables"])
+    linked_leads = any(
+        isinstance(lead.get("payload"), dict)
+        and lead["payload"].get("leadscanner_lead_id")
+        or isinstance(lead.get("custom_variables"), dict)
+        and lead["custom_variables"].get("leadscanner_lead_id")
+        for lead in leads
+    )
+    if not linked_template and not linked_leads:
+        if approval:
+            raise ValueError("activation_approval_not_applicable")
+        return False
+    if not report or report["decision"] not in {
+        "reviewed_mail_copy_still_required", "evidence_only_template_candidate",
+    } or report["unresolved_template_variables"] or report["unsupported_leadscanner_variables"]:
+        raise ValueError("activation_requires_reviewed_leadscanner_sequence")
+    if report["decision"] == "evidence_only_template_candidate" and (
+        report["sequence_count"] != 1
+        or report["email_step_count"] != 3
+        or not {"leadscanner_observation", "leadscanner_value_action"} <= set(report["leadscanner_variables"])
+    ):
+        raise ValueError("activation_requires_approved_three_step_evidence_sequence")
+    expected = (
+        "APPROVE_INSTANTLY_ACTIVATION "
+        + report["campaign_id"] + " " + report["sequence_fingerprint"]
+        + " " + _activation_leadset_fingerprint(leads)
+    )
+    if approval != expected:
+        raise ValueError("activation_sequence_approval_required_or_stale")
+    for lead in leads:
+        variables = lead.get("payload")
+        if not isinstance(variables, dict):
+            variables = lead.get("custom_variables")
+        if not isinstance(variables, dict) or not variables.get("leadscanner_lead_id"):
+            raise ValueError("activation_requires_leadscanner_origin_for_all_leads")
+        basis = variables.get("leadscanner_contact_basis")
+        reference = variables.get("leadscanner_contact_basis_ref")
+        if basis not in {"consent_verified", "existing_customer_related_verified"} or (
+            not isinstance(reference, str)
+            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9:._/-]{7,160}", reference)
+        ):
+            raise ValueError("activation_requires_documented_contact_permission")
+    return True
+
+
+def _activate(
+    client: InstantlyClient, campaign_id: str, *, activation_approval: str = "",
+) -> dict:
+    campaign = client.get_campaign(campaign_id)
+    if not isinstance(campaign, dict) or _text(campaign.get("id")) != campaign_id:
+        raise RuntimeError("campaign_readback_id_mismatch")
+    campaign_status = campaign.get("status")
+    if type(campaign_status) is not int or campaign_status not in SAFE_CAMPAIGN_STATUSES:
         raise ValueError("campaign_must_be_draft_or_paused_before_activation")
     if campaign.get("allow_risky_contacts") is True:
         raise ValueError("activation_blocks_allow_risky_contacts_true")
@@ -415,9 +505,32 @@ def _activate(client: InstantlyClient, campaign_id: str) -> dict:
     reason = _text(diagnostics.get("status") or summary.get("status")).casefold()
     if reason == "all_accounts_unhealthy":
         raise ValueError("activation_sending_status_all_accounts_unhealthy")
+    leadscanner_campaign = _require_leadscanner_activation_approval(campaign, leads, activation_approval)
+    # A campaign can be edited while sender/lead preflight is running.
+    current = client.get_campaign(campaign_id)
+    if not isinstance(current, dict) or _text(current.get("id")) != campaign_id:
+        raise RuntimeError("campaign_readback_id_mismatch")
+    current_status = current.get("status")
+    if type(current_status) is not int or current_status not in SAFE_CAMPAIGN_STATUSES:
+        raise ValueError("campaign_changed_during_activation_preflight")
+    if (
+        current.get("email_list") != campaign.get("email_list")
+        or current.get("allow_risky_contacts") != campaign.get("allow_risky_contacts")
+        or current.get("sequences") != campaign.get("sequences")
+    ):
+        raise ValueError("campaign_changed_during_activation_preflight")
+    if leadscanner_campaign and (
+        _activation_leadset_fingerprint(_campaign_leads(client, campaign_id))
+        != _activation_leadset_fingerprint(leads)
+    ):
+        raise ValueError("activation_leadset_changed_during_preflight")
     operation = _api(client, "POST", f"/campaigns/{_id(campaign_id, 'campaign_id')}/activate", payload={})
     observed = client.get_campaign(campaign_id) or {}
-    if int(observed.get("status")) not in {1, 4}:
+    if (
+        _text(observed.get("id")) != campaign_id
+        or type(observed.get("status")) is not int
+        or observed.get("status") not in {1, 4}
+    ):
         raise RuntimeError("campaign_activation_readback_not_active")
     return {"operation": operation, "readback": observed, "preflight_lead_count": len(leads), "preflight_sending_status": sending_status}
 
@@ -456,6 +569,47 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
         if not isinstance(campaign, dict) or _text(campaign.get("id")) != campaign_id:
             raise RuntimeError("campaign_readback_id_mismatch")
         data = inspect_campaign_sequence(campaign)
+    elif action == "audit_activation_readiness":
+        cid = _text(args.get("campaign_id"))
+        if not cid:
+            raise ValueError("campaign_id_required")
+        campaign = client.get_campaign(cid)
+        if not isinstance(campaign, dict) or _text(campaign.get("id")) != cid:
+            raise RuntimeError("campaign_readback_id_mismatch")
+        report = inspect_campaign_sequence(campaign)
+        leads = _campaign_leads(client, cid)
+        fingerprint = _activation_leadset_fingerprint(leads)
+        basis_ok = 0
+        for lead in leads:
+            variables = lead.get("payload")
+            if not isinstance(variables, dict):
+                variables = lead.get("custom_variables")
+            if isinstance(variables, dict) and (
+                variables.get("leadscanner_contact_basis")
+                in {"consent_verified", "existing_customer_related_verified"}
+                and isinstance(variables.get("leadscanner_contact_basis_ref"), str)
+                and re.fullmatch(
+                    r"[A-Za-z0-9][A-Za-z0-9:._/-]{7,160}",
+                    variables["leadscanner_contact_basis_ref"],
+                )
+            ):
+                basis_ok += 1
+        data = {
+            "schema_version": "leadscanner-activation-readiness-audit/1.0",
+            "campaign_id": cid,
+            "campaign_status": campaign.get("status"),
+            "sequence_fingerprint": report["sequence_fingerprint"],
+            "leadset_fingerprint": fingerprint,
+            "lead_count": len(leads),
+            "documented_contact_basis_count": basis_ok,
+            "missing_contact_basis_count": len(leads) - basis_ok,
+            "leadscanner_variables": report["leadscanner_variables"],
+            "automatic_send": False,
+            "review_required": True,
+            "approval_format": (
+                "APPROVE_INSTANTLY_ACTIVATION <campaign_id> <sequence_fingerprint> <leadset_fingerprint>"
+            ),
+        }
     elif action == "campaign_sending_status":
         data = _api(client, "GET", f"/campaigns/{_id(args.get('campaign_id'), 'campaign_id')}/sending-status", params={"with_ai_summary": bool(args.get("with_ai_summary", False))})
     elif action == "campaign_analytics":
@@ -507,13 +661,20 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
         payload.setdefault("allow_risky_contacts", False)
         created = _api(client, "POST", "/campaigns", payload=payload) or {}
         observed = client.get_campaign(_text(created.get("id"))) or {}
-        if int(observed.get("status")) != 0:
+        if (
+            _text(observed.get("id")) != _text(created.get("id"))
+            or type(observed.get("status")) is not int
+            or observed.get("status") != 0
+        ):
             raise RuntimeError("new_campaign_must_read_back_as_draft")
         data = {"operation": created, "readback": observed}
     elif action == "update_campaign":
         cid = _text(args.get("campaign_id"))
         current = client.get_campaign(cid) or {}
-        if int(current.get("status")) not in SAFE_CAMPAIGN_STATUSES:
+        if _text(current.get("id")) != cid:
+            raise RuntimeError("campaign_readback_id_mismatch")
+        current_status = current.get("status")
+        if type(current_status) is not int or current_status not in SAFE_CAMPAIGN_STATUSES:
             raise ValueError("campaign_must_be_draft_or_paused_before_update")
         operation = _api(
             client,
@@ -530,7 +691,10 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
             raise RuntimeError("campaign_pause_readback_not_paused")
         data = {"operation": operation, "readback": observed}
     elif action == "activate_campaign":
-        data = _activate(client, _text(args.get("campaign_id")))
+        data = _activate(
+            client, _text(args.get("campaign_id")),
+            activation_approval=_text(args.get("activation_approval")),
+        )
     elif action == "delete_campaign":
         data = _api(client, "DELETE", f"/campaigns/{_id(args.get('campaign_id'), 'campaign_id')}")
     elif action == "update_lead":

@@ -4,9 +4,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from instantly_client import InstantlyError
+from instantly_client import InstantlyError, inspect_campaign_sequence
 from instantly_control import (
     _activate,
+    _activation_leadset_fingerprint,
     _campaign_leads,
     _verify_email,
     _wait_background_job,
@@ -48,7 +49,282 @@ class FakeClient:
         }
 
 
+
+class ActivationGuardClient:
+    """Provider double: never sends or touches a real Instantly campaign."""
+    def __init__(self, *, basis=None, reference=None, mutate=False, status=0, campaign_id="c1"):
+        self.activated = False
+        self.get_count = 0
+        self.mutate = mutate
+        self.status = status
+        self.campaign_id = campaign_id
+        self.posts = 0
+        self.variables = {
+            "leadscanner_lead_id": "growth-aaaaaaaaaaaaaaaaaaaa",
+            "leadscanner_observation": "Verified website fact",
+            "leadscanner_value_action": "Small example",
+        }
+        if basis is not None:
+            self.variables["leadscanner_contact_basis"] = basis
+        if reference is not None:
+            self.variables["leadscanner_contact_basis_ref"] = reference
+
+    def get_campaign(self, campaign_id):
+        self.get_count += 1
+        steps = [
+            {"type": "email", "variants": [{
+                "subject": "Step 1", "body": "Seen {{leadscanner_observation}}",
+            }]},
+            {"type": "email", "variants": [{
+                "subject": "Step 2", "body": "Propose {{leadscanner_value_action}}",
+            }]},
+            {"type": "email", "variants": [{
+                "subject": "Step 3", "body": "Thanks for considering this",
+            }]},
+        ]
+        if self.mutate and self.get_count > 2 and not self.activated:
+            steps[1]["variants"][0]["body"] += " CHANGED"
+        return {
+            "id": self.campaign_id,
+            "status": 1 if self.activated else self.status,
+            "allow_risky_contacts": False,
+            "email_list": ["sender@example.com"],
+            "sequences": [{"steps": steps}],
+        }
+
+    def list_leads(self, **kwargs):
+        return {
+            "items": [{
+                "id": "l1", "email": "lead@example.com",
+                "verification_status": 1,
+                "payload": dict(self.variables),
+            }],
+            "next_starting_after": None,
+        }
+
+    def _request(self, method, path, **kwargs):
+        if method == "GET" and path.endswith("/sending-status"):
+            return {"summary": {"status": "campaign_draft"}}
+        if method == "GET" and path == "/accounts/sender%40example.com":
+            return {"status": 1}
+        if method == "POST" and path == "/campaigns/c1/activate":
+            self.posts += 1
+            self.activated = True
+            return {"accepted": True}
+        raise AssertionError((method, path, kwargs))
+
+
+def activation_approval_for(client):
+    campaign = client.get_campaign("c1")
+    report = inspect_campaign_sequence(campaign)
+    return (
+        "APPROVE_INSTANTLY_ACTIVATION c1 " + report["sequence_fingerprint"]
+        + " " + _activation_leadset_fingerprint(client.list_leads()["items"])
+    )
+
+
 class InstantlyControlTests(unittest.TestCase):
+
+    def test_activation_of_leadscanner_campaign_requires_fresh_sequence_approval(self):
+        client = ActivationGuardClient(
+            basis="consent_verified", reference="crm:consent-2026-123",
+        )
+        with self.assertRaisesRegex(ValueError, "activation_sequence_approval_required_or_stale"):
+            _activate(client, "c1")
+        self.assertEqual(client.posts, 0)
+
+    def test_activation_rejects_unverified_public_contact_basis(self):
+        for basis, reference in (
+            (None, None),
+            ("public_business_email", "crm:public-website-123"),
+            ("consent_verified", None),
+            ("consent_verified", "x"),
+            ("existing_customer_related_verified", ""),
+        ):
+            with self.subTest(basis=basis, reference=reference):
+                client = ActivationGuardClient(basis=basis, reference=reference)
+                approval = activation_approval_for(client)
+                with self.assertRaisesRegex(ValueError, "activation_requires_documented_contact_permission"):
+                    _activate(client, "c1", activation_approval=approval)
+                self.assertEqual(client.posts, 0)
+
+    def test_activation_with_documented_basis_and_exact_fingerprint(self):
+        for basis in ("consent_verified", "existing_customer_related_verified"):
+            with self.subTest(basis=basis):
+                client = ActivationGuardClient(basis=basis, reference="crm:permission-2026-123")
+                approval = activation_approval_for(client)
+                result = _activate(client, "c1", activation_approval=approval)
+                self.assertEqual(client.posts, 1)
+                self.assertEqual(result["readback"]["status"], 1)
+
+    def test_activation_rejects_sequence_mutation_during_preflight(self):
+        client = ActivationGuardClient(
+            basis="consent_verified", reference="crm:consent-2026-123", mutate=True,
+        )
+        approval = activation_approval_for(client)
+        with self.assertRaisesRegex(ValueError, "campaign_changed_during_activation_preflight"):
+            _activate(client, "c1", activation_approval=approval)
+        self.assertEqual(client.posts, 0)
+
+    def test_activation_rejects_stale_fingerprint_before_any_send(self):
+        client = ActivationGuardClient(
+            basis="consent_verified", reference="crm:consent-2026-123",
+        )
+        with self.assertRaisesRegex(ValueError, "activation_sequence_approval_required_or_stale"):
+            _activate(client, "c1", activation_approval="APPROVE_INSTANTLY_ACTIVATION c1 " + "a" * 64)
+        self.assertEqual(client.posts, 0)
+
+    def test_activation_rejects_boolean_status_and_campaign_id_mismatch(self):
+        bad_status = ActivationGuardClient(status=False)
+        with self.assertRaisesRegex(ValueError, "campaign_must_be_draft_or_paused_before_activation"):
+            _activate(bad_status, "c1")
+        self.assertEqual(bad_status.posts, 0)
+        wrong_id = ActivationGuardClient(campaign_id="other")
+        with self.assertRaisesRegex(RuntimeError, "campaign_readback_id_mismatch"):
+            _activate(wrong_id, "c1")
+        self.assertEqual(wrong_id.posts, 0)
+
+
+    def test_activation_rejects_leadset_change_during_preflight(self):
+        class ChangingLeads(ActivationGuardClient):
+            def __init__(self):
+                super().__init__(
+                    basis="consent_verified", reference="crm:consent-2026-123",
+                )
+                self.read_count = 0
+
+            def list_leads(self, **kwargs):
+                self.read_count += 1
+                result = super().list_leads(**kwargs)
+                if self.read_count >= 3:
+                    result["items"][0]["payload"]["leadscanner_observation"] = "Unreviewed replacement"
+                return result
+        client = ChangingLeads()
+        approval = activation_approval_for(client)
+        with self.assertRaisesRegex(ValueError, "activation_leadset_changed_during_preflight"):
+            _activate(client, "c1", activation_approval=approval)
+        self.assertEqual(client.posts, 0)
+
+    def test_activation_approval_is_bound_to_exact_lead_payload(self):
+        client = ActivationGuardClient(
+            basis="consent_verified", reference="crm:consent-2026-123",
+        )
+        approval = activation_approval_for(client)
+        client.variables["leadscanner_observation"] = "Different fact after review"
+        with self.assertRaisesRegex(ValueError, "activation_sequence_approval_required_or_stale"):
+            _activate(client, "c1", activation_approval=approval)
+        self.assertEqual(client.posts, 0)
+
+    def test_activation_leadset_rejects_duplicate_identity(self):
+        client = ActivationGuardClient()
+        lead = client.list_leads()["items"][0]
+        with self.assertRaisesRegex(ValueError, "activation_leadset_duplicate_or_invalid_identity"):
+            _activation_leadset_fingerprint([lead, dict(lead)])
+
+    def test_read_only_activation_audit_exposes_hashes_not_lead_emails(self):
+        client = ActivationGuardClient(
+            basis="consent_verified", reference="crm:consent-2026-123",
+        )
+        command = {
+            "schema_version": "leadscanner-instantly-command/1.0",
+            "command_id": "activation-readiness-001",
+            "action": "audit_activation_readiness",
+            "args": {"campaign_id": "c1"},
+            "confirm": "",
+            "requested_by": "chatgpt",
+        }
+        result = execute_command(command, config(), client)
+        report = result["result"]
+        self.assertEqual(result["mode"], "read")
+        self.assertFalse(result["send_action"])
+        self.assertEqual(report["lead_count"], 1)
+        self.assertEqual(report["documented_contact_basis_count"], 1)
+        self.assertEqual(len(report["leadset_fingerprint"]), 64)
+        self.assertNotIn("lead@example.com", str(report))
+        self.assertEqual(client.posts, 0)
+
+    def test_activation_blocks_unreviewed_lead_in_leadscanner_campaign(self):
+        client = ActivationGuardClient(
+            basis="consent_verified", reference="crm:consent-2026-123",
+        )
+        approval = activation_approval_for(client)
+        del client.variables["leadscanner_lead_id"]
+        # The leadset changed, so even a previously valid approval must fail.
+        with self.assertRaisesRegex(ValueError, "activation_sequence_approval_required_or_stale"):
+            _activate(client, "c1", activation_approval=approval)
+        self.assertEqual(client.posts, 0)
+
+    def test_activation_blocks_legacy_template_without_contact_basis(self):
+        class LegacyClient(ActivationGuardClient):
+            def get_campaign(self, campaign_id):
+                target = super().get_campaign(campaign_id)
+                target["sequences"] = [{"steps": [{
+                    "type": "email",
+                    "variants": [{
+                        "subject": "{{leadscanner_subject}}",
+                        "body": "{{leadscanner_body}}",
+                    }],
+                }]}]
+                return target
+        client = LegacyClient()
+        approval = activation_approval_for(client)
+        with self.assertRaisesRegex(ValueError, "activation_requires_documented_contact_permission"):
+            _activate(client, "c1", activation_approval=approval)
+        self.assertEqual(client.posts, 0)
+
+    def test_activation_blocks_campaign_status_change_during_preflight(self):
+        class ChangingStatus(ActivationGuardClient):
+            def get_campaign(self, campaign_id):
+                target = super().get_campaign(campaign_id)
+                if self.get_count >= 3 and not self.activated:
+                    target["status"] = 1
+                return target
+        client = ChangingStatus(
+            basis="consent_verified", reference="crm:consent-2026-123",
+        )
+        approval = activation_approval_for(client)
+        with self.assertRaisesRegex(ValueError, "campaign_changed_during_activation_preflight"):
+            _activate(client, "c1", activation_approval=approval)
+        self.assertEqual(client.posts, 0)
+
+    def test_update_campaign_rejects_boolean_status_before_patch(self):
+        class BooleanStatusClient:
+            def get_campaign(self, campaign_id):
+                return {"id": campaign_id, "status": False}
+
+            def _request(self, *args, **kwargs):
+                raise AssertionError("must not patch")
+        command = {
+            "schema_version": "leadscanner-instantly-command/1.0",
+            "command_id": "campaign-bool-status-001",
+            "action": "update_campaign",
+            "args": {"campaign_id": "c1", "payload": {"name": "Bad"}},
+            "confirm": "EXECUTE update_campaign c1",
+            "requested_by": "chatgpt",
+        }
+        with self.assertRaisesRegex(ValueError, "campaign_must_be_draft_or_paused_before_update"):
+            execute_command(command, config(), BooleanStatusClient())
+
+    def test_create_campaign_rejects_boolean_draft_readback(self):
+        class BooleanDraftClient:
+            def _request(self, method, path, **kwargs):
+                if method == "POST" and path == "/campaigns":
+                    return {"id": "c1"}
+                raise AssertionError("unexpected API call")
+
+            def get_campaign(self, campaign_id):
+                return {"id": campaign_id, "status": False}
+        command = {
+            "schema_version": "leadscanner-instantly-command/1.0",
+            "command_id": "create-bool-draft-001",
+            "action": "create_campaign_draft",
+            "args": {"payload": {"name": "Draft", "campaign_schedule": {}}},
+            "confirm": "EXECUTE create_campaign_draft Draft",
+            "requested_by": "chatgpt",
+        }
+        with self.assertRaisesRegex(RuntimeError, "new_campaign_must_read_back_as_draft"):
+            execute_command(command, config(), BooleanDraftClient())
+
     def test_read_command_does_not_require_confirmation(self):
         command = {
             "schema_version": "leadscanner-instantly-command/1.0",
