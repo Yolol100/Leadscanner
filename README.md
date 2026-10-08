@@ -2,6 +2,8 @@
 
 Leadscanner is being rebuilt as a fast, cold-only lead pipeline.
 
+**Current safety audit:** [8 October 2026 scenario, regression and Instantly report](docs/LEADSCANNER_SECURITY_AND_REGRESSION_AUDIT_2026-10-08.md). Commercial sending remains **NO-GO** until contact permission, campaign copy and public-artifact privacy have been reviewed.
+
 ## Active execution path
 
 The only active GitHub workflow is `.github/workflows/leads-cold.yml`.
