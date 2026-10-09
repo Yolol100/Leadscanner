@@ -72,7 +72,8 @@ def read_source_drafts(*, connector=connect_imap) -> dict:
     try:
         folder = find_drafts_folder(client)
         select_folder(client, folder, readonly=True)
-        status, data = client.uid("search", None, "ALL")
+        # Search only tagged Leadscanner drafts; unrelated mailbox drafts stay unread.
+        status, data = client.uid("search", None, "HEADER", "X-Webactueel-Lead-ID", "growth-")
         if status != "OK" or not isinstance(data, list):
             raise RuntimeError("imap_uid_search_failed")
         uids = (data[0] or b"").split() if data else []
