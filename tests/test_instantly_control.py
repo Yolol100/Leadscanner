@@ -896,6 +896,31 @@ class InstantlyControlTests(unittest.TestCase):
             self.assertEqual(written["result"]["advanced"]["access_token"], "[REDACTED]")
             self.assertEqual(written["result"]["email"], "sender@example.com")
 
+    def test_public_command_artifact_does_not_disclose_recipient_or_copy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "public-report.json"
+            _write(path, {
+                "result": {
+                    "items": [{
+                        "id": "lead-123",
+                        "email": "private.lead@example.org",
+                        "company_name": "Prospect Company",
+                        "subject": "Internal strategy",
+                        "body": "Sensitive personalized message",
+                        "payload": {"leadscanner_observation": "Private prospect detail"},
+                    }],
+                    "email_step_count": 3,
+                    "error": "problem for private.lead@example.org",
+                },
+            })
+            written = path.read_text(encoding="utf-8")
+            for sensitive in ("private.lead@example.org", "Prospect Company",
+                              "Internal strategy", "Sensitive personalized message",
+                              "Private prospect detail"):
+                self.assertNotIn(sensitive, written)
+            self.assertIn('"email_step_count": 3', written)
+            self.assertIn('"id": "lead-123"', written)
+
     def test_test_send_200_error_body_fails_closed(self):
         class ActionClient:
             def _request(self, method, path, **kwargs):
