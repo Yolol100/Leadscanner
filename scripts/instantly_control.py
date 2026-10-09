@@ -18,7 +18,7 @@ from urllib.parse import quote
 
 from instantly_client import InstantlyClient, InstantlyError, SAFE_CAMPAIGN_STATUSES, inspect_campaign_sequence
 from instantly_service import DEFAULT_REGISTRY_URL, DEFAULT_REPOSITORY, fetch_live_registry, stage_exact_approved_lead
-from myhost_instantly_import import execute_migration
+from myhost_instantly_import import execute_migration, blocked_values
 from instantly_language_campaigns import audit_language_split
 from instantly_mail_quality import mail_quality_audit
 from instantly_language_route import route_exact_language
