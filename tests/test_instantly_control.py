@@ -532,6 +532,46 @@ class InstantlyControlTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "new_campaign_must_read_back_as_draft"):
             execute_command(command, config(), BooleanDraftClient())
 
+    def test_safe_obsolete_draft_delete_only_if_empty_and_inactive(self):
+        cid = "59c01c6e-86a6-4417-acab-76f114dca9c5"
+        class Draft:
+            def __init__(self, count=0, status=0):
+                self.count=count
+                self.status=status
+                self.deleted=False
+            def get_campaign(self, target):
+                if self.deleted:
+                    raise InstantlyError("instantly_api_error status=404")
+                return {"id":cid,"name":"Leadscanner 3-Step Concept","status":self.status}
+            def list_leads(self,**kwargs):
+                return {"items":[{"id":"existing"}] if self.count else []}
+            def _request(self, method, path, **kwargs):
+                if method=="DELETE" and path.endswith(cid):
+                    self.deleted=True
+                    return {}
+                raise AssertionError("unsafe provider call")
+        cmd={"schema_version":"leadscanner-instantly-command/1.0","command_id":"test-delete-empty",
+             "action":"delete_unused_draft_campaign","args":{"campaign_id":cid},
+             "confirm":"EXECUTE delete_unused_draft_campaign "+cid}
+        for kwargs in ({"count":1},{"status":1}):
+            api=Draft(**kwargs)
+            with self.assertRaisesRegex(ValueError,"has_leads|must_be_inactive"):
+                execute_command(cmd,config(),api)
+            self.assertFalse(api.deleted)
+        api=Draft()
+        result=execute_command(cmd,config(),api)
+        self.assertTrue(result["result"]["deleted"])
+        self.assertTrue(api.deleted)
+
+    def test_safe_obsolete_draft_delete_blocks_other_campaigns(self):
+        cmd={"schema_version":"leadscanner-instantly-command/1.0","command_id":"test-delete-target",
+             "action":"delete_unused_draft_campaign","args":{"campaign_id":"5c720281-fd07-4c47-8155-c88d7d3c09b8"},
+             "confirm":"EXECUTE delete_unused_draft_campaign 5c720281-fd07-4c47-8155-c88d7d3c09b8"}
+        class NoApi:
+            def get_campaign(self,*a): raise AssertionError("should fail before provider")
+        with self.assertRaisesRegex(ValueError,"obsolete_draft_exact_id_required"):
+            execute_command(cmd,config(),NoApi())
+
     def test_read_command_does_not_require_confirmation(self):
         command = {
             "schema_version": "leadscanner-instantly-command/1.0",
