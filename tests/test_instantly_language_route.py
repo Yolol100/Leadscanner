@@ -11,7 +11,7 @@ NAME=LANGUAGE_CAMPAIGN_NAMES["nl"]
 SUBJECT="Een korte vraag over jullie website"
 BODY="Hoi, ik zag jullie website en dacht aan een klein idee. Laat gerust weten als je graag een voorstel wilt."
 ROW={"id":"11111111-1111-1111-1111-111111111111","email":"contact@example.org","list_id":LID,"campaign":None,
-"payload":{"leadscanner_import_origin":"myhost_drafts","leadscanner_contact_basis":"review_required","leadscanner_source_lead_id":"growth-"+"a"*20,
+"payload":{"leadscanner_import_origin":"myhost_drafts","leadscanner_contact_basis":"consent_verified","leadscanner_contact_basis_ref":"verified-proof-2026","leadscanner_source_lead_id":"growth-"+"a"*20,
 "leadscanner_subject":SUBJECT,"leadscanner_body":BODY}}
 SEQUENCE={"steps":[
 {"type":"email","variants":[{"subject":"{{leadscanner_subject}}","body":"{{leadscanner_body}}"}]},
@@ -89,6 +89,17 @@ class TestLanguageRouting(unittest.TestCase):
             report=route_exact_language(api,language="nl",campaign_id=CID,max_leads=1)
         self.assertEqual(report["already_present_count"],1)
         self.assertEqual(report["attempt_count"],0)
+        self.assertFalse(api.calls)
+
+    def test_unverified_contact_basis_must_not_be_copied(self):
+        api=Fake()
+        row=dict(ROW, payload=dict(ROW["payload"],leadscanner_contact_basis="review_required"))
+        with patch("instantly_language_route.read_imported_leads",return_value=(LID,[row])),\
+             patch("instantly_language_route.fetch_live_registry",return_value=[]),\
+             patch("instantly_language_route.blocked_values",return_value=set()):
+            out=route_exact_language(api,language="nl",campaign_id=CID,max_leads=1)
+        self.assertEqual(out["held_counts"]["contact_basis_hold"],1)
+        self.assertEqual(out["attempt_count"],0)
         self.assertFalse(api.calls)
 
     def test_wrong_target_id_language_and_size_fail_before_provider(self):

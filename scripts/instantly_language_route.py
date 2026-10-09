@@ -148,7 +148,12 @@ def route_exact_language(client: InstantlyClient, *, language: str, campaign_id:
             counters["blocklist_hold"] += 1
             continue
         variables = row.get("payload") or row.get("custom_variables") or {}
-        if variables.get("leadscanner_contact_basis") != "review_required":
+        basis = variables.get("leadscanner_contact_basis")
+        proof = variables.get("leadscanner_contact_basis_ref")
+        if basis not in {"consent_verified", "existing_customer_related_verified"} or (
+            not isinstance(proof, str)
+            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9:._/-]{7,160}", proof)
+        ):
             counters["contact_basis_hold"] += 1
             continue
         if not registry_allows_draft({
