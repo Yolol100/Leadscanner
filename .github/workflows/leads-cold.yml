@@ -15,9 +15,9 @@ on:
           - instantly_stage
           - draft
       preview_copy_mode:
-        description: 'Instantly sequence = alleen geverifieerde feiten; reviewed_mail = aparte mail voor legacy/mijn.host'
+        description: 'reviewed_mail = gecontroleerde NL/EN Leadscanner-mail; instantly_sequence = alleen feiten voor aparte template'
         required: true
-        default: instantly_sequence
+        default: reviewed_mail
         type: choice
         options:
           - instantly_sequence
@@ -43,9 +43,9 @@ on:
         default: ''
         type: string
       instantly_campaign_id:
-        description: 'Instantly-stage: doelcampagne-ID; campagne moet Draft of Paused zijn'
+        description: 'Instantly-stage: auto_language routeert gecontroleerde NL/EN tekst; anders exact campagne-ID'
         required: false
-        default: ''
+        default: auto_language
         type: string
       instantly_sequence_approval:
         description: 'Fact-only staging: APPROVE_INSTANTLY_SEQUENCE <campaign_id> <audited_sha256>; uitsluitend voor Draft met 3 e-mails'

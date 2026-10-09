@@ -158,3 +158,22 @@ Confirmation: `EXECUTE route_language_drafts nl|<uuid>|25`.
 It never launches campaigns or sends, and it never accepts lead emails in a
 public GitHub command. Avoid re-running an uncertain background write: audit
 first, then issue a new exact command.
+
+## Automatic language destination for newly approved Leadscanner leads
+
+The normal review path is now `preview_copy_mode=reviewed_mail`. The
+`instantly_stage` dispatch uses `instantly_campaign_id=auto_language` by
+default and resolves an **exact approved reviewed subject/body** to one of the
+existing NL or EN Draft campaigns after fresh registry revalidation. An
+ambiguous or mismatched language is held rather than guessed from domain,
+company location or names. Target campaigns must be Draft with **zero senders**,
+matching exact names, a three-email sequence, approved first-step merge fields,
+and no unsupported fields. No send or activation is performed.
+
+The old fact-only `instantly_sequence` mode is explicitly opt-in and
+requires a distinct exact destination ID and sequence fingerprint approval. It
+cannot be silently staged through the automatic reviewed-mail route.
+
+**Before any launch**, record genuine per-lead evidence for contact permission,
+confirm suppression rules and reconnect/test the sender accounts. A successful
+copy, staging action or review is never evidence of consent.
