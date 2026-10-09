@@ -1,0 +1,10 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "20261009-import-myhost-smoke-001",
+  "action": "import_myhost_drafts",
+  "args": {
+    "max_imports": 1
+  },
+  "confirm": "EXECUTE import_myhost_drafts isolated-list-no-send:1",
+  "requested_by": "chatgpt"
+}
