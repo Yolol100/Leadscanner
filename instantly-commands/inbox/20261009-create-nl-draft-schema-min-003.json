@@ -1,0 +1,48 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "20261009-create-nl-draft-schema-min-003",
+  "action": "create_campaign_draft",
+  "args": {
+    "payload": {
+      "name": "Webactueel NL Websiteadvies Draft",
+      "campaign_schedule": {
+        "schedules": [
+          {
+            "name": "Business hours",
+            "timing": {
+              "from": "09:00",
+              "to": "17:00"
+            },
+            "days": {
+              "1": true,
+              "2": true,
+              "3": true,
+              "4": true,
+              "5": true
+            },
+            "timezone": "Europe/Amsterdam"
+          }
+        ]
+      },
+      "sequences": [
+        {
+          "steps": [
+            {
+              "type": "email",
+              "delay": 0,
+              "variants": [
+                {
+                  "subject": "{{leadscanner_subject}}",
+                  "body": "{{leadscanner_body}}"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "stop_on_reply": true
+    }
+  },
+  "confirm": "EXECUTE create_campaign_draft Webactueel NL Websiteadvies Draft",
+  "requested_by": "chatgpt"
+}
