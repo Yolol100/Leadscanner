@@ -129,7 +129,7 @@ No action in that audit sent, activated or deleted any campaign or lead.
 The aggregate-only mail analysis was refined without modifying mail content:
 [37938696038](https://github.com/Yolol100/Leadscanner/actions/runs/37938696038)
 reported 1,128 subject/body pairs complete, NL 1,066, EN 59, unknown 3,
-zero unanswered/no-question messages, **two messages with one question**,
+zero messages without a question mark, **two messages with one question**,
 **1,108 with two questions**, and **18 with three or more**. Other soft review
 flags: 11 messages under 35 words, 3 without an obvious opt-out phrase,
 zero unrendered template markers, zero missing sender identification, and
