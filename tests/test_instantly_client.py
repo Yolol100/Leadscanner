@@ -373,6 +373,40 @@ class InstantlyClientTests(unittest.TestCase):
             "https://acme.nl/afspraak",
         )
 
+
+    def test_staging_rechecks_provider_blocklist_before_create(self):
+        for blocked in ("info@acme.nl", "acme.nl"):
+            with self.subTest(blocked=blocked):
+                session=FakeSession([
+                    FakeResponse(payload=campaign()),
+                    FakeResponse(payload={"items":[{"bl_value":blocked}],"next_starting_after":None}),
+                ])
+                client=InstantlyClient("secret",session=session)
+                with self.assertRaisesRegex(ValueError,"provider_blocklist_blocks_stage"):
+                    client.add_approved_lead_to_campaign(
+                        approved_batch=approved_batch(),
+                        lead_id="growth-aaaaaaaaaaaaaaaaaaaa",
+                        campaign_id="c1",
+                        registry_rows=[],
+                    )
+                self.assertFalse(any(method=="POST" and url.endswith("/leads") for method,url,_ in session.calls))
+
+    def test_staging_rejects_blocklist_api_failure_without_write(self):
+        session=FakeSession([
+            FakeResponse(payload=campaign()),
+            FakeResponse(status_code=503,payload={"message":"private"}),
+            FakeResponse(status_code=503,payload={"message":"private"}),
+        ])
+        client=InstantlyClient("secret",session=session,sleep_fn=lambda _:None)
+        with self.assertRaisesRegex(InstantlyError,"instantly_api_error status=503"):
+            client.add_approved_lead_to_campaign(
+                approved_batch=approved_batch(),
+                lead_id="growth-aaaaaaaaaaaaaaaaaaaa",
+                campaign_id="c1",
+                registry_rows=[],
+            )
+        self.assertFalse(any(method=="POST" and url.endswith("/leads") for method,url,_ in session.calls))
+
     def test_legacy_copy_can_use_guarded_optional_fact_fields(self):
         from instantly_campaign_copy import campaign_steps
         from instantly_client import validate_campaign_personalization
