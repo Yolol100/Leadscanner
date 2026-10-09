@@ -1671,5 +1671,51 @@ class InstantlyControlTests(unittest.TestCase):
                 load_command(path)
 
 
+    @patch("instantly_control.fetch_live_registry")
+    def test_nl_activation_fails_closed_when_reply_stopping_or_schedule_drifts(self, registry_mock):
+        from instantly_campaign_copy import TARGET_CAMPAIGNS, campaign_payload
+        campaign_id=TARGET_CAMPAIGNS["nl"][0]
+        registry_mock.return_value=activation_registry_rows()
+
+        class Target(ActivationGuardClient):
+            def __init__(self, drift):
+                super().__init__(basis="consent_verified", reference="crm:consent-2026-123",
+                                 campaign_id=campaign_id)
+                self.drift=drift
+
+            def get_campaign(self, cid):
+                campaign=super().get_campaign(cid)
+                campaign.update(campaign_payload("nl"))
+                campaign["email_list"]=["sender@example.com"]
+                campaign["campaign_schedule"]={"schedules":[{
+                    "timezone":"Arctic/Longyearbyen",
+                    "timing":{"from":"09:30","to":"16:30"},
+                    "days":{"0":False,"1":True,"2":True,"3":True,
+                            "4":True,"5":True,"6":False},
+                }]}
+                if self.drift=="reply":
+                    campaign["stop_on_reply"]=False
+                if self.drift=="schedule":
+                    campaign["campaign_schedule"]["schedules"][0]["timing"]["from"]="00:00"
+                return campaign
+
+            def _request(self, method, path, **kwargs):
+                if method=="POST" and path=="/campaigns/"+campaign_id+"/activate":
+                    self.activated=True
+                    self.posts+=1
+                    return {"accepted":True}
+                return super()._request(method,path,**kwargs)
+
+        for drift in ("reply","schedule"):
+            with self.subTest(drift=drift):
+                provider=Target(drift)
+                sequence=inspect_campaign_sequence(provider.get_campaign(campaign_id))
+                approval="APPROVE_INSTANTLY_ACTIVATION "+campaign_id+" "+sequence["sequence_fingerprint"]+" "+_activation_leadset_fingerprint(provider.list_leads()["items"])
+                with patch("instantly_control.blocked_values",return_value=set()):
+                    with self.assertRaisesRegex(ValueError,"activation_reviewed_campaign_configuration_drift"):
+                        _activate(provider,campaign_id,activation_approval=approval)
+                self.assertEqual(provider.posts,0)
+
+
 if __name__ == "__main__":
     unittest.main()
