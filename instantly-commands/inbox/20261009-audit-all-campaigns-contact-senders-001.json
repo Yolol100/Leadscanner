@@ -1,0 +1,7 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "20261009-audit-all-campaigns-contact-senders-001",
+  "action": "audit_launch_inventory",
+  "args": {},
+  "requested_by": "chatgpt"
+}
