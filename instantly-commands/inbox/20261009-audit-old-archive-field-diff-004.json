@@ -1,0 +1,7 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "20261009-audit-old-archive-field-diff-004",
+  "action": "audit_old_archive_metadata",
+  "args": {},
+  "requested_by": "chatgpt"
+}
