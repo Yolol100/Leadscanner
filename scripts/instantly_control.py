@@ -21,6 +21,7 @@ from instantly_service import DEFAULT_REGISTRY_URL, DEFAULT_REPOSITORY, fetch_li
 from myhost_instantly_import import execute_migration
 from instantly_language_campaigns import audit_language_split
 from instantly_language_route import route_exact_language
+from instantly_launch_audit import audit_launch_inventory
 
 SCHEMA_VERSION = "leadscanner-instantly-command/1.0"
 RESULT_SCHEMA_VERSION = "leadscanner-instantly-command-result/1.0"
@@ -28,7 +29,7 @@ COMMAND_PREFIX = "instantly-commands/inbox/"
 COMMAND_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{5,120}$")
 
 READ_ACTIONS = {
-    "audit_myhost_drafts", "audit_language_split", "audit_campaign_schedule", "list_campaigns", "get_campaign", "audit_campaign_sequence", "audit_activation_readiness", "campaign_sending_status", "campaign_analytics",
+    "audit_launch_inventory", "audit_myhost_drafts", "audit_language_split", "audit_campaign_schedule", "list_campaigns", "get_campaign", "audit_campaign_sequence", "audit_activation_readiness", "campaign_sending_status", "campaign_analytics",
     "list_leads", "get_lead", "list_emails", "get_email", "count_unread_emails",
     "list_accounts", "get_account", "test_account_vitals", "warmup_analytics", "daily_account_analytics",
     "list_blocklist", "get_blocklist_entry", "get_background_job",
@@ -622,7 +623,9 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
     validate_write_gate(command, config, run_attempt=run_attempt)
     action, args = command["action"], command["args"]
 
-    if action == "audit_language_split":
+    if action == "audit_launch_inventory":
+        data = audit_launch_inventory(client)
+    elif action == "audit_language_split":
         data = audit_language_split(client)
     elif action == "route_language_drafts":
         data = route_exact_language(
