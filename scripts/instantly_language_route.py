@@ -110,7 +110,7 @@ def _step(label, func, *args, **kwargs):
     except Exception as exc:
         # Expose only HTTP status or fixed transport labels; never provider copy.
         raw = str(exc)
-        match = re.fullmatch(r"instantly_api_error status=(\\d{3})", raw)
+        match = re.fullmatch(r"instantly_api_error status=(\d{3})", raw)
         suffix = ("_http" + match.group(1)) if match else (
             "_network" if raw == "instantly_network_error" else ""
         )
