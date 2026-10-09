@@ -182,8 +182,54 @@ def archive_and_retire_old_campaign(client) -> dict:
         raise RuntimeError("archive_missing_confirmed_copy")
     original_vars=lead.get("payload") if isinstance(lead.get("payload"),dict) else lead.get("custom_variables")
     stored_vars=stored[0].get("payload") if isinstance(stored[0].get("payload"),dict) else stored[0].get("custom_variables")
-    if isinstance(original_vars,dict) and (not isinstance(stored_vars,dict) or any(stored_vars.get(k)!=v for k,v in original_vars.items())):
-        raise RuntimeError("archive_custom_fields_changed")
+    if isinstance(original_vars,dict):
+        if not isinstance(stored_vars,dict):
+            raise RuntimeError("archive_custom_fields_missing")
+        conflicting=[
+            key for key,val in original_vars.items()
+            if key in stored_vars and stored_vars[key]!=val
+        ]
+        if conflicting:
+            raise RuntimeError("archive_custom_fields_conflict")
+        missing={key:val for key,val in original_vars.items() if key not in stored_vars}
+        if missing:
+            # Repair only missing metadata. Never overwrite an existing value or
+            # change permission/suppression values created in the archive.
+            if len(missing)>3 or len(original_vars)>100 or len(stored_vars)>100:
+                raise RuntimeError("archive_metadata_repair_scope_exceeded")
+            merged={**stored_vars,**missing}
+            if any(not isinstance(key,str) or
+                   not isinstance(value,(str,int,float,bool,type(None)))
+                   for key,value in merged.items()):
+                raise RuntimeError("archive_metadata_repair_type_invalid")
+            if sum(len(key)+len(str(value)) for key,value in merged.items())>100000:
+                raise RuntimeError("archive_metadata_repair_payload_too_large")
+            archived_id=_text(stored[0].get("id"))
+            if not re.fullmatch(r"[0-9a-fA-F-]{36}",archived_id):
+                raise RuntimeError("archive_metadata_repair_id_invalid")
+            # Fail closed on ambiguous PATCH outcomes; no blind network retries.
+            client._request("PATCH","/leads/"+archived_id,json={"custom_variables":merged})
+            observed=client.get_lead(archived_id)
+            if not isinstance(observed,dict) or (
+                _text(observed.get("id"))!=archived_id
+                or _text(observed.get("email")).casefold()!=email
+            ):
+                raise RuntimeError("archive_metadata_repair_readback_identity_invalid")
+            observed_vars=observed.get("payload")
+            if not isinstance(observed_vars,dict):
+                observed_vars=observed.get("custom_variables")
+            if not isinstance(observed_vars,dict) or any(
+                observed_vars.get(key)!=value for key,value in merged.items()
+            ):
+                raise RuntimeError("archive_metadata_repair_readback_fields_invalid")
+            stored=_archive_leads(client,list_id,email)
+            stored_vars=(stored[0].get("payload") if len(stored)==1 else None)
+            if not isinstance(stored_vars,dict) or any(
+                stored_vars.get(key)!=value for key,value in merged.items()
+            ):
+                raise RuntimeError("archive_metadata_repair_list_readback_invalid")
+        elif any(stored_vars.get(key)!=value for key,value in original_vars.items()):
+            raise RuntimeError("archive_custom_fields_changed")
     still=_target_ready(client)
     if _text(still["id"])!=_text(lead["id"]) or _text(still["email"]).casefold()!=email:
         raise RuntimeError("archive_source_changed_before_delete")

@@ -95,6 +95,53 @@ class Tests(unittest.TestCase):
         self.assertNotIn("keep",str(report))
         self.assertNotIn("old@example.org",str(report))
 
+    def test_restore_only_missing_metadata_then_delete(self):
+        f=Fake()
+        f.archive=[{"id":"33333333-3333-3333-3333-333333333333",
+            "email":LEAD["email"],"list_id":LIST_ID,"payload":{"extra":"preserve"}}]
+        def _req(method,path,**kwargs):
+            f.calls.append((method,path))
+            if method=="GET" and path=="/lead-lists":
+                return {"items":[{"id":LIST_ID,"name":ARCHIVE_NAME}]}
+            if method=="PATCH" and path=="/leads/33333333-3333-3333-3333-333333333333":
+                assert kwargs["json"]["custom_variables"]["extra"]=="preserve"
+                assert kwargs["json"]["custom_variables"]["note"]=="keep"
+                f.archive[0]["payload"]=kwargs["json"]["custom_variables"]
+                return {"id":f.archive[0]["id"]}
+            if method=="DELETE" and path=="/campaigns/"+CAMPAIGN_ID:
+                f.deleted=True
+                return {}
+            raise AssertionError("unexpected API request")
+        f._request=_req
+        f.get_lead=lambda lid: dict(f.archive[0])
+        result=archive_and_retire_old_campaign(f)
+        self.assertTrue(result["old_campaign_deleted"])
+        self.assertFalse(result["lead_copied_on_this_run"])
+        self.assertLess(
+            f.calls.index(("PATCH","/leads/33333333-3333-3333-3333-333333333333")),
+            f.calls.index(("DELETE","/campaigns/"+CAMPAIGN_ID))
+        )
+        self.assertEqual(f.archive[0]["payload"]["extra"],"preserve")
+        self.assertEqual(f.archive[0]["payload"]["note"],"keep")
+
+    def test_repair_fail_closed_if_patch_readback_does_not_persist(self):
+        f=Fake()
+        f.archive=[{"id":"33333333-3333-3333-3333-333333333333",
+            "email":LEAD["email"],"list_id":LIST_ID,"payload":{"extra":"preserve"}}]
+        def _req(method,path,**kwargs):
+            if method=="GET" and path=="/lead-lists":
+                return {"items":[{"id":LIST_ID,"name":ARCHIVE_NAME}]}
+            if method=="PATCH":
+                return {}
+            if method=="DELETE":
+                raise AssertionError("must not delete")
+            raise AssertionError("unexpected API request")
+        f._request=_req
+        f.get_lead=lambda lid: dict(f.archive[0])
+        with self.assertRaisesRegex(RuntimeError,"archive_metadata_repair_readback_fields_invalid"):
+            archive_and_retire_old_campaign(f)
+        self.assertFalse(f.deleted)
+
     def test_stop_if_email_history(self):
         f=Fake();f.history=[{"id":"email"}]
         with self.assertRaisesRegex(ValueError,"email_history"):
