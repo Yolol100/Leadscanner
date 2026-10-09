@@ -60,6 +60,29 @@ class Tests(unittest.TestCase):
         self.assertTrue(out["old_campaign_deleted"])
         self.assertTrue(f.deleted)
 
+    def test_archive_readback_last_nonempty_page_may_have_cursor(self):
+        from instantly_old_campaign_retire import _archive_leads
+        class Cursor(Fake):
+            def list_leads(self,*,campaign=None,list_id=None,contacts=None,limit=100,starting_after=None):
+                if list_id:
+                    if starting_after=="terminal":
+                        return {"items":[],"next_starting_after":None}
+                    return {"items":[{"id":"33333333-3333-3333-3333-333333333333",
+                                     "email":LEAD["email"],"list_id":LIST_ID,
+                                     "payload":LEAD["payload"]}],
+                            "next_starting_after":"terminal"}
+                return {"items":[LEAD]}
+        result=_archive_leads(Cursor(),LIST_ID,LEAD["email"])
+        self.assertEqual(len(result),1)
+
+    def test_archive_refuses_wrong_list_even_if_email_matches(self):
+        from instantly_old_campaign_retire import _archive_leads
+        class Wrong(Fake):
+            def list_leads(self,*,campaign=None,list_id=None,contacts=None,limit=100,starting_after=None):
+                return {"items":[{"email":LEAD["email"],"list_id":"wrong"}]}
+        with self.assertRaisesRegex(RuntimeError,"archive_readback_identity_mismatch"):
+            _archive_leads(Wrong(),LIST_ID,LEAD["email"])
+
     def test_stop_if_email_history(self):
         f=Fake();f.history=[{"id":"email"}]
         with self.assertRaisesRegex(ValueError,"email_history"):

@@ -109,17 +109,34 @@ def _archive_list(client):
 
 
 def _archive_leads(client,list_id,email):
-    response=client.list_leads(list_id=list_id,contacts=[email],limit=100)
-    if not isinstance(response,dict) or not isinstance(response.get("items"),list):
-        raise RuntimeError("archive_readback_page_invalid")
-    items=[
-        x for x in response["items"] if isinstance(x,dict)
-        and _text(x.get("email")).casefold()==email
-        and _text(x.get("list_id"))==list_id
-    ]
-    if response.get("next_starting_after") or len(items)>1:
-        raise RuntimeError("archive_lead_identity_ambiguous")
-    return items
+    # The provider may emit a cursor on its last non-empty page.
+    # Traverse until the empty terminal page and verify every identity.
+    items=[]
+    cursor=None
+    seen=set()
+    for _ in range(10):
+        response=client.list_leads(
+            list_id=list_id, contacts=[email], limit=100, starting_after=cursor
+        )
+        if not isinstance(response,dict) or not isinstance(response.get("items"),list):
+            raise RuntimeError("archive_readback_page_invalid")
+        rows=response["items"]
+        for row in rows:
+            if not isinstance(row,dict):
+                raise RuntimeError("archive_readback_row_invalid")
+            if _text(row.get("email")).casefold()!=email or _text(row.get("list_id"))!=list_id:
+                raise RuntimeError("archive_readback_identity_mismatch")
+            items.append(row)
+        if len(items)>1:
+            raise RuntimeError("archive_lead_identity_ambiguous")
+        next_cursor=_text(response.get("next_starting_after"))
+        if not next_cursor:
+            return items
+        if not rows or next_cursor==cursor or next_cursor in seen:
+            raise RuntimeError("archive_readback_cursor_invalid")
+        seen.add(next_cursor)
+        cursor=next_cursor
+    raise RuntimeError("archive_readback_page_limit")
 
 
 def _wait_job(client,id,*,sleep_fn=time.sleep):
