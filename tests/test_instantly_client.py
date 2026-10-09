@@ -347,6 +347,28 @@ class InstantlyClientTests(unittest.TestCase):
             "https://acme.nl/afspraak",
         )
 
+    def test_legacy_copy_can_use_guarded_optional_fact_fields(self):
+        from instantly_campaign_copy import campaign_steps
+        from instantly_client import validate_campaign_personalization
+        for lang in ("nl", "en"):
+            c={"id":"draft-id","status":0,"sequences":[{"steps":campaign_steps(lang)}]}
+            validate_campaign_personalization(
+                c, {"leadscanner_subject":"approved subject","leadscanner_body":"approved body"},
+                review_mode="reviewed_mail",
+            )
+
+    def test_unprotected_optional_fact_field_rejected_for_reviewed_copy(self):
+        from instantly_campaign_copy import campaign_steps
+        from instantly_client import validate_campaign_personalization
+        steps=campaign_steps("nl")
+        steps[2]["variants"][0]["body"] += "\n{{leadscanner_value_action}}"
+        c={"id":"draft-id","status":0,"sequences":[{"steps":steps}]}
+        with self.assertRaisesRegex(ValueError,"campaign_optional_evidence_unprotected"):
+            validate_campaign_personalization(
+                c, {"leadscanner_subject":"approved subject","leadscanner_body":"approved body"},
+                review_mode="reviewed_mail",
+            )
+
     def test_legacy_reviewed_mail_cannot_bypass_sequence_fingerprint_approval(self):
         session = FakeSession([FakeResponse(payload=campaign(steps=evidence_three_steps(), status=0))])
         client = InstantlyClient("secret", session=session)

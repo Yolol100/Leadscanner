@@ -177,6 +177,40 @@ def inspect_campaign_sequence(campaign: dict) -> dict:
     }
 
 
+
+def _optional_guarded_evidence_fields(campaign: dict) -> set[str]:
+    """Only approved first-party fields inside strict Liquid if/else fallbacks are optional.
+
+    Use structural checks instead of assuming undocumented provider defaults.
+    All steps are scanned: any unguarded occurrence makes the field required.
+    """
+    sequences = campaign.get("sequences") or []
+    optional = {"leadscanner_observation", "leadscanner_value_action"}
+    combined = "{% if leadscanner_observation and leadscanner_value_action %}"
+    observed = "{% if leadscanner_observation %}"
+    for seq in sequences:
+        for step in seq.get("steps", []):
+            for variant in step.get("variants", []):
+                copy = str(variant.get("subject") or "") + "\n" + str(variant.get("body") or "")
+                # Only these two conditional forms are recognized.
+                pattern = r"\{%\s*if\s+(leadscanner_observation(?:\s+and\s+leadscanner_value_action)?)\s*%\}(.*?)\{%\s*(?:else\s*%\}.*?\{%\s*)?endif\s*%\}"
+                blocks = list(re.finditer(pattern, copy, re.S))
+                remaining = copy
+                for block in reversed(blocks):
+                    cond = block.group(1).strip()
+                    interior = block.group(2)
+                    start, end = block.span()
+                    if cond not in {"leadscanner_observation", "leadscanner_observation and leadscanner_value_action"}:
+                        raise ValueError("campaign_optional_liquid_guard_invalid")
+                    if "{{leadscanner_value_action}}" in interior and cond != "leadscanner_observation and leadscanner_value_action":
+                        raise ValueError("campaign_optional_liquid_guard_invalid")
+                    # Remove optional field references inside a safe conditional.
+                    remaining = remaining[:start] + remaining[end:]
+                if any("{{"+k+"}}" in remaining for k in optional):
+                    raise ValueError("campaign_optional_evidence_unprotected")
+    return optional
+
+
 def validate_campaign_personalization(
     campaign: dict,
     variables: dict[str, str],
@@ -189,7 +223,13 @@ def validate_campaign_personalization(
     referenced = set(report["leadscanner_variables"])
     if not report["email_variant_count"] or not referenced:
         raise ValueError("campaign_leadscanner_personalization_required")
-    if any(not variables.get(name) for name in referenced):
+    # Optional verified observation/action may appear in guarded Liquid follow-ups.
+    # Legacy imported draft leads have reviewed subject/body but no source fact fields.
+    # Every optional merge must be inside its exact guard, never leak as a blank token.
+    optional: set[str] = set()
+    if review_mode == "reviewed_mail":
+        optional = _optional_guarded_evidence_fields(campaign)
+    if any(not variables.get(name) for name in referenced - optional):
         raise ValueError("campaign_personalization_variable_missing")
     if report["unresolved_template_variables"]:
         raise ValueError("campaign_personalization_variable_missing")
