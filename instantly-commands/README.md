@@ -142,3 +142,19 @@ names, subjects or bodies**. A list is not a sendable campaign. The existing
 approval and legal-basis gates still apply before any subsequent campaign use.
 
 Imports are bounded to 1-250 leads per command. Use max_imports=1 for a real provider smoke test. Every fresh command rechecks source IMAP, live suppression, Instantly workspace duplicates, and destination list before writing. Commands do not continue after a failed/unknown write result; reconciliation requires a new read-only audit.
+
+## Language-separated imported-draft routing
+
+The allowlisted `route_language_drafts` action inspects every lead's source
+subject/body, handles only confidently Dutch or English business addresses,
+respects the live registry and blocklist, and **copies** approved rows to the
+matching Draft campaign while preserving the original list. It requires an
+empty sender list, a three-email sequence with exact reviewed subject/body
+merge fields, strict command confirmation and provider job/readback evidence.
+Ambiguous, suppressed, already-routed and consumer-mail rows stay on hold.
+
+Example command args: `{"language":"nl","campaign_id":"<uuid>","max_leads":25}`.
+Confirmation: `EXECUTE route_language_drafts nl|<uuid>|25`.
+It never launches campaigns or sends, and it never accepts lead emails in a
+public GitHub command. Avoid re-running an uncertain background write: audit
+first, then issue a new exact command.

@@ -1,0 +1,97 @@
+"""No-network regression tests for safe draft-only language routing."""
+import unittest
+from unittest.mock import patch
+
+from instantly_language_route import preflight_campaign, route_exact_language
+from instantly_language_campaigns import LANGUAGE_CAMPAIGN_NAMES
+
+CID="5c720281-fd07-4c47-8155-c88d7d3c09b8"
+LID="24deb187-59e0-43b5-86b8-fe37a7b21e2a"
+NAME=LANGUAGE_CAMPAIGN_NAMES["nl"]
+SUBJECT="Een korte vraag over jullie website"
+BODY="Hoi, ik zag jullie website en dacht aan een klein idee. Laat gerust weten als je graag een voorstel wilt."
+ROW={"id":"11111111-1111-1111-1111-111111111111","email":"contact@example.org","list_id":LID,"campaign":None,
+"payload":{"leadscanner_import_origin":"myhost_drafts","leadscanner_contact_basis":"review_required","leadscanner_source_lead_id":"growth-"+"a"*20,
+"leadscanner_subject":SUBJECT,"leadscanner_body":BODY}}
+SEQUENCE={"steps":[
+{"type":"email","variants":[{"subject":"{{leadscanner_subject}}","body":"{{leadscanner_body}}"}]},
+{"type":"email","variants":[{"subject":"","body":"Hallo, laat het weten."}]},
+{"type":"email","variants":[{"subject":"","body":"Laatste bericht."}]},
+]}
+
+
+class Fake:
+    def __init__(self):
+        self.sent=False
+        self.destination=[]
+        self.calls=[]
+        self.campaign={"id":CID,"name":NAME,"status":0,"email_list":[],
+                       "sequences":[SEQUENCE],"stop_on_reply":True,"allow_risky_contacts":False}
+    def get_campaign(self, cid):
+        return self.campaign
+    def list_leads(self, *, campaign=None, limit=100, starting_after=None, **kwargs):
+        if campaign: return {"items":self.destination,"next_starting_after":None}
+        raise AssertionError("unsupported list")
+    def _request(self, method,path,**kwargs):
+        self.calls.append((method,path))
+        if path=="/leads/move":
+            self.destination=[dict(ROW, campaign=CID)]
+            return {"id":"22222222-2222-2222-2222-222222222222"}
+        if path.startswith("/background-jobs/"):
+            return {"status":"completed"}
+        raise AssertionError(path)
+
+
+class TestLanguageRouting(unittest.TestCase):
+    def test_preflight_rejects_active_and_sender_assigned(self):
+        api=Fake()
+        preflight_campaign(api,"nl",CID)
+        api.campaign["status"]=1
+        with self.assertRaisesRegex(ValueError,"must_be_draft"):
+            preflight_campaign(api,"nl",CID)
+        api.campaign["status"]=0
+        api.campaign["email_list"]=["connected@example.org"]
+        with self.assertRaisesRegex(ValueError,"no_senders"):
+            preflight_campaign(api,"nl",CID)
+
+    def test_exact_copy_into_draft_never_sends(self):
+        api=Fake()
+        with patch("instantly_language_route.read_imported_leads",return_value=(LID,[ROW])),\
+             patch("instantly_language_route.fetch_live_registry",return_value=[]),\
+             patch("instantly_language_route.blocked_values",return_value=set()):
+            report=route_exact_language(api,language="nl",campaign_id=CID,max_leads=1)
+        self.assertEqual(report["confirmed_copied_count"],1)
+        self.assertFalse(report["campaign_activated"])
+        self.assertFalse(report["automatic_send"])
+        self.assertFalse(report["original_list_modified"])
+        self.assertEqual(api.calls,[("POST","/leads/move"),("GET","/background-jobs/22222222-2222-2222-2222-222222222222")])
+
+    def test_ambiguous_or_existing_lead_skipped(self):
+        api=Fake();api.destination=[dict(ROW,campaign=CID)]
+        with patch("instantly_language_route.read_imported_leads",return_value=(LID,[ROW])),\
+             patch("instantly_language_route.fetch_live_registry",return_value=[]),\
+             patch("instantly_language_route.blocked_values",return_value=set()):
+            report=route_exact_language(api,language="nl",campaign_id=CID,max_leads=1)
+        self.assertEqual(report["already_present_count"],1)
+        self.assertEqual(report["attempt_count"],0)
+        self.assertFalse(api.calls)
+
+    def test_wrong_target_id_language_and_size_fail_before_provider(self):
+        api=Fake()
+        for language,cid,size in [("de",CID,1),("nl","notuuid",1),("nl",CID,0),("nl",CID,251)]:
+            with self.assertRaises(ValueError):
+                route_exact_language(api,language=language,campaign_id=cid,max_leads=size)
+        self.assertFalse(api.calls)
+
+    def test_copy_rejected_if_no_matching_email_after_job(self):
+        api=Fake()
+        api._request=lambda method,path,**kw: {"id":"22222222-2222-2222-2222-222222222222"} if method=="POST" else {"status":"completed"}
+        with patch("instantly_language_route.read_imported_leads",return_value=(LID,[ROW])),\
+             patch("instantly_language_route.fetch_live_registry",return_value=[]),\
+             patch("instantly_language_route.blocked_values",return_value=set()):
+            with self.assertRaisesRegex(RuntimeError,"destination_readback_missing"):
+                route_exact_language(api,language="nl",campaign_id=CID,max_leads=1)
+
+
+if __name__=="__main__":
+    unittest.main()

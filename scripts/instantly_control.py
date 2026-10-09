@@ -20,6 +20,7 @@ from instantly_client import InstantlyClient, InstantlyError, SAFE_CAMPAIGN_STAT
 from instantly_service import DEFAULT_REGISTRY_URL, DEFAULT_REPOSITORY, fetch_live_registry, stage_exact_approved_lead
 from myhost_instantly_import import execute_migration
 from instantly_language_campaigns import audit_language_split
+from instantly_language_route import route_exact_language
 
 SCHEMA_VERSION = "leadscanner-instantly-command/1.0"
 RESULT_SCHEMA_VERSION = "leadscanner-instantly-command-result/1.0"
@@ -38,7 +39,7 @@ WRITE_ACTIONS = {
     "forward_email", "send_test_email", "mark_thread_read", "update_account",
     "mark_account_fixed", "pause_account", "resume_account", "enable_warmup", "disable_warmup",
     "verify_email",
-    "block_email", "block_domain", "delete_blocklist_entry", "stage_approved_lead", "import_myhost_drafts",
+    "block_email", "block_domain", "delete_blocklist_entry", "stage_approved_lead", "import_myhost_drafts", "route_language_drafts",
 }
 SEND_ACTIONS = {"activate_campaign", "reply_email", "forward_email", "send_test_email"}
 DESTRUCTIVE_ACTIONS = {"delete_campaign", "delete_lead", "delete_blocklist_entry"}
@@ -148,6 +149,8 @@ def _confirmation_target(action: str, args: dict) -> str:
         "stage_approved_lead": "campaign_id",
     }
     payload = args.get("payload") or {}
+    if action == "route_language_drafts":
+        return "|".join((_text(args.get("language")), _text(args.get("campaign_id")), str(args.get("max_leads"))))
     if action == "import_myhost_drafts":
         return f"isolated-list-no-send:{_import_limit(args)}"
     if action == "create_campaign_draft":
@@ -621,6 +624,12 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
 
     if action == "audit_language_split":
         data = audit_language_split(client)
+    elif action == "route_language_drafts":
+        data = route_exact_language(
+            client, language=_text(args.get("language")), campaign_id=_text(args.get("campaign_id")),
+            max_leads=args.get("max_leads", 25),
+            registry_url=os.getenv("DEDUPE_REGISTRY_CSV_URL", DEFAULT_REGISTRY_URL),
+        )
     elif action == "audit_myhost_drafts":
         data = execute_migration(client, mode="audit", registry_url=os.getenv("DEDUPE_REGISTRY_CSV_URL", DEFAULT_REGISTRY_URL))
     elif action == "import_myhost_drafts":
