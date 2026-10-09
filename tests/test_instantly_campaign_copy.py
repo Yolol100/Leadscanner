@@ -28,6 +28,39 @@ class Tests(unittest.TestCase):
             self.assertEqual(body.count("{{leadscanner_value_action}}"),1)
             self.assertIn("{% if leadscanner_observation %}",two["variants"][0]["body"])
             self.assertIn("{% endif %}",two["variants"][0]["body"])
+    def test_auto_route_by_reviewed_text_only(self):
+        from instantly_campaign_copy import AUTO_CAMPAIGN_ID,TARGET_CAMPAIGNS,resolve_language_destination
+        class Provider:
+            def get_campaign(self,cid):
+                lang=next(k for k,v in TARGET_CAMPAIGNS.items() if v[0]==cid)
+                return {"id":cid,"name":TARGET_CAMPAIGNS[lang][1],"status":0,
+                        "email_list":[],"sequences":[{"steps":campaign_steps(lang)}]}
+        examples={
+          "nl":("Een korte vraag over jullie website","Hoi, ik zag jullie website en dacht aan een klein idee voor de pagina. Als je wilt, stuur ik graag een concreet voorstel. Laat gerust weten."),
+          "en":("Quick question about your website","Hi, I noticed your website and thought of an idea. Would you like me to send a short example? Let me know if you're interested. Best regards.")
+        }
+        for language,(subject,body) in examples.items():
+            row={"status":"review_draft","review_mode":"reviewed_mail","subject":subject,"body":body}
+            self.assertEqual(resolve_language_destination(Provider(),row,AUTO_CAMPAIGN_ID),TARGET_CAMPAIGNS[language][0])
+            wrong="nl" if language=="en" else "en"
+            with self.assertRaisesRegex(ValueError,"reviewed_mail_campaign_language_mismatch"):
+                resolve_language_destination(Provider(),row,TARGET_CAMPAIGNS[wrong][0])
+        with self.assertRaisesRegex(ValueError,"reviewed_mail_language_ambiguous_hold"):
+            resolve_language_destination(Provider(),{"status":"review_draft","subject":"Website","body":"Hi"},AUTO_CAMPAIGN_ID)
+        with self.assertRaisesRegex(ValueError,"auto_language_requires_reviewed_mail"):
+            resolve_language_destination(Provider(),{"status":"sequence_facts_review","review_mode":"instantly_sequence"},AUTO_CAMPAIGN_ID)
+
+    def test_auto_route_never_uses_campaign_with_senders(self):
+        from instantly_campaign_copy import AUTO_CAMPAIGN_ID,TARGET_CAMPAIGNS,resolve_language_destination
+        class Unsafe:
+            def get_campaign(self,cid):
+                return {"id":cid,"name":TARGET_CAMPAIGNS["nl"][1],"status":0,
+                        "email_list":["sender@example.org"],"sequences":[{"steps":campaign_steps("nl")}]}
+        row={"status":"review_draft","subject":"Een korte vraag over jullie website",
+             "body":"Hoi, ik zag jullie website en dacht aan een klein idee voor de pagina. Als je wilt, stuur ik graag een concreet voorstel. Laat gerust weten."}
+        with self.assertRaisesRegex(ValueError,"auto_language_requires_zero_senders"):
+            resolve_language_destination(Unsafe(),row,AUTO_CAMPAIGN_ID)
+
     def test_copy_quality_and_contact_handling(self):
         for lang in LANGS:
             steps=campaign_steps(lang)

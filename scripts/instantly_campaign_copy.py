@@ -89,3 +89,53 @@ def campaign_payload(language: str) -> dict:
         "open_tracking": False, "link_tracking": False,
         "text_only": True, "insert_unsubscribe_header": True,
         "email_list": []}
+
+
+AUTO_CAMPAIGN_ID = "auto_language"
+TARGET_CAMPAIGNS = {
+    "nl": ("5c720281-fd07-4c47-8155-c88d7d3c09b8", "Webactueel NL - Websiteadvies (Concept)"),
+    "en": ("fd405145-4bf5-40c5-b6ae-2e7f5af6120c", "Webactueel EN - Website Advice (Draft)"),
+}
+
+
+def resolve_language_destination(client, row: dict, requested_campaign_id: str) -> str:
+    """Route only reviewed NL/EN copy to its own identified, non-sending Draft."""
+    known={x[0] for x in TARGET_CAMPAIGNS.values()}
+    if requested_campaign_id not in known | {AUTO_CAMPAIGN_ID}:
+        return requested_campaign_id
+    if row.get("status")!="review_draft" or str(row.get("review_mode") or "reviewed_mail")!="reviewed_mail":
+        raise ValueError("auto_language_requires_reviewed_mail")
+    subject=row.get("subject")
+    body=row.get("body")
+    if not isinstance(subject,str) or not isinstance(body,str) or not subject.strip() or not body.strip():
+        raise ValueError("auto_language_requires_reviewed_copy")
+    # Avoid cycles through the existing mijn.host migration adapter.
+    from instantly_language_campaigns import classify_language
+    lang=classify_language(subject,body)
+    if lang not in TARGET_CAMPAIGNS:
+        raise ValueError("reviewed_mail_language_ambiguous_hold")
+    cid,name=TARGET_CAMPAIGNS[lang]
+    if requested_campaign_id!=AUTO_CAMPAIGN_ID and requested_campaign_id!=cid:
+        raise ValueError("reviewed_mail_campaign_language_mismatch")
+    observed=client.get_campaign(cid)
+    if not isinstance(observed,dict) or observed.get("id")!=cid:
+        raise RuntimeError("auto_language_campaign_readback_invalid")
+    if observed.get("name")!=name or type(observed.get("status")) is not int or observed["status"]!=0:
+        raise ValueError("auto_language_requires_matching_draft")
+    if observed.get("email_list")!=[]:
+        raise ValueError("auto_language_requires_zero_senders")
+    sequences=observed.get("sequences")
+    if not isinstance(sequences,list) or len(sequences)!=1:
+        raise ValueError("auto_language_requires_three_step_sequence")
+    steps=sequences[0].get("steps") if isinstance(sequences[0],dict) else None
+    if not isinstance(steps,list) or len(steps)!=3:
+        raise ValueError("auto_language_requires_three_step_sequence")
+    if steps[0].get("variants")!=[{
+        "subject":"{{leadscanner_subject}}","body":"{{leadscanner_body}}"
+    }]:
+        raise ValueError("auto_language_first_step_copy_contract_invalid")
+    from instantly_client import inspect_campaign_sequence
+    report=inspect_campaign_sequence(observed)
+    if report["unsupported_leadscanner_variables"] or report["unresolved_template_variables"]:
+        raise ValueError("auto_language_unmapped_template_variables")
+    return cid
