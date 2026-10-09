@@ -61,7 +61,7 @@ class ImportTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "source_single_valid_recipient"):
             extract_lead_draft(mail(to="one@example.com, two@example.com"), sender="info@andrewbaeten.nl")
         m = mail()
-        m.add_attachment(b"file", filename="notes.txt")
+        m.add_attachment(b"file", maintype="application", subtype="octet-stream", filename="notes.txt")
         with self.assertRaisesRegex(ValueError, "attachments"):
             extract_lead_draft(m, sender="info@andrewbaeten.nl")
 
