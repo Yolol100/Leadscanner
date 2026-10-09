@@ -192,3 +192,44 @@ def archive_and_retire_old_campaign(client) -> dict:
         "email_sent":False,
         "contains_personal_data":False,
     }
+
+
+def audit_old_archive_state(client) -> dict:
+    """Inspect destination after an async API outcome that may be ambiguous."""
+    lead=_target_ready(client)
+    email=_text(lead.get("email")).casefold()
+    match=[]
+    cursor=None
+    seen=set()
+    for _ in range(20):
+        params={"limit":100}
+        if cursor:params["starting_after"]=cursor
+        page=client._request("GET","/lead-lists",params=params,retry_safe=True)
+        if not isinstance(page,dict) or not isinstance(page.get("items"),list):
+            raise RuntimeError("archive_reconcile_lists_invalid")
+        for row in page["items"]:
+            if isinstance(row,dict) and row.get("name")==ARCHIVE_NAME:
+                match.append(_text(row.get("id")))
+        cursor=_text(page.get("next_starting_after"))
+        if not cursor: break
+        if cursor in seen:raise RuntimeError("archive_reconcile_cursor_loop")
+        seen.add(cursor)
+    else:
+        raise RuntimeError("archive_reconcile_page_limit")
+    if len(match)>1:
+        raise RuntimeError("archive_reconcile_duplicate_lists")
+    copied=0
+    if match:
+        copied=len(_archive_leads(client,match[0],email))
+    return {
+        "schema_version":"leadscanner-old-archive-check/1.0",
+        "old_campaign_paused":True,
+        "old_campaign_leads":1,
+        "archive_list_exists":bool(match),
+        "archive_list_id":match[0] if match else None,
+        "archived_matching_leads":copied,
+        "can_finalize_without_move":bool(match and copied==1),
+        "auto_send":False,
+        "mutated":False,
+        "contains_email":False,
+    }
