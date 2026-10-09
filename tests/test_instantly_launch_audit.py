@@ -43,6 +43,23 @@ class Tests(unittest.TestCase):
         self.assertNotIn("sender.do.not.expose@example.org",str(r))
         self.assertNotIn("bad@example.org",str(r))
 
+    def test_vitals_collects_only_aggregate_domain_results(self):
+        from instantly_launch_audit import audit_sender_vitals
+        class Vitals(Fake):
+            def _request(self, method, path, **kwargs):
+                if path=="/accounts/test/vitals":
+                    self.assertion_body=kwargs["json"]
+                    return {"status":"success","success_list":[{"domain":"private.example","allPass":True}],"failure_list":[]}
+                return super()._request(method,path,**kwargs)
+        f=Vitals()
+        out=audit_sender_vitals(f)
+        self.assertEqual(out["account_count"],1)
+        self.assertEqual(out["vitals_allpass_count"],1)
+        self.assertEqual(out["active_connection_count"],1)
+        self.assertIn("sender.do.not.expose@example.org",f.assertion_body["accounts"])
+        self.assertNotIn("sender.do.not.expose@example.org",str(out))
+        self.assertFalse(out["ready_to_send"])
+
     def test_missing_contact_proof_remains_unverified(self):
         self.assertEqual(_permission_counts([
             {"payload":{"leadscanner_contact_basis":"consent_verified"}},

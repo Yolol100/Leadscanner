@@ -165,3 +165,37 @@ def audit_launch_inventory(client, *, source: bool = True) -> dict:
         report["source_contact_basis"] = _permission_counts(leads)
         report["source_lead_count"] = len(leads)
     return report
+
+
+def audit_sender_vitals(client) -> dict:
+    """Run provider's account-vitals check without exposing mailbox identifiers."""
+    rows = _list_pages(
+        lambda cursor: client._request(
+            "GET", "/accounts", params={"limit":100, **({"starting_after":cursor} if cursor else {})},
+            retry_safe=True,
+        ), limit=MAX_ACCOUNT_RECORDS,
+    )
+    emails = [_text(item.get("email")).casefold() for item in rows]
+    if not emails or any("@" not in x for x in emails) or len(set(emails)) != len(emails):
+        return {"account_count":len(rows), "vitals":"not_runnable_missing_account", "ready_to_send":False}
+    raw = client._request("POST", "/accounts/test/vitals",
+                          json={"accounts":emails},retry_safe=True)
+    if not isinstance(raw, dict):
+        raise RuntimeError("account_vitals_unrecognized_response")
+    successes = raw.get("success_list")
+    failures = raw.get("failure_list")
+    if not isinstance(successes, list) or not isinstance(failures, list):
+        raise RuntimeError("account_vitals_unrecognized_response")
+    allpass = sum(row.get("allPass") is True for row in successes if isinstance(row, dict))
+    return {
+        "schema_version":"leadscanner-account-vitals-audit/1.0",
+        "account_count":len(rows),
+        "active_connection_count":sum(item.get("status") == 1 and type(item.get("status")) is int for item in rows),
+        "vitals_checked_count":len(successes)+len(failures),
+        "vitals_allpass_count":allpass,
+        "vitals_success_without_allpass_count":len(successes)-allpass,
+        "vitals_failure_count":len(failures),
+        "sender_identifiers_in_output":False,
+        "warmup_duration_and_reputation_not_verified":True,
+        "ready_to_send":False,
+    }
