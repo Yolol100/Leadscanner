@@ -101,6 +101,28 @@ TARGET_CAMPAIGNS = {
 }
 
 
+def campaign_copy_matches(campaign: dict, language: str) -> bool:
+    """Compare saved provider copy and delays, ignoring provider-owned IDs."""
+    sequences = campaign.get("sequences") if isinstance(campaign, dict) else None
+    if not isinstance(sequences, list) or len(sequences) != 1:
+        return False
+    actual = sequences[0].get("steps") if isinstance(sequences[0], dict) else None
+    expected = campaign_steps(language)
+    if not isinstance(actual, list) or len(actual) != len(expected):
+        return False
+    for step, baseline in zip(actual, expected):
+        if not isinstance(step, dict) or any(
+            step.get(key) != baseline[key] for key in ("type", "delay", "delay_unit")
+        ):
+            return False
+        variants = step.get("variants")
+        if not isinstance(variants, list) or len(variants) != 1 or not isinstance(variants[0], dict):
+            return False
+        if any(variants[0].get(key) != baseline["variants"][0][key] for key in ("subject", "body")):
+            return False
+    return True
+
+
 def resolve_language_destination(client, row: dict, requested_campaign_id: str) -> str:
     """Route only reviewed NL/EN copy to its own identified, non-sending Draft."""
     known={x[0] for x in TARGET_CAMPAIGNS.values()}
@@ -137,6 +159,8 @@ def resolve_language_destination(client, row: dict, requested_campaign_id: str) 
         "subject":"{{leadscanner_subject}}","body":"{{leadscanner_body}}"
     }]:
         raise ValueError("auto_language_first_step_copy_contract_invalid")
+    if not campaign_copy_matches(observed, lang):
+        raise ValueError("auto_language_copy_readback_mismatch")
     from instantly_client import inspect_campaign_sequence
     report=inspect_campaign_sequence(observed)
     if report["unsupported_leadscanner_variables"] or report["unresolved_template_variables"]:

@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections import Counter
 
 from instantly_language_campaigns import read_imported_leads
+from instantly_campaign_copy import campaign_copy_matches
 from instantly_client import InstantlyError
 from myhost_instantly_import import blocked_values
 
@@ -298,6 +299,14 @@ def audit_two_campaign_options(client) -> dict:
                 "hours_to":_text((item.get("timing") or {}).get("to"))[:12],
                 "weekday_flags":item.get("days") if isinstance(item.get("days"),dict) else None,
             }
+        weekdays={str(i): 1 <= i <= 5 for i in range(7)}
+        schedule_matches=(
+            schedule["status"]=="verified_format"
+            and schedule["timezone"]=="Arctic/Longyearbyen"
+            and schedule["hours_from"]=="09:30"
+            and schedule["hours_to"]=="16:30"
+            and schedule["weekday_flags"]==weekdays
+        )
         items.append({
             "language":language,
             "campaign_id":campaign_id,
@@ -308,6 +317,8 @@ def audit_two_campaign_options(client) -> dict:
             "mismatch_count":sum(value=="mismatch" for value in states.values()),
             "not_returned_count":sum(value=="not_returned_by_provider" for value in states.values()),
             "schedule":schedule,
+            "schedule_matches_baseline":schedule_matches,
+            "copy_matches_baseline":campaign_copy_matches(observed, language),
         })
     return {
         "schema_version":"leadscanner-two-campaign-options-audit/1.0",
@@ -315,8 +326,10 @@ def audit_two_campaign_options(client) -> dict:
         "all_confirmed_settings_match":all(
             item["verified_setting_count"]==len(safety_expected)+len(limits_expected)
             and item["draft"] and item["sender_count"]==0
+            and item["schedule_matches_baseline"]
             for item in items
         ),
+        "all_reviewed_copy_matches":all(item["copy_matches_baseline"] for item in items),
         "sends":False,
         "mutation":False,
         "contains_email_addresses_or_copy":False,

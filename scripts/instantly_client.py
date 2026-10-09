@@ -193,34 +193,36 @@ def inspect_campaign_sequence(campaign: dict) -> dict:
 
 
 def _optional_guarded_evidence_fields(campaign: dict) -> set[str]:
-    """Only approved first-party fields inside strict Liquid if/else fallbacks are optional.
+    """Permit optional first-party variables only in their true Liquid branch.
 
-    Use structural checks instead of assuming undocumented provider defaults.
-    All steps are scanned: any unguarded occurrence makes the field required.
+    If the optional value is absent, neither the fallback nor the rest of the
+    email may reference it. Match merge fields with Instantly's whitespace
+    tolerant syntax; reject nested/unrecognized guards rather than guessing.
     """
-    sequences = campaign.get("sequences") or []
     optional = {"leadscanner_observation", "leadscanner_value_action"}
-    combined = "{% if leadscanner_observation and leadscanner_value_action %}"
-    observed = "{% if leadscanner_observation %}"
-    for seq in sequences:
-        for step in seq.get("steps", []):
-            for variant in step.get("variants", []):
-                copy = str(variant.get("subject") or "") + "\n" + str(variant.get("body") or "")
-                # Only these two conditional forms are recognized.
-                pattern = r"\{%\s*if\s+(leadscanner_observation(?:\s+and\s+leadscanner_value_action)?)\s*%\}(.*?)\{%\s*(?:else\s*%\}.*?\{%\s*)?endif\s*%\}"
-                blocks = list(re.finditer(pattern, copy, re.S))
-                remaining = copy
-                for block in reversed(blocks):
-                    cond = block.group(1).strip()
-                    interior = block.group(2)
-                    start, end = block.span()
-                    if cond not in {"leadscanner_observation", "leadscanner_observation and leadscanner_value_action"}:
+    variable = re.compile(r"\{\{\s*(leadscanner_observation|leadscanner_value_action)\s*\}\}")
+    guard = re.compile(
+        r"\{%\s*if\s+(?P<cond>leadscanner_observation(?:\s+and\s+leadscanner_value_action)?)\s*%\}"
+        r"(?P<yes>.*?)"
+        r"(?:\{%\s*else\s*%\}(?P<no>.*?))?"
+        r"\{%\s*endif\s*%\}", re.S,
+    )
+    for sequence in campaign.get("sequences") or []:
+        for step in sequence.get("steps") or []:
+            for variant in step.get("variants") or []:
+                remaining = str(variant.get("subject") or "") + "\n" + str(variant.get("body") or "")
+                for block in reversed(list(guard.finditer(remaining))):
+                    permitted = set(block.group("cond").split(" and "))
+                    true_branch = block.group("yes")
+                    false_branch = block.group("no") or ""
+                    if "{%" in true_branch or "{%" in false_branch:
                         raise ValueError("campaign_optional_liquid_guard_invalid")
-                    if "{{leadscanner_value_action}}" in interior and cond != "leadscanner_observation and leadscanner_value_action":
+                    if any(match.group(1) not in permitted for match in variable.finditer(true_branch)):
                         raise ValueError("campaign_optional_liquid_guard_invalid")
-                    # Remove optional field references inside a safe conditional.
-                    remaining = remaining[:start] + remaining[end:]
-                if any("{{"+k+"}}" in remaining for k in optional):
+                    if variable.search(false_branch):
+                        raise ValueError("campaign_personalization_variable_missing:optional_evidence_unprotected")
+                    remaining = remaining[:block.start()] + remaining[block.end():]
+                if variable.search(remaining):
                     raise ValueError("campaign_personalization_variable_missing:optional_evidence_unprotected")
     return optional
 
