@@ -252,6 +252,7 @@ class InstantlyClientTests(unittest.TestCase):
     def test_write_does_not_retry_on_server_error(self):
         session = FakeSession([
             FakeResponse(payload=campaign()),
+            FakeResponse(payload={"items": [], "next_starting_after": None}),
             FakeResponse(status_code=503, payload={"message": "do not repeat this write"}),
         ])
         client = InstantlyClient("secret", session=session, sleep_fn=lambda _: None)
@@ -262,7 +263,7 @@ class InstantlyClientTests(unittest.TestCase):
                 campaign_id="c1",
                 registry_rows=[],
             )
-        self.assertEqual(len(session.calls), 2)
+        self.assertEqual([method for method, _, _ in session.calls], ["GET", "GET", "POST"])
 
     def test_write_timeout_reports_unknown_outcome(self):
         class TimeoutSession:
