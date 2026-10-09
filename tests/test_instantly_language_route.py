@@ -43,6 +43,12 @@ class Fake:
 
 
 class TestLanguageRouting(unittest.TestCase):
+    def test_provider_status_is_safe_and_preserved(self):
+        from instantly_client import InstantlyError
+        from instantly_language_route import _step
+        with self.assertRaisesRegex(RuntimeError, "^routing_stage_blocklist_InstantlyError_http404$"):
+            _step("blocklist", lambda: (_ for _ in ()).throw(InstantlyError("instantly_api_error status=404")))
+
     def test_stage_label_redacts_connection_details(self):
         from instantly_language_route import _step
 

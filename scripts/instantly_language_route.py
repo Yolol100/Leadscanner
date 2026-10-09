@@ -108,7 +108,13 @@ def _step(label, func, *args, **kwargs):
     try:
         return func(*args, **kwargs)
     except Exception as exc:
-        raise RuntimeError(f"routing_stage_{label}_{type(exc).__name__}") from exc
+        # Expose only HTTP status or fixed transport labels; never provider copy.
+        raw = str(exc)
+        match = re.fullmatch(r"instantly_api_error status=(\\d{3})", raw)
+        suffix = ("_http" + match.group(1)) if match else (
+            "_network" if raw == "instantly_network_error" else ""
+        )
+        raise RuntimeError(f"routing_stage_{label}_{type(exc).__name__}{suffix}") from exc
 
 
 def route_exact_language(client: InstantlyClient, *, language: str, campaign_id: str, max_leads: int = 25,
