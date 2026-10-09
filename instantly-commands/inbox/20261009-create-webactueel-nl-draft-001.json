@@ -1,0 +1,85 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "20261009-create-webactueel-nl-draft-001",
+  "action": "create_campaign_draft",
+  "args": {
+    "payload": {
+      "name": "Webactueel | NL | Websiteadvies | REVIEW - NIET VERZENDEN",
+      "campaign_schedule": {
+        "schedules": [
+          {
+            "name": "Weekdagen 09:30-16:30 NL (voorlopig)",
+            "timezone": "Europe/Amsterdam",
+            "timing": {
+              "from": "09:30",
+              "to": "16:30"
+            },
+            "days": {
+              "0": false,
+              "1": true,
+              "2": true,
+              "3": true,
+              "4": true,
+              "5": true,
+              "6": false
+            }
+          }
+        ]
+      },
+      "sequences": [
+        {
+          "steps": [
+            {
+              "type": "email",
+              "delay": 4,
+              "delay_unit": "days",
+              "variants": [
+                {
+                  "subject": "{{leadscanner_subject}}",
+                  "body": "{{leadscanner_body}}"
+                }
+              ]
+            },
+            {
+              "type": "email",
+              "delay": 5,
+              "delay_unit": "days",
+              "variants": [
+                {
+                  "subject": "",
+                  "body": "Hoi,\n\nIk wilde nog even vragen of mijn vorige bericht relevant is. Als je een concreet voorbeeld wilt zien, stuur ik het graag toe.\n\nGeen interesse? Laat het gerust weten; dan laat ik het hierbij.\n\nGroet,\nAndrew"
+                }
+              ]
+            },
+            {
+              "type": "email",
+              "delay": 0,
+              "delay_unit": "days",
+              "variants": [
+                {
+                  "subject": "",
+                  "body": "Hoi,\n\nDit is mijn laatste bericht hierover. Mocht je later een voorbeeld willen ontvangen, dan kun je altijd reageren.\n\nGroet,\nAndrew"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "email_list": [],
+      "daily_limit": 10,
+      "daily_max_leads": 5,
+      "email_gap": 12,
+      "random_wait_max": 5,
+      "stop_on_reply": true,
+      "stop_on_auto_reply": true,
+      "stop_for_company": true,
+      "allow_risky_contacts": false,
+      "open_tracking": false,
+      "link_tracking": false,
+      "text_only": true,
+      "insert_unsubscribe_header": true
+    }
+  },
+  "confirm": "EXECUTE create_campaign_draft Webactueel | NL | Websiteadvies | REVIEW - NIET VERZENDEN",
+  "requested_by": "chatgpt"
+}

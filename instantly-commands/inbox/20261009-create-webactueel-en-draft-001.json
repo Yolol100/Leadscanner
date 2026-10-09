@@ -1,0 +1,85 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "20261009-create-webactueel-en-draft-001",
+  "action": "create_campaign_draft",
+  "args": {
+    "payload": {
+      "name": "Webactueel | EN | Website advice | REVIEW - DO NOT SEND",
+      "campaign_schedule": {
+        "schedules": [
+          {
+            "name": "Weekdagen 09:30-16:30 NL (voorlopig)",
+            "timezone": "Europe/Amsterdam",
+            "timing": {
+              "from": "09:30",
+              "to": "16:30"
+            },
+            "days": {
+              "0": false,
+              "1": true,
+              "2": true,
+              "3": true,
+              "4": true,
+              "5": true,
+              "6": false
+            }
+          }
+        ]
+      },
+      "sequences": [
+        {
+          "steps": [
+            {
+              "type": "email",
+              "delay": 4,
+              "delay_unit": "days",
+              "variants": [
+                {
+                  "subject": "{{leadscanner_subject}}",
+                  "body": "{{leadscanner_body}}"
+                }
+              ]
+            },
+            {
+              "type": "email",
+              "delay": 5,
+              "delay_unit": "days",
+              "variants": [
+                {
+                  "subject": "",
+                  "body": "Hi,\n\nI wanted to follow up on my previous message. If a concrete example would be useful, I'm happy to send one over.\n\nIf it's not relevant, just let me know and I'll leave it there.\n\nBest,\nAndrew"
+                }
+              ]
+            },
+            {
+              "type": "email",
+              "delay": 0,
+              "delay_unit": "days",
+              "variants": [
+                {
+                  "subject": "",
+                  "body": "Hi,\n\nThis is my last note on this. If you'd ever like to see an example, feel free to reply.\n\nBest,\nAndrew"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "email_list": [],
+      "daily_limit": 10,
+      "daily_max_leads": 5,
+      "email_gap": 12,
+      "random_wait_max": 5,
+      "stop_on_reply": true,
+      "stop_on_auto_reply": true,
+      "stop_for_company": true,
+      "allow_risky_contacts": false,
+      "open_tracking": false,
+      "link_tracking": false,
+      "text_only": true,
+      "insert_unsubscribe_header": true
+    }
+  },
+  "confirm": "EXECUTE create_campaign_draft Webactueel | EN | Website advice | REVIEW - DO NOT SEND",
+  "requested_by": "chatgpt"
+}
