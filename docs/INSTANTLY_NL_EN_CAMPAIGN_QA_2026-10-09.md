@@ -90,12 +90,15 @@ both passed. A local Liquid simulation remains *not* an Instantly Preview.
    manufacture, bulk-mark or auto-approve consent.
 2. **Sender account:** one Instantly account, status `-1` (inactive);
    zero active senders. The user is reconnecting the account separately.
-3. **Global provider blocklist:** authenticated read still fails with
-   `instantly_network_error`. Official Instantly blocklist endpoint is
-   `GET /api/v2/block-lists-entries`. The local canonical dedupe registry is
-   independently required and does *not* replace the provider blocklist.
-   The activation code now refuses Leadscanner campaign activation unless
-   a fresh provider list read succeeds and every recipient is clear.
+3. **Global provider blocklist:** an earlier authenticated read failed with
+   `instantly_network_error`, but the new read-only provider audit on
+   [37938304051](https://github.com/Yolol100/Leadscanner/actions/runs/37938304051)
+   **succeeded and reported zero blocked entries at that moment**.
+   Official endpoint: `GET /api/v2/block-lists-entries`. The local canonical
+   dedupe registry is independently required and does *not* replace the
+   provider blocklist. The activation code requires a **fresh** global provider
+   blocklist read and recipient/domain recheck immediately before activation.
+   One successful read does not prove future availability.
 4. **Real provider Preview:** no campaign leads and no active account exist.
    Therefore a lead-populated Instantly Preview and test email have **not**
    yet been conducted. Synthetic no-network preview tests do not substitute.
@@ -111,6 +114,42 @@ References:
 - https://developer.instantly.ai/api-reference/groups/block-list-entry
 - https://www.acm.nl/nl/verkoop-aan-consumenten/reclame-en-verleiden/spam-voorkomen-uw-reclame
 
+
+## Continuation verification — live workspace and copy QA
+
+Fresh read-only Actions audit
+[37938304051](https://github.com/Yolol100/Leadscanner/actions/runs/37938304051)
+reconfirmed **exactly two campaigns**, no extras, both Draft with zero
+campaign leads/senders, **11/11 options per language matched**, and a
+successful Instantly global provider blocklist read with **zero current
+entries**. The one sender account remained inactive, and all **1,128** imported
+source records remained `review_required` without documented contact basis.
+No action in that audit sent, activated or deleted any campaign or lead.
+
+The aggregate-only mail analysis was refined without modifying mail content:
+[37938696038](https://github.com/Yolol100/Leadscanner/actions/runs/37938696038)
+reported 1,128 subject/body pairs complete, NL 1,066, EN 59, unknown 3,
+zero unanswered/no-question messages, **two messages with one question**,
+**1,108 with two questions**, and **18 with three or more**. Other soft review
+flags: 11 messages under 35 words, 3 without an obvious opt-out phrase,
+zero unrendered template markers, zero missing sender identification, and
+zero separately stored verified observation/action pairs. These are
+**editorial indicators only**, not evidence of individual mail quality,
+consent, rendering accuracy, delivery, replies or conversions.
+
+The aggregate audit keeps subject/body/addresses private; the next editorial
+step is a consent-safe review of selected outliers, not a mass rewrite of
+approved historical mail. The reviewed-mail NL/EN sequence contracts remain
+separate from actual provider Preview and test sends. Regression workflow
+[37938696038](https://github.com/Yolol100/Leadscanner/actions/runs/37938696038)
+passed **355 focused tests**, including the new private-safe question-count
+distribution cases.
+
+**Operational decision unchanged:** configuration/static QA PASS within this
+defined scope; activation **NO-GO** until genuine per-lead contact basis,
+healthy sending account, actual variable-populated Instantly Preview,
+current suppression checks and fresh explicit launch approval are all evidenced.
+
 ## Release checklist
 
 - [x] Only two expected campaigns exist.
@@ -120,7 +159,8 @@ References:
 - [x] Local Liquid fixture tests for complete, missing and partial evidence.
 - [x] Provider blocklist gate added before Leadscanner activation.
 - [ ] Reconnect sending account; verify status/limits/health/warmup.
-- [ ] Resolve provider blocklist read and recheck exclusions.
+- [x] Provider blocklist successfully fetched in latest read-only audit (0 entries).
+- [ ] Repeat provider and canonical suppression checks at actual activation.
 - [ ] Document genuine per-lead contact basis and suppression evidence.
 - [ ] Stage and verify an individually approved, legally eligible test lead.
 - [ ] Run Instantly Preview with populated variables and inspect all 3 emails
