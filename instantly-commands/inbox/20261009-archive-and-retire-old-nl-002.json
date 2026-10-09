@@ -1,0 +1,10 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "20261009-archive-and-retire-old-nl-002",
+  "action": "archive_and_retire_old_campaign",
+  "args": {
+    "campaign_id": "827b1b45-6a7e-45ba-88de-d89db2a47d6a"
+  },
+  "confirm": "EXECUTE archive_and_retire_old_campaign 827b1b45-6a7e-45ba-88de-d89db2a47d6a",
+  "requested_by": "chatgpt"
+}
