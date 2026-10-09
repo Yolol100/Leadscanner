@@ -22,6 +22,7 @@ from myhost_instantly_import import execute_migration
 from instantly_language_campaigns import audit_language_split
 from instantly_language_route import route_exact_language
 from instantly_launch_audit import audit_launch_inventory, audit_sender_vitals, audit_old_campaign_retirement
+from instantly_old_campaign_retire import archive_and_retire_old_campaign
 
 SCHEMA_VERSION = "leadscanner-instantly-command/1.0"
 RESULT_SCHEMA_VERSION = "leadscanner-instantly-command-result/1.0"
@@ -35,7 +36,7 @@ READ_ACTIONS = {
     "list_blocklist", "get_blocklist_entry", "get_background_job",
 }
 WRITE_ACTIONS = {
-    "create_campaign_draft", "update_campaign", "pause_campaign", "activate_campaign", "delete_unused_draft_campaign",
+    "create_campaign_draft", "update_campaign", "pause_campaign", "activate_campaign", "delete_unused_draft_campaign", "archive_and_retire_old_campaign",
     "delete_campaign", "update_lead", "delete_lead", "update_interest", "reply_email",
     "forward_email", "send_test_email", "mark_thread_read", "update_account",
     "mark_account_fixed", "pause_account", "resume_account", "enable_warmup", "disable_warmup",
@@ -43,7 +44,7 @@ WRITE_ACTIONS = {
     "block_email", "block_domain", "delete_blocklist_entry", "stage_approved_lead", "import_myhost_drafts", "route_language_drafts",
 }
 SEND_ACTIONS = {"activate_campaign", "reply_email", "forward_email", "send_test_email"}
-DESTRUCTIVE_ACTIONS = {"delete_campaign", "delete_unused_draft_campaign", "delete_lead", "delete_blocklist_entry"}
+DESTRUCTIVE_ACTIONS = {"delete_campaign", "delete_unused_draft_campaign", "archive_and_retire_old_campaign", "delete_lead", "delete_blocklist_entry"}
 ALL_ACTIONS = READ_ACTIONS | WRITE_ACTIONS
 SENSITIVE_ACCOUNT_KEYS = ("password", "secret", "token", "credential", "private_key", "api_key")
 NON_SECRET_COMMAND_KEYS = {"approval_token"}
@@ -142,7 +143,7 @@ def load_command(path: str | Path) -> dict:
 def _confirmation_target(action: str, args: dict) -> str:
     direct = {
         "update_campaign": "campaign_id", "pause_campaign": "campaign_id",
-        "activate_campaign": "campaign_id", "delete_campaign": "campaign_id", "delete_unused_draft_campaign": "campaign_id",
+        "activate_campaign": "campaign_id", "delete_campaign": "campaign_id", "delete_unused_draft_campaign": "campaign_id", "archive_and_retire_old_campaign": "campaign_id",
         "update_lead": "lead_id", "delete_lead": "lead_id", "mark_thread_read": "thread_id",
         "update_account": "email", "mark_account_fixed": "email", "pause_account": "email", "resume_account": "email",
         "verify_email": "email",
@@ -858,6 +859,10 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
             client, _text(args.get("campaign_id")),
             activation_approval=_text(args.get("activation_approval")),
         )
+    elif action == "archive_and_retire_old_campaign":
+        if _text(args.get("campaign_id")) != "827b1b45-6a7e-45ba-88de-d89db2a47d6a":
+            raise ValueError("old_archive_exact_campaign_required")
+        data = archive_and_retire_old_campaign(client)
     elif action == "delete_unused_draft_campaign":
         cid = _text(args.get("campaign_id"))
         if cid != "59c01c6e-86a6-4417-acab-76f114dca9c5":
