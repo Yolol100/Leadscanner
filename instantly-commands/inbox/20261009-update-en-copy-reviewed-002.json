@@ -1,0 +1,64 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "20261009-update-en-copy-reviewed-002",
+  "action": "update_campaign",
+  "args": {
+    "campaign_id": "fd405145-4bf5-40c5-b6ae-2e7f5af6120c",
+    "payload": {
+      "sequences": [
+        {
+          "steps": [
+            {
+              "type": "email",
+              "delay": 4,
+              "delay_unit": "days",
+              "variants": [
+                {
+                  "subject": "{{leadscanner_subject}}",
+                  "body": "{{leadscanner_body}}"
+                }
+              ]
+            },
+            {
+              "type": "email",
+              "delay": 5,
+              "delay_unit": "days",
+              "variants": [
+                {
+                  "subject": "",
+                  "body": "Hi,\n\nJust following up on my note about your website.\n{% if leadscanner_observation and leadscanner_value_action %}\nWhat caught my eye: {{leadscanner_observation}}\nIf useful, I can put together {{leadscanner_value_action}} as a short example.\n{% else %}\nI could outline the first 2–3 areas I'd look at, in a few short lines.\n{% endif %}\n\nWould you like me to send that over?\n\nBest,\nAndrew\nWebactueel\n\nIf it's not relevant, just reply 'no' and I'll leave it there."
+                }
+              ]
+            },
+            {
+              "type": "email",
+              "delay": 0,
+              "delay_unit": "days",
+              "variants": [
+                {
+                  "subject": "",
+                  "body": "Hi,\n\nThis is my last note about this.\n{% if leadscanner_observation %}\nMy earlier comment about {{leadscanner_observation}} was simply one possible starting point, not a judgment on your website.\n{% endif %}\nIf a small, concrete improvement sketch would ever be useful, you can just reply. Otherwise I'll leave it there.\n\nBest,\nAndrew\nWebactueel"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "daily_limit": 10,
+      "daily_max_leads": 5,
+      "email_gap": 12,
+      "random_wait_max": 5,
+      "stop_on_reply": true,
+      "stop_on_auto_reply": true,
+      "stop_for_company": true,
+      "allow_risky_contacts": false,
+      "open_tracking": false,
+      "link_tracking": false,
+      "text_only": true,
+      "insert_unsubscribe_header": true,
+      "email_list": []
+    }
+  },
+  "confirm": "EXECUTE update_campaign fd405145-4bf5-40c5-b6ae-2e7f5af6120c",
+  "requested_by": "chatgpt"
+}

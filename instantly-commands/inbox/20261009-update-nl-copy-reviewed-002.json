@@ -1,0 +1,64 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "20261009-update-nl-copy-reviewed-002",
+  "action": "update_campaign",
+  "args": {
+    "campaign_id": "5c720281-fd07-4c47-8155-c88d7d3c09b8",
+    "payload": {
+      "sequences": [
+        {
+          "steps": [
+            {
+              "type": "email",
+              "delay": 4,
+              "delay_unit": "days",
+              "variants": [
+                {
+                  "subject": "{{leadscanner_subject}}",
+                  "body": "{{leadscanner_body}}"
+                }
+              ]
+            },
+            {
+              "type": "email",
+              "delay": 5,
+              "delay_unit": "days",
+              "variants": [
+                {
+                  "subject": "",
+                  "body": "Hoi,\n\nIk kom nog even terug op mijn bericht over jullie website.\n{% if leadscanner_observation and leadscanner_value_action %}\nWat ik concreet zag: {{leadscanner_observation}}\nAls je dat nuttig vindt, kan ik {{leadscanner_value_action}} uitwerken als kort voorbeeld.\n{% else %}\nIk kan in een paar regels laten zien welke 2–3 onderdelen ik als eerste zou bekijken.\n{% endif %}\n\nZal ik dat kort toesturen?\n\nGroet,\nAndrew\nWebactueel\n\nAls dit niet relevant is, antwoord gerust met 'nee'; dan stop ik."
+                }
+              ]
+            },
+            {
+              "type": "email",
+              "delay": 0,
+              "delay_unit": "days",
+              "variants": [
+                {
+                  "subject": "",
+                  "body": "Hoi,\n\nDit is mijn laatste bericht hierover.\n{% if leadscanner_observation %}\nMijn eerdere opmerking over {{leadscanner_observation}} is vooral een mogelijk aanknopingspunt, geen oordeel over jullie website.\n{% endif %}\nMocht je later behoefte hebben aan een kleine, concrete verbeterschets, dan kun je eenvoudig op dit bericht reageren. Anders laat ik het hierbij.\n\nGroet,\nAndrew\nWebactueel"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "daily_limit": 10,
+      "daily_max_leads": 5,
+      "email_gap": 12,
+      "random_wait_max": 5,
+      "stop_on_reply": true,
+      "stop_on_auto_reply": true,
+      "stop_for_company": true,
+      "allow_risky_contacts": false,
+      "open_tracking": false,
+      "link_tracking": false,
+      "text_only": true,
+      "insert_unsubscribe_header": true,
+      "email_list": []
+    }
+  },
+  "confirm": "EXECUTE update_campaign 5c720281-fd07-4c47-8155-c88d7d3c09b8",
+  "requested_by": "chatgpt"
+}
