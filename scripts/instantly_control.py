@@ -19,6 +19,7 @@ from urllib.parse import quote
 from instantly_client import InstantlyClient, InstantlyError, SAFE_CAMPAIGN_STATUSES, inspect_campaign_sequence
 from instantly_service import DEFAULT_REGISTRY_URL, DEFAULT_REPOSITORY, fetch_live_registry, stage_exact_approved_lead
 from myhost_instantly_import import execute_migration
+from instantly_language_campaigns import audit_language_split
 
 SCHEMA_VERSION = "leadscanner-instantly-command/1.0"
 RESULT_SCHEMA_VERSION = "leadscanner-instantly-command-result/1.0"
@@ -26,7 +27,7 @@ COMMAND_PREFIX = "instantly-commands/inbox/"
 COMMAND_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{5,120}$")
 
 READ_ACTIONS = {
-    "audit_myhost_drafts", "list_campaigns", "get_campaign", "audit_campaign_sequence", "audit_activation_readiness", "campaign_sending_status", "campaign_analytics",
+    "audit_myhost_drafts", "audit_language_split", "list_campaigns", "get_campaign", "audit_campaign_sequence", "audit_activation_readiness", "campaign_sending_status", "campaign_analytics",
     "list_leads", "get_lead", "list_emails", "get_email", "count_unread_emails",
     "list_accounts", "get_account", "test_account_vitals", "warmup_analytics", "daily_account_analytics",
     "list_blocklist", "get_blocklist_entry", "get_background_job",
@@ -618,7 +619,9 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
     validate_write_gate(command, config, run_attempt=run_attempt)
     action, args = command["action"], command["args"]
 
-    if action == "audit_myhost_drafts":
+    if action == "audit_language_split":
+        data = audit_language_split(client)
+    elif action == "audit_myhost_drafts":
         data = execute_migration(client, mode="audit", registry_url=os.getenv("DEDUPE_REGISTRY_CSV_URL", DEFAULT_REGISTRY_URL))
     elif action == "import_myhost_drafts":
         data = execute_migration(client, mode="import", registry_url=os.getenv("DEDUPE_REGISTRY_CSV_URL", DEFAULT_REGISTRY_URL), max_imports=_import_limit(args))
