@@ -129,7 +129,7 @@ class ImportTests(unittest.TestCase):
         class Existing(FakeInstantly):
             def list_leads(self, **kwargs):
                 self.calls.append(("POST", "/leads/list", None))
-                if not kwargs.get("contacts"):
+                if row["email"] in (kwargs.get("contacts") or []):
                     return {"items":[{"email":row["email"]}],"next_starting_after":None}
                 return {"items":[]}
 
@@ -149,15 +149,36 @@ class ImportTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "max_imports_out_of_bounds"):
                 execute_migration(api, mode="import", max_imports=count)
 
+    def test_candidate_lookup_batches_and_validates_provider_contact_filter(self):
+        from myhost_instantly_import import workspace_candidate_emails
+
+        class Lookup(FakeInstantly):
+            def list_leads(self, **kwargs):
+                batch = kwargs.get("contacts") or []
+                self.calls.append(("POST", "/leads/list", None))
+                return {"items":[{"email":batch[0]}] if batch else [],"next_starting_after":None}
+
+        api = Lookup()
+        emails = [f"user{x}@example.com" for x in range(73)]
+        found = workspace_candidate_emails(api, emails)
+        self.assertEqual(len(found), 3)
+        self.assertEqual(len([c for c in api.calls if c[1] == "/leads/list"]), 3)
+
+        class Unfiltered(FakeInstantly):
+            def list_leads(self, **kwargs):
+                return {"items":[{"email":"unrelated@example.net"}]}
+        with self.assertRaisesRegex(RuntimeError, "provider_contacts_filter_mismatch"):
+            workspace_candidate_emails(Unfiltered(), ["valid@example.org"])
+
     def test_privacy_safe_stage_label_on_upstream_failure(self):
         row = extract_lead_draft(mail(), sender="info@andrewbaeten.nl")
         api = FakeInstantly()
         with patch("myhost_instantly_import.read_source_drafts", return_value={
             "source_count":1,"untagged_count":0,"invalid_tagged_count":0,"drafts":[row],
         }), patch("myhost_instantly_import.fetch_live_registry", return_value=[]), patch(
-            "myhost_instantly_import.fetch_all_leads", side_effect=RuntimeError("sensitive upstream detail")
+            "myhost_instantly_import.workspace_candidate_emails", side_effect=RuntimeError("sensitive upstream detail")
         ):
-            with self.assertRaisesRegex(RuntimeError, "^migration_step_workspace_snapshot_RuntimeError$"):
+            with self.assertRaisesRegex(RuntimeError, "^migration_step_workspace_candidate_lookup_RuntimeError$"):
                 execute_migration(api, mode="audit")
 
     def test_readback_rejects_wrong_campaign(self):

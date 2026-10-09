@@ -13,7 +13,6 @@ from email.utils import getaddresses, parseaddr
 from dedupe_preflight import match_candidate
 from instantly_client import InstantlyClient
 from instantly_service import DEFAULT_REGISTRY_URL, fetch_live_registry
-from instantly_sync import fetch_all_leads
 from myhost_draft import (
     LEAD_ID_RE, connect_imap, fetch_message_uid, find_drafts_folder,
     normalize_text, plain_body, select_folder,
@@ -245,6 +244,35 @@ def _step(label: str, operation, *args, **kwargs):
         raise RuntimeError(f"migration_step_{label}_{type(exc).__name__}") from exc
 
 
+def workspace_candidate_emails(client: InstantlyClient, emails: list[str], *, chunk_size: int = 25) -> set[str]:
+    """Proven contact-filtered paginated reads; never list entire workspace."""
+    if type(chunk_size) is not int or not 1 <= chunk_size <= 50:
+        raise ValueError("workspace_chunk_limit_invalid")
+    candidates = sorted(set(emails))
+    existing: set[str] = set()
+    for offset in range(0, len(candidates), chunk_size):
+        chunk = candidates[offset:offset + chunk_size]
+        accepted = set(chunk)
+        cursor, seen = "", set()
+        for _ in range(100):
+            page = client.list_leads(contacts=chunk, limit=100, starting_after=cursor or None)
+            items, next_cursor = _items_page(page)
+            for item in items:
+                email = _text(item.get("email")).casefold()
+                if not email or email not in accepted:
+                    raise RuntimeError("provider_contacts_filter_mismatch")
+                existing.add(email)
+            if not next_cursor:
+                break
+            if not items or next_cursor == cursor or next_cursor in seen:
+                raise RuntimeError("provider_contacts_pagination_invalid")
+            seen.add(next_cursor)
+            cursor = next_cursor
+        else:
+            raise RuntimeError("provider_contacts_pagination_limit_exceeded")
+    return existing
+
+
 def execute_migration(client: InstantlyClient, *, mode: str = "audit", registry_url: str = DEFAULT_REGISTRY_URL, max_imports: int = 25) -> dict:
     if mode not in {"audit", "import"}:
         raise ValueError("migration_mode_invalid")
@@ -256,10 +284,10 @@ def execute_migration(client: InstantlyClient, *, mode: str = "audit", registry_
         raise RuntimeError("eligible_source_draft_limit_exceeded")
     registry = _step("registry", fetch_live_registry, registry_url=registry_url)
     blocklist = _step("blocklist", blocked_values, client)
-    # One complete workspace snapshot avoids thousands of API requests and
-    # fails closed if provider pagination is incomplete. Recheck each write live.
-    workspace_rows = _step("workspace_snapshot", fetch_all_leads, client, max_leads=50000)
-    workspace_emails = {_text(item.get("email")).casefold() for item in workspace_rows if _text(item.get("email"))}
+    # Query all candidate emails in bounded contact-filtered groups. The live
+    # provider supports contact filters; unfiltered snapshot calls can return
+    # endpoint errors on some workspaces. Recheck every lead before writing.
+    workspace_emails = _step("workspace_candidate_lookup", workspace_candidate_emails, client, [r["email"] for r in unique])
     pending, suppressed, already_existing = [], 0, 0
     for row in unique:
         domain = row["email"].rsplit("@", 1)[-1]
