@@ -12,6 +12,7 @@ import requests
 from approval_revalidation import revalidate_approved
 from dedupe_preflight import load_registry
 from instantly_client import InstantlyClient, approved_custom_variables
+from instantly_campaign_copy import resolve_language_destination
 from preview_snapshot import fetch_snapshot
 from review_selection import select_approved
 from update_dedupe_registry import (
@@ -222,10 +223,11 @@ def stage_approved_batch(
             continue
 
         current_row = refreshed["rows"][0]
+        target_campaign = resolve_language_destination(client, current_row, campaign)
         created = client.add_approved_lead_to_campaign(
             approved_batch=refreshed,
             lead_id=_text(current_row.get("lead_id")),
-            campaign_id=campaign,
+            campaign_id=target_campaign,
             registry_rows=fresh_registry_rows,
             sequence_approval=sequence_approval,
         )
@@ -234,12 +236,12 @@ def stage_approved_batch(
             raise RuntimeError("instantly_create_lead_missing_id")
         observed = client.get_lead(instantly_id)
         _verify_instantly_readback(
-            observed, row=current_row, campaign_id=campaign,
+            observed, row=current_row, campaign_id=target_campaign,
             instantly_lead_id=instantly_id,
         )
 
         registry_result = update_registry(
-            _registry_readback_for_staged(current_row, campaign),
+            _registry_readback_for_staged(current_row, target_campaign),
             spreadsheet_id=resolved_spreadsheet_id,
             sheet_name=resolved_sheet_name,
         )
@@ -248,6 +250,7 @@ def stage_approved_batch(
         staged.append({
             "lead_id": _text(current_row.get("lead_id")),
             "instantly_lead_id": instantly_id,
+            "campaign_id": target_campaign,
             "email": _text(current_row.get("email")).casefold(),
             "registry_exact_readback": True,
         })
@@ -256,6 +259,7 @@ def stage_approved_batch(
         "schema_version": "leadscanner-instantly-stage-batch/1.0",
         "status": "green",
         "campaign_id": campaign,
+        "target_campaign_ids": sorted({r["campaign_id"] for r in staged}),
         "approved_sequence_fingerprint": sequence_approval.rsplit(" ", 1)[-1] if sequence_approval else None,
         "requested_count": len(rows),
         "staged_count": len(staged),
@@ -322,10 +326,11 @@ def stage_exact_approved_lead(
     row = refreshed["rows"][0]
 
     client = instantly_client or InstantlyClient(instantly_api_key)
+    target_campaign = resolve_language_destination(client, row, _text(campaign_id))
     created = client.add_approved_lead_to_campaign(
         approved_batch=refreshed,
         lead_id=_text(row.get("lead_id")),
-        campaign_id=_text(campaign_id),
+        campaign_id=target_campaign,
         registry_rows=fresh_registry_rows,
         sequence_approval=sequence_approval,
     )
@@ -334,12 +339,12 @@ def stage_exact_approved_lead(
         raise RuntimeError("instantly_create_lead_missing_id")
     observed = client.get_lead(instantly_id)
     _verify_instantly_readback(
-        observed, row=row, campaign_id=campaign_id,
+        observed, row=row, campaign_id=target_campaign,
         instantly_lead_id=instantly_id,
     )
 
     registry_result = update_registry(
-        _registry_readback_for_staged(row, campaign_id),
+        _registry_readback_for_staged(row, target_campaign),
         spreadsheet_id=resolved_spreadsheet_id,
         sheet_name=resolved_sheet_name,
     )
@@ -352,7 +357,7 @@ def stage_exact_approved_lead(
         "preview_run_id": int(preview_run_id),
         "preview_id": resolved["snapshot"]["preview_id"],
         "lead_id": _text(row.get("lead_id")),
-        "campaign_id": _text(campaign_id),
+        "campaign_id": target_campaign,
         "approved_sequence_fingerprint": sequence_approval.rsplit(" ", 1)[-1] if sequence_approval else None,
         "instantly_lead_id": instantly_id,
         "instantly_readback": True,

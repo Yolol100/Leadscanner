@@ -125,6 +125,39 @@ class InstantlyServiceTests(unittest.TestCase):
         self.assertNotIn("leadscanner_body", approved_custom_variables(row))
         update_mock.assert_called_once()
 
+    @patch("instantly_service.update_registry")
+    @patch("instantly_service.revalidate_approved")
+    @patch("instantly_service.fetch_live_registry")
+    @patch("instantly_service.check_registry_access")
+    def test_auto_language_routes_approved_mail_to_draft_only(
+        self, access_mock, registry_mock, validate_mock, write_mock
+    ):
+        from instantly_campaign_copy import TARGET_CAMPAIGNS,campaign_steps
+        row={**resolved()["row"],
+             "subject":"Een korte vraag over jullie website",
+             "body":"Hoi, ik zag jullie website en dacht aan een klein idee voor de pagina. Als je wilt, stuur ik graag een concreet voorstel. Laat gerust weten."}
+        data={"schema_version":"leadscanner-approved-review-draft-batch/1.0",
+              "rows":[row],"approval":{"approved_count":1,"automatic_send":False}}
+        validate_mock.return_value={**resolved()["approved_current"],"rows":[row]}
+        registry_mock.return_value=[]
+        write_mock.return_value={"exact_readback":True}
+        class FakeAuto(FakeInstantlyClient):
+            def get_campaign(self,cid):
+                return {"id":cid,"name":TARGET_CAMPAIGNS["nl"][1],"status":0,"email_list":[],
+                        "sequences":[{"steps":campaign_steps("nl")}]}
+            def get_lead(self,id):
+                self.calls.append(("get",id))
+                return {"id":id,"email":row["email"],"campaign":TARGET_CAMPAIGNS["nl"][0],
+                        "payload":approved_custom_variables(self.last_row)}
+        client=FakeAuto()
+        with patch.dict(os.environ,{"LEADSCANNER_INSTANTLY_WRITES_ENABLED":"true"},clear=False):
+            result=stage_approved_batch(
+                approved_batch=data,campaign_id="auto_language",
+                instantly_api_key="test",instantly_client=client)
+        self.assertEqual(result["target_campaign_ids"],[TARGET_CAMPAIGNS["nl"][0]])
+        self.assertEqual(client.calls[0][1]["campaign_id"],TARGET_CAMPAIGNS["nl"][0])
+        self.assertFalse(result["automatic_send"])
+
     def test_mixed_review_modes_rejected_before_mutation(self):
         legacy = resolved()["row"]
         fact = {**legacy, "review_mode": "instantly_sequence", "status": "sequence_facts_review", "subject": "", "body": ""}
