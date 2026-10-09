@@ -46,6 +46,20 @@ class Tests(unittest.TestCase):
         self.assertFalse(result["email_sent"])
         self.assertNotIn("old@example.org",str(result))
         self.assertLess(f.calls.index(("POST","/leads/move")),f.calls.index(("DELETE","/campaigns/"+CAMPAIGN_ID)))
+    def test_source_cursor_with_single_lead_is_enumerated_safely(self):
+        class Cursor(Fake):
+            def list_leads(self,*,campaign=None,list_id=None,contacts=None,limit=100,starting_after=None):
+                if campaign==CAMPAIGN_ID:
+                    if not starting_after:
+                        return {"items":[LEAD],"next_starting_after":"cursor-2"}
+                    if starting_after=="cursor-2":
+                        return {"items":[],"next_starting_after":None}
+                return {"items":list(self.archive),"next_starting_after":None}
+        f=Cursor()
+        out=archive_and_retire_old_campaign(f)
+        self.assertTrue(out["old_campaign_deleted"])
+        self.assertTrue(f.deleted)
+
     def test_stop_if_email_history(self):
         f=Fake();f.history=[{"id":"email"}]
         with self.assertRaisesRegex(ValueError,"email_history"):

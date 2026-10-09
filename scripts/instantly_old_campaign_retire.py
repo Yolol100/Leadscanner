@@ -20,12 +20,30 @@ def _text(x):
 
 
 def _single_campaign_lead(client):
-    r=client.list_leads(campaign=CAMPAIGN_ID,limit=100)
-    if not isinstance(r,dict) or not isinstance(r.get("items"),list):
-        raise RuntimeError("archive_source_lead_list_invalid")
-    if len(r["items"])!=1 or r.get("next_starting_after"):
+    # Instantly can provide a cursor even when the current page holds one lead.
+    # Enumerate bounded pages, then require exactly one unique source lead.
+    rows=[]
+    cursor=None
+    seen=set()
+    for _ in range(10):
+        r=client.list_leads(campaign=CAMPAIGN_ID,limit=100,starting_after=cursor)
+        if not isinstance(r,dict) or not isinstance(r.get("items"),list):
+            raise RuntimeError("archive_source_lead_list_invalid")
+        rows.extend(r["items"])
+        if len(rows)>1:
+            raise ValueError("archive_requires_exactly_one_lead")
+        next_cursor=_text(r.get("next_starting_after"))
+        if not next_cursor:
+            break
+        if next_cursor==cursor or next_cursor in seen:
+            raise RuntimeError("archive_source_lead_cursor_loop")
+        seen.add(next_cursor)
+        cursor=next_cursor
+    else:
+        raise RuntimeError("archive_source_lead_page_limit")
+    if len(rows)!=1:
         raise ValueError("archive_requires_exactly_one_lead")
-    lead=r["items"][0]
+    lead=rows[0]
     if not isinstance(lead,dict) or not re.fullmatch(r"[0-9a-fA-F-]{36}",_text(lead.get("id"))):
         raise ValueError("archive_source_lead_id_invalid")
     if "@" not in _text(lead.get("email")):
