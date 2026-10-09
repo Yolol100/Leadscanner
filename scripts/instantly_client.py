@@ -207,7 +207,7 @@ def _optional_guarded_evidence_fields(campaign: dict) -> set[str]:
                     # Remove optional field references inside a safe conditional.
                     remaining = remaining[:start] + remaining[end:]
                 if any("{{"+k+"}}" in remaining for k in optional):
-                    raise ValueError("campaign_optional_evidence_unprotected")
+                    raise ValueError("campaign_personalization_variable_missing:optional_evidence_unprotected")
     return optional
 
 
@@ -223,6 +223,8 @@ def validate_campaign_personalization(
     referenced = set(report["leadscanner_variables"])
     if not report["email_variant_count"] or not referenced:
         raise ValueError("campaign_leadscanner_personalization_required")
+    if review_mode == "reviewed_mail" and not {"leadscanner_subject", "leadscanner_body"} <= referenced:
+        raise ValueError("reviewed_mail_campaign_must_use_approved_copy")
     # Optional verified observation/action may appear in guarded Liquid follow-ups.
     # Legacy imported draft leads have reviewed subject/body but no source fact fields.
     # Every optional merge must be inside its exact guard, never leak as a blank token.
