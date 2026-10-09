@@ -80,6 +80,15 @@ class Tests(unittest.TestCase):
         self.assertEqual(result["duplicate_in_safe_source_count"],0)
         self.assertNotIn("old@company.example",str(result))
 
+    def test_blocklist_api_error_kind_has_no_provider_payload(self):
+        from instantly_client import InstantlyError
+        with patch("instantly_launch_audit.blocked_values",
+                   side_effect=InstantlyError("instantly_network_error")):
+            out=audit_launch_inventory(Fake(),source=False)
+        self.assertEqual(out["blocklist"]["cause"],"network")
+        self.assertIsNone(out["blocklist"]["http_status"])
+        self.assertFalse(out["go_live_approved"])
+
     def test_missing_contact_proof_remains_unverified(self):
         self.assertEqual(_permission_counts([
             {"payload":{"leadscanner_contact_basis":"consent_verified"}},

@@ -136,9 +136,16 @@ def audit_launch_inventory(client, *, source: bool = True) -> dict:
     except InstantlyError as exc:
         err = str(exc)
         status_code = err.removeprefix("instantly_api_error status=")
+        known_failures = {
+            "instantly_network_error":"network",
+            "instantly_invalid_json_response":"invalid_json",
+            "instantly_request_exhausted":"request_exhausted",
+            "instantly_write_outcome_unknown":"write_outcome_unknown",
+        }
         blocklist = {
             "state":"unavailable_fail_closed",
-            "http_status":int(status_code) if status_code.isdigit() and len(status_code) == 3 else None,
+            "http_status":int(status_code) if status_code.isdigit() and len(status_code)==3 else None,
+            "cause":known_failures.get(err, "provider_error" if status_code.isdigit() else "other"),
         }
 
     report = {
