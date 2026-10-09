@@ -105,5 +105,20 @@ class Tests(unittest.TestCase):
             self.assertFalse(report["unresolved_template_variables"])
             self.assertEqual(report["decision"],"reviewed_mail_copy_still_required")
 
+
+    def test_auto_route_rejects_unapproved_followup_content_drift(self):
+        from instantly_campaign_copy import AUTO_CAMPAIGN_ID,TARGET_CAMPAIGNS,resolve_language_destination
+        class Drifted:
+            def get_campaign(self,cid):
+                steps=campaign_steps("nl")
+                steps[1]["variants"][0]["body"] += " Unreviewed extra claim."
+                return {"id":cid,"name":TARGET_CAMPAIGNS["nl"][1],
+                        "status":0,"email_list":[],"sequences":[{"steps":steps}]}
+        row={"status":"review_draft","review_mode":"reviewed_mail",
+             "subject":"Een korte vraag over jullie website",
+             "body":"Hoi, ik zag jullie website en dacht aan een klein idee voor de pagina. Als je wilt, stuur ik graag een concreet voorstel. Laat gerust weten."}
+        with self.assertRaisesRegex(ValueError,"auto_language_copy_readback_mismatch"):
+            resolve_language_destination(Drifted(),row,AUTO_CAMPAIGN_ID)
+
 if __name__=="__main__":
     unittest.main()

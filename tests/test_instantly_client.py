@@ -656,5 +656,36 @@ class InstantlyClientTests(unittest.TestCase):
             self.assertFalse(hasattr(InstantlyClient, name), name)
 
 
+
+    def test_liquid_else_must_not_use_missing_optional_fact(self):
+        from instantly_client import validate_campaign_personalization
+        steps = [
+            {"type":"email","variants":[{"subject":"{{leadscanner_subject}}","body":"{{leadscanner_body}}"}]},
+            {"type":"email","variants":[{"subject":"","body":
+                "{% if leadscanner_observation %}Observed {{leadscanner_observation}}"
+                "{% else %}Fallback {{leadscanner_value_action}}{% endif %}"}]},
+        ]
+        target = {"id":"draft-id","status":0,"sequences":[{"steps":steps}]}
+        with self.assertRaisesRegex(ValueError,"optional_evidence_unprotected"):
+            validate_campaign_personalization(
+                target,{"leadscanner_subject":"Approved","leadscanner_body":"Reviewed"},
+                review_mode="reviewed_mail",
+            )
+
+    def test_spaced_unguarded_optional_variable_is_rejected(self):
+        from instantly_client import validate_campaign_personalization
+        steps = [
+            {"type":"email","variants":[{"subject":"{{leadscanner_subject}}","body":"{{leadscanner_body}}"}]},
+            {"type":"email","variants":[{"subject":"","body":
+                "{% if leadscanner_observation %}Saw {{leadscanner_observation}}{% endif %}"
+                "Outside guard: {{ leadscanner_value_action }}"}]},
+        ]
+        target = {"id":"draft-id","status":0,"sequences":[{"steps":steps}]}
+        with self.assertRaisesRegex(ValueError,"optional_evidence_unprotected"):
+            validate_campaign_personalization(
+                target,{"leadscanner_subject":"Approved","leadscanner_body":"Reviewed"},
+                review_mode="reviewed_mail",
+            )
+
 if __name__ == "__main__":
     unittest.main()

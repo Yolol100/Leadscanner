@@ -124,5 +124,37 @@ class Tests(unittest.TestCase):
         self.assertEqual(out["active_account_count"],0)
         self.assertFalse(out["go_live_approved"])
 
+
+    def test_campaign_audit_fails_closed_on_changed_schedule_or_copy(self):
+        from instantly_launch_audit import audit_two_campaign_options
+        from instantly_campaign_copy import campaign_steps
+        class Provider(Fake):
+            def __init__(self, drift):
+                super().__init__()
+                self.drift=drift
+            def get_campaign(self,cid):
+                lang=next(x for x,y in TARGETS.items() if y==cid)
+                steps=campaign_steps(lang)
+                if self.drift=="copy" and lang=="nl":
+                    steps[1]["variants"][0]["body"]+=" Unreviewed text."
+                timing={"from":"09:30","to":"16:30"}
+                if self.drift=="schedule" and lang=="nl":
+                    timing["from"]="00:00"
+                return {"id":cid,"status":0,"email_list":[],"sequences":[{"steps":steps}],
+                    "daily_limit":10,"daily_max_leads":5,"email_gap":12,
+                    "stop_on_reply":True,"stop_on_auto_reply":True,"stop_for_company":True,
+                    "allow_risky_contacts":False,"open_tracking":False,"link_tracking":False,
+                    "text_only":True,"insert_unsubscribe_header":True,
+                    "campaign_schedule":{"schedules":[{"timezone":"Arctic/Longyearbyen",
+                        "timing":timing,"days":{"0":False,"1":True,"2":True,"3":True,
+                            "4":True,"5":True,"6":False}}]}}
+        good=audit_two_campaign_options(Provider("none"))
+        self.assertTrue(good["all_confirmed_settings_match"])
+        self.assertTrue(good["all_reviewed_copy_matches"])
+        schedule=audit_two_campaign_options(Provider("schedule"))
+        self.assertFalse(schedule["all_confirmed_settings_match"])
+        copy=audit_two_campaign_options(Provider("copy"))
+        self.assertFalse(copy["all_reviewed_copy_matches"])
+
 if __name__=="__main__":
     unittest.main()
