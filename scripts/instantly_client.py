@@ -497,6 +497,28 @@ class InstantlyClient:
             for value in blocked
         ):
             raise ValueError("provider_blocklist_blocks_stage")
+        # A campaign can become Active or change copy while the provider
+        # suppression list is being fetched. Re-read immediately before POST.
+        current = self.get_campaign(campaign_id)
+        safety_fields = (
+            "email_list", "sequences", "allow_risky_contacts", "stop_on_reply",
+            "stop_on_auto_reply", "stop_for_company", "campaign_schedule",
+            "daily_limit", "daily_max_leads", "email_gap",
+            "open_tracking", "link_tracking", "text_only", "insert_unsubscribe_header",
+        )
+        if (
+            not isinstance(current, dict)
+            or str(current.get("id") or "").strip() != str(campaign_id)
+            or type(current.get("status")) is not int
+            or current["status"] not in SAFE_CAMPAIGN_STATUSES
+            or current.get("status") != campaign_status
+            or any(current.get(key) != campaign.get(key) for key in safety_fields)
+        ):
+            raise ValueError("campaign_changed_during_lead_preflight")
+        validate_campaign_personalization(
+            current, variables, review_mode=review_mode,
+            sequence_approval=sequence_approval,
+        )
         payload = {
             "campaign": campaign_id,
             "email": str(row.get("email") or "").strip(),

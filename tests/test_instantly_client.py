@@ -127,6 +127,7 @@ class InstantlyClientTests(unittest.TestCase):
         session = FakeSession([
             FakeResponse(payload=target),
             FakeResponse(payload={"items": [], "next_starting_after": None}),
+            FakeResponse(payload=target),
             FakeResponse(payload={"id": "instantly-lead-1"}),
         ])
         client = InstantlyClient("secret", session=session)
@@ -137,8 +138,8 @@ class InstantlyClientTests(unittest.TestCase):
             registry_rows=[],
             sequence_approval=approval_for(target),
         )
-        self.assertEqual([call[0] for call in session.calls], ["GET", "GET", "POST"])
-        vars = session.calls[2][2]["json"]["custom_variables"]
+        self.assertEqual([call[0] for call in session.calls], ["GET", "GET", "GET", "POST"])
+        vars = session.calls[3][2]["json"]["custom_variables"]
         self.assertNotIn("leadscanner_subject", vars)
         self.assertNotIn("leadscanner_body", vars)
         self.assertEqual(vars["leadscanner_observation"], approved_batch()["rows"][0]["verified_observation"])
@@ -253,6 +254,7 @@ class InstantlyClientTests(unittest.TestCase):
         session = FakeSession([
             FakeResponse(payload=campaign()),
             FakeResponse(payload={"items": [], "next_starting_after": None}),
+            FakeResponse(payload=campaign()),
             FakeResponse(status_code=503, payload={"message": "do not repeat this write"}),
         ])
         client = InstantlyClient("secret", session=session, sleep_fn=lambda _: None)
@@ -263,7 +265,7 @@ class InstantlyClientTests(unittest.TestCase):
                 campaign_id="c1",
                 registry_rows=[],
             )
-        self.assertEqual([method for method, _, _ in session.calls], ["GET", "GET", "POST"])
+        self.assertEqual([method for method, _, _ in session.calls], ["GET", "GET", "GET", "POST"])
 
     def test_write_timeout_reports_unknown_outcome(self):
         class TimeoutSession:
@@ -345,6 +347,7 @@ class InstantlyClientTests(unittest.TestCase):
         session = FakeSession([
             FakeResponse(payload=campaign()),
             FakeResponse(payload={"items": [], "next_starting_after": None}),
+            FakeResponse(payload=campaign()),
             FakeResponse(payload={"id": "instantly-lead-1"}),
         ])
         client = InstantlyClient("secret", session=session)
@@ -356,7 +359,8 @@ class InstantlyClientTests(unittest.TestCase):
         )
         self.assertEqual(result["id"], "instantly-lead-1")
         self.assertEqual(session.calls[1][0], "GET")
-        method, url, kwargs = session.calls[2]
+        self.assertEqual(session.calls[2][0], "GET")
+        method, url, kwargs = session.calls[3]
         self.assertEqual((method, url), ("POST", "https://api.instantly.ai/api/v2/leads"))
         self.assertTrue(kwargs["json"]["skip_if_in_workspace"])
         self.assertTrue(kwargs["json"]["skip_if_in_campaign"])
