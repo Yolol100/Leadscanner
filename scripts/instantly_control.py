@@ -248,7 +248,7 @@ _PRIVATE_RESULT_KEYS = frozenset({
     "snippet", "payload", "custom_variables", "personalization",
     "content", "message_text", "reply_text", "html",
 })
-_EMAIL_IN_TEXT = re.compile(r"(?<![\\w.+-])[\\w.+-]+@(?:[\\w-]+\\.)+[A-Za-z]{2,}(?![\\w.-])")
+_EMAIL_IN_TEXT = re.compile(r"(?<![\w.+-])[\w.+-]+@(?:[\w-]+\.)+[A-Za-z]{2,}(?![\w.-])")
 
 
 def _redact_sensitive(value):
