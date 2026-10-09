@@ -247,6 +247,10 @@ _PRIVATE_RESULT_KEYS = frozenset({
     "subject", "body", "subject_line", "text_body", "html_body",
     "snippet", "payload", "custom_variables", "personalization",
     "content", "message_text", "reply_text", "html",
+    "name", "company", "companyname", "firstname", "lastname",
+    "website", "website_url", "phone", "phone_number", "domain",
+    "bl_value", "jobtitle", "job_title", "linkedin", "linkedin_url",
+    "location", "address",
 })
 _EMAIL_IN_TEXT = re.compile(r"(?<![\w.+-])[\w.+-]+@(?:[\w-]+\.)+[A-Za-z]{2,}(?![\w.-])")
 
