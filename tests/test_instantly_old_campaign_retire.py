@@ -157,7 +157,7 @@ class Tests(unittest.TestCase):
         f=Fake()
         f.archive=[{"id":"33333333-3333-3333-3333-333333333333",
                     "email":LEAD["email"],"list_id":LIST_ID,"payload":{"note":"DIFFERENT"}}]
-        with self.assertRaisesRegex(RuntimeError,"custom_fields_changed"):
+        with self.assertRaisesRegex(RuntimeError,"archive_custom_fields_conflict"):
             archive_and_retire_old_campaign(f)
         self.assertFalse(f.deleted)
 if __name__=="__main__":
