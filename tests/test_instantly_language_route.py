@@ -43,6 +43,15 @@ class Fake:
 
 
 class TestLanguageRouting(unittest.TestCase):
+    def test_stage_label_redacts_connection_details(self):
+        from instantly_language_route import _step
+
+        def fail():
+            raise RuntimeError("contains private test email person@example.org")
+        with self.assertRaisesRegex(RuntimeError, "^routing_stage_source_list_RuntimeError$") as ctx:
+            _step("source_list", fail)
+        self.assertNotIn("person@example.org", str(ctx.exception))
+
     def test_preflight_rejects_active_and_sender_assigned(self):
         api=Fake()
         preflight_campaign(api,"nl",CID)

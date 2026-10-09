@@ -103,6 +103,14 @@ def _wait_job(client: InstantlyClient, job: object, *, sleep_fn=time.sleep) -> N
     raise RuntimeError("routing_background_job_pending_no_retry")
 
 
+def _step(label, func, *args, **kwargs):
+    """Use fixed stage names; never log recipient names, emails or provider bodies."""
+    try:
+        return func(*args, **kwargs)
+    except Exception as exc:
+        raise RuntimeError(f"routing_stage_{label}_{type(exc).__name__}") from exc
+
+
 def route_exact_language(client: InstantlyClient, *, language: str, campaign_id: str, max_leads: int = 25,
                          registry_url: str = DEFAULT_REGISTRY_URL) -> dict:
     if language not in {"nl","en"}:
@@ -112,11 +120,11 @@ def route_exact_language(client: InstantlyClient, *, language: str, campaign_id:
     if not re.fullmatch(r"[0-9a-fA-F-]{36}", campaign_id or ""):
         raise ValueError("routing_campaign_id_invalid")
 
-    preflight_campaign(client, language, campaign_id)
-    source_id, rows = read_imported_leads(client)
-    registry = fetch_live_registry(registry_url=registry_url)
-    blocklist = blocked_values(client)
-    already = destination_emails(client, campaign_id)
+    _step('campaign_preflight', preflight_campaign, client, language, campaign_id)
+    source_id, rows = _step('source_list', read_imported_leads, client)
+    registry = _step('registry', fetch_live_registry, registry_url=registry_url)
+    blocklist = _step('blocklist', blocked_values, client)
+    already = _step('destination_before', destination_emails, client, campaign_id)
     counters = Counter()
     selected = []
     for row in sorted(rows, key=lambda v: _text(v.get("email")).casefold()):
@@ -176,20 +184,20 @@ def route_exact_language(client: InstantlyClient, *, language: str, campaign_id:
         return result
 
     # Exact pre-write preflight, never allow a changed campaign to receive leads.
-    preflight_campaign(client, language, campaign_id)
+    _step("campaign_prewrite", preflight_campaign, client, language, campaign_id)
     payload = {
         "list_id": source_id, "to_campaign_id": campaign_id,
         "ids": [row["id"] for row in selected],
         "copy_leads": True, "reset_interest_status": False,
     }
     # No blind retry of this non-idempotent POST.
-    created = client._request("POST", "/leads/move", json=payload)
-    _wait_job(client, created)
+    created = _step("copy_write", client._request, "POST", "/leads/move", json=payload)
+    _step("background_readback", _wait_job, client, created)
     # Complete one-to-one after-state recheck (no addresses in public result).
-    copied = destination_emails(client, campaign_id)
+    copied = _step('destination_after', destination_emails, client, campaign_id)
     for row in selected:
         if _text(row.get("email")).casefold() not in copied:
             raise RuntimeError("routing_destination_readback_missing_lead")
-    preflight_campaign(client, language, campaign_id)
+    _step('campaign_final', preflight_campaign, client, language, campaign_id)
     result["confirmed_copied_count"] = len(selected)
     return result
