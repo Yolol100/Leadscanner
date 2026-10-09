@@ -112,7 +112,7 @@ class PipelineContractScenarioTests(unittest.TestCase):
         from re import search
         root=Path(__file__).resolve().parents[1]
         workflow=(root/".github/workflows/leads-cold.yml").read_text(encoding="utf-8")
-        mode=search(r"preview_copy_mode:[\\s\\S]*?default:\\s*(reviewed_mail|instantly_sequence)",workflow)
+        mode=search(r"(?s)preview_copy_mode:.*?default: *(reviewed_mail|instantly_sequence)",workflow)
         self.assertIsNotNone(mode)
         self.assertEqual(mode.group(1),"reviewed_mail")
         for path in ("README.md","AGENTS.md"):
