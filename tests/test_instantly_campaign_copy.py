@@ -61,6 +61,14 @@ class Tests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"auto_language_requires_zero_senders"):
             resolve_language_destination(Unsafe(),row,AUTO_CAMPAIGN_ID)
 
+    def test_fact_cta_avoids_repeated_example_phrases(self):
+        nl=campaign_steps("nl")[1]["variants"][0]["body"]
+        en=campaign_steps("en")[1]["variants"][0]["body"]
+        self.assertIn("maken, zodat je ziet wat ik bedoel",nl)
+        self.assertIn("prepare {{leadscanner_value_action}} to make the idea tangible",en)
+        self.assertNotIn("als kort voorbeeld",nl)
+        self.assertNotIn("as a short example",en)
+
     def test_copy_quality_and_contact_handling(self):
         for lang in LANGS:
             steps=campaign_steps(lang)

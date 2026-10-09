@@ -12,7 +12,7 @@ NL = {
 Ik kom nog even terug op mijn bericht over jullie website.
 {% if leadscanner_observation and leadscanner_value_action %}
 Wat ik concreet zag: {{leadscanner_observation}}
-Als je dat nuttig vindt, kan ik {{leadscanner_value_action}} uitwerken als kort voorbeeld.
+Ik kan {{leadscanner_value_action}} maken, zodat je ziet wat ik bedoel.
 {% else %}
 Ik kan in een paar regels laten zien welke 2–3 onderdelen ik als eerste zou bekijken.
 {% endif %}
@@ -42,7 +42,7 @@ EN = {
 Just following up on my note about your website.
 {% if leadscanner_observation and leadscanner_value_action %}
 What caught my eye: {{leadscanner_observation}}
-If useful, I can put together {{leadscanner_value_action}} as a short example.
+I can prepare {{leadscanner_value_action}} to make the idea tangible.
 {% else %}
 I could outline the first 2–3 areas I'd look at, in a few short lines.
 {% endif %}

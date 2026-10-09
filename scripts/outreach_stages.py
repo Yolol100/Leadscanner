@@ -301,7 +301,7 @@ def body_for(candidate: dict) -> str:
         return (
             "Hoi,\n\n"
             f"Op jullie website viel me dit detail op: {observation}\n\n"
-            f"Ik kan {action} uitwerken als concreet voorbeeld, zonder verplichtingen.\n\n"
+            f"Als je wilt, kan ik {action} maken. Dat is vrijblijvend.\n\n"
             "Zal ik dat voorbeeld per mail sturen?\n\n"
             "Geen interesse, laat het gerust weten; dan stop ik.\n\n"
             "Groet,\nAndrew\nWebactueel"
@@ -309,7 +309,7 @@ def body_for(candidate: dict) -> str:
     return (
         "Hi,\n\n"
         f"I noticed one detail on your website: {observation}\n\n"
-        f"I can put together {action} as a concrete example, with no obligation.\n\n"
+        f"If useful, I can prepare {action} with no obligation.\n\n"
         "Would you like me to email it to you?\n\n"
         "If it isn't relevant, just reply 'no' and I'll stop.\n\n"
         "Best,\nAndrew\nWebactueel"
