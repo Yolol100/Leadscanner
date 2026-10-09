@@ -118,3 +118,25 @@ A command run uploads an Actions artifact named
 
 The scheduled reconciliation uploads
 `instantly-sync-<github-run-id>`.
+
+
+## mijn.host Drafts -> isolated Instantly list (no sending)
+
+Only drafts created by Leadscanner with a valid X-Webactueel-Lead-ID are eligible.
+The source mailbox is opened read-only and original drafts are retained. Duplicate
+lead IDs and email addresses, invalid drafts, suppressed registry identities,
+Instantly blocklisted addresses/domains and emails already in the workspace are
+skipped. The import preserves each approved source draft's subject/body as
+lead custom variables in an isolated Instantly **lead list**, not a campaign.
+No SMTP send, campaign activation, list-to-campaign move or registry edit occurs.
+
+Run the read-only inventory first by adding a new immutable command file:
+{"schema_version":"leadscanner-instantly-command/1.0","command_id":"20261009-audit-myhost-001","action":"audit_myhost_drafts","args":{},"requested_by":"chatgpt"}
+
+Only after validating the count-only audit, run the separately authorized
+non-sending import using a NEW immutable command file:
+{"schema_version":"leadscanner-instantly-command/1.0","command_id":"20261009-import-myhost-001","action":"import_myhost_drafts","args":{},"confirm":"EXECUTE import_myhost_drafts isolated-list-no-send","requested_by":"chatgpt"}
+
+The result artifact contains counts and the destination list ID, **never emails,
+names, subjects or bodies**. A list is not a sendable campaign. The existing
+approval and legal-basis gates still apply before any subsequent campaign use.

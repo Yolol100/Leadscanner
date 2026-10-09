@@ -18,6 +18,7 @@ from urllib.parse import quote
 
 from instantly_client import InstantlyClient, InstantlyError, SAFE_CAMPAIGN_STATUSES, inspect_campaign_sequence
 from instantly_service import DEFAULT_REGISTRY_URL, DEFAULT_REPOSITORY, fetch_live_registry, stage_exact_approved_lead
+from myhost_instantly_import import execute_migration
 
 SCHEMA_VERSION = "leadscanner-instantly-command/1.0"
 RESULT_SCHEMA_VERSION = "leadscanner-instantly-command-result/1.0"
@@ -25,7 +26,7 @@ COMMAND_PREFIX = "instantly-commands/inbox/"
 COMMAND_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{5,120}$")
 
 READ_ACTIONS = {
-    "list_campaigns", "get_campaign", "audit_campaign_sequence", "audit_activation_readiness", "campaign_sending_status", "campaign_analytics",
+    "audit_myhost_drafts", "list_campaigns", "get_campaign", "audit_campaign_sequence", "audit_activation_readiness", "campaign_sending_status", "campaign_analytics",
     "list_leads", "get_lead", "list_emails", "get_email", "count_unread_emails",
     "list_accounts", "get_account", "test_account_vitals", "warmup_analytics", "daily_account_analytics",
     "list_blocklist", "get_blocklist_entry", "get_background_job",
@@ -36,7 +37,7 @@ WRITE_ACTIONS = {
     "forward_email", "send_test_email", "mark_thread_read", "update_account",
     "mark_account_fixed", "pause_account", "resume_account", "enable_warmup", "disable_warmup",
     "verify_email",
-    "block_email", "block_domain", "delete_blocklist_entry", "stage_approved_lead",
+    "block_email", "block_domain", "delete_blocklist_entry", "stage_approved_lead", "import_myhost_drafts",
 }
 SEND_ACTIONS = {"activate_campaign", "reply_email", "forward_email", "send_test_email"}
 DESTRUCTIVE_ACTIONS = {"delete_campaign", "delete_lead", "delete_blocklist_entry"}
@@ -139,6 +140,8 @@ def _confirmation_target(action: str, args: dict) -> str:
         "stage_approved_lead": "campaign_id",
     }
     payload = args.get("payload") or {}
+    if action == "import_myhost_drafts":
+        return "isolated-list-no-send"
     if action == "create_campaign_draft":
         return _text(payload.get("name"))
     if action == "stage_approved_lead":
@@ -608,7 +611,11 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
     validate_write_gate(command, config, run_attempt=run_attempt)
     action, args = command["action"], command["args"]
 
-    if action == "list_campaigns":
+    if action == "audit_myhost_drafts":
+        data = execute_migration(client, mode="audit", registry_url=os.getenv("DEDUPE_REGISTRY_CSV_URL", DEFAULT_REGISTRY_URL))
+    elif action == "import_myhost_drafts":
+        data = execute_migration(client, mode="import", registry_url=os.getenv("DEDUPE_REGISTRY_CSV_URL", DEFAULT_REGISTRY_URL))
+    elif action == "list_campaigns":
         page = client.list_campaigns(
             limit=_limit(args),
             starting_after=_text(args.get("starting_after")) or None,

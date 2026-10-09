@@ -97,6 +97,7 @@ on:
       - 'scripts/preview_snapshot.py'
       - 'scripts/approval_revalidation.py'
       - 'scripts/myhost_draft.py'
+      - 'scripts/myhost_instantly_import.py'
       - 'scripts/update_dedupe_registry.py'
       - 'scripts/url_safety.py'
       - 'scripts/instantly_client.py'
@@ -117,6 +118,7 @@ on:
       - 'tests/test_preview_snapshot.py'
       - 'tests/test_approval_revalidation.py'
       - 'tests/test_myhost_draft.py'
+      - 'tests/test_myhost_instantly_import.py'
       - 'tests/test_update_dedupe_registry.py'
       - 'tests/test_url_safety.py'
       - 'tests/test_instantly_client.py'
@@ -148,6 +150,7 @@ on:
       - 'scripts/preview_snapshot.py'
       - 'scripts/approval_revalidation.py'
       - 'scripts/myhost_draft.py'
+      - 'scripts/myhost_instantly_import.py'
       - 'scripts/update_dedupe_registry.py'
       - 'scripts/url_safety.py'
       - 'scripts/instantly_client.py'
@@ -168,6 +171,7 @@ on:
       - 'tests/test_preview_snapshot.py'
       - 'tests/test_approval_revalidation.py'
       - 'tests/test_myhost_draft.py'
+      - 'tests/test_myhost_instantly_import.py'
       - 'tests/test_update_dedupe_registry.py'
       - 'tests/test_url_safety.py'
       - 'tests/test_instantly_client.py'
@@ -224,6 +228,7 @@ jobs:
             scripts/preview_snapshot.py \
             scripts/approval_revalidation.py \
             scripts/myhost_draft.py \
+            scripts/myhost_instantly_import.py \
             scripts/update_dedupe_registry.py \
             scripts/overture_discovery.py \
             scripts/url_safety.py \
@@ -246,6 +251,7 @@ jobs:
             tests.test_preview_snapshot \
             tests.test_approval_revalidation \
             tests.test_myhost_draft \
+            tests.test_myhost_instantly_import \
             tests.test_update_dedupe_registry \
             tests.test_url_safety \
             tests.test_instantly_client \
@@ -952,6 +958,11 @@ jobs:
         env:
           PYTHONPATH: scripts
           INSTANTLY_API_KEY: ${{ secrets.INSTANTLY_API_KEY }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
           LEADSCANNER_GITHUB_TOKEN: ${{ github.token }}
           LEADSCANNER_INSTANTLY_WRITES_ENABLED: 'true'
           LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON || secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
