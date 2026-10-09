@@ -149,6 +149,17 @@ class ImportTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "max_imports_out_of_bounds"):
                 execute_migration(api, mode="import", max_imports=count)
 
+    def test_privacy_safe_stage_label_on_upstream_failure(self):
+        row = extract_lead_draft(mail(), sender="info@andrewbaeten.nl")
+        api = FakeInstantly()
+        with patch("myhost_instantly_import.read_source_drafts", return_value={
+            "source_count":1,"untagged_count":0,"invalid_tagged_count":0,"drafts":[row],
+        }), patch("myhost_instantly_import.fetch_live_registry", return_value=[]), patch(
+            "myhost_instantly_import.fetch_all_leads", side_effect=RuntimeError("sensitive upstream detail")
+        ):
+            with self.assertRaisesRegex(RuntimeError, "^migration_step_workspace_snapshot_RuntimeError$"):
+                execute_migration(api, mode="audit")
+
     def test_readback_rejects_wrong_campaign(self):
         row = extract_lead_draft(mail(), sender="info@andrewbaeten.nl")
         payload = lead_payload(row, "list123")

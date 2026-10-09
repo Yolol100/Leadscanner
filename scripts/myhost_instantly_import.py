@@ -237,20 +237,28 @@ def verify_import(client: InstantlyClient, expected: dict, created: object) -> N
         raise RuntimeError("lead_custom_variables_readback_mismatch")
 
 
+def _step(label: str, operation, *args, **kwargs):
+    """Privacy-safe error stage; never include personal data or request payloads."""
+    try:
+        return operation(*args, **kwargs)
+    except Exception as exc:
+        raise RuntimeError(f"migration_step_{label}_{type(exc).__name__}") from exc
+
+
 def execute_migration(client: InstantlyClient, *, mode: str = "audit", registry_url: str = DEFAULT_REGISTRY_URL, max_imports: int = 25) -> dict:
     if mode not in {"audit", "import"}:
         raise ValueError("migration_mode_invalid")
     if type(max_imports) is not int or not 1 <= max_imports <= 250:
         raise ValueError("max_imports_out_of_bounds")
-    source = read_source_drafts()
+    source = _step("source", read_source_drafts)
     unique, duplicate_count = unique_drafts(source["drafts"])
     if len(unique) > MAX_IMPORT_DRAFTS:
         raise RuntimeError("eligible_source_draft_limit_exceeded")
-    registry = fetch_live_registry(registry_url=registry_url)
-    blocklist = blocked_values(client)
+    registry = _step("registry", fetch_live_registry, registry_url=registry_url)
+    blocklist = _step("blocklist", blocked_values, client)
     # One complete workspace snapshot avoids thousands of API requests and
     # fails closed if provider pagination is incomplete. Recheck each write live.
-    workspace_rows = fetch_all_leads(client, max_leads=50000)
+    workspace_rows = _step("workspace_snapshot", fetch_all_leads, client, max_leads=50000)
     workspace_emails = {_text(item.get("email")).casefold() for item in workspace_rows if _text(item.get("email"))}
     pending, suppressed, already_existing = [], 0, 0
     for row in unique:
@@ -290,15 +298,15 @@ def execute_migration(client: InstantlyClient, *, mode: str = "audit", registry_
     }
     if mode == "audit" or not pending:
         return report
-    list_id = ensure_isolated_list(client)
+    list_id = _step("target_list", ensure_isolated_list, client)
     report["list_id"] = list_id
     for row in pending[:max_imports]:
         # Recheck immediately before each write. Ambiguous errors stop; never retry POST.
-        if workspace_contains(client, row["email"]):
+        if _step(f"prewrite_dedupe_verified_{report['imported_count']}", workspace_contains, client, row["email"]):
             report["already_in_workspace_count"] += 1
             continue
         expected = lead_payload(row, list_id)
-        created = client._request("POST", "/leads", json=expected)
-        verify_import(client, expected, created)
+        created = _step(f"lead_write_verified_{report['imported_count']}", client._request, "POST", "/leads", json=expected)
+        _step(f"lead_readback_verified_{report['imported_count']}", verify_import, client, expected, created)
         report["imported_count"] += 1
     return report
