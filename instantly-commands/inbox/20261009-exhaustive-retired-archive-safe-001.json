@@ -1,0 +1,7 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "20261009-exhaustive-retired-archive-safe-001",
+  "action": "audit_retired_archive",
+  "args": {},
+  "requested_by": "chatgpt"
+}
