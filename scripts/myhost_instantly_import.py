@@ -7,11 +7,12 @@ from __future__ import annotations
 
 import os
 import re
+import time
 from collections import Counter
 from email.utils import getaddresses, parseaddr
 
 from dedupe_preflight import match_candidate
-from instantly_client import InstantlyClient
+from instantly_client import InstantlyClient, InstantlyError
 from instantly_service import DEFAULT_REGISTRY_URL, fetch_live_registry
 from myhost_draft import (
     LEAD_ID_RE, connect_imap, fetch_message_uid, find_drafts_folder,
@@ -220,11 +221,29 @@ def lead_payload(row: dict, list_id: str) -> dict:
     }
 
 
+def _get_lead_with_readback_retry(client: InstantlyClient, lead_id: str, *, sleep_fn=time.sleep):
+    """Retry bounded GET-only readback after a confirmed POST, never retry the POST."""
+    for attempt in range(5):
+        try:
+            return client.get_lead(lead_id)
+        except InstantlyError as exc:
+            message = str(exc)
+            code = message.removeprefix("instantly_api_error status=")
+            retryable = (
+                code in {"404", "408", "429", "500", "502", "503", "504"}
+                or message in {"instantly_network_error", "instantly_request_exhausted"}
+            )
+            if not retryable or attempt == 4:
+                raise
+            sleep_fn(min(2 ** attempt, 5))
+    raise RuntimeError("lead_readback_retry_exhausted")
+
+
 def verify_import(client: InstantlyClient, expected: dict, created: object) -> None:
     lead_id = _text(created.get("id")) if isinstance(created, dict) else ""
     if not lead_id:
         raise RuntimeError("lead_create_missing_id_no_retry")
-    actual = client.get_lead(lead_id)
+    actual = _get_lead_with_readback_retry(client, lead_id)
     if not isinstance(actual, dict):
         raise RuntimeError("lead_readback_invalid")
     if _text(actual.get("id")) != lead_id or _text(actual.get("email")).casefold() != expected["email"]:

@@ -181,6 +181,39 @@ class ImportTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "^migration_step_workspace_candidate_lookup_RuntimeError$"):
                 execute_migration(api, mode="audit")
 
+    def test_readback_retries_only_safe_get_requests(self):
+        from instantly_client import InstantlyError
+        from myhost_instantly_import import _get_lead_with_readback_retry
+
+        class Flaky:
+            def __init__(self):
+                self.calls = 0
+            def get_lead(self, _):
+                self.calls += 1
+                if self.calls <= 2:
+                    raise InstantlyError("instantly_api_error status=429")
+                return {"id":"ok"}
+        api = Flaky()
+        delays = []
+        self.assertEqual(_get_lead_with_readback_retry(api, "some-id", sleep_fn=delays.append), {"id":"ok"})
+        self.assertEqual(api.calls, 3)
+        self.assertEqual(delays, [1, 2])
+
+    def test_readback_does_not_retry_invalid_client_requests(self):
+        from instantly_client import InstantlyError
+        from myhost_instantly_import import _get_lead_with_readback_retry
+
+        class Bad:
+            def __init__(self):
+                self.calls = 0
+            def get_lead(self, _):
+                self.calls += 1
+                raise InstantlyError("instantly_api_error status=403")
+        api = Bad()
+        with self.assertRaisesRegex(InstantlyError, "403"):
+            _get_lead_with_readback_retry(api, "id", sleep_fn=lambda _: None)
+        self.assertEqual(api.calls, 1)
+
     def test_readback_rejects_wrong_campaign(self):
         row = extract_lead_draft(mail(), sender="info@andrewbaeten.nl")
         payload = lead_payload(row, "list123")
