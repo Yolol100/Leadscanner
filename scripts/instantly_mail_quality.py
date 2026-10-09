@@ -35,7 +35,18 @@ def mail_quality_audit(client) -> dict:
         if n>130:counts["long_over_130_words"]+=1
         if len(subj)>65:counts["subject_over_65_chars"]+=1
         if UNRESOLVED.search(subj+"\n"+body):counts["unresolved_template_markers"]+=1
-        if body.count("?")!=1:counts["not_exactly_one_question"]+=1
+        question_count = body.count("?")
+        if question_count == 0:
+            counts["questions_zero"] += 1
+            counts["not_exactly_one_question"] += 1
+        elif question_count == 1:
+            counts["questions_one"] += 1
+        elif question_count == 2:
+            counts["questions_two"] += 1
+            counts["not_exactly_one_question"] += 1
+        else:
+            counts["questions_three_or_more"] += 1
+            counts["not_exactly_one_question"] += 1
         lower=body.casefold()
         if not any(v in lower for v in SENDER):counts["no_sender_identification"]+=1
         if not any(v in lower for v in (OPT_OUT_NL if lang=="nl" else OPT_OUT_EN)):counts["no_obvious_optout_phrase"]+=1
@@ -57,6 +68,13 @@ def mail_quality_audit(client) -> dict:
                 "no_obvious_optout_phrase",
             )
         },
+        "question_count_distribution": {
+            "zero": counts["questions_zero"],
+            "one": counts["questions_one"],
+            "two": counts["questions_two"],
+            "three_or_more": counts["questions_three_or_more"],
+        },
+        "question_count_is_a_review_heuristic_not_reply_rate": True,
         "both_verified_fact_placeholders_present":counts["both_verified_fact_placeholders_present"],
         "documented_contact_basis_count":counts["documented_contact_basis"],
         "copy_is_not_consent":True,
