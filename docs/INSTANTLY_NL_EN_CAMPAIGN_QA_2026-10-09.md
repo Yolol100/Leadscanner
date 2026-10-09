@@ -61,6 +61,26 @@ There is no evidence of a live test send during this QA.
 Account-level daily limits and warmup must be rechecked once an active
 sender account is reconnected. Account caps apply across campaigns.
 
+## Latest independent settings readback
+
+A second provider read-only audit confirmed both Drafts using
+[GitHub Actions run 37933798576](https://github.com/Yolol100/Leadscanner/actions/runs/37933798576):
+**11/11 expected campaign settings match per language**, with zero mismatches,
+zero missing provider fields and zero assigned senders. Each schedule contains
+the expected Monday-Friday 09:30-16:30 CET/CEST window (zone:
+`Arctic/Longyearbyen`).
+
+Regressions on `main` also include:
+- nested template/Liquid syntax rejection for future lead data;
+- suppression-list and domain checks in the final activation preflight;
+- both languages' three-step local Liquid fallback scenario matrix;
+- non-zero intervals between both follow-up sends.
+
+Code regression runs:
+[37933105186](https://github.com/Yolol100/Leadscanner/actions/runs/37933105186)
+and [37933363355](https://github.com/Yolol100/Leadscanner/actions/runs/37933363355)
+both passed. A local Liquid simulation remains *not* an Instantly Preview.
+
 ## Independent no-go checks
 
 1. **Legal contact basis:** 1,128 imported leads recorded as
