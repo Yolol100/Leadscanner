@@ -83,6 +83,45 @@ class Tests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,"archive_readback_identity_mismatch"):
             _archive_leads(Wrong(),LIST_ID,LEAD["email"])
 
+    def test_retired_archive_audit_succeeds_after_old_campaign_deleted(self):
+        from instantly_old_campaign_retire import audit_retired_archive
+        f=Fake()
+        f.deleted=True
+        f.archive=[{"id":"33333333-3333-3333-3333-333333333333",
+                    "email":LEAD["email"],"list_id":LIST_ID,
+                    "campaign":None,"payload":{"note":"keep"}}]
+        out=audit_retired_archive(f)
+        self.assertEqual(out["archived_contact_count"],1)
+        self.assertTrue(out["archive_preserved"])
+        self.assertFalse(out["writes"])
+        self.assertFalse(out["sends"])
+        self.assertNotIn("old@example.org",str(out))
+        self.assertEqual(f.calls,[("GET","/lead-lists")])
+
+    def test_retired_archive_audit_rejects_missing_or_duplicate_copy(self):
+        from instantly_old_campaign_retire import audit_retired_archive
+        f=Fake()
+        f.deleted=True
+        with self.assertRaisesRegex(RuntimeError,"retired_archive_contact_count_mismatch"):
+            audit_retired_archive(f)
+        f.archive=[{"id":"33333333-3333-3333-3333-333333333333",
+                    "email":LEAD["email"],"list_id":LIST_ID,"payload":{"note":"keep"}}]*2
+        with self.assertRaisesRegex(RuntimeError,"retired_archive_contact_count_mismatch"):
+            audit_retired_archive(f)
+
+    def test_retired_archive_audit_rejects_wrong_list_or_missing_fields(self):
+        from instantly_old_campaign_retire import audit_retired_archive
+        f=Fake()
+        f.deleted=True
+        f.archive=[{"id":"33333333-3333-3333-3333-333333333333",
+                    "email":LEAD["email"],"list_id":"other","payload":{"note":"keep"}}]
+        with self.assertRaisesRegex(RuntimeError,"retired_archive_contact_identity_invalid"):
+            audit_retired_archive(f)
+        f.archive[0]["list_id"]=LIST_ID
+        f.archive[0].pop("payload")
+        with self.assertRaisesRegex(RuntimeError,"retired_archive_custom_fields_missing"):
+            audit_retired_archive(f)
+
     def test_archive_metadata_audit_counts_without_exposing_values(self):
         from instantly_old_campaign_retire import audit_old_archive_metadata
         f=Fake()
