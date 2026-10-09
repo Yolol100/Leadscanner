@@ -219,5 +219,26 @@ class InstantlySyncTests(unittest.TestCase):
         self.assertEqual(client.calls[1]["starting_after"], "cursor-1")
 
 
+
+    def test_public_sync_artifact_must_not_expose_ambiguous_contact_email(self):
+        from unittest.mock import patch
+        from instantly_sync import sync_registry
+        private_email="private-customer@example.org"
+        class Provider:
+            def list_leads(self,**kwargs):
+                return {"items":[{"id":"test","email":private_email,"status":-2,
+                                  "timestamp_updated":"2026-10-09T00:00:00Z"}],
+                        "next_starting_after":None}
+        with patch("instantly_sync.InstantlyClient",return_value=Provider()),\
+             patch("instantly_sync._authorized_session",return_value=(object(),"service")),\
+             patch("instantly_sync.read_live_values",return_value=[]),\
+             patch("instantly_sync.plan_registry_event_update",
+                   side_effect=ValueError("registry_event_identity_ambiguous")):
+            result=sync_registry(api_key="test")
+        self.assertEqual(result["registry_identity_ambiguous_count"],1)
+        self.assertEqual(result["status"],"yellow")
+        self.assertNotIn(private_email,str(result))
+
+
 if __name__ == "__main__":
     unittest.main()

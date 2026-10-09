@@ -119,5 +119,18 @@ class TestLanguageRouting(unittest.TestCase):
                 route_exact_language(api,language="nl",campaign_id=CID,max_leads=1)
 
 
+
+    def test_parent_domain_blocklist_prevents_subdomain_routing(self):
+        api=Fake()
+        row=dict(ROW,email="contact@sub.example.org")
+        with patch("instantly_language_route.read_imported_leads",return_value=(LID,[row])),\
+             patch("instantly_language_route.fetch_live_registry",return_value=[]),\
+             patch("instantly_language_route.blocked_values",return_value={"example.org"}):
+            result=route_exact_language(api,language="nl",campaign_id=CID,max_leads=1)
+        self.assertEqual(result["held_counts"]["blocklist_hold"],1)
+        self.assertEqual(result["attempt_count"],0)
+        self.assertFalse(api.calls)
+
+
 if __name__=="__main__":
     unittest.main()

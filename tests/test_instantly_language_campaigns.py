@@ -73,5 +73,14 @@ class LanguageCampaignTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError,"language_source_list_identity_mismatch"):
                 read_imported_leads(Provider([{"id":"id","email":"person@example.org","list_id":"wrong"}]))
 
+
+    def test_duplicate_source_email_blocks_routing_before_any_write(self):
+        rows=[{"id":str(i),"email":"same@example.org","list_id":"correct"} for i in (1,2)]
+        api=Provider(rows)
+        with patch("instantly_language_campaigns.matching_list_ids",return_value=["correct"]):
+            with self.assertRaisesRegex(RuntimeError,"language_source_duplicate_or_missing_email"):
+                read_imported_leads(api)
+
+
 if __name__=="__main__":
     unittest.main()

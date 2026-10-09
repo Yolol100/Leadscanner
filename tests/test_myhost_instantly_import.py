@@ -223,5 +223,16 @@ class ImportTests(unittest.TestCase):
             verify_import(api, payload, {"id":"lead123"})
 
 
+
+    def test_blocklist_empty_page_with_next_cursor_must_fail_closed(self):
+        from myhost_instantly_import import blocked_values
+        class Incomplete:
+            def _request(self, method, path, **kwargs):
+                self.asserted=(method,path)
+                return {"items":[],"next_starting_after":"more-items"}
+        with self.assertRaisesRegex(RuntimeError,"provider_page_empty_with_cursor"):
+            blocked_values(Incomplete())
+
+
 if __name__ == "__main__":
     unittest.main()
