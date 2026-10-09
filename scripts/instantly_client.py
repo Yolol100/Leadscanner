@@ -484,6 +484,19 @@ class InstantlyClient:
             review_mode=review_mode,
             sequence_approval=sequence_approval,
         )
+        # Workspace dedupe alone does not cover global Instantly opt-outs.
+        # Complete provider read must succeed before a new lead can be staged.
+        from myhost_instantly_import import blocked_values
+        blocked = blocked_values(self)
+        email = str(row.get("email") or "").strip().casefold()
+        if email.count("@") != 1:
+            raise ValueError("approved_email_required")
+        domain = email.rsplit("@", 1)[-1]
+        if email in blocked or any(
+            "@" not in value and (domain == value or domain.endswith("." + value))
+            for value in blocked
+        ):
+            raise ValueError("provider_blocklist_blocks_stage")
         payload = {
             "campaign": campaign_id,
             "email": str(row.get("email") or "").strip(),

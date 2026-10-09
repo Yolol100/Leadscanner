@@ -126,6 +126,7 @@ class InstantlyClientTests(unittest.TestCase):
         target = campaign(steps=evidence_three_steps(), status=0)
         session = FakeSession([
             FakeResponse(payload=target),
+            FakeResponse(payload={"items": [], "next_starting_after": None}),
             FakeResponse(payload={"id": "instantly-lead-1"}),
         ])
         client = InstantlyClient("secret", session=session)
@@ -136,8 +137,8 @@ class InstantlyClientTests(unittest.TestCase):
             registry_rows=[],
             sequence_approval=approval_for(target),
         )
-        self.assertEqual([call[0] for call in session.calls], ["GET", "POST"])
-        vars = session.calls[1][2]["json"]["custom_variables"]
+        self.assertEqual([call[0] for call in session.calls], ["GET", "GET", "POST"])
+        vars = session.calls[2][2]["json"]["custom_variables"]
         self.assertNotIn("leadscanner_subject", vars)
         self.assertNotIn("leadscanner_body", vars)
         self.assertEqual(vars["leadscanner_observation"], approved_batch()["rows"][0]["verified_observation"])
@@ -342,6 +343,7 @@ class InstantlyClientTests(unittest.TestCase):
     def test_add_approved_lead_uses_workspace_dedupe_flags(self):
         session = FakeSession([
             FakeResponse(payload=campaign()),
+            FakeResponse(payload={"items": [], "next_starting_after": None}),
             FakeResponse(payload={"id": "instantly-lead-1"}),
         ])
         client = InstantlyClient("secret", session=session)
@@ -352,7 +354,8 @@ class InstantlyClientTests(unittest.TestCase):
             registry_rows=[],
         )
         self.assertEqual(result["id"], "instantly-lead-1")
-        method, url, kwargs = session.calls[1]
+        self.assertEqual(session.calls[1][0], "GET")
+        method, url, kwargs = session.calls[2]
         self.assertEqual((method, url), ("POST", "https://api.instantly.ai/api/v2/leads"))
         self.assertTrue(kwargs["json"]["skip_if_in_workspace"])
         self.assertTrue(kwargs["json"]["skip_if_in_campaign"])
