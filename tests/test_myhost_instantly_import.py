@@ -110,6 +110,25 @@ class ImportTests(unittest.TestCase):
         self.assertFalse(result["imap_mutation"])
         self.assertFalse(any("/campaigns" in path or "/emails" in path for _,path,_ in api.calls))
 
+    def test_import_respects_batch_limit(self):
+        row1 = extract_lead_draft(mail(), sender="info@andrewbaeten.nl")
+        row2 = extract_lead_draft(mail(to="two@example.org", lead="growth-" + "b" * 20), sender="info@andrewbaeten.nl")
+        api = FakeInstantly()
+        with patch("myhost_instantly_import.read_source_drafts", return_value={
+            "source_count":2,"untagged_count":0,"invalid_tagged_count":0,"drafts":[row1,row2],
+        }), patch("myhost_instantly_import.fetch_live_registry", return_value=[]):
+            result = execute_migration(api, mode="import", max_imports=1)
+        self.assertEqual(result["eligible_count"], 2)
+        self.assertEqual(result["imported_count"], 1)
+        self.assertEqual(result["deferred_count"], 1)
+        self.assertEqual(sum(1 for method,path,_ in api.calls if method == "POST" and path == "/leads"), 1)
+
+    def test_import_limit_bounds_fail_closed(self):
+        api = FakeInstantly()
+        for count in (0, 251, True, "25"):
+            with self.assertRaisesRegex(ValueError, "max_imports_out_of_bounds"):
+                execute_migration(api, mode="import", max_imports=count)
+
     def test_readback_rejects_wrong_campaign(self):
         row = extract_lead_draft(mail(), sender="info@andrewbaeten.nl")
         payload = lead_payload(row, "list123")

@@ -236,9 +236,11 @@ def verify_import(client: InstantlyClient, expected: dict, created: object) -> N
         raise RuntimeError("lead_custom_variables_readback_mismatch")
 
 
-def execute_migration(client: InstantlyClient, *, mode: str = "audit", registry_url: str = DEFAULT_REGISTRY_URL) -> dict:
+def execute_migration(client: InstantlyClient, *, mode: str = "audit", registry_url: str = DEFAULT_REGISTRY_URL, max_imports: int = 25) -> dict:
     if mode not in {"audit", "import"}:
         raise ValueError("migration_mode_invalid")
+    if type(max_imports) is not int or not 1 <= max_imports <= 250:
+        raise ValueError("max_imports_out_of_bounds")
     source = read_source_drafts()
     unique, duplicate_count = unique_drafts(source["drafts"])
     if len(unique) > MAX_IMPORT_DRAFTS:
@@ -271,6 +273,8 @@ def execute_migration(client: InstantlyClient, *, mode: str = "audit", registry_
         "suppressed_count": suppressed,
         "already_in_workspace_count": already_existing,
         "eligible_count": len(pending),
+        "batch_limit": max_imports,
+        "deferred_count": max(0, len(pending) - max_imports) if mode == "import" else len(pending),
         "imported_count": 0,
         "list_name": TARGET_LIST_NAME,
         "list_id": None,
@@ -283,7 +287,7 @@ def execute_migration(client: InstantlyClient, *, mode: str = "audit", registry_
         return report
     list_id = ensure_isolated_list(client)
     report["list_id"] = list_id
-    for row in pending:
+    for row in pending[:max_imports]:
         # Recheck immediately before each write. Ambiguous errors stop; never retry POST.
         if workspace_contains(client, row["email"]):
             report["already_in_workspace_count"] += 1

@@ -893,7 +893,7 @@ jobs:
     if: github.event_name == 'push'
     needs: test
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 30
     concurrency:
       group: leadscanner-instantly-registry
       cancel-in-progress: false

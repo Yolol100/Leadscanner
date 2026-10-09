@@ -64,6 +64,13 @@ def _id(value: object, name: str) -> str:
     return quote(text, safe="")
 
 
+def _import_limit(args: dict) -> int:
+    value = args.get("max_imports", 25)
+    if type(value) is not int or not 1 <= value <= 250:
+        raise ValueError("max_imports_out_of_bounds")
+    return value
+
+
 def _limit(args: dict, default: int = 50) -> int:
     return min(max(int(args.get("limit", default)), 1), 100)
 
@@ -141,7 +148,7 @@ def _confirmation_target(action: str, args: dict) -> str:
     }
     payload = args.get("payload") or {}
     if action == "import_myhost_drafts":
-        return "isolated-list-no-send"
+        return f"isolated-list-no-send:{_import_limit(args)}"
     if action == "create_campaign_draft":
         return _text(payload.get("name"))
     if action == "stage_approved_lead":
@@ -614,7 +621,7 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
     if action == "audit_myhost_drafts":
         data = execute_migration(client, mode="audit", registry_url=os.getenv("DEDUPE_REGISTRY_CSV_URL", DEFAULT_REGISTRY_URL))
     elif action == "import_myhost_drafts":
-        data = execute_migration(client, mode="import", registry_url=os.getenv("DEDUPE_REGISTRY_CSV_URL", DEFAULT_REGISTRY_URL))
+        data = execute_migration(client, mode="import", registry_url=os.getenv("DEDUPE_REGISTRY_CSV_URL", DEFAULT_REGISTRY_URL), max_imports=_import_limit(args))
     elif action == "list_campaigns":
         page = client.list_campaigns(
             limit=_limit(args),

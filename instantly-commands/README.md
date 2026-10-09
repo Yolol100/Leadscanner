@@ -135,8 +135,10 @@ Run the read-only inventory first by adding a new immutable command file:
 
 Only after validating the count-only audit, run the separately authorized
 non-sending import using a NEW immutable command file:
-{"schema_version":"leadscanner-instantly-command/1.0","command_id":"20261009-import-myhost-001","action":"import_myhost_drafts","args":{},"confirm":"EXECUTE import_myhost_drafts isolated-list-no-send","requested_by":"chatgpt"}
+{"schema_version":"leadscanner-instantly-command/1.0","command_id":"20261009-import-myhost-001","action":"import_myhost_drafts","args":{"max_imports":25},"confirm":"EXECUTE import_myhost_drafts isolated-list-no-send:25","requested_by":"chatgpt"}
 
 The result artifact contains counts and the destination list ID, **never emails,
 names, subjects or bodies**. A list is not a sendable campaign. The existing
 approval and legal-basis gates still apply before any subsequent campaign use.
+
+Imports are bounded to 1-250 leads per command. Use max_imports=1 for a real provider smoke test. Every fresh command rechecks source IMAP, live suppression, Instantly workspace duplicates, and destination list before writing. Commands do not continue after a failed/unknown write result; reconciliation requires a new read-only audit.
