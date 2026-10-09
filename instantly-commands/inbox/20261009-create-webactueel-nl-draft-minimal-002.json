@@ -1,0 +1,32 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "20261009-create-webactueel-nl-draft-minimal-002",
+  "action": "create_campaign_draft",
+  "args": {
+    "payload": {
+      "name": "Webactueel | NL | Websiteadvies | REVIEW - NIET VERZENDEN",
+      "campaign_schedule": {
+        "schedules": [
+          {
+            "name": "Weekdays",
+            "timezone": "Europe/Amsterdam",
+            "timing": {
+              "from": "09:30",
+              "to": "16:30"
+            },
+            "days": {
+              "1": true,
+              "2": true,
+              "3": true,
+              "4": true,
+              "5": true
+            }
+          }
+        ]
+      },
+      "stop_on_reply": true
+    }
+  },
+  "confirm": "EXECUTE create_campaign_draft Webactueel | NL | Websiteadvies | REVIEW - NIET VERZENDEN",
+  "requested_by": "chatgpt"
+}
