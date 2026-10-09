@@ -69,6 +69,12 @@ class TestLanguageRouting(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"no_senders"):
             preflight_campaign(api,"nl",CID)
 
+    def test_legacy_language_copy_rejects_unreviewed_followup_drift(self):
+        api=Fake()
+        api.campaign["sequences"][0]["steps"][1]["variants"][0]["body"] += " Newly added claim."
+        with self.assertRaisesRegex(ValueError,"routing_campaign_copy_readback_mismatch"):
+            preflight_campaign(api,"nl",CID)
+
     def test_exact_copy_into_draft_never_sends(self):
         api=Fake()
         with patch("instantly_language_route.read_imported_leads",return_value=(LID,[ROW])),\
