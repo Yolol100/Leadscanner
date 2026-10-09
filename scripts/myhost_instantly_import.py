@@ -19,8 +19,8 @@ from myhost_draft import (
 )
 
 TARGET_LIST_NAME = "Webactueel - mijn.host concepten - NIET VERZENDEN"
-MAX_SOURCE_DRAFTS = 500
-MAX_IMPORT_DRAFTS = 200
+MAX_SOURCE_DRAFTS = 20000
+MAX_IMPORT_DRAFTS = 5000
 MAX_BLOCKLIST_ROWS = 20000
 PERMITTED_REGISTRY_STATUSES = {
     "", "concept", "draft", "draft_ready", "review_draft",
