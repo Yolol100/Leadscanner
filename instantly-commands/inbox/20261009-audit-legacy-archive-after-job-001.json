@@ -1,0 +1,7 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "20261009-audit-legacy-archive-after-job-001",
+  "action": "audit_old_archive_state",
+  "args": {},
+  "requested_by": "chatgpt"
+}
