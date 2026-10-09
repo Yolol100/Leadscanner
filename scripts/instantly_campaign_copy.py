@@ -12,7 +12,7 @@ NL = {
 Ik kom nog even terug op mijn bericht over jullie website.
 {% if leadscanner_observation and leadscanner_value_action %}
 Wat ik concreet zag: {{leadscanner_observation}}
-Als je dat nuttig vindt, kan ik {{leadscanner_value_action}} schetsen als voorbeeld.
+Als je dat nuttig vindt, kan ik {{leadscanner_value_action}} uitwerken als kort voorbeeld.
 {% else %}
 Ik kan in een paar regels laten zien welke 2–3 onderdelen ik als eerste zou bekijken.
 {% endif %}
@@ -23,7 +23,7 @@ Groet,
 Andrew
 Webactueel
 
-Geen interesse? Antwoord gerust met 'nee', dan stopt het.""",
+Als dit niet relevant is, antwoord gerust met 'nee'; dan stop ik.""",
  "step_3": """Hoi,
 
 Dit is mijn laatste bericht hierover.
@@ -42,7 +42,7 @@ EN = {
 Just following up on my note about your website.
 {% if leadscanner_observation and leadscanner_value_action %}
 What caught my eye: {{leadscanner_observation}}
-If useful, I can sketch {{leadscanner_value_action}} as a practical example.
+If useful, I can put together {{leadscanner_value_action}} as a short example.
 {% else %}
 I could outline the first 2–3 areas I'd look at, in a few short lines.
 {% endif %}
@@ -53,7 +53,7 @@ Best,
 Andrew
 Webactueel
 
-Not relevant? A quick 'no' is fine and I'll stop here.""",
+If it's not relevant, just reply 'no' and I'll leave it there.""",
  "step_3": """Hi,
 
 This is my last note about this.
@@ -76,7 +76,7 @@ def campaign_steps(language: str) -> list[dict]:
          "variants": [{"subject": "{{leadscanner_subject}}", "body": "{{leadscanner_body}}"}]},
         {"type": "email", "delay": 5, "delay_unit": "days",
          "variants": [{"subject": "", "body": texts["step_2"]}]},
-        {"type": "email", "delay": 1, "delay_unit": "days",
+        {"type": "email", "delay": 0, "delay_unit": "days",
          "variants": [{"subject": "", "body": texts["step_3"]}]},
     ]
 

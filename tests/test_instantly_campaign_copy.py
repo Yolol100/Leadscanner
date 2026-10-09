@@ -11,7 +11,7 @@ class Tests(unittest.TestCase):
             steps=campaign_steps(language)
             self.assertEqual(len(steps),3)
             self.assertEqual(steps[0]["variants"],[{"subject":"{{leadscanner_subject}}","body":"{{leadscanner_body}}"}])
-            self.assertEqual([s["delay"] for s in steps],[4,5,1])
+            self.assertEqual([s["delay"] for s in steps],[4,5,0])
             self.assertEqual([s["variants"][0]["subject"] for s in steps[1:]],["",""])
             for step in steps:
                 self.assertEqual(step["type"],"email")
@@ -42,6 +42,8 @@ class Tests(unittest.TestCase):
             self.assertEqual(settings["email_list"],[])
             self.assertTrue(settings["stop_on_reply"])
             self.assertFalse(settings["open_tracking"])
+            self.assertTrue(settings["insert_unsubscribe_header"])
+            self.assertNotIn("Geen interesse?",steps[1]["variants"][0]["body"])
     def test_actual_sequence_inspector_accepts_supported_fields(self):
         for lang in LANGS:
             campaign={"id":"example","status":0,"sequences":[{"steps":campaign_steps(lang)}]}
