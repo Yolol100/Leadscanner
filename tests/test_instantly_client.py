@@ -256,6 +256,19 @@ class InstantlyClientTests(unittest.TestCase):
         self.assertIn("status=400", str(caught.exception))
         self.assertNotIn("private lead content", str(caught.exception))
 
+    def test_campaign_error_exposes_only_allowlisted_schema_hints(self):
+        session = FakeSession([FakeResponse(status_code=400, payload={
+            "message": "campaign_schedule timezone invalid - hello@example.org private code sk_TEST"
+        })])
+        client = InstantlyClient("secret", session=session)
+        with self.assertRaises(InstantlyError) as caught:
+            client._request("POST", "/campaigns", json={"name": "Sample"})
+        message = str(caught.exception)
+        self.assertIn("campaign_schedule", message)
+        self.assertIn("timezone", message)
+        self.assertNotIn("hello@example.org", message)
+        self.assertNotIn("sk_TEST", message)
+
     def test_email_reads_support_cursor_pagination(self):
         session = FakeSession([FakeResponse(payload={"items": [], "next_starting_after": None})])
         client = InstantlyClient("secret", session=session)

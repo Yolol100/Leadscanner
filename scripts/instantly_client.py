@@ -282,6 +282,24 @@ class InstantlyClient:
                 self.sleep_fn(self._retry_delay(response))
                 continue
 
+            # Campaign creation errors may include private provider context. Only
+            # emit a fixed allowlist of schema-key hints, never raw response data.
+            if method.upper() == "POST" and path == "/campaigns" and response.status_code == 400:
+                try:
+                    detail = response.json()
+                except (TypeError, ValueError):
+                    detail = None
+                response_text = str(detail).casefold()[:5000]
+                key_names = (
+                    "campaign_schedule", "schedules", "schedule", "timezone",
+                    "timing", "days", "sequences", "steps", "variants",
+                    "name", "email_list", "sender", "stop_on_reply",
+                    "permission", "quota", "limit", "account", "plan",
+                    "required", "invalid",
+                )
+                clues = [key for key in key_names if key in response_text]
+                safe_suffix = " field_hints=" + ",".join(clues) if clues else " field_hints=none"
+                raise InstantlyError(f"instantly_api_error status=400{safe_suffix}")
             raise InstantlyError(f"instantly_api_error status={response.status_code}")
 
         raise InstantlyError("instantly_request_exhausted")
