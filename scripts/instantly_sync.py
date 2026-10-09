@@ -212,7 +212,9 @@ def sync_registry(*, api_key: str, max_leads: int = 10000) -> dict:
                 continue
             if message == "registry_event_identity_ambiguous":
                 ambiguous += 1
-                errors.append({"email": event["lead_email"], "error": message})
+                # Actions artifacts may be readable for public repositories.
+                # Keep the failure class and count, never the recipient address.
+                errors.append({"error": message})
                 continue
             raise
 

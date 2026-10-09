@@ -83,6 +83,7 @@ def read_imported_leads(client) -> tuple[str, list[dict]]:
         raise RuntimeError("single_import_source_list_required")
     list_id = ids[0]
     result, cursor, seen = [], "", set()
+    seen_emails: set[str] = set()
     while True:
         raw = client.list_leads(list_id=list_id, limit=100, starting_after=cursor or None)
         rows, next_cursor = _safe_page(raw)
@@ -90,6 +91,10 @@ def read_imported_leads(client) -> tuple[str, list[dict]]:
             observed_id = _text(row.get("list_id"))
             if observed_id != list_id:
                 raise RuntimeError("language_source_list_identity_mismatch")
+            email = _text(row.get("email")).casefold()
+            if email.count("@") != 1 or email in seen_emails:
+                raise RuntimeError("language_source_duplicate_or_missing_email")
+            seen_emails.add(email)
         result.extend(rows)
         if len(result) > MAX_SOURCE_ROWS:
             raise RuntimeError("language_source_limit_exceeded")

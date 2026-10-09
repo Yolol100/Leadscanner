@@ -144,7 +144,10 @@ def route_exact_language(client: InstantlyClient, *, language: str, campaign_id:
         if not email or "@" not in email or domain in HOLD_FREE_MAIL:
             counters["personal_email_hold"] += 1
             continue
-        if email in blocklist or domain in blocklist:
+        if email in blocklist or any(
+            "@" not in entry and (domain == entry or domain.endswith("." + entry))
+            for entry in blocklist
+        ):
             counters["blocklist_hold"] += 1
             continue
         variables = row.get("payload") or row.get("custom_variables") or {}

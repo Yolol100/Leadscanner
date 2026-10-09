@@ -144,8 +144,10 @@ def _iter_pages(client: InstantlyClient, path: str, *, max_rows: int):
         count += len(items)
         if count > max_rows:
             raise RuntimeError("provider_pagination_limit_exceeded")
+        if not items and next_cursor:
+            raise RuntimeError("provider_page_empty_with_cursor")
         yield from items
-        if not items or not next_cursor:
+        if not next_cursor:
             return
         if next_cursor == cursor or next_cursor in seen:
             raise RuntimeError("provider_pagination_loop")
