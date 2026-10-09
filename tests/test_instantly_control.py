@@ -166,9 +166,46 @@ class InstantlyControlTests(unittest.TestCase):
             with self.subTest(basis=basis):
                 client = ActivationGuardClient(basis=basis, reference="crm:permission-2026-123")
                 approval = activation_approval_for(client)
-                result = _activate(client, "c1", activation_approval=approval)
+                with patch("instantly_control.blocked_values", return_value=set()):
+                    result = _activate(client, "c1", activation_approval=approval)
                 self.assertEqual(client.posts, 1)
                 self.assertEqual(result["readback"]["status"], 1)
+
+    @patch("instantly_control.fetch_live_registry")
+    def test_activation_blocks_provider_suppressed_address(self, registry_mock):
+        registry_mock.return_value = activation_registry_rows()
+        client = ActivationGuardClient(
+            basis="consent_verified", reference="crm:permission-2026-123",
+        )
+        approval = activation_approval_for(client)
+        with patch("instantly_control.blocked_values", return_value={"lead@example.com"}):
+            with self.assertRaisesRegex(ValueError, "activation_provider_blocklist_match"):
+                _activate(client, "c1", activation_approval=approval)
+        self.assertEqual(client.posts, 0)
+
+    @patch("instantly_control.fetch_live_registry")
+    def test_activation_blocks_provider_domain_and_subdomain_suppression(self, registry_mock):
+        registry_mock.return_value = activation_registry_rows()
+        client = ActivationGuardClient(
+            basis="consent_verified", reference="crm:permission-2026-123",
+        )
+        approval = activation_approval_for(client)
+        with patch("instantly_control.blocked_values", return_value={"example.com"}):
+            with self.assertRaisesRegex(ValueError, "activation_provider_blocklist_match"):
+                _activate(client, "c1", activation_approval=approval)
+        self.assertEqual(client.posts, 0)
+
+    @patch("instantly_control.fetch_live_registry")
+    def test_activation_fails_closed_when_provider_blocklist_unavailable(self, registry_mock):
+        registry_mock.return_value = activation_registry_rows()
+        client = ActivationGuardClient(
+            basis="consent_verified", reference="crm:permission-2026-123",
+        )
+        approval = activation_approval_for(client)
+        with patch("instantly_control.blocked_values", side_effect=InstantlyError("instantly_network_error")):
+            with self.assertRaisesRegex(RuntimeError, "activation_blocklist_unavailable"):
+                _activate(client, "c1", activation_approval=approval)
+        self.assertEqual(client.posts, 0)
 
     @patch("instantly_control.fetch_live_registry")
     def test_activation_rejects_sequence_mutation_during_preflight(self, registry_mock):

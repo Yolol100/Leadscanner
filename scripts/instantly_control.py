@@ -514,6 +514,34 @@ def _require_registry_staged_for_activation(leads: list[dict], registry_rows: li
             raise ValueError("activation_registry_suppression_or_identity_mismatch")
 
 
+def _require_instantly_blocklist_clear(client: InstantlyClient, leads: list[dict]) -> None:
+    """A local dedupe registry cannot substitute for Instantly's global suppression list.
+
+    Fail closed if Instantly cannot be read or if any lead's email or domain
+    (including a parent domain block) is on its provider-level block list.
+    """
+    try:
+        blocked = blocked_values(client)
+    except Exception:
+        raise RuntimeError("activation_blocklist_unavailable") from None
+    if not isinstance(blocked, set):
+        raise RuntimeError("activation_blocklist_invalid")
+    blocked_domains = {
+        x for x in blocked if isinstance(x, str) and x and "@" not in x
+    }
+    for lead in leads:
+        email = _text(lead.get("email")).casefold()
+        if email.count("@") != 1:
+            raise ValueError("activation_lead_email_invalid")
+        domain = email.rsplit("@", 1)[-1]
+        if (
+            email in blocked
+            or domain in blocked_domains
+            or any(domain.endswith("." + item) for item in blocked_domains)
+        ):
+            raise ValueError("activation_provider_blocklist_match")
+
+
 def _activate(
     client: InstantlyClient, campaign_id: str, *, activation_approval: str = "",
 ) -> dict:
@@ -610,6 +638,9 @@ def _activate(
         _require_registry_staged_for_activation(
             current_leads, fetch_live_registry(registry_url=registry_url),
         )
+        # Final external provider blocklist read is required even when the
+        # canonical local dedupe registry is green. No fallback can skip it.
+        _require_instantly_blocklist_clear(client, current_leads)
     operation = _api(client, "POST", f"/campaigns/{_id(campaign_id, 'campaign_id')}/activate", payload={})
     observed = client.get_campaign(campaign_id) or {}
     if (
