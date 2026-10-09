@@ -894,7 +894,7 @@ class InstantlyControlTests(unittest.TestCase):
             written = json.loads(path.read_text(encoding="utf-8"))
             self.assertEqual(written["result"]["advanced"]["smtp_password"], "[REDACTED]")
             self.assertEqual(written["result"]["advanced"]["access_token"], "[REDACTED]")
-            self.assertEqual(written["result"]["email"], "sender@example.com")
+            self.assertEqual(written["result"]["email"], "[REDACTED]")
 
     def test_public_command_artifact_does_not_disclose_recipient_or_copy(self):
         with tempfile.TemporaryDirectory() as tmp:

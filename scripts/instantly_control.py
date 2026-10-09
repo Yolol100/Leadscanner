@@ -237,20 +237,36 @@ def _api(
     return client._request(method, path, params=params, json=payload, retry_safe=safe)
 
 
+# GitHub Actions artifacts from this public repository are not a private CRM.
+# Keep counts/IDs for troubleshooting, never names, addresses or mail content.
+_PRIVATE_RESULT_KEYS = frozenset({
+    "email", "email_address", "lead_email", "from_email", "to_email",
+    "sender_email", "recipient_email", "eaccount", "email_list",
+    "to_address_email_list", "from_address", "to_address",
+    "sender", "recipient", "first_name", "last_name", "company_name",
+    "subject", "body", "subject_line", "text_body", "html_body",
+    "snippet", "payload", "custom_variables", "personalization",
+    "content", "message_text", "reply_text", "html",
+})
+_EMAIL_IN_TEXT = re.compile(r"(?<![\\w.+-])[\\w.+-]+@(?:[\\w-]+\\.)+[A-Za-z]{2,}(?![\\w.-])")
+
+
 def _redact_sensitive(value):
     if isinstance(value, dict):
         redacted = {}
         for key, nested in value.items():
             normalized = str(key or "").casefold()
-            if any(marker in normalized for marker in SENSITIVE_ACCOUNT_KEYS):
+            if normalized in _PRIVATE_RESULT_KEYS or any(
+                marker in normalized for marker in SENSITIVE_ACCOUNT_KEYS
+            ):
                 redacted[key] = "[REDACTED]"
             else:
                 redacted[key] = _redact_sensitive(nested)
         return redacted
-    if isinstance(value, list):
+    if isinstance(value, (list, tuple)):
         return [_redact_sensitive(item) for item in value]
-    if isinstance(value, tuple):
-        return [_redact_sensitive(item) for item in value]
+    if isinstance(value, str):
+        return _EMAIL_IN_TEXT.sub("[REDACTED_EMAIL]", value)
     return value
 
 
