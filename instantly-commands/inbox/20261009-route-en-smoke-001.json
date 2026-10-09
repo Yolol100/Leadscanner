@@ -1,0 +1,12 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "20261009-route-en-smoke-001",
+  "action": "route_language_drafts",
+  "args": {
+    "language": "en",
+    "campaign_id": "fd405145-4bf5-40c5-b6ae-2e7f5af6120c",
+    "max_leads": 1
+  },
+  "confirm": "EXECUTE route_language_drafts en|fd405145-4bf5-40c5-b6ae-2e7f5af6120c|1",
+  "requested_by": "chatgpt"
+}
