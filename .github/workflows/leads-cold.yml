@@ -100,6 +100,7 @@ on:
       - 'scripts/myhost_instantly_import.py'
       - 'scripts/instantly_language_campaigns.py'
       - 'scripts/instantly_campaign_copy.py'
+      - 'scripts/instantly_mail_quality.py'
       - 'scripts/instantly_language_route.py'
       - 'scripts/instantly_launch_audit.py'
       - 'scripts/instantly_old_campaign_retire.py'
@@ -126,6 +127,7 @@ on:
       - 'tests/test_myhost_instantly_import.py'
       - 'tests/test_instantly_language_campaigns.py'
       - 'tests/test_instantly_campaign_copy.py'
+      - 'tests/test_instantly_mail_quality.py'
       - 'tests/test_instantly_language_route.py'
       - 'tests/test_instantly_launch_audit.py'
       - 'tests/test_instantly_old_campaign_retire.py'
@@ -163,6 +165,7 @@ on:
       - 'scripts/myhost_instantly_import.py'
       - 'scripts/instantly_language_campaigns.py'
       - 'scripts/instantly_campaign_copy.py'
+      - 'scripts/instantly_mail_quality.py'
       - 'scripts/instantly_language_route.py'
       - 'scripts/instantly_launch_audit.py'
       - 'scripts/instantly_old_campaign_retire.py'
@@ -189,6 +192,7 @@ on:
       - 'tests/test_myhost_instantly_import.py'
       - 'tests/test_instantly_language_campaigns.py'
       - 'tests/test_instantly_campaign_copy.py'
+      - 'tests/test_instantly_mail_quality.py'
       - 'tests/test_instantly_language_route.py'
       - 'tests/test_instantly_launch_audit.py'
       - 'tests/test_instantly_old_campaign_retire.py'
@@ -251,6 +255,7 @@ jobs:
             scripts/myhost_instantly_import.py \
             scripts/instantly_language_campaigns.py \
             scripts/instantly_campaign_copy.py \
+            scripts/instantly_mail_quality.py \
             scripts/instantly_language_route.py \
             scripts/instantly_launch_audit.py \
             scripts/instantly_old_campaign_retire.py \
@@ -279,6 +284,7 @@ jobs:
             tests.test_myhost_instantly_import \
             tests.test_instantly_language_campaigns \
             tests.test_instantly_campaign_copy \
+            tests.test_instantly_mail_quality \
             tests.test_instantly_language_route \
             tests.test_instantly_launch_audit \
             tests.test_instantly_old_campaign_retire \
