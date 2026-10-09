@@ -27,7 +27,7 @@ COMMAND_PREFIX = "instantly-commands/inbox/"
 COMMAND_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{5,120}$")
 
 READ_ACTIONS = {
-    "audit_myhost_drafts", "audit_language_split", "list_campaigns", "get_campaign", "audit_campaign_sequence", "audit_activation_readiness", "campaign_sending_status", "campaign_analytics",
+    "audit_myhost_drafts", "audit_language_split", "audit_campaign_schedule", "list_campaigns", "get_campaign", "audit_campaign_sequence", "audit_activation_readiness", "campaign_sending_status", "campaign_analytics",
     "list_leads", "get_lead", "list_emails", "get_email", "count_unread_emails",
     "list_accounts", "get_account", "test_account_vitals", "warmup_analytics", "daily_account_analytics",
     "list_blocklist", "get_blocklist_entry", "get_background_job",
@@ -647,6 +647,37 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
         }
     elif action == "get_campaign":
         data = client.get_campaign(_text(args.get("campaign_id")))
+    elif action == "audit_campaign_schedule":
+        campaign_id = _text(args.get("campaign_id"))
+        if not campaign_id:
+            raise ValueError("campaign_id_required")
+        campaign = client.get_campaign(campaign_id)
+        if not isinstance(campaign, dict) or _text(campaign.get("id")) != campaign_id:
+            raise RuntimeError("campaign_readback_id_mismatch")
+        raw_schedule = campaign.get("campaign_schedule") or {}
+        schedules = raw_schedule.get("schedules") or [] if isinstance(raw_schedule, dict) else []
+        if not isinstance(schedules, list):
+            raise RuntimeError("campaign_schedules_invalid")
+        data = {
+            "campaign_id": campaign_id,
+            "status": campaign.get("status"),
+            "schedule": [
+                {
+                    "timezone": row.get("timezone"),
+                    "timing": row.get("timing"),
+                    "days": row.get("days"),
+                }
+                for row in schedules if isinstance(row, dict)
+            ],
+            "sender_count": len(campaign.get("email_list") or []),
+            "available_config_fields": sorted(
+                key for key in ("daily_limit","daily_max_leads","email_gap","stop_on_reply",
+                                "open_tracking","link_tracking","text_only","insert_unsubscribe_header")
+                if key in campaign
+            ),
+            "sending_action": False,
+            "contains_campaign_copy": False,
+        }
     elif action == "audit_campaign_sequence":
         campaign_id = _text(args.get("campaign_id"))
         if not campaign_id:
