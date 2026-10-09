@@ -60,6 +60,26 @@ class Tests(unittest.TestCase):
         self.assertNotIn("sender.do.not.expose@example.org",str(out))
         self.assertFalse(out["ready_to_send"])
 
+    def test_old_campaign_retirement_must_preserve_unique_lead_or_history(self):
+        from instantly_launch_audit import audit_old_campaign_retirement, OLD_ACTIVE_CAMPAIGN
+        class Old(Fake):
+            def get_campaign(self,cid):
+                if cid==OLD_ACTIVE_CAMPAIGN:return {"id":cid,"status":2}
+                return super().get_campaign(cid)
+            def list_leads(self,campaign=None,**kwargs):
+                if campaign==OLD_ACTIVE_CAMPAIGN:
+                    return {"items":[{"email":"old@company.example"}]}
+                return {"items":[]}
+            def get_emails(self,**kwargs):
+                return {"items":[{"id":"historical"}]}
+        api=Old()
+        with patch("instantly_launch_audit.read_imported_leads",return_value=("source",[])):
+            result=audit_old_campaign_retirement(api)
+        self.assertFalse(result["eligible_for_delete"])
+        self.assertTrue(result["historical_email_activity_present"])
+        self.assertEqual(result["duplicate_in_safe_source_count"],0)
+        self.assertNotIn("old@company.example",str(result))
+
     def test_missing_contact_proof_remains_unverified(self):
         self.assertEqual(_permission_counts([
             {"payload":{"leadscanner_contact_basis":"consent_verified"}},

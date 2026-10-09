@@ -199,3 +199,54 @@ def audit_sender_vitals(client) -> dict:
         "warmup_duration_and_reputation_not_verified":True,
         "ready_to_send":False,
     }
+
+
+OLD_ACTIVE_CAMPAIGN = "827b1b45-6a7e-45ba-88de-d89db2a47d6a"
+
+def audit_old_campaign_retirement(client) -> dict:
+    """Never delete on this path. Report whether old NL campaign has protected history."""
+    cid=OLD_ACTIVE_CAMPAIGN
+    campaign=client.get_campaign(cid)
+    if not isinstance(campaign,dict) or _text(campaign.get("id"))!=cid:
+        raise RuntimeError("old_campaign_identity_mismatch")
+    leads=[]
+    cursor=None
+    seen=set()
+    for _ in range(5):
+        raw=client.list_leads(campaign=cid,limit=100,starting_after=cursor)
+        if not isinstance(raw,dict) or not isinstance(raw.get("items"),list):
+            raise RuntimeError("old_leads_page_invalid")
+        leads.extend(raw["items"])
+        cursor=_text(raw.get("next_starting_after"))
+        if not cursor:
+            break
+        if cursor in seen:
+            raise RuntimeError("old_leads_cursor_repeat")
+        seen.add(cursor)
+    else:
+        raise RuntimeError("old_leads_page_limit")
+    if len(leads)>100:
+        raise RuntimeError("old_lead_limit")
+    _, source_rows=read_imported_leads(client)
+    source_emails={_text(row.get("email")).casefold() for row in source_rows}
+    old_emails={_text(row.get("email")).casefold() for row in leads}
+    if not all(old_emails) or len(old_emails)!=len(leads):
+        raise RuntimeError("old_lead_identity_invalid")
+    result=client.get_emails(campaign_id=cid,received_only=False,limit=1)
+    if not isinstance(result,dict) or not isinstance(result.get("items"),list):
+        raise RuntimeError("old_campaign_email_history_unknown")
+    history=bool(result["items"] or result.get("next_starting_after"))
+    is_paused=type(campaign.get("status")) is int and campaign["status"]==2
+    archived_all=old_emails.issubset(source_emails)
+    return {
+        "schema_version":"leadscanner-old-campaign-retirement/1.0",
+        "campaign_id":cid,
+        "campaign_paused":is_paused,
+        "lead_count":len(leads),
+        "duplicate_in_safe_source_count":len(old_emails & source_emails),
+        "historical_email_activity_present":history,
+        "eligible_for_delete":bool(is_paused and archived_all and not history),
+        "contains_email_addresses":False,
+        "sending_action":False,
+        "deletion_performed":False,
+    }
