@@ -14,6 +14,7 @@ from instantly_language_campaigns import (
     LANGUAGE_CAMPAIGN_NAMES, classify_language, inspect_lead_language, read_imported_leads,
 )
 from instantly_client import InstantlyClient
+from instantly_campaign_copy import campaign_copy_matches
 from myhost_instantly_import import blocked_values, registry_allows_draft
 from instantly_service import DEFAULT_REGISTRY_URL, fetch_live_registry
 
@@ -81,6 +82,8 @@ def preflight_campaign(client: InstantlyClient, language: str, cid: str) -> None
             raise ValueError("routing_email_step_contract_invalid")
     if campaign.get("allow_risky_contacts") is not False or campaign.get("stop_on_reply") is not True:
         raise ValueError("routing_campaign_safety_options_required")
+    if not campaign_copy_matches(campaign, language):
+        raise ValueError("routing_campaign_copy_readback_mismatch")
 
 
 def _wait_job(client: InstantlyClient, job: object, *, sleep_fn=time.sleep) -> None:

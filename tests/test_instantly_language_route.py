@@ -1,6 +1,8 @@
 """No-network regression tests for safe draft-only language routing."""
 import unittest
 from unittest.mock import patch
+from copy import deepcopy
+from instantly_campaign_copy import campaign_steps
 
 from instantly_language_route import preflight_campaign, route_exact_language
 from instantly_language_campaigns import LANGUAGE_CAMPAIGN_NAMES
@@ -13,11 +15,7 @@ BODY="Hoi, ik zag jullie website en dacht aan een klein idee. Laat gerust weten 
 ROW={"id":"11111111-1111-1111-1111-111111111111","email":"contact@example.org","list_id":LID,"campaign":None,
 "payload":{"leadscanner_import_origin":"myhost_drafts","leadscanner_contact_basis":"consent_verified","leadscanner_contact_basis_ref":"verified-proof-2026","leadscanner_source_lead_id":"growth-"+"a"*20,
 "leadscanner_subject":SUBJECT,"leadscanner_body":BODY}}
-SEQUENCE={"steps":[
-{"type":"email","variants":[{"subject":"{{leadscanner_subject}}","body":"{{leadscanner_body}}"}]},
-{"type":"email","variants":[{"subject":"","body":"Hallo, laat het weten."}]},
-{"type":"email","variants":[{"subject":"","body":"Laatste bericht."}]},
-]}
+SEQUENCE={"steps":campaign_steps("nl")}
 
 
 class Fake:
@@ -26,7 +24,7 @@ class Fake:
         self.destination=[]
         self.calls=[]
         self.campaign={"id":CID,"name":NAME,"status":0,"email_list":[],
-                       "sequences":[SEQUENCE],"stop_on_reply":True,"allow_risky_contacts":False}
+                       "sequences":[deepcopy(SEQUENCE)],"stop_on_reply":True,"allow_risky_contacts":False}
     def get_campaign(self, cid):
         return self.campaign
     def list_leads(self, *, campaign=None, limit=100, starting_after=None, **kwargs):
