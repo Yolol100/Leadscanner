@@ -170,3 +170,26 @@ current suppression checks and fresh explicit launch approval are all evidenced.
 **Decision:** engineering configuration and static QA **PASS** for the verified
 scope; operational and legal go-live **BLOCKED** until the last five gates
 are independently evidenced. Do not claim any delivery/conversion result.
+
+## Final continued audit — 2026-10-09
+
+**Evidence:** [full regression run 37948776593](https://github.com/Yolol100/Leadscanner/actions/runs/37948776593) (375/375 tests pass, `main` at `cc3411a`) and [10-command provider readback 37948334148](https://github.com/Yolol100/Leadscanner/actions/runs/37948334148) (10/10 read-only actions green, no mutations). Results are scoped to these runs, not proof of future provider availability.
+
+**Confirmed repairs:**
+- Blocklist pagination now fails closed on an empty page with a remaining cursor; parent-domain exclusions cover subdomains.
+- Duplicate imported source addresses block routing; unreadable Instantly blocklists block new lead staging.
+- New-lead staging rechecks campaign Draft state, reviewed sequences, and key safety options just before `POST /leads`. Historical language routing now rejects NL/EN follow-up copy drift.
+- Public Actions result files redact addresses, contact names, domains, custom variables, and email content; sync error reports no longer echo recipient addresses.
+- Archived legacy contact can be checked after the source campaign was deleted, without exposing personal data or altering the archive.
+
+**Live readback:**
+- Two campaigns exactly, both Draft, zero campaign leads and zero assigned senders.
+- NL and EN each have three approved steps; both match reviewed copy and 11/11 tested safety settings, including weekday 09:30–16:30 schedule.
+- 1,128 isolated historical concepts remain present: 1,066 NL, 59 EN, three ambiguous/held. All 1,128 remain unverified for lawful sending. No lead was automatically moved or sent.
+- Global Instantly blocklist read succeeded with zero entries **at the audited moment**; the separate canonical registry still applies.
+- Retired archive: one preserved contact with 14 stored custom fields. Original-vs-archive byte equality cannot be independently established after deletion.
+- One sending account exists but is not actively connected; provider-rendered, populated Previews of all six emails and sender-specific deliverability remain unproven.
+
+**Residual privacy risk:** The repository is public, and some *historical immutable command files* contain literal email addresses. New result redaction does not erase past Git history, commands, or old artifacts. Do not rewrite history, delete records, or change repository visibility without an explicit retention/privacy decision.
+
+**Release decision:** Code/regression and the audited live Draft configurations: **PASS**. Campaign activation, real message rendering, per-lead legal basis and sending readiness: **NO-GO**. Keep send/activate off until those gates are independently verified and a new explicit approval is given.
