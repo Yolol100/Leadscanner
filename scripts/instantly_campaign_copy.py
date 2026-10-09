@@ -123,6 +123,33 @@ def campaign_copy_matches(campaign: dict, language: str) -> bool:
     return True
 
 
+def campaign_activation_baseline_matches(campaign: dict, language: str) -> bool:
+    """Never launch either reviewed NL/EN campaign after copy or safety drift."""
+    if not campaign_copy_matches(campaign, language):
+        return False
+    expected = campaign_payload(language)
+    fields = ("stop_on_reply", "stop_on_auto_reply", "stop_for_company",
+              "allow_risky_contacts", "open_tracking", "link_tracking",
+              "text_only", "insert_unsubscribe_header", "daily_limit",
+              "daily_max_leads", "email_gap")
+    if any(type(campaign.get(key)) is not type(expected[key])
+           or campaign.get(key) != expected[key] for key in fields):
+        return False
+    schedule = campaign.get("campaign_schedule")
+    entries = schedule.get("schedules") if isinstance(schedule, dict) else None
+    if not isinstance(entries, list) or len(entries) != 1 or not isinstance(entries[0], dict):
+        return False
+    entry = entries[0]
+    timing = entry.get("timing")
+    return (
+        entry.get("timezone") == "Arctic/Longyearbyen"
+        and isinstance(timing, dict)
+        and timing.get("from") == "09:30"
+        and timing.get("to") == "16:30"
+        and entry.get("days") == {str(i): 1 <= i <= 5 for i in range(7)}
+    )
+
+
 def resolve_language_destination(client, row: dict, requested_campaign_id: str) -> str:
     """Route only reviewed NL/EN copy to its own identified, non-sending Draft."""
     known={x[0] for x in TARGET_CAMPAIGNS.values()}

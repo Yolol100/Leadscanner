@@ -23,6 +23,7 @@ from instantly_language_campaigns import audit_language_split
 from instantly_mail_quality import mail_quality_audit
 from instantly_language_route import route_exact_language
 from instantly_launch_audit import audit_launch_inventory, audit_sender_vitals, audit_old_campaign_retirement, audit_two_campaign_options
+from instantly_campaign_copy import TARGET_CAMPAIGNS, campaign_activation_baseline_matches
 from instantly_old_campaign_retire import archive_and_retire_old_campaign, audit_old_archive_state, audit_old_archive_metadata
 
 SCHEMA_VERSION = "leadscanner-instantly-command/1.0"
@@ -542,6 +543,13 @@ def _require_instantly_blocklist_clear(client: InstantlyClient, leads: list[dict
             raise ValueError("activation_provider_blocklist_match")
 
 
+
+def _require_reviewed_campaign_baseline(campaign: dict, campaign_id: str) -> None:
+    for language, (target_id, _) in TARGET_CAMPAIGNS.items():
+        if campaign_id == target_id and not campaign_activation_baseline_matches(campaign, language):
+            raise ValueError("activation_reviewed_campaign_configuration_drift")
+
+
 def _activate(
     client: InstantlyClient, campaign_id: str, *, activation_approval: str = "",
 ) -> dict:
@@ -553,6 +561,7 @@ def _activate(
         raise ValueError("campaign_must_be_draft_or_paused_before_activation")
     if campaign.get("allow_risky_contacts") is True:
         raise ValueError("activation_blocks_allow_risky_contacts_true")
+    _require_reviewed_campaign_baseline(campaign, campaign_id)
     try:
         sending_status = _api(
             client,
@@ -631,6 +640,7 @@ def _activate(
         or current.get("sequences") != campaign.get("sequences")
     ):
         raise ValueError("campaign_changed_during_activation_preflight")
+    _require_reviewed_campaign_baseline(current, campaign_id)
     if leadscanner_campaign:
         current_leads = _campaign_leads(client, campaign_id)
         if _activation_leadset_fingerprint(current_leads) != _activation_leadset_fingerprint(leads):

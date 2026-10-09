@@ -1716,6 +1716,14 @@ class InstantlyControlTests(unittest.TestCase):
                         _activate(provider,campaign_id,activation_approval=approval)
                 self.assertEqual(provider.posts,0)
 
+        provider=Target("none")
+        sequence=inspect_campaign_sequence(provider.get_campaign(campaign_id))
+        approval="APPROVE_INSTANTLY_ACTIVATION "+campaign_id+" "+sequence["sequence_fingerprint"]+" "+_activation_leadset_fingerprint(provider.list_leads()["items"])
+        with patch("instantly_control.blocked_values",return_value=set()):
+            result=_activate(provider,campaign_id,activation_approval=approval)
+        self.assertEqual(provider.posts,1)
+        self.assertEqual(result["readback"]["status"],1)
+
 
 if __name__ == "__main__":
     unittest.main()
