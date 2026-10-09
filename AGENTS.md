@@ -4,7 +4,7 @@
 - Build a fast cold-lead pipeline from a clean slate.
 - Keep only the active cold-pipeline dependency closure. Legacy Google Maps adapters, remediation scripts, old mailbox bridges, pricing/scoring code and their tests have been removed.
 - The Google Sheet Lead Dedupe Registry is the only retained historical lead source and is suppression-only.
-- The primary active phases are preview discovery/filter -> historical dedupe -> identity/domain/contact verification -> bounded first-party research -> one evidence-backed outreach reason -> one proposed value-first action -> verified-facts-only review (default; no per-lead email) or legacy validated mail -> human review queue -> immutable preview snapshot -> exact approval selection -> fresh live dedupe revalidation -> Instantly staging into a Draft/Paused campaign -> exact Instantly readback -> canonical dedupe-registry closure -> explicit separate campaign activation -> scheduled Instantly reconciliation.
+- The primary active phases are preview discovery/filter -> historical dedupe -> identity/domain/contact verification -> bounded first-party research -> one evidence-backed outreach reason -> one proposed value-first action -> validated reviewed-mail copy by default or explicitly selected fact-only review -> human review queue -> immutable preview snapshot -> exact approval selection -> fresh live dedupe revalidation -> Instantly staging into a Draft/Paused campaign -> exact Instantly readback -> canonical dedupe-registry closure -> explicit separate campaign activation -> scheduled Instantly reconciliation.
 - The cold discovery/review pipeline and Instantly staging must never auto-send. Campaign activation is a separate user-confirmed send-capable action. The optional mijn.host draft path is fallback-only and not part of the primary outbound route.
 
 ## Execution rules
@@ -17,7 +17,7 @@
 - Research only candidates with `ready_for_research=true` and fetch at most two extra first-party pages per candidate.
 - After research, select exactly one concrete first-party customer-action signal (appointment/booking, quote request, reservation or ordering) or hold the lead. Generic quality, service, catalog or brand language never qualifies.
 - Map that reason to exactly one small proposed example; never claim an artifact already exists.
-- Default `preview_copy_mode=instantly_sequence` must not generate a per-lead email; it reviews verified official-site facts only. Use `preview_copy_mode=reviewed_mail` only for the legacy Instantly template or optional mijn.host fallback. If generating legacy copy, use one CTA, no meeting pressure, and no price/ROI/result claim.
+- Default `preview_copy_mode=reviewed_mail` generates one evidence-backed NL/EN email for human approval. Explicit `preview_copy_mode=instantly_sequence` reviews verified official-site facts only and must never generate a per-lead email. If generating legacy copy, use one CTA, no meeting pressure, and no price/ROI/result claim.
 - Every preview must emit privacy-safe `funnel-metrics.json` with stage rejection totals and `coverage-audit.json` with Overture operational-supply status.
 - Do not add a second discovery source from a single thin/gap run; broaden the current query first and require repeated independent gap evidence before deliberate source expansion.
 - Default every manual execution to `preview`; preview must not require mailbox or Google write credentials and must not mutate either system.

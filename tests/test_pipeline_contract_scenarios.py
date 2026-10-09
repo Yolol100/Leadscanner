@@ -107,5 +107,20 @@ class PipelineContractScenarioTests(unittest.TestCase):
         self.assertEqual(mails["ready_for_human_review_count"], 0)
 
 
+    def test_default_mail_mode_matches_operator_documentation(self):
+        from pathlib import Path
+        from re import search
+        root=Path(__file__).resolve().parents[1]
+        workflow=(root/".github/workflows/leads-cold.yml").read_text(encoding="utf-8")
+        mode=search(r"preview_copy_mode:[\\s\\S]*?default:\\s*(reviewed_mail|instantly_sequence)",workflow)
+        self.assertIsNotNone(mode)
+        self.assertEqual(mode.group(1),"reviewed_mail")
+        for path in ("README.md","AGENTS.md"):
+            documentation=(root/path).read_text(encoding="utf-8")
+            self.assertIn("preview_copy_mode=reviewed_mail`",documentation)
+            self.assertIn("default",documentation.casefold())
+            self.assertNotIn("preview_copy_mode=instantly_sequence` (default)",documentation)
+
+
 if __name__ == "__main__":
     unittest.main()
