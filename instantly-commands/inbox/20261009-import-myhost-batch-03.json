@@ -1,0 +1,10 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "20261009-import-myhost-batch-03",
+  "action": "import_myhost_drafts",
+  "args": {
+    "max_imports": 250
+  },
+  "confirm": "EXECUTE import_myhost_drafts isolated-list-no-send:250",
+  "requested_by": "chatgpt"
+}
