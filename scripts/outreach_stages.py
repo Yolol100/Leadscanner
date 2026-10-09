@@ -299,20 +299,20 @@ def body_for(candidate: dict) -> str:
     action = _text(candidate.get("value_first_action"))
     if language == "nl":
         return (
-            "Hallo,\n\n"
-            f"Op jullie site viel me dit op: {observation}\n\n"
-            f"Ik kan vrijblijvend {action} maken om te laten zien hoe ik dit online zou aanpakken.\n\n"
-            "Zal ik die sturen?\n\n"
-            "Geen interesse, laat het gerust weten.\n\n"
-            "Groet,\nAndrew"
+            "Hoi,\n\n"
+            f"Op jullie website viel me dit detail op: {observation}\n\n"
+            f"Ik kan {action} uitwerken als concreet voorbeeld, zonder verplichtingen.\n\n"
+            "Zal ik dat voorbeeld per mail sturen?\n\n"
+            "Geen interesse, laat het gerust weten; dan stop ik.\n\n"
+            "Groet,\nAndrew\nWebactueel"
         )
     return (
-        "Hello,\n\n"
-        f"This stood out to me on your site: {observation}\n\n"
-        f"I can create {action} with no obligation to show how I would approach this online.\n\n"
-        "Want me to send it?\n\n"
-        "If this is not relevant, just let me know.\n\n"
-        "Best,\nAndrew"
+        "Hi,\n\n"
+        f"I noticed one detail on your website: {observation}\n\n"
+        f"I can put together {action} as a concrete example, with no obligation.\n\n"
+        "Would you like me to email it to you?\n\n"
+        "If it isn't relevant, just reply 'no' and I'll stop.\n\n"
+        "Best,\nAndrew\nWebactueel"
     )
 
 

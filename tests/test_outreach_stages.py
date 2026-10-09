@@ -6,6 +6,7 @@ from outreach_stages import (
     generate_sequence_facts,
     select_reasons,
     validate_mail,
+    body_for,
 )
 
 
@@ -20,6 +21,23 @@ def candidate_with_evidence(items):
 
 
 class OutreachStagesTests(unittest.TestCase):
+    def test_future_first_mail_uses_verified_fact_action_and_one_soft_cta(self):
+        samples=[
+            ("nl","Op onze site kunnen klanten online een afspraak maken.","een korte voorbeeldvariant voor de afspraakroute"),
+            ("en","Customers can book appointments directly on our website.","a short example for the appointment flow"),
+        ]
+        for lang,obs,action in samples:
+            mail=body_for({"language":lang,"verified_observation":obs,
+                           "value_first_action":action})
+            self.assertIn(obs,mail)
+            self.assertIn(action,mail)
+            self.assertEqual(mail.count("?"),1)
+            self.assertIn("Webactueel",mail)
+            self.assertLess(len(mail.split()),100)
+            self.assertNotIn("ROI",mail)
+            self.assertNotIn("guarantee",mail.lower())
+
+
     def test_sequence_facts_skip_per_lead_mail_generation(self):
         source = {
             "outreach_status": "ready",
