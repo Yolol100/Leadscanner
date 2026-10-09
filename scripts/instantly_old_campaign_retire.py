@@ -331,3 +331,88 @@ def audit_old_archive_metadata(client) -> dict:
         "contains_personal_data":False,
         "writes":False,
     }
+
+
+def audit_retired_archive(client) -> dict:
+    """Verify the archived contact after the old campaign has been deleted.
+
+    Do not fetch the deleted campaign and do not return personal data.
+    Original-vs-archive field equality is no longer independently provable.
+    """
+    cursor, seen, matches = "", set(), []
+    for _ in range(20):
+        params = {"limit": 100}
+        if cursor:
+            params["starting_after"] = cursor
+        page = client._request("GET", "/lead-lists", params=params, retry_safe=True)
+        if not isinstance(page, dict) or not isinstance(page.get("items"), list):
+            raise RuntimeError("retired_archive_list_page_invalid")
+        rows = page["items"]
+        if not rows and page.get("next_starting_after"):
+            raise RuntimeError("retired_archive_list_cursor_invalid")
+        for row in rows:
+            if not isinstance(row, dict):
+                raise RuntimeError("retired_archive_list_row_invalid")
+            if row.get("name") == ARCHIVE_NAME:
+                matches.append(_text(row.get("id")))
+        next_cursor = _text(page.get("next_starting_after"))
+        if not next_cursor:
+            break
+        if next_cursor == cursor or next_cursor in seen:
+            raise RuntimeError("retired_archive_list_cursor_invalid")
+        seen.add(next_cursor)
+        cursor = next_cursor
+    else:
+        raise RuntimeError("retired_archive_list_pagination_limit")
+
+    if len(matches) != 1 or not re.fullmatch(r"[0-9a-fA-F-]{36}", matches[0]):
+        raise RuntimeError("retired_archive_list_missing_or_ambiguous")
+    archive_id = matches[0]
+    cursor, seen, archived = "", set(), []
+    for _ in range(20):
+        page = client.list_leads(
+            list_id=archive_id, limit=100, starting_after=cursor or None
+        )
+        if not isinstance(page, dict) or not isinstance(page.get("items"), list):
+            raise RuntimeError("retired_archive_lead_page_invalid")
+        rows = page["items"]
+        if not rows and page.get("next_starting_after"):
+            raise RuntimeError("retired_archive_lead_cursor_invalid")
+        for item in rows:
+            if not isinstance(item, dict):
+                raise RuntimeError("retired_archive_lead_row_invalid")
+            if (
+                _text(item.get("list_id")) != archive_id
+                or _text(item.get("email")).count("@") != 1
+                or _text(item.get("campaign"))
+            ):
+                raise RuntimeError("retired_archive_contact_identity_invalid")
+            archived.append(item)
+            if len(archived) > 1:
+                raise RuntimeError("retired_archive_contact_count_mismatch")
+        next_cursor = _text(page.get("next_starting_after"))
+        if not next_cursor:
+            break
+        if next_cursor == cursor or next_cursor in seen:
+            raise RuntimeError("retired_archive_lead_cursor_invalid")
+        seen.add(next_cursor)
+        cursor = next_cursor
+    else:
+        raise RuntimeError("retired_archive_lead_pagination_limit")
+    if len(archived) != 1:
+        raise RuntimeError("retired_archive_contact_count_mismatch")
+    fields = archived[0].get("payload")
+    if not isinstance(fields, dict):
+        fields = archived[0].get("custom_variables")
+    if not isinstance(fields, dict) or not fields:
+        raise RuntimeError("retired_archive_custom_fields_missing")
+    return {
+        "schema_version": "leadscanner-retired-archive-audit/1.0",
+        "archive_preserved": True,
+        "archived_contact_count": 1,
+        "custom_variable_count": len(fields),
+        "old_source_field_comparison": "not_possible_after_retirement",
+        "contains_personal_data": False,
+        "writes": False,
+        "sends": False,
+    }

@@ -8,6 +8,10 @@ uses the repository's Instantly secret, executes one allowlisted action, and
 uploads a JSON result artifact. Existing command files must never be edited or
 reused.
 
+## Read-only archive audit
+
+Use `audit_retired_archive` to verify the non-sending archived contact after the historical campaign was deleted. This audit does not re-open the deleted campaign or expose contact data; original-vs-copy equality can no longer be independently checked.
+
 ## Read command
 
 ```json

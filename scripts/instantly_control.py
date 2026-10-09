@@ -24,7 +24,7 @@ from instantly_mail_quality import mail_quality_audit
 from instantly_language_route import route_exact_language
 from instantly_launch_audit import audit_launch_inventory, audit_sender_vitals, audit_old_campaign_retirement, audit_two_campaign_options
 from instantly_campaign_copy import TARGET_CAMPAIGNS, campaign_activation_baseline_matches
-from instantly_old_campaign_retire import archive_and_retire_old_campaign, audit_old_archive_state, audit_old_archive_metadata
+from instantly_old_campaign_retire import archive_and_retire_old_campaign, audit_old_archive_state, audit_old_archive_metadata, audit_retired_archive
 
 SCHEMA_VERSION = "leadscanner-instantly-command/1.0"
 RESULT_SCHEMA_VERSION = "leadscanner-instantly-command-result/1.0"
@@ -32,7 +32,7 @@ COMMAND_PREFIX = "instantly-commands/inbox/"
 COMMAND_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{5,120}$")
 
 READ_ACTIONS = {
-    "audit_old_archive_metadata", "audit_old_archive_state", "audit_sender_vitals", "audit_old_campaign_retirement", "audit_two_campaign_options", "audit_imported_mail_quality", "audit_launch_inventory", "audit_myhost_drafts", "audit_language_split", "audit_campaign_schedule", "list_campaigns", "get_campaign", "audit_campaign_sequence", "audit_activation_readiness", "campaign_sending_status", "campaign_analytics",
+    "audit_retired_archive", "audit_old_archive_metadata", "audit_old_archive_state", "audit_sender_vitals", "audit_old_campaign_retirement", "audit_two_campaign_options", "audit_imported_mail_quality", "audit_launch_inventory", "audit_myhost_drafts", "audit_language_split", "audit_campaign_schedule", "list_campaigns", "get_campaign", "audit_campaign_sequence", "audit_activation_readiness", "campaign_sending_status", "campaign_analytics",
     "list_leads", "get_lead", "list_emails", "get_email", "count_unread_emails",
     "list_accounts", "get_account", "test_account_vitals", "warmup_analytics", "daily_account_analytics",
     "list_blocklist", "get_blocklist_entry", "get_background_job",
@@ -684,6 +684,8 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
 
     if action == "audit_two_campaign_options":
         data = audit_two_campaign_options(client)
+    elif action == "audit_retired_archive":
+        data = audit_retired_archive(client)
     elif action == "audit_old_archive_metadata":
         data = audit_old_archive_metadata(client)
     elif action == "audit_imported_mail_quality":
