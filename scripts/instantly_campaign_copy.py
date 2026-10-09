@@ -71,6 +71,9 @@ def campaign_steps(language: str) -> list[dict]:
     if language not in {"nl", "en"}:
         raise ValueError("campaign_language_invalid")
     texts = NL if language == "nl" else EN
+    # Instantly applies a step's delay to the NEXT step: first follow-up after
+    # 4 calendar days, final follow-up 5 days after that. The final step's
+    # unused delay is zero because there is no fourth message.
     return [
         {"type": "email", "delay": 4, "delay_unit": "days",
          "variants": [{"subject": "{{leadscanner_subject}}", "body": "{{leadscanner_body}}"}]},

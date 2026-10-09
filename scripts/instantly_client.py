@@ -79,6 +79,20 @@ def approved_custom_variables(row: dict) -> dict[str, str]:
         })
         if signal_type:
             variables["leadscanner_signal_type"] = signal_type
+    # Never allow content copied from websites or reviewed mail to become a
+    # second, unreviewed Instantly/Liquid template. Only campaign-owned code
+    # may contain merge delimiters; lead values must remain literal plain text.
+    for key in ("leadscanner_subject", "leadscanner_body",
+                "leadscanner_observation", "leadscanner_value_action"):
+        value = variables.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, str) or any(
+            sequence in value for sequence in ("{{", "}}", "{%", "%}")
+        ):
+            raise ValueError("reviewed_lead_nested_template_markup_forbidden")
+        if "\x00" in value:
+            raise ValueError("reviewed_lead_nul_character_forbidden")
     return variables
 
 

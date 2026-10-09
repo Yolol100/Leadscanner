@@ -17,6 +17,17 @@ class Tests(unittest.TestCase):
                 self.assertEqual(step["type"],"email")
                 self.assertFalse("http://" in step["variants"][0]["body"])
                 self.assertFalse("https://" in step["variants"][0]["body"])
+    def test_step_delays_mean_wait_before_the_following_email(self):
+        # Instantly official July 2026 article: 0 on a non-terminal step
+        # would trigger an immediate follow-up. Both gaps must be >=1 day.
+        for language in ("nl","en"):
+            steps = campaign_steps(language)
+            self.assertEqual(steps[0]["delay"],4)
+            self.assertEqual(steps[1]["delay"],5)
+            self.assertGreater(steps[0]["delay"],0)
+            self.assertGreater(steps[1]["delay"],0)
+            self.assertEqual(steps[2]["delay"],0)
+
     def test_liquid_guard_and_fallback_for_missing_legacy_data(self):
         for language in LANGS:
             one,two=campaign_steps(language)[1:]

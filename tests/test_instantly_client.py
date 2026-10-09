@@ -96,6 +96,32 @@ def approval_for(target):
 
 
 class InstantlyClientTests(unittest.TestCase):
+    def test_nested_liquid_in_verified_website_observation_is_blocked(self):
+        from instantly_client import approved_custom_variables
+        for malicious in (
+            "{{sendingAccountEmail}}",
+            "{% if sendingAccountName %}private{% endif %}",
+            "stray }} template close",
+        ):
+            item = {**approved_batch()["rows"][0], "verified_observation": malicious}
+            with self.assertRaisesRegex(ValueError, "nested_template_markup_forbidden"):
+                approved_custom_variables(item)
+
+    def test_nested_template_in_reviewed_subject_or_body_is_blocked(self):
+        from instantly_client import approved_custom_variables
+        for field, value in (("subject","{{firstName}}"),("body","Hi {% assign hidden = 1 %}")):
+            item = {**approved_batch()["rows"][0], field: value}
+            with self.assertRaisesRegex(ValueError, "nested_template_markup_forbidden"):
+                approved_custom_variables(item)
+
+    def test_reviewed_facts_without_nested_syntax_remain_valid(self):
+        from instantly_client import approved_custom_variables
+        variables = approved_custom_variables(approved_batch()["rows"][0])
+        self.assertIn("leadscanner_subject", variables)
+        self.assertIn("leadscanner_body", variables)
+        self.assertIn("leadscanner_observation", variables)
+        self.assertIn("leadscanner_value_action", variables)
+
     def test_fact_only_draft_three_step_stages_without_email_copy(self):
         target = campaign(steps=evidence_three_steps(), status=0)
         session = FakeSession([
