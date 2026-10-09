@@ -250,3 +250,38 @@ def audit_old_archive_state(client) -> dict:
         "mutated":False,
         "contains_email":False,
     }
+
+
+def audit_old_archive_metadata(client) -> dict:
+    """Inspect key preservation without exporting names, values or contact details."""
+    current=_target_ready(client)
+    state=audit_old_archive_state(client)
+    if state.get("archived_matching_leads") != 1:
+        raise RuntimeError("archive_metadata_requires_exact_one_copy")
+    archive_id=state["archive_list_id"]
+    archived=_archive_leads(client,archive_id,_text(current["email"]).casefold())
+    original_vars=current.get("payload")
+    if not isinstance(original_vars,dict):
+        original_vars=current.get("custom_variables")
+    target_vars=archived[0].get("payload")
+    if not isinstance(target_vars,dict):
+        target_vars=archived[0].get("custom_variables")
+    original_vars=original_vars if isinstance(original_vars,dict) else {}
+    target_vars=target_vars if isinstance(target_vars,dict) else {}
+    missing=set(original_vars)-set(target_vars)
+    differing={k for k in original_vars.keys() & target_vars.keys()
+               if original_vars[k] != target_vars[k]}
+    extra=set(target_vars)-set(original_vars)
+    return {
+        "schema_version":"leadscanner-old-archive-metadata-audit/1.0",
+        "old_campaign_paused":True,
+        "archived_leads":1,
+        "original_custom_field_count":len(original_vars),
+        "archived_custom_field_count":len(target_vars),
+        "missing_field_count":len(missing),
+        "conflicting_field_count":len(differing),
+        "archived_extra_field_count":len(extra),
+        "all_original_fields_preserved":not missing and not differing,
+        "contains_personal_data":False,
+        "writes":False,
+    }

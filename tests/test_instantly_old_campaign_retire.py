@@ -83,6 +83,18 @@ class Tests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,"archive_readback_identity_mismatch"):
             _archive_leads(Wrong(),LIST_ID,LEAD["email"])
 
+    def test_archive_metadata_audit_counts_without_exposing_values(self):
+        from instantly_old_campaign_retire import audit_old_archive_metadata
+        f=Fake()
+        f.archive=[{"id":"33333333-3333-3333-3333-333333333333",
+                   "email":LEAD["email"],"list_id":LIST_ID,"payload":{}}]
+        report=audit_old_archive_metadata(f)
+        self.assertEqual(report["missing_field_count"],1)
+        self.assertEqual(report["conflicting_field_count"],0)
+        self.assertFalse(report["writes"])
+        self.assertNotIn("keep",str(report))
+        self.assertNotIn("old@example.org",str(report))
+
     def test_stop_if_email_history(self):
         f=Fake();f.history=[{"id":"email"}]
         with self.assertRaisesRegex(ValueError,"email_history"):
