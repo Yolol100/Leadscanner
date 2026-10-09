@@ -411,6 +411,42 @@ class InstantlyClientTests(unittest.TestCase):
             )
         self.assertFalse(any(method=="POST" and url.endswith("/leads") for method,url,_ in session.calls))
 
+
+    def test_stage_blocks_campaign_becoming_active_during_blocklist_read(self):
+        active={**campaign(),"status":1}
+        session=FakeSession([
+            FakeResponse(payload=campaign()),
+            FakeResponse(payload={"items":[],"next_starting_after":None}),
+            FakeResponse(payload=active),
+        ])
+        client=InstantlyClient("secret",session=session)
+        with self.assertRaisesRegex(ValueError,"campaign_changed_during_lead_preflight"):
+            client.add_approved_lead_to_campaign(
+                approved_batch=approved_batch(),
+                lead_id="growth-aaaaaaaaaaaaaaaaaaaa",
+                campaign_id="c1",
+                registry_rows=[],
+            )
+        self.assertFalse(any(m=="POST" and u.endswith("/leads") for m,u,_ in session.calls))
+
+    def test_stage_blocks_unapproved_sequence_change_before_post(self):
+        changed=campaign()
+        changed["sequences"][0]["steps"][0]["variants"][0]["body"]+=" unreviewed"
+        session=FakeSession([
+            FakeResponse(payload=campaign()),
+            FakeResponse(payload={"items":[],"next_starting_after":None}),
+            FakeResponse(payload=changed),
+        ])
+        client=InstantlyClient("secret",session=session)
+        with self.assertRaisesRegex(ValueError,"campaign_changed_during_lead_preflight"):
+            client.add_approved_lead_to_campaign(
+                approved_batch=approved_batch(),
+                lead_id="growth-aaaaaaaaaaaaaaaaaaaa",
+                campaign_id="c1",
+                registry_rows=[],
+            )
+        self.assertFalse(any(m=="POST" and u.endswith("/leads") for m,u,_ in session.calls))
+
     def test_legacy_copy_can_use_guarded_optional_fact_fields(self):
         from instantly_campaign_copy import campaign_steps
         from instantly_client import validate_campaign_personalization
