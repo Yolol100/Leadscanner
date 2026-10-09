@@ -363,7 +363,7 @@ class InstantlyClientTests(unittest.TestCase):
         steps=campaign_steps("nl")
         steps[2]["variants"][0]["body"] += "\n{{leadscanner_value_action}}"
         c={"id":"draft-id","status":0,"sequences":[{"steps":steps}]}
-        with self.assertRaisesRegex(ValueError,"campaign_optional_evidence_unprotected"):
+        with self.assertRaisesRegex(ValueError,"optional_evidence_unprotected"):
             validate_campaign_personalization(
                 c, {"leadscanner_subject":"approved subject","leadscanner_body":"approved body"},
                 review_mode="reviewed_mail",

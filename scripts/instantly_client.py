@@ -223,13 +223,13 @@ def validate_campaign_personalization(
     referenced = set(report["leadscanner_variables"])
     if not report["email_variant_count"] or not referenced:
         raise ValueError("campaign_leadscanner_personalization_required")
-    if review_mode == "reviewed_mail" and not {"leadscanner_subject", "leadscanner_body"} <= referenced:
-        raise ValueError("reviewed_mail_campaign_must_use_approved_copy")
+    # Optional evidence guards are meaningful only for a reviewed-copy template.
+    # Keep older missing/unmapped-field failure codes stable for evidence-only ones.
     # Optional verified observation/action may appear in guarded Liquid follow-ups.
     # Legacy imported draft leads have reviewed subject/body but no source fact fields.
     # Every optional merge must be inside its exact guard, never leak as a blank token.
     optional: set[str] = set()
-    if review_mode == "reviewed_mail":
+    if review_mode == "reviewed_mail" and {"leadscanner_subject", "leadscanner_body"} <= referenced:
         optional = _optional_guarded_evidence_fields(campaign)
     if any(not variables.get(name) for name in referenced - optional):
         raise ValueError("campaign_personalization_variable_missing")
