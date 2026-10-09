@@ -257,3 +257,67 @@ def audit_old_campaign_retirement(client) -> dict:
         "sending_action":False,
         "deletion_performed":False,
     }
+
+
+def audit_two_campaign_options(client) -> dict:
+    """Read provider-authoritative configuration without exporting sequence copy."""
+    safety_expected = {
+        "stop_on_reply":True,
+        "stop_on_auto_reply":True,
+        "stop_for_company":True,
+        "allow_risky_contacts":False,
+        "open_tracking":False,
+        "link_tracking":False,
+        "text_only":True,
+        "insert_unsubscribe_header":True,
+    }
+    limits_expected = {"daily_limit":10,"daily_max_leads":5,"email_gap":12}
+    items=[]
+    for language,campaign_id in TARGETS.items():
+        observed=client.get_campaign(campaign_id)
+        if not isinstance(observed,dict) or _text(observed.get("id"))!=campaign_id:
+            raise RuntimeError("campaign_options_identity_mismatch")
+        states={}
+        for key,expected in {**safety_expected,**limits_expected}.items():
+            if key not in observed:
+                states[key]="not_returned_by_provider"
+            elif type(observed[key]) is not type(expected):
+                states[key]="invalid_type"
+            else:
+                states[key]="ok" if observed[key]==expected else "mismatch"
+        raw_schedule=observed.get("campaign_schedule")
+        schedules=raw_schedule.get("schedules") if isinstance(raw_schedule,dict) else None
+        if not isinstance(schedules,list) or len(schedules)!=1 or not isinstance(schedules[0],dict):
+            schedule={"status":"unverified"}
+        else:
+            item=schedules[0]
+            schedule={
+                "status":"verified_format",
+                "timezone":_text(item.get("timezone"))[:80],
+                "hours_from":_text((item.get("timing") or {}).get("from"))[:12],
+                "hours_to":_text((item.get("timing") or {}).get("to"))[:12],
+                "weekday_flags":item.get("days") if isinstance(item.get("days"),dict) else None,
+            }
+        items.append({
+            "language":language,
+            "campaign_id":campaign_id,
+            "draft":type(observed.get("status")) is int and observed["status"]==0,
+            "sender_count":len(observed.get("email_list") or []),
+            "setting_checks":states,
+            "verified_setting_count":sum(value=="ok" for value in states.values()),
+            "mismatch_count":sum(value=="mismatch" for value in states.values()),
+            "not_returned_count":sum(value=="not_returned_by_provider" for value in states.values()),
+            "schedule":schedule,
+        })
+    return {
+        "schema_version":"leadscanner-two-campaign-options-audit/1.0",
+        "campaigns":items,
+        "all_confirmed_settings_match":all(
+            item["verified_setting_count"]==len(safety_expected)+len(limits_expected)
+            and item["draft"] and item["sender_count"]==0
+            for item in items
+        ),
+        "sends":False,
+        "mutation":False,
+        "contains_email_addresses_or_copy":False,
+    }

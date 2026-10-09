@@ -89,6 +89,27 @@ class Tests(unittest.TestCase):
         self.assertIsNone(out["blocklist"]["http_status"])
         self.assertFalse(out["go_live_approved"])
 
+    def test_two_campaign_settings_audit_distinguishes_missing_from_verified(self):
+        from instantly_launch_audit import audit_two_campaign_options, TARGETS
+        class Scenario(Fake):
+            def get_campaign(self,cid):
+                return {
+                    "id":cid,"status":0,"email_list":[],
+                    "daily_limit":10,"daily_max_leads":5,"email_gap":12,
+                    "stop_on_reply":True,"open_tracking":False,
+                    "campaign_schedule":{"schedules":[{
+                        "timezone":"Arctic/Longyearbyen",
+                        "timing":{"from":"09:30","to":"16:30"},
+                        "days":{"1":True,"2":True,"3":True,"4":True,"5":True},
+                    }]},
+                }
+        report=audit_two_campaign_options(Scenario())
+        self.assertEqual(len(report["campaigns"]),2)
+        self.assertFalse(report["all_confirmed_settings_match"])
+        self.assertGreater(report["campaigns"][0]["not_returned_count"],0)
+        self.assertFalse(report["sends"])
+        self.assertNotIn("sender.do.not.expose@example.org",str(report))
+
     def test_missing_contact_proof_remains_unverified(self):
         self.assertEqual(_permission_counts([
             {"payload":{"leadscanner_contact_basis":"consent_verified"}},
