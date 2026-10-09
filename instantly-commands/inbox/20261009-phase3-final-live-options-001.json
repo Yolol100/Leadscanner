@@ -1,0 +1,7 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "20261009-phase3-final-live-options-001",
+  "action": "audit_two_campaign_options",
+  "args": {},
+  "requested_by": "chatgpt"
+}
