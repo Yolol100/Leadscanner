@@ -921,6 +921,32 @@ class InstantlyControlTests(unittest.TestCase):
             self.assertIn('"email_step_count": 3', written)
             self.assertIn('"id": "lead-123"', written)
 
+    def test_public_provider_artifact_redacts_lead_profile_and_suppression_values(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/"public-contacts.json"
+            _write(path,{
+                "result":{
+                    "items":[{
+                        "name":"Sensitive Contact Name",
+                        "companyName":"Private Customer Ltd",
+                        "firstName":"Private First",
+                        "website":"https://private-prospect.example",
+                        "phone":"+31 612345678",
+                        "bl_value":"blocked-prospect.example",
+                        "id":"lead-123",
+                    }],
+                    "lead_count":1,
+                }
+            })
+            raw=path.read_text(encoding="utf-8")
+            for secret in (
+                "Sensitive Contact Name","Private Customer Ltd","Private First",
+                "private-prospect.example","+31 612345678","blocked-prospect.example",
+            ):
+                self.assertNotIn(secret,raw)
+            self.assertIn('"lead_count": 1',raw)
+            self.assertIn('"id": "lead-123"',raw)
+
     def test_test_send_200_error_body_fails_closed(self):
         class ActionClient:
             def _request(self, method, path, **kwargs):
