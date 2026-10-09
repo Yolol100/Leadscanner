@@ -123,6 +123,26 @@ class ImportTests(unittest.TestCase):
         self.assertEqual(result["deferred_count"], 1)
         self.assertEqual(sum(1 for method,path,_ in api.calls if method == "POST" and path == "/leads"), 1)
 
+    def test_workspace_snapshot_skips_existing_before_import(self):
+        row = extract_lead_draft(mail(), sender="info@andrewbaeten.nl")
+
+        class Existing(FakeInstantly):
+            def list_leads(self, **kwargs):
+                self.calls.append(("POST", "/leads/list", None))
+                if not kwargs.get("contacts"):
+                    return {"items":[{"email":row["email"]}],"next_starting_after":None}
+                return {"items":[]}
+
+        api = Existing()
+        with patch("myhost_instantly_import.read_source_drafts", return_value={
+            "source_count":1,"untagged_count":0,"invalid_tagged_count":0,"drafts":[row],
+        }), patch("myhost_instantly_import.fetch_live_registry", return_value=[]):
+            result = execute_migration(api, mode="import", max_imports=1)
+        self.assertEqual(result["already_in_workspace_count"], 1)
+        self.assertEqual(result["eligible_count"], 0)
+        self.assertEqual(result["imported_count"], 0)
+        self.assertFalse(any(method == "POST" and path == "/leads" for method,path,_ in api.calls))
+
     def test_import_limit_bounds_fail_closed(self):
         api = FakeInstantly()
         for count in (0, 251, True, "25"):

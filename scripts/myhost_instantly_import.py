@@ -13,6 +13,7 @@ from email.utils import getaddresses, parseaddr
 from dedupe_preflight import match_candidate
 from instantly_client import InstantlyClient
 from instantly_service import DEFAULT_REGISTRY_URL, fetch_live_registry
+from instantly_sync import fetch_all_leads
 from myhost_draft import (
     LEAD_ID_RE, connect_imap, fetch_message_uid, find_drafts_folder,
     normalize_text, plain_body, select_folder,
@@ -247,6 +248,10 @@ def execute_migration(client: InstantlyClient, *, mode: str = "audit", registry_
         raise RuntimeError("eligible_source_draft_limit_exceeded")
     registry = fetch_live_registry(registry_url=registry_url)
     blocklist = blocked_values(client)
+    # One complete workspace snapshot avoids thousands of API requests and
+    # fails closed if provider pagination is incomplete. Recheck each write live.
+    workspace_rows = fetch_all_leads(client, max_leads=50000)
+    workspace_emails = {_text(item.get("email")).casefold() for item in workspace_rows if _text(item.get("email"))}
     pending, suppressed, already_existing = [], 0, 0
     for row in unique:
         domain = row["email"].rsplit("@", 1)[-1]
@@ -257,7 +262,7 @@ def execute_migration(client: InstantlyClient, *, mode: str = "audit", registry_
         ):
             suppressed += 1
             continue
-        if workspace_contains(client, row["email"]):
+        if row["email"] in workspace_emails:
             already_existing += 1
             continue
         pending.append(row)
