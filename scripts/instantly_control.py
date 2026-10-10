@@ -743,11 +743,24 @@ def _rename_retired_archive(client: InstantlyClient) -> dict:
         raise RuntimeError("archive_rebrand_current_name_changed")
 
     def archive_lead_id() -> str:
-        page = client.list_leads(list_id=lid, limit=100)
-        if not isinstance(page, dict) or not isinstance(page.get("items"), list):
-            raise RuntimeError("archive_rebrand_page_invalid")
-        rows = page["items"]
-        if len(rows) != 1 or page.get("next_starting_after"):
+        rows, cursor, seen = [], None, set()
+        for _ in range(20):
+            page = client.list_leads(list_id=lid, limit=100, starting_after=cursor)
+            if not isinstance(page, dict) or not isinstance(page.get("items"), list):
+                raise RuntimeError("archive_rebrand_page_invalid")
+            rows.extend(page["items"])
+            if len(rows) > 1:
+                raise RuntimeError("archive_rebrand_single_lead_required")
+            nxt = _text(page.get("next_starting_after"))
+            if not nxt:
+                break
+            if nxt == cursor or nxt in seen:
+                raise RuntimeError("archive_rebrand_cursor_invalid")
+            seen.add(nxt)
+            cursor = nxt
+        else:
+            raise RuntimeError("archive_rebrand_pagination_limit")
+        if len(rows) != 1:
             raise RuntimeError("archive_rebrand_single_lead_required")
         lead = rows[0]
         if (not isinstance(lead, dict) or _text(lead.get("list_id")) != lid
