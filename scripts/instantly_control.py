@@ -21,6 +21,7 @@ from instantly_service import DEFAULT_REGISTRY_URL, DEFAULT_REPOSITORY, fetch_li
 from myhost_instantly_import import execute_migration, blocked_values, TARGET_LIST_ID, TARGET_LIST_NAME
 from instantly_language_campaigns import audit_language_split, read_imported_leads
 from instantly_mail_quality import mail_quality_audit
+from instantly_signature_repair import normalize_source_first_mail_signatures
 from instantly_language_route import route_exact_language
 from instantly_launch_audit import audit_launch_inventory, audit_sender_vitals, audit_old_campaign_retirement, audit_two_campaign_options, _list_pages
 from instantly_campaign_copy import TARGET_CAMPAIGNS, campaign_activation_baseline_matches
@@ -43,6 +44,7 @@ WRITE_ACTIONS = {
     "forward_email", "send_test_email", "mark_thread_read", "update_account",
     "mark_account_fixed", "pause_account", "resume_account", "enable_warmup", "disable_warmup",
     "verify_email", "rename_source_lead_list", "rename_retired_archive",
+    "repair_imported_first_mail_signatures",
     "block_email", "block_domain", "delete_blocklist_entry", "stage_approved_lead", "import_myhost_drafts", "route_language_drafts",
 }
 SEND_ACTIONS = {"activate_campaign", "reply_email", "forward_email", "send_test_email"}
@@ -146,6 +148,7 @@ def _confirmation_target(action: str, args: dict) -> str:
     direct = {
         "update_campaign": "campaign_id", "pause_campaign": "campaign_id",
         "rename_source_lead_list": "list_id",
+        "repair_imported_first_mail_signatures": "list_id",
         "activate_campaign": "campaign_id", "delete_campaign": "campaign_id", "delete_unused_draft_campaign": "campaign_id", "archive_and_retire_old_campaign": "campaign_id",
         "update_lead": "lead_id", "delete_lead": "lead_id", "mark_thread_read": "thread_id",
         "update_account": "email", "mark_account_fixed": "email", "pause_account": "email", "resume_account": "email",
@@ -981,6 +984,11 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
         data = _api(client, "GET", f"/block-lists-entries/{_id(args.get('entry_id'), 'entry_id')}")
     elif action == "get_background_job":
         data = _api(client, "GET", f"/background-jobs/{_id(args.get('job_id'), 'job_id')}")
+    elif action == "repair_imported_first_mail_signatures":
+        data = normalize_source_first_mail_signatures(
+            client, list_id=_text(args.get("list_id")),
+            expected_count=args.get("expected_count"), max_updates=args.get("max_updates"),
+        )
     elif action == "rename_source_lead_list":
         data = _rename_source_lead_list(client, args)
     elif action == "rename_retired_archive":
