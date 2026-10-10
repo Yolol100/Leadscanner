@@ -53,6 +53,10 @@ diversity, repeated-body groups, questions per language, strongly worded opt-out
 cues, missing source-URL/website facts and documented contact-basis coverage.
 No subject, email address, lead ID, body or even a content hash is returned.
 A unique email **does not prove** it is factually tailored or authorized to send.
+The NL/EN imported-lead staging router also holds **both** recipients of
+any identical normalized subject/body pair until independently reviewed,
+differentiated copy is saved. This safeguard never changes source messages and
+never treats a difference in wording as proof of personalization.
 Question counts and opt-out phrases are review heuristics, never legal approval.
 
 `audit_synthetic_campaign_previews` reads the exact stored NL/EN sequences,
