@@ -82,13 +82,19 @@ def _safe_replacement(variables: dict) -> str | None:
         return None
     if classify_signature_tail(body) != "first_name_only_tail" or not SIGNATURE_FIRST.search(body.strip()):
         return None
-    output, count = TAIL_NAME.subn("Andrew Baeten", body)
-    if count != 1 or not output.endswith("Andrew Baeten") or output == body:
+    trimmed = body.rstrip(" \t\r\n")
+    trailing = body[len(trimmed):]
+    output, count = TAIL_NAME.subn("Andrew Baeten", trimmed)
+    if count != 1 or not output.endswith("Andrew Baeten"):
         raise RuntimeError("signature_repair_normalization_not_exact")
     # Only the trailing sender name is different. No marketing claims, CTAs,
     # recipient identity, first-party observations, or legal bases are changed.
-    if not output.startswith(body[:TAIL_NAME.search(body).start()]):
+    marker = TAIL_NAME.search(trimmed)
+    if marker is None or output[:marker.start()] != trimmed[:marker.start()]:
         raise RuntimeError("signature_repair_unexpected_body_change")
+    output += trailing
+    if output == body:
+        raise RuntimeError("signature_repair_normalization_not_exact")
     return output
 
 
