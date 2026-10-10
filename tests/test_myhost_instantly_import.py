@@ -11,13 +11,13 @@ from myhost_instantly_import import (
 LEAD = "growth-" + "a" * 20
 
 
-def mail(*, to="hello@example.org", lead=LEAD, sender="info@andrewbaeten.nl"):
+def mail(*, to="hello@example.org", lead=LEAD, sender="info@andrewbaeten.nl", legacy=False):
     msg = EmailMessage()
     msg["From"] = sender
     msg["To"] = to
     msg["Subject"] = "Een korte vraag"
     if lead:
-        msg["X-Webactueel-Lead-ID"] = lead
+        msg["X-Webactueel-Lead-ID" if legacy else "X-Leadscanner-Lead-ID"] = lead
     msg.set_content("Een kort, concreet idee.")
     return msg
 
@@ -56,6 +56,11 @@ class ImportTests(unittest.TestCase):
         self.assertEqual(extract_lead_draft(mail(), sender="info@andrewbaeten.nl")["email"], "hello@example.org")
         with self.assertRaisesRegex(ValueError, "source_sender_mismatch"):
             extract_lead_draft(mail(sender="other@example.net"), sender="info@andrewbaeten.nl")
+
+    def test_old_header_is_read_only_backward_compatible(self):
+        old=mail(legacy=True)
+        self.assertEqual(extract_lead_draft(old,sender="info@andrewbaeten.nl")["lead_id"],LEAD)
+        self.assertEqual(extract_lead_draft(mail(),sender="info@andrewbaeten.nl")["lead_id"],LEAD)
 
     def test_multi_recipient_or_attachment_rejected(self):
         with self.assertRaisesRegex(ValueError, "source_single_valid_recipient"):
