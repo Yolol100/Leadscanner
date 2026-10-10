@@ -64,7 +64,7 @@ class Tests(unittest.TestCase):
             self.assertEqual(two.count("{{leadscanner_observation}}"), 1)
             self.assertEqual(two.count("{{leadscanner_value_action}}"), 1)
             self.assertEqual(three.count("{{leadscanner_observation}}"), 1)
-            self.assertNotIn("{{leadscanner_value_action}}", three)
+            self.assertEqual(three.count("{{leadscanner_value_action}}"), 1)
             self.assertNotIn("{%", two + three)
             self.assertEqual(two.count("?"), 1)
             self.assertEqual(three.count("?"), 0)
@@ -72,6 +72,18 @@ class Tests(unittest.TestCase):
                 self.assertIn("Andrew Baeten", text)
                 self.assertLess(len(text.split()), 120)
                 self.assertTrue(text.rstrip().endswith("Andrew Baeten"))
+
+    def test_step_three_retains_value_first_recipient_specificity(self):
+        for language in LANGS:
+            followups=campaign_steps(language)[1:]
+            for step in followups:
+                content=step["variants"][0]["body"]
+                self.assertEqual(content.count("{{leadscanner_observation}}"),1)
+                self.assertEqual(content.count("{{leadscanner_value_action}}"),1)
+                self.assertNotIn("{%",content)
+                self.assertNotIn("Webactueel",content)
+                self.assertLess(len(content.split()),100)
+            self.assertNotIn("ROI",followups[0]["variants"][0]["body"])
 
     def test_auto_route_by_reviewed_text_only(self):
         from instantly_campaign_copy import AUTO_CAMPAIGN_ID,TARGET_CAMPAIGNS,resolve_language_destination
@@ -152,8 +164,8 @@ class Tests(unittest.TestCase):
     def test_fact_cta_avoids_repeated_example_phrases(self):
         nl=campaign_steps("nl")[1]["variants"][0]["body"]
         en=campaign_steps("en")[1]["variants"][0]["body"]
-        self.assertIn("{{leadscanner_value_action}} maken om mijn idee concreet",nl)
-        self.assertIn("prepare {{leadscanner_value_action}} to make the idea concrete",en)
+        self.assertIn("{{leadscanner_value_action}} uitwerken",nl)
+        self.assertIn("put together {{leadscanner_value_action}}",en)
         self.assertNotIn("een kort voorbeeld maken",nl)
         self.assertNotIn("a short example to prepare",en)
 
