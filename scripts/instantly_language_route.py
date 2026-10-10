@@ -162,6 +162,17 @@ def route_exact_language(client: InstantlyClient, *, language: str, campaign_id:
         ):
             counters["contact_basis_hold"] += 1
             continue
+        # Legacy mail copy alone is not enough to personalize follow-ups.
+        # Only move leads with concrete first-party evidence and an offer tied
+        # to that evidence. Missing facts stay in the unsendable source list.
+        if (
+            variables.get("leadscanner_evidence_source_type") != "official_site"
+            or not all(isinstance(variables.get(key),str) and variables[key].strip() for key in (
+                "leadscanner_observation","leadscanner_value_action","leadscanner_evidence_url"
+            ))
+        ):
+            counters["personalization_evidence_hold"] += 1
+            continue
         if not registry_allows_draft({
             "email":email, "lead_id":_text(variables.get("leadscanner_source_lead_id")),
         }, registry):
@@ -182,12 +193,13 @@ def route_exact_language(client: InstantlyClient, *, language: str, campaign_id:
         "route_candidates_remaining": max(0, sum(inspect_lead_language(row) == language for row in rows)
                                            - counters["already_present"] - counters["personal_email_hold"]
                                            - counters["blocklist_hold"] - counters["contact_basis_hold"]
-                                           - counters["registry_hold"] - counters["missing_provider_id_hold"]),
+                                           - counters["personalization_evidence_hold"] - counters["registry_hold"] - counters["missing_provider_id_hold"]),
         "already_present_count": counters["already_present"],
         "held_counts": {
             k: counters[k] for k in (
                 "personal_email_hold", "blocklist_hold",
-                "contact_basis_hold", "registry_hold", "missing_provider_id_hold"
+                "contact_basis_hold", "personalization_evidence_hold",
+                "registry_hold", "missing_provider_id_hold"
             )
         },
         "attempt_count": len(selected),
