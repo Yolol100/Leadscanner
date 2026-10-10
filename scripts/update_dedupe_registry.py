@@ -10,8 +10,10 @@ import argparse
 import json
 import os
 import re
+import time
 from pathlib import Path
 from urllib.parse import quote, urlparse
+from requests.exceptions import ConnectionError as RequestsConnectionError, Timeout
 
 from dedupe_preflight import (
     domains_match,
@@ -165,15 +167,25 @@ def _api_values_url(spreadsheet_id: str, sheet_name: str) -> str:
     return f"https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values/{range_name}"
 
 
-def read_live_values(session, spreadsheet_id: str, sheet_name: str) -> list[list[object]]:
-    response = session.get(_api_values_url(spreadsheet_id, sheet_name), timeout=20)
-    if response.status_code != 200:
-        raise RuntimeError(f"registry_read_failed status={response.status_code}")
-    payload = response.json()
-    values = payload.get("values")
-    if not isinstance(values, list):
-        raise RuntimeError("registry_read_returned_no_values")
-    return values
+def read_live_values(session, spreadsheet_id: str, sheet_name: str, *, sleep_fn=time.sleep) -> list[list[object]]:
+    """Retry bounded, read-only Sheets GETs; never retry registry mutations."""
+    url = _api_values_url(spreadsheet_id, sheet_name)
+    for attempt in range(3):
+        try:
+            response = session.get(url, timeout=20)
+        except (Timeout, RequestsConnectionError):
+            if attempt == 2:
+                raise RuntimeError("registry_read_transient_retries_exhausted") from None
+            sleep_fn(2 ** attempt)
+            continue
+        if response.status_code != 200:
+            raise RuntimeError(f"registry_read_failed status={response.status_code}")
+        payload = response.json()
+        values = payload.get("values")
+        if not isinstance(values, list):
+            raise RuntimeError("registry_read_returned_no_values")
+        return values
+    raise RuntimeError("registry_read_transient_retries_exhausted")
 
 
 def append_values(session, spreadsheet_id: str, sheet_name: str, rows: list[list[str]]) -> None:

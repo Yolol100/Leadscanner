@@ -1,9 +1,12 @@
 import unittest
+from unittest.mock import Mock
+from requests.exceptions import ReadTimeout
 
 from update_dedupe_registry import (
     HEADERS,
     exact_rows_present,
     plan_registry_update,
+    read_live_values,
     update_registry,
 )
 
@@ -123,6 +126,42 @@ class RegistryUpdateTests(unittest.TestCase):
         expected = self.row()
         with self.assertRaisesRegex(ValueError, "live_registry_headers_mismatch"):
             plan_registry_update(self.readback([expected]), [["company", "domain"]])
+
+
+    def test_readonly_registry_get_retries_one_sheets_timeout(self):
+        session = Mock()
+        response = Mock(status_code=200)
+        response.json.return_value = {"values": [HEADERS]}
+        session.get.side_effect = [ReadTimeout("simulated"), response]
+        pauses = []
+        values = read_live_values(session, "sheet", "DedupeRegistry", sleep_fn=pauses.append)
+        self.assertEqual(values, [HEADERS])
+        self.assertEqual(session.get.call_count, 2)
+        self.assertEqual(pauses, [1])
+        session.post.assert_not_called()
+        session.put.assert_not_called()
+
+    def test_readonly_registry_get_fails_closed_after_three_timeouts(self):
+        session = Mock()
+        session.get.side_effect = ReadTimeout("simulated")
+        pauses = []
+        with self.assertRaisesRegex(RuntimeError, "registry_read_transient_retries_exhausted"):
+            read_live_values(session, "sheet", "DedupeRegistry", sleep_fn=pauses.append)
+        self.assertEqual(session.get.call_count, 3)
+        self.assertEqual(pauses, [1, 2])
+        session.post.assert_not_called()
+        session.put.assert_not_called()
+
+    def test_registry_permission_failure_does_not_retry(self):
+        session = Mock()
+        session.get.return_value.status_code = 403
+        pauses = []
+        with self.assertRaisesRegex(RuntimeError, "registry_read_failed status=403"):
+            read_live_values(session, "sheet", "DedupeRegistry", sleep_fn=pauses.append)
+        self.assertEqual(session.get.call_count, 1)
+        self.assertEqual(pauses, [])
+        session.post.assert_not_called()
+        session.put.assert_not_called()
 
 
 if __name__ == "__main__":
