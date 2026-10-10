@@ -1,0 +1,7 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "20261010-continuation-quality-001",
+  "action": "audit_imported_mail_quality",
+  "args": {},
+  "requested_by": "chatgpt"
+}

@@ -1,0 +1,7 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "20261010-continuation-preview-001",
+  "action": "audit_synthetic_campaign_previews",
+  "args": {},
+  "requested_by": "chatgpt"
+}
