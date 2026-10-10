@@ -1,7 +1,7 @@
 """Privacy/quality audit does not publish an identifiable lead or raw copy."""
 import unittest
 from unittest.mock import patch
-from instantly_mail_quality import mail_quality_audit
+from instantly_mail_quality import mail_quality_audit, classify_signature_tail
 class Tests(unittest.TestCase):
     def test_aggregates_and_redacts_sensitive_copy(self):
         rows=[{"email":"private@company.example","payload":{
@@ -21,6 +21,36 @@ class Tests(unittest.TestCase):
         self.assertFalse(out["writes"])
         self.assertNotIn("private@",str(out))
         self.assertNotIn("I saw your website",str(out))
+    def test_signature_tail_classification_is_strict_and_private(self):
+        examples={
+            "Hi, I noticed the quote page. Best,\\nAndrew": "unrecognized_tail",
+            "Hoi, bedankt.\\n\\nGroet,\\nAndrew": "first_name_only_tail",
+            "Hi there.\\n\\nBest,\\nAndrew": "first_name_only_tail",
+            "Hoi.\\n\\nGroet,\\nAndrew Baeten": "full_name_tail",
+            "Hoi.\\nGroet,": "closing_without_name_tail",
+            "Could this be Andrew?": "unrecognized_tail",
+            "Hi.\\nBest,\\nAndrew van Example": "unrecognized_tail",
+        }
+        for value, expected in examples.items():
+            with self.subTest(tail=expected):
+                self.assertEqual(classify_signature_tail(value.replace('\\\\n','\\n')), expected)
+
+    def test_signature_counts_do_not_reveal_content_or_overwrite_any_leads(self):
+        leads=[{"email":"hidden@firm.example","campaign":None,"payload":{
+            "leadscanner_subject":"Een vraag over jullie website",
+            "leadscanner_body":"Hoi, ik heb een concreet idee.\\n\\nGroet,\\nAndrew"}},
+            {"email":"hidden2@firm.example","campaign":None,"payload":{
+            "leadscanner_subject":"Website vraag",
+            "leadscanner_body":"Hoi, ik heb een vraag.\\n\\nGroet,\\nAndrew Baeten"}}]
+        with patch("instantly_mail_quality.read_imported_leads",return_value=("source",leads)):
+            out=mail_quality_audit(object())
+        self.assertEqual(out["signature_tail_distribution"]["first_name_only_tail"],1)
+        self.assertEqual(out["signature_tail_distribution"]["full_name_tail"],1)
+        self.assertEqual(out["source_leads_assigned_to_campaign"],0)
+        self.assertFalse(out["writes"])
+        self.assertNotIn("hidden@firm.example",str(out))
+        self.assertNotIn("Hoi, ik heb",str(out))
+
     def test_legacy_brand_is_counted_without_exposing_recipient_copy(self):
         old_brand="Web"+"actueel"
         item={"email":"private@example.org","payload":{
