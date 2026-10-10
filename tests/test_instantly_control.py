@@ -136,6 +136,46 @@ def activation_approval_for(client):
 
 class InstantlyControlTests(unittest.TestCase):
 
+    def test_retired_archive_rename_does_not_modify_contact_or_send(self):
+        from instantly_control import _rename_retired_archive
+        from instantly_old_campaign_retire import ARCHIVE_NAME, LEGACY_ARCHIVE_NAME
+
+        archive_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        contact_id = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+
+        class Provider:
+            def __init__(self):
+                self.name = LEGACY_ARCHIVE_NAME
+                self.calls = []
+            def _request(self, method, path, **kwargs):
+                self.calls.append((method, path))
+                if method == "GET" and path == "/lead-lists":
+                    return {"items": [{"id": archive_id, "name": self.name}],
+                            "next_starting_after": None}
+                if method == "GET" and path == "/lead-lists/" + archive_id:
+                    return {"id": archive_id, "name": self.name}
+                if method == "PATCH" and path == "/lead-lists/" + archive_id:
+                    self.name = kwargs["json"]["name"]
+                    return {"id": archive_id, "name": self.name}
+                raise AssertionError("unsupported provider action")
+            def list_leads(self, **kwargs):
+                return {"items": [{
+                    "id": contact_id, "list_id": archive_id,
+                    "email": "archived@example.org", "campaign": None,
+                    "payload": {"original_field": "preserved"},
+                }], "next_starting_after": None}
+
+        api = Provider()
+        report = _rename_retired_archive(api)
+        self.assertEqual(api.name, ARCHIVE_NAME)
+        self.assertEqual(report["archived_contact_count"], 1)
+        self.assertTrue(report["lead_identities_unchanged"])
+        self.assertFalse(report["campaign_mutation"])
+        self.assertFalse(report["automatic_send"])
+        self.assertEqual(sum(1 for m,_ in api.calls if m=="PATCH"),1)
+        self.assertFalse(any("/campaigns" in path or "/emails" in path
+                             for _,path in api.calls))
+
     def test_source_list_rebrand_preserves_exact_lead_identities_and_never_sends(self):
         from instantly_control import _rename_source_lead_list
         from myhost_instantly_import import TARGET_LIST_ID, TARGET_LIST_NAME

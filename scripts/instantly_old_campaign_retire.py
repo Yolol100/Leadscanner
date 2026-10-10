@@ -12,7 +12,9 @@ from instantly_client import InstantlyError
 
 CAMPAIGN_ID="827b1b45-6a7e-45ba-88de-d89db2a47d6a"
 CAMPAIGN_NAME="Outreach NL - Website & Digitale Diensten"
-ARCHIVE_NAME="Webactueel - Oud Campagne Archief - NIET VERZENDEN"
+ARCHIVE_NAME="Andrew Baeten - Oud Campagne Archief - NIET VERZENDEN"
+# Read-only fallback for the single historical archive list before its rename.
+LEGACY_ARCHIVE_NAME="Webactueel - Oud Campagne Archief - NIET VERZENDEN"
 
 
 def _text(x):
@@ -353,7 +355,7 @@ def audit_retired_archive(client) -> dict:
         for row in rows:
             if not isinstance(row, dict):
                 raise RuntimeError("retired_archive_list_row_invalid")
-            if row.get("name") == ARCHIVE_NAME:
+            if row.get("name") in {ARCHIVE_NAME, LEGACY_ARCHIVE_NAME}:
                 matches.append(_text(row.get("id")))
         next_cursor = _text(page.get("next_starting_after"))
         if not next_cursor:

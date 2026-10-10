@@ -22,9 +22,9 @@ from myhost_instantly_import import execute_migration, blocked_values, TARGET_LI
 from instantly_language_campaigns import audit_language_split, read_imported_leads
 from instantly_mail_quality import mail_quality_audit
 from instantly_language_route import route_exact_language
-from instantly_launch_audit import audit_launch_inventory, audit_sender_vitals, audit_old_campaign_retirement, audit_two_campaign_options
+from instantly_launch_audit import audit_launch_inventory, audit_sender_vitals, audit_old_campaign_retirement, audit_two_campaign_options, _list_pages
 from instantly_campaign_copy import TARGET_CAMPAIGNS, campaign_activation_baseline_matches
-from instantly_old_campaign_retire import archive_and_retire_old_campaign, audit_old_archive_state, audit_old_archive_metadata, audit_retired_archive
+from instantly_old_campaign_retire import archive_and_retire_old_campaign, audit_old_archive_state, audit_old_archive_metadata, audit_retired_archive, ARCHIVE_NAME, LEGACY_ARCHIVE_NAME
 
 SCHEMA_VERSION = "leadscanner-instantly-command/1.0"
 RESULT_SCHEMA_VERSION = "leadscanner-instantly-command-result/1.0"
@@ -42,7 +42,7 @@ WRITE_ACTIONS = {
     "delete_campaign", "update_lead", "delete_lead", "update_interest", "reply_email",
     "forward_email", "send_test_email", "mark_thread_read", "update_account",
     "mark_account_fixed", "pause_account", "resume_account", "enable_warmup", "disable_warmup",
-    "verify_email", "rename_source_lead_list",
+    "verify_email", "rename_source_lead_list", "rename_retired_archive",
     "block_email", "block_domain", "delete_blocklist_entry", "stage_approved_lead", "import_myhost_drafts", "route_language_drafts",
 }
 SEND_ACTIONS = {"activate_campaign", "reply_email", "forward_email", "send_test_email"}
@@ -720,6 +720,76 @@ def _rename_source_lead_list(client: InstantlyClient, args: dict) -> dict:
     }
 
 
+def _rename_retired_archive(client: InstantlyClient) -> dict:
+    """Rebrand the single historic, non-sending archive; never move its lead."""
+    before_audit = audit_retired_archive(client)
+    if before_audit.get("archived_contact_count") != 1:
+        raise RuntimeError("archive_rebrand_preflight_invalid")
+    lists = _list_pages(
+        lambda cursor: _api(client, "GET", "/lead-lists", params={
+            "limit": 100, **({"starting_after": cursor} if cursor else {}),
+        }), limit=10000,
+    )
+    old = [x for x in lists if _text(x.get("name")) == LEGACY_ARCHIVE_NAME]
+    newer = [x for x in lists if _text(x.get("name")) == ARCHIVE_NAME]
+    if len(old) != 1 or newer:
+        raise RuntimeError("archive_rebrand_list_must_be_unique_and_legacy")
+    lid = _text(old[0].get("id"))
+    if not re.fullmatch(r"[0-9a-fA-F-]{36}", lid):
+        raise RuntimeError("archive_rebrand_list_id_invalid")
+    path = f"/lead-lists/{_id(lid, 'list_id')}"
+    pre = _api(client, "GET", path) or {}
+    if _text(pre.get("id")) != lid or _text(pre.get("name")) != LEGACY_ARCHIVE_NAME:
+        raise RuntimeError("archive_rebrand_current_name_changed")
+
+    def archive_lead_id() -> str:
+        rows, cursor, seen = [], None, set()
+        for _ in range(20):
+            page = client.list_leads(list_id=lid, limit=100, starting_after=cursor)
+            if not isinstance(page, dict) or not isinstance(page.get("items"), list):
+                raise RuntimeError("archive_rebrand_page_invalid")
+            rows.extend(page["items"])
+            if len(rows) > 1:
+                raise RuntimeError("archive_rebrand_single_lead_required")
+            nxt = _text(page.get("next_starting_after"))
+            if not nxt:
+                break
+            if nxt == cursor or nxt in seen:
+                raise RuntimeError("archive_rebrand_cursor_invalid")
+            seen.add(nxt)
+            cursor = nxt
+        else:
+            raise RuntimeError("archive_rebrand_pagination_limit")
+        if len(rows) != 1:
+            raise RuntimeError("archive_rebrand_single_lead_required")
+        lead = rows[0]
+        if (not isinstance(lead, dict) or _text(lead.get("list_id")) != lid
+                or _text(lead.get("campaign"))):
+            raise RuntimeError("archive_rebrand_lead_moved")
+        identity = _text(lead.get("id"))
+        if not re.fullmatch(r"[0-9a-fA-F-]{36}", identity):
+            raise RuntimeError("archive_rebrand_lead_id_invalid")
+        return identity
+
+    original_id = archive_lead_id()
+    _api(client, "PATCH", path, payload={"name": ARCHIVE_NAME})
+    readback = _api(client, "GET", path) or {}
+    if _text(readback.get("id")) != lid or _text(readback.get("name")) != ARCHIVE_NAME:
+        raise RuntimeError("archive_rebrand_name_readback_mismatch")
+    if archive_lead_id() != original_id:
+        raise RuntimeError("archive_rebrand_lead_identity_changed")
+    after_audit = audit_retired_archive(client)
+    if after_audit.get("archived_contact_count") != 1:
+        raise RuntimeError("archive_rebrand_archive_readback_invalid")
+    return {
+        "archive_list_id": lid,
+        "label": ARCHIVE_NAME,
+        "archived_contact_count": 1,
+        "lead_identities_unchanged": True,
+        "campaign_mutation": False, "lead_mutation": False, "automatic_send": False,
+    }
+
+
 def execute_command(command: dict, config: dict, client: InstantlyClient, *, run_attempt: str = "1") -> dict:
     validate_write_gate(command, config, run_attempt=run_attempt)
     action, args = command["action"], command["args"]
@@ -900,6 +970,8 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
         data = _api(client, "GET", f"/background-jobs/{_id(args.get('job_id'), 'job_id')}")
     elif action == "rename_source_lead_list":
         data = _rename_source_lead_list(client, args)
+    elif action == "rename_retired_archive":
+        data = _rename_retired_archive(client)
     elif action == "create_campaign_draft":
         payload = _payload(args)
         if not _text(payload.get("name")) or not isinstance(payload.get("campaign_schedule"), dict):
