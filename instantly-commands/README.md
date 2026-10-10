@@ -45,6 +45,31 @@ Check **all source contacts without writing any leads** by adding immutable read
 
 A successful dry-run is **not** Instantly's live preview. With no eligible lead in either campaign, the real preview with filled variables is still pending; perform that in the Instantly Editor with an individually reviewed, eligible lead once available. Do not attach a sender, activate a campaign, or stage historical contacts just to make the preview work. No automatic send is authorized by this workflow.
 
+## Read-only first-mail quality and synthetic live-template checks
+
+The immutable `audit_imported_mail_quality` action reads the existing 1,128-lead
+isolated source list and returns **aggregate counts only**: normalized subject/body
+diversity, repeated-body groups, questions per language, strongly worded opt-out
+cues, missing source-URL/website facts and documented contact-basis coverage.
+No subject, email address, lead ID, body or even a content hash is returned.
+A unique email **does not prove** it is factually tailored or authorized to send.
+Question counts and opt-out phrases are review heuristics, never legal approval.
+
+`audit_synthetic_campaign_previews` reads the exact stored NL/EN sequences,
+requires both campaigns to remain Paused with zero senders and zero leads,
+and renders the six live steps against two **fictional** recipient profiles
+per language (12 message-body renderings). It verifies variable substitution,
+separation of profiles, proposal facts and signatures, returning counts only.
+It uses no real leads or personal data and never sends or activates anything.
+This is **not Instantly's actual Preview UI**, which remains pending until
+an individually reviewed and eligible lead is available.
+
+The remaining release gates remain documented opt-in or a genuinely applicable
+exception supported by an external source, independently checked first-party
+website observations, approved recipient-specific first-mail text, suppression
+and human sign-off. Never upgrade `review_required` based only on a public
+business email or an automated model guess.
+
 ## Evidence-only three-email campaign approval
 
 An explicitly selected `instantly_sequence` preview does not generate a separate email. To stage an approved lead, first audit a **Draft** campaign using `audit_campaign_sequence`. The audit must show exactly one sequence and **three email steps**, no unresolved template fields, no `leadscanner_subject` or `leadscanner_body`, and both `leadscanner_observation` and `leadscanner_value_action` in the template. Review the actual subjects, bodies, variants and legal/contact basis in Instantly independently; the copy-free audit does not certify those.
