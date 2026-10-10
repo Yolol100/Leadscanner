@@ -226,6 +226,34 @@ class InstantlyControlTests(unittest.TestCase):
                 "expected_name":"Other name","expected_count":1128})
         self.assertEqual(client.writes, 0)
 
+    def test_readonly_paused_route_eligibility_audit_never_stages(self):
+        from instantly_campaign_copy import TARGET_CAMPAIGNS
+        command = {
+            "schema_version":"leadscanner-instantly-command/1.0",
+            "command_id":"safe-paused-route-audit-001",
+            "action":"audit_language_route_readiness",
+            "args":{"language":"nl"},
+            "requested_by":"chatgpt",
+        }
+        audit_data = {
+            "source_count":1128, "attempt_count":0,
+            "confirmed_copied_count":0, "eligible_candidate_count":0,
+            "dry_run":True, "held_counts":{"contact_basis_hold":1128},
+        }
+        with patch("instantly_control.route_exact_language",return_value=audit_data) as route:
+            result = execute_command(command,config(write_actions_enabled=False,
+                send_actions_enabled=False),FakeClient())
+        self.assertEqual(result["status"],"green")
+        self.assertEqual(result["result"]["held_counts"]["contact_basis_hold"],1128)
+        self.assertFalse(result["result"]["mutation"])
+        self.assertFalse(result["result"]["send"])
+        kwargs = route.call_args.kwargs
+        self.assertTrue(kwargs["dry_run"])
+        self.assertEqual(kwargs["campaign_id"],TARGET_CAMPAIGNS["nl"][0])
+        with self.assertRaisesRegex(ValueError,"readiness_language_must_be_nl_or_en"):
+            execute_command({**command,"args":{"language":"unknown"}},
+                            config(write_actions_enabled=False),FakeClient())
+
     def test_activation_of_leadscanner_campaign_requires_fresh_sequence_approval(self):
         client = ActivationGuardClient(
             basis="consent_verified", reference="crm:consent-2026-123",
