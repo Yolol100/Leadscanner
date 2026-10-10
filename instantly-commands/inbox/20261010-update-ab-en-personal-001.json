@@ -1,0 +1,51 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "20261010-update-ab-en-personal-001",
+  "action": "update_campaign",
+  "args": {
+    "campaign_id": "fd405145-4bf5-40c5-b6ae-2e7f5af6120c",
+    "payload": {
+      "sequences": [
+        {
+          "steps": [
+            {
+              "type": "email",
+              "delay": 4,
+              "delay_unit": "days",
+              "variants": [
+                {
+                  "subject": "{{leadscanner_subject}}",
+                  "body": "{{leadscanner_body}}"
+                }
+              ]
+            },
+            {
+              "type": "email",
+              "delay": 5,
+              "delay_unit": "days",
+              "variants": [
+                {
+                  "subject": "",
+                  "body": "Hi,\n\nJust following up on my earlier note. This was the detail I noticed on your website:\n\n\"{{leadscanner_observation}}\"\n\nI can prepare {{leadscanner_value_action}} to make the idea concrete.\n\nWould you like me to email that over?\n\nIf it's not relevant, just reply 'no' and I'll stop.\n\nBest,\nAndrew Baeten"
+                }
+              ]
+            },
+            {
+              "type": "email",
+              "delay": 0,
+              "delay_unit": "days",
+              "variants": [
+                {
+                  "subject": "",
+                  "body": "Hi,\n\nThis is my last note. My earlier idea came from this detail on your website:\n\n\"{{leadscanner_observation}}\"\n\nIt's just a possible starting point, not a judgment on your current approach. If a short example would be useful later, feel free to reply. Otherwise I'll leave it here.\n\nBest,\nAndrew Baeten"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "confirm": "EXECUTE update_campaign fd405145-4bf5-40c5-b6ae-2e7f5af6120c",
+  "requested_by": "chatgpt"
+}
