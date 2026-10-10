@@ -75,6 +75,7 @@ def approved_custom_variables(row: dict) -> dict[str, str]:
         variables.update({
             "leadscanner_observation": observation,
             "leadscanner_evidence_url": evidence_url,
+            "leadscanner_evidence_source_type": "official_site",
             "leadscanner_value_action": value_action,
         })
         if signal_type:
