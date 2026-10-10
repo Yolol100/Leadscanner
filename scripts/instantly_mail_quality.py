@@ -15,7 +15,11 @@ SENDER=("andrew baeten",)
 # Only recognize unambiguous, single-name signatures at the very end of a
 # reviewed source email. Never guess which sender an unsigned mail represents.
 SIGNATURE_FULL = re.compile(r"(?i)(?:^|\n)[ \t]*andrew[ \t]+baeten[ \t]*[.!]?[ \t]*\Z")
-SIGNATURE_FIRST = re.compile(r"(?i)(?:^|\n)[ \t]*andrew[ \t]*[.!]?[ \t]*\Z")
+SIGNATURE_FIRST = re.compile(
+    r"(?i)(?:^|\n)[ \t]*(?:groet|met vriendelijke groet|hartelijke groet|"
+    r"vriendelijke groeten|best|kind regards|regards|cheers)[ \t]*[,!.]?[ \t]*\r?\n"
+    r"[ \t]*andrew[ \t]*[.!]?[ \t]*\Z"
+)
 CLOSING_ONLY = re.compile(
     r"(?i)(?:^|\n)[ \t]*(?:groet|met vriendelijke groet|hartelijke groet|"
     r"vriendelijke groeten|best|kind regards|regards|cheers)[ \t]*[,!.]?[ \t]*\Z"
