@@ -86,7 +86,8 @@ class Tests(unittest.TestCase):
             for i,step in enumerate(steps[1:]):
                 body=step["variants"][0]["body"]
                 assert re.search(r"(?i)Andrew",body)
-                assert re.search(r"(?i)Webactueel",body)
+                self.assertIn("Andrew Baeten",body)
+                self.assertNotIn("Webactueel",body)
                 self.assertLess(len(body.split()),125)
                 self.assertNotIn("€",body)
                 self.assertNotIn("ROI",body)
@@ -96,6 +97,43 @@ class Tests(unittest.TestCase):
             self.assertFalse(settings["open_tracking"])
             self.assertTrue(settings["insert_unsubscribe_header"])
             self.assertNotIn("Geen interesse?",steps[1]["variants"][0]["body"])
+    def test_exact_campaign_ids_and_names_are_kept_in_both_routers(self):
+        from instantly_campaign_copy import TARGET_CAMPAIGNS
+        from instantly_language_campaigns import LANGUAGE_CAMPAIGN_NAMES
+        expected = {
+            "nl": ("5c720281-fd07-4c47-8155-c88d7d3c09b8", "Websiteadvies NL"),
+            "en": ("fd405145-4bf5-40c5-b6ae-2e7f5af6120c", "Websiteadvies EN"),
+        }
+        self.assertEqual(TARGET_CAMPAIGNS, expected)
+        self.assertEqual(LANGUAGE_CAMPAIGN_NAMES, {
+            language: name for language, (_, name) in expected.items()
+        })
+
+    def test_auto_route_fails_closed_on_active_paused_or_wrong_name(self):
+        from instantly_campaign_copy import AUTO_CAMPAIGN_ID, TARGET_CAMPAIGNS, resolve_language_destination
+        cid, name = TARGET_CAMPAIGNS["nl"]
+        row = {
+            "status": "review_draft", "review_mode": "reviewed_mail",
+            "subject": "Een korte vraag over jullie website",
+            "body": "Hoi, ik zag jullie website en dacht aan een klein idee voor de pagina. Als je wilt, stuur ik graag een concreet voorstel. Laat gerust weten.",
+        }
+        class Provider:
+            def __init__(self, override):
+                self.override = override
+            def get_campaign(self, campaign_id):
+                self_id = cid
+                if campaign_id != self_id:
+                    raise AssertionError("unexpected_campaign_id")
+                baseline = {
+                    "id": cid, "name": name, "status": 0, "email_list": [],
+                    "sequences": [{"steps": campaign_steps("nl")}],
+                }
+                return {**baseline, **self.override}
+        for override in ({"status": 1}, {"status": 2}, {"name": "Webactueel NL - Websiteadvies (Concept)"}):
+            with self.subTest(override=override):
+                with self.assertRaisesRegex(ValueError, "auto_language_requires_matching_draft"):
+                    resolve_language_destination(Provider(override), row, AUTO_CAMPAIGN_ID)
+
     def test_actual_sequence_inspector_accepts_supported_fields(self):
         for lang in LANGS:
             campaign={"id":"example","status":0,"sequences":[{"steps":campaign_steps(lang)}]}
