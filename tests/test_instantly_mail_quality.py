@@ -95,5 +95,59 @@ class Tests(unittest.TestCase):
         for body in bodies:
             self.assertNotIn(body,str(audit))
 
+    def test_copy_diversity_only_returns_group_counts_not_pii_or_hashes(self):
+        first = "Hi. A specific website note. Can I send a preview? Best,\nAndrew Baeten"
+        second = "Hi. Another website note. Can I send a preview? Best,\nAndrew Baeten"
+        third = "Hi. Third website note. Can I send a preview? Best,\nAndrew Baeten"
+        rows = [
+            {"email": "hidden1@example.org", "payload": {
+                "leadscanner_subject": "Subject A",
+                "leadscanner_body": first,
+                "leadscanner_contact_basis": "review_required"}},
+            {"email": "hidden2@example.org", "payload": {
+                "leadscanner_subject": "Subject A ",
+                "leadscanner_body": first.replace("  ", " "),
+                "leadscanner_contact_basis": "review_required"}},
+            {"email": "hidden3@example.org", "payload": {
+                "leadscanner_subject": "Subject B",
+                "leadscanner_body": second,
+                "leadscanner_contact_basis": "review_required"}},
+            {"email": "hidden4@example.org", "payload": {
+                "leadscanner_subject": "Subject C",
+                "leadscanner_body": third,
+                "leadscanner_contact_basis": "review_required"}},
+        ]
+        with patch("instantly_mail_quality.read_imported_leads",return_value=("source",rows)):
+            report=mail_quality_audit(object())
+        self.assertEqual(report["copy_diversity"]["subject"]["distinct_count"],3)
+        self.assertEqual(report["copy_diversity"]["body"]["distinct_count"],3)
+        self.assertEqual(report["copy_diversity"]["subject_and_body_pair"]["distinct_count"],3)
+        self.assertEqual(report["copy_diversity"]["body"]["recipients_in_reused_groups"],2)
+        self.assertEqual(report["copy_diversity"]["body"]["largest_group_size"],2)
+        self.assertTrue(report["copy_diversity"]["diversity_is_not_personalization_proof"])
+        self.assertFalse(report["copy_diversity"]["raw_text_or_fingerprints_returned"])
+        self.assertEqual(report["contact_basis_unverified_count"],4)
+        for private in ("hidden1@example.org","Subject A","specific website note"):
+            self.assertNotIn(private,str(report))
+        self.assertFalse(report["writes"])
+
+    def test_generic_interest_invitation_is_not_optout_evidence(self):
+        messages=(
+            ("nl","Hoi, laat het weten als je een voorbeeld wilt. Groet,\nAndrew Baeten",1),
+            ("nl","Hoi, geen interesse is prima; dan stop ik. Groet,\nAndrew Baeten",0),
+            ("en","Hello, let me know if this could help. Best,\nAndrew Baeten",1),
+            ("en","Hello, if this isn't relevant just reply 'no' and I'll stop. Best,\nAndrew Baeten",0),
+        )
+        for language,body,expected in messages:
+            with self.subTest(language=language,expected=expected):
+                row={"email":"hidden@example.org","payload":{
+                    "leadscanner_subject":"Question about a website","leadscanner_body":body}}
+                with patch("instantly_mail_quality.read_imported_leads",return_value=("source",[row])), \
+                     patch("instantly_mail_quality.classify_language",return_value=language):
+                    report=mail_quality_audit(object())
+                self.assertEqual(report["mail_review_flags"]["no_obvious_optout_phrase"],expected)
+                self.assertEqual(report["language_review"][language]["no_obvious_optout_phrase"],expected)
+                self.assertFalse(report["writes"])
+
 if __name__=="__main__":
     unittest.main()
