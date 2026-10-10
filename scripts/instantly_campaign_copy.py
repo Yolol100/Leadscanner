@@ -144,7 +144,7 @@ def campaign_activation_baseline_matches(campaign: dict, language: str) -> bool:
 
 
 def resolve_language_destination(client, row: dict, requested_campaign_id: str) -> str:
-    """Route only reviewed NL/EN copy to its own identified, non-sending Draft."""
+    """Route reviewed NL/EN copy only to the exact Draft/Paused campaign without senders."""
     known={x[0] for x in TARGET_CAMPAIGNS.values()}
     if requested_campaign_id not in known | {AUTO_CAMPAIGN_ID}:
         return requested_campaign_id
@@ -167,8 +167,10 @@ def resolve_language_destination(client, row: dict, requested_campaign_id: str) 
     observed=client.get_campaign(cid)
     if not isinstance(observed,dict) or observed.get("id")!=cid:
         raise RuntimeError("auto_language_campaign_readback_invalid")
-    if observed.get("name")!=name or type(observed.get("status")) is not int or observed["status"]!=0:
-        raise ValueError("auto_language_requires_matching_draft")
+    from instantly_client import SAFE_CAMPAIGN_STATUSES
+    if (observed.get("name")!=name or type(observed.get("status")) is not int
+            or observed["status"] not in SAFE_CAMPAIGN_STATUSES):
+        raise ValueError("auto_language_requires_matching_non_sending_campaign")
     if observed.get("email_list")!=[]:
         raise ValueError("auto_language_requires_zero_senders")
     sequences=observed.get("sequences")
