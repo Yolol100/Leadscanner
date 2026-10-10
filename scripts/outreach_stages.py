@@ -120,8 +120,8 @@ def detect_language(candidate: dict, observation: str) -> str:
         return "nl"
     if en_score > nl_score:
         return "en"
-    domain = _text(candidate.get("official_domain")).casefold()
-    return "nl" if domain.endswith(".nl") else "en"
+    # Never guess a recipient language from a domain or country.
+    return "unknown"
 
 
 def evidence_is_usable(item: dict) -> bool:
@@ -200,6 +200,9 @@ def select_one_reason(candidate: dict) -> dict:
     _, _, item, classification = ranked[0]
     observation = re.sub(r"\s+", " ", _text(item["text"])).strip()
     language = detect_language(candidate, observation)
+    if language not in {"nl", "en"}:
+        result["outreach_hold_reason"] = "observation_language_ambiguous"
+        return result
     result.update({
         "outreach_status": "ready",
         "outreach_hold_reason": None,
@@ -304,7 +307,7 @@ def body_for(candidate: dict) -> str:
             f"Als je wilt, kan ik {action} maken. Dat is vrijblijvend.\n\n"
             "Zal ik dat voorbeeld per mail sturen?\n\n"
             "Geen interesse, laat het gerust weten; dan stop ik.\n\n"
-            "Groet,\nAndrew\nWebactueel"
+            "Groet,\nAndrew Baeten"
         )
     return (
         "Hi,\n\n"
@@ -312,7 +315,7 @@ def body_for(candidate: dict) -> str:
         f"If useful, I can prepare {action} with no obligation.\n\n"
         "Would you like me to email it to you?\n\n"
         "If it isn't relevant, just reply 'no' and I'll stop.\n\n"
-        "Best,\nAndrew\nWebactueel"
+        "Best,\nAndrew Baeten"
     )
 
 
@@ -331,6 +334,8 @@ def validate_mail(candidate: dict, subject: str, body: str) -> list[str]:
         reasons.append("body_too_long")
     if body.count("?") != 1:
         reasons.append("exactly_one_question_cta_required")
+    if "Andrew Baeten" not in body or "Webactueel" in body:
+        reasons.append("andrew_baeten_sender_identity_required")
     if _text(candidate.get("verified_observation")) not in body:
         reasons.append("verified_observation_missing_from_body")
     if _text(candidate.get("verified_observation_source_type")) != "official_site":
