@@ -1,0 +1,9 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "20261010-list-ab-campaign-status-001",
+  "action": "list_campaigns",
+  "args": {
+    "limit": 100
+  },
+  "requested_by": "chatgpt"
+}
