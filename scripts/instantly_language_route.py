@@ -177,7 +177,7 @@ def route_exact_language(client: InstantlyClient, *, language: str, campaign_id:
             continue
         # Signed full business identity is required for step 1; do not silently
         # rewrite already reviewed imported mail. Missing signatures need review.
-        if not re.search(r"\bandrew\s+baeten\b", reviewed_body, re.I):
+        if not re.search(r"(?im)^\s*(?:groet|met vriendelijke groet|best|kind regards),?\s*\n\s*andrew baeten\s*$", reviewed_body):
             counters["sender_identity_hold"] += 1
             continue
         # Legacy mail copy alone is not enough to personalize follow-ups.
