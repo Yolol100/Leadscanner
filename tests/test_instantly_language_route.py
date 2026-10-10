@@ -202,6 +202,40 @@ class TestLanguageRouting(unittest.TestCase):
         self.assertEqual(report["held_counts"]["personalization_evidence_hold"],1)
         self.assertFalse(api.calls)
 
+    def test_duplicate_first_mail_pair_is_held_for_both_recipients(self):
+        api=Fake()
+        other=deepcopy(ROW)
+        other["id"]="22222222-2222-2222-2222-222222222222"
+        other["email"]="second@example.org"
+        other["payload"]["leadscanner_source_lead_id"]="growth-"+"b"*20
+        with patch("instantly_language_route.read_imported_leads",return_value=(LID,[ROW,other])),\
+             patch("instantly_language_route.fetch_live_registry",return_value=[]),\
+             patch("instantly_language_route.blocked_values",return_value=set()):
+            result=route_exact_language(api,language="nl",campaign_id=CID,max_leads=2,dry_run=True)
+        self.assertEqual(result["eligible_candidate_count"],0)
+        self.assertEqual(result["held_counts"]["duplicate_first_mail_copy_hold"],2)
+        self.assertEqual(result["attempt_count"],0)
+        self.assertFalse(api.calls)
+        self.assertNotIn(BODY,str(result))
+        self.assertNotIn(other["email"],str(result))
+
+    def test_same_subject_with_genuinely_different_first_mail_is_not_deduped(self):
+        api=Fake()
+        other=deepcopy(ROW)
+        other["id"]="22222222-2222-2222-2222-222222222222"
+        other["email"]="second@example.org"
+        other["payload"]["leadscanner_source_lead_id"]="growth-"+"b"*20
+        other["payload"]["leadscanner_body"]=BODY.replace(
+            "dacht aan een klein idee.", "dacht aan jullie afspraakformulier.")
+        with patch("instantly_language_route.read_imported_leads",return_value=(LID,[ROW,other])),\
+             patch("instantly_language_route.fetch_live_registry",return_value=[]),\
+             patch("instantly_language_route.blocked_values",return_value=set()):
+            result=route_exact_language(api,language="nl",campaign_id=CID,max_leads=2,dry_run=True)
+        self.assertEqual(result["held_counts"]["duplicate_first_mail_copy_hold"],0)
+        self.assertEqual(result["eligible_candidate_count"],2)
+        self.assertEqual(result["attempt_count"],0)
+        self.assertFalse(api.calls)
+
     def test_wrong_target_id_language_and_size_fail_before_provider(self):
         api=Fake()
         for language,cid,size in [("de",CID,1),("nl","notuuid",1),("nl",CID,0),("nl",CID,251)]:
