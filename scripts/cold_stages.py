@@ -264,7 +264,7 @@ def safe_fetch_html(session, url: str, expected_domain: str, *, timeout: int = D
                 allow_redirects=False,
                 stream=True,
                 headers={
-                    "User-Agent": "WebactueelLeadscanner/2.0 (+https://andrewbaeten.nl)",
+                    "User-Agent": "Leadscanner/2.1 (+https://andrewbaeten.nl)",
                     "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
                     "Accept-Language": "nl-NL,nl;q=0.9,en;q=0.8",
                 },
