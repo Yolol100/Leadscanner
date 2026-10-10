@@ -311,6 +311,8 @@ def audit_two_campaign_options(client) -> dict:
             "language":language,
             "campaign_id":campaign_id,
             "draft":type(observed.get("status")) is int and observed["status"]==0,
+            "paused":type(observed.get("status")) is int and observed["status"]==2,
+            "non_sending_staging_state":type(observed.get("status")) is int and observed["status"] in {0,2},
             "sender_count":len(observed.get("email_list") or []),
             "setting_checks":states,
             "verified_setting_count":sum(value=="ok" for value in states.values()),
@@ -325,7 +327,7 @@ def audit_two_campaign_options(client) -> dict:
         "campaigns":items,
         "all_confirmed_settings_match":all(
             item["verified_setting_count"]==len(safety_expected)+len(limits_expected)
-            and item["draft"] and item["sender_count"]==0
+            and item["non_sending_staging_state"] and item["sender_count"]==0
             and item["schedule_matches_baseline"]
             for item in items
         ),
