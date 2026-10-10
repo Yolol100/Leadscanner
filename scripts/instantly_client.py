@@ -39,6 +39,8 @@ def approved_custom_variables(row: dict) -> dict[str, str]:
             raise ValueError("sequence_facts_must_not_include_mail_copy")
     elif not lead_id or not subject or not body:
         raise ValueError("reviewed_lead_copy_required")
+    if mode == "reviewed_mail" and "webactueel" in (subject+"\n"+body).casefold():
+        raise ValueError("reviewed_mail_obsolete_sender_brand_forbidden")
     variables = {
         "leadscanner_lead_id": lead_id,
         "leadscanner_review_status": "approved",
