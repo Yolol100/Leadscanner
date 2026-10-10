@@ -140,7 +140,9 @@ class Tests(unittest.TestCase):
                 timing={"from":"09:30","to":"16:30"}
                 if self.drift=="schedule" and lang=="nl":
                     timing["from"]="00:00"
-                return {"id":cid,"status":0,"email_list":[],"sequences":[{"steps":steps}],
+                status={"paused":2,"active":1,"boolean":True}.get(self.drift,0)
+                senders=["sender@example.org"] if self.drift=="sender" else []
+                return {"id":cid,"status":status,"email_list":senders,"sequences":[{"steps":steps}],
                     "daily_limit":10,"daily_max_leads":5,"email_gap":12,
                     "stop_on_reply":True,"stop_on_auto_reply":True,"stop_for_company":True,
                     "allow_risky_contacts":False,"open_tracking":False,"link_tracking":False,
@@ -151,6 +153,16 @@ class Tests(unittest.TestCase):
         good=audit_two_campaign_options(Provider("none"))
         self.assertTrue(good["all_confirmed_settings_match"])
         self.assertTrue(good["all_reviewed_copy_matches"])
+        paused=audit_two_campaign_options(Provider("paused"))
+        self.assertTrue(paused["all_confirmed_settings_match"])
+        self.assertTrue(paused["all_reviewed_copy_matches"])
+        self.assertTrue(all(item["paused"] and item["non_sending_staging_state"]
+                            and not item["draft"] for item in paused["campaigns"]))
+        for bad_state in ("active","boolean","sender"):
+            with self.subTest(bad_state=bad_state):
+                unsafe=audit_two_campaign_options(Provider(bad_state))
+                self.assertFalse(unsafe["all_confirmed_settings_match"])
+
         schedule=audit_two_campaign_options(Provider("schedule"))
         self.assertFalse(schedule["all_confirmed_settings_match"])
         copy=audit_two_campaign_options(Provider("copy"))
