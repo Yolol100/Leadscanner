@@ -18,8 +18,8 @@ from urllib.parse import quote
 
 from instantly_client import InstantlyClient, InstantlyError, SAFE_CAMPAIGN_STATUSES, inspect_campaign_sequence
 from instantly_service import DEFAULT_REGISTRY_URL, DEFAULT_REPOSITORY, fetch_live_registry, stage_exact_approved_lead
-from myhost_instantly_import import execute_migration, blocked_values
-from instantly_language_campaigns import audit_language_split
+from myhost_instantly_import import execute_migration, blocked_values, TARGET_LIST_ID, TARGET_LIST_NAME
+from instantly_language_campaigns import audit_language_split, read_imported_leads
 from instantly_mail_quality import mail_quality_audit
 from instantly_language_route import route_exact_language
 from instantly_launch_audit import audit_launch_inventory, audit_sender_vitals, audit_old_campaign_retirement, audit_two_campaign_options
@@ -42,7 +42,7 @@ WRITE_ACTIONS = {
     "delete_campaign", "update_lead", "delete_lead", "update_interest", "reply_email",
     "forward_email", "send_test_email", "mark_thread_read", "update_account",
     "mark_account_fixed", "pause_account", "resume_account", "enable_warmup", "disable_warmup",
-    "verify_email",
+    "verify_email", "rename_source_lead_list",
     "block_email", "block_domain", "delete_blocklist_entry", "stage_approved_lead", "import_myhost_drafts", "route_language_drafts",
 }
 SEND_ACTIONS = {"activate_campaign", "reply_email", "forward_email", "send_test_email"}
@@ -145,6 +145,7 @@ def load_command(path: str | Path) -> dict:
 def _confirmation_target(action: str, args: dict) -> str:
     direct = {
         "update_campaign": "campaign_id", "pause_campaign": "campaign_id",
+        "rename_source_lead_list": "list_id",
         "activate_campaign": "campaign_id", "delete_campaign": "campaign_id", "delete_unused_draft_campaign": "campaign_id", "archive_and_retire_old_campaign": "campaign_id",
         "update_lead": "lead_id", "delete_lead": "lead_id", "mark_thread_read": "thread_id",
         "update_account": "email", "mark_account_fixed": "email", "pause_account": "email", "resume_account": "email",
@@ -682,6 +683,43 @@ def _activate(
     return {"operation": operation, "readback": observed, "preflight_lead_count": len(leads), "preflight_sending_status": sending_status}
 
 
+def _rename_source_lead_list(client: InstantlyClient, args: dict) -> dict:
+    """Rename the exact existing unsendable import list, never moving a lead."""
+    lid = _text(args.get("list_id"))
+    old_name = _text(args.get("expected_name"))
+    expected_count = args.get("expected_count")
+    if lid != TARGET_LIST_ID or not old_name or old_name == TARGET_LIST_NAME:
+        raise ValueError("source_list_rename_identity_or_name_invalid")
+    if type(expected_count) is not int or expected_count < 1 or expected_count > 5000:
+        raise ValueError("source_list_rename_expected_count_required")
+    path = f"/lead-lists/{_id(lid, 'list_id')}"
+    before = _api(client, "GET", path) or {}
+    if _text(before.get("id")) != lid or _text(before.get("name")) != old_name:
+        raise RuntimeError("source_list_rename_current_identity_or_name_mismatch")
+    current_id, rows = read_imported_leads(client)
+    if current_id != lid or len(rows) != expected_count:
+        raise RuntimeError("source_list_rename_preflight_lead_count_mismatch")
+    old_ids = {_text(x.get("id")) for x in rows}
+    if len(old_ids) != len(rows) or not all(old_ids):
+        raise RuntimeError("source_list_rename_lead_identity_invalid")
+    # No retry on an unknown PATCH outcome. Read-only reconciliation can
+    # determine whether the rename happened without repeating the mutation.
+    _api(client, "PATCH", path, payload={"name": TARGET_LIST_NAME})
+    current = _api(client, "GET", path) or {}
+    if _text(current.get("id")) != lid or _text(current.get("name")) != TARGET_LIST_NAME:
+        raise RuntimeError("source_list_rename_provider_readback_mismatch")
+    after_id, after = read_imported_leads(client)
+    after_ids = {_text(x.get("id")) for x in after}
+    if after_id != lid or after_ids != old_ids or len(after) != expected_count:
+        raise RuntimeError("source_list_rename_leads_changed")
+    return {
+        "list_id": lid, "new_label": TARGET_LIST_NAME,
+        "lead_count_before": expected_count, "lead_count_after": len(after),
+        "lead_identities_unchanged": True,
+        "campaign_mutation": False, "lead_mutation": False, "automatic_send": False,
+    }
+
+
 def execute_command(command: dict, config: dict, client: InstantlyClient, *, run_attempt: str = "1") -> dict:
     validate_write_gate(command, config, run_attempt=run_attempt)
     action, args = command["action"], command["args"]
@@ -860,6 +898,8 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
         data = _api(client, "GET", f"/block-lists-entries/{_id(args.get('entry_id'), 'entry_id')}")
     elif action == "get_background_job":
         data = _api(client, "GET", f"/background-jobs/{_id(args.get('job_id'), 'job_id')}")
+    elif action == "rename_source_lead_list":
+        data = _rename_source_lead_list(client, args)
     elif action == "create_campaign_draft":
         payload = _payload(args)
         if not _text(payload.get("name")) or not isinstance(payload.get("campaign_schedule"), dict):

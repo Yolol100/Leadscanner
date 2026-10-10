@@ -39,6 +39,8 @@ def approved_custom_variables(row: dict) -> dict[str, str]:
             raise ValueError("sequence_facts_must_not_include_mail_copy")
     elif not lead_id or not subject or not body:
         raise ValueError("reviewed_lead_copy_required")
+    if mode == "reviewed_mail" and "webactueel" in (subject+"\n"+body).casefold():
+        raise ValueError("reviewed_mail_obsolete_sender_brand_forbidden")
     variables = {
         "leadscanner_lead_id": lead_id,
         "leadscanner_review_status": "approved",
@@ -75,6 +77,7 @@ def approved_custom_variables(row: dict) -> dict[str, str]:
         variables.update({
             "leadscanner_observation": observation,
             "leadscanner_evidence_url": evidence_url,
+            "leadscanner_evidence_source_type": "official_site",
             "leadscanner_value_action": value_action,
         })
         if signal_type:
@@ -192,14 +195,14 @@ def inspect_campaign_sequence(campaign: dict) -> dict:
 
 
 
-def _optional_guarded_evidence_fields(campaign: dict) -> set[str]:
+def _optional_guarded_evidence_fields(campaign: dict, variables: dict[str, str]) -> set[str]:
     """Permit optional first-party variables only in their true Liquid branch.
 
     If the optional value is absent, neither the fallback nor the rest of the
     email may reference it. Match merge fields with Instantly's whitespace
     tolerant syntax; reject nested/unrecognized guards rather than guessing.
     """
-    optional = {"leadscanner_observation", "leadscanner_value_action"}
+    guarded_optional: set[str] = set()
     variable = re.compile(r"\{\{\s*(leadscanner_observation|leadscanner_value_action)\s*\}\}")
     guard = re.compile(
         r"\{%\s*if\s+(?P<cond>leadscanner_observation(?:\s+and\s+leadscanner_value_action)?)\s*%\}"
@@ -217,14 +220,16 @@ def _optional_guarded_evidence_fields(campaign: dict) -> set[str]:
                     false_branch = block.group("no") or ""
                     if "{%" in true_branch or "{%" in false_branch:
                         raise ValueError("campaign_optional_liquid_guard_invalid")
-                    if any(match.group(1) not in permitted for match in variable.finditer(true_branch)):
+                    true_fields = {match.group(1) for match in variable.finditer(true_branch)}
+                    if any(field not in permitted for field in true_fields):
                         raise ValueError("campaign_optional_liquid_guard_invalid")
+                    guarded_optional.update(true_fields)
                     if variable.search(false_branch):
                         raise ValueError("campaign_personalization_variable_missing:optional_evidence_unprotected")
                     remaining = remaining[:block.start()] + remaining[block.end():]
-                if variable.search(remaining):
+                if any(not variables.get(match.group(1)) for match in variable.finditer(remaining)):
                     raise ValueError("campaign_personalization_variable_missing:optional_evidence_unprotected")
-    return optional
+    return guarded_optional
 
 
 def validate_campaign_personalization(
@@ -242,11 +247,12 @@ def validate_campaign_personalization(
     # Optional evidence guards are meaningful only for a reviewed-copy template.
     # Keep older missing/unmapped-field failure codes stable for evidence-only ones.
     # Optional verified observation/action may appear in guarded Liquid follow-ups.
-    # Legacy imported draft leads have reviewed subject/body but no source fact fields.
-    # Every optional merge must be inside its exact guard, never leak as a blank token.
+    # Legacy optional fact references remain supported only inside true Liquid
+    # branches; mandatory unguarded fact placeholders must have verified values.
+    # Never allow optional merge references to leak as blank tokens.
     optional: set[str] = set()
     if review_mode == "reviewed_mail" and {"leadscanner_subject", "leadscanner_body"} <= referenced:
-        optional = _optional_guarded_evidence_fields(campaign)
+        optional = _optional_guarded_evidence_fields(campaign, variables)
     if any(not variables.get(name) for name in referenced - optional):
         raise ValueError("campaign_personalization_variable_missing")
     if report["unresolved_template_variables"]:

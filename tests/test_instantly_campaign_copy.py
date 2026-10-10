@@ -28,17 +28,23 @@ class Tests(unittest.TestCase):
             self.assertGreater(steps[1]["delay"],0)
             self.assertEqual(steps[2]["delay"],0)
 
-    def test_liquid_guard_and_fallback_for_missing_legacy_data(self):
+    def test_both_followups_require_per_recipient_verified_evidence(self):
         for language in LANGS:
-            one,two=campaign_steps(language)[1:]
-            body=one["variants"][0]["body"]
-            self.assertIn("{% if leadscanner_observation and leadscanner_value_action %}",body)
-            self.assertIn("{% else %}",body)
-            self.assertIn("{% endif %}",body)
-            self.assertEqual(body.count("{{leadscanner_observation}}"),1)
-            self.assertEqual(body.count("{{leadscanner_value_action}}"),1)
-            self.assertIn("{% if leadscanner_observation %}",two["variants"][0]["body"])
-            self.assertIn("{% endif %}",two["variants"][0]["body"])
+            step_2, step_3 = campaign_steps(language)[1:]
+            two = step_2["variants"][0]["body"]
+            three = step_3["variants"][0]["body"]
+            self.assertEqual(two.count("{{leadscanner_observation}}"), 1)
+            self.assertEqual(two.count("{{leadscanner_value_action}}"), 1)
+            self.assertEqual(three.count("{{leadscanner_observation}}"), 1)
+            self.assertNotIn("{{leadscanner_value_action}}", three)
+            self.assertNotIn("{%", two + three)
+            self.assertEqual(two.count("?"), 1)
+            self.assertEqual(three.count("?"), 0)
+            for text in (two, three):
+                self.assertIn("Andrew Baeten", text)
+                self.assertLess(len(text.split()), 120)
+                self.assertTrue(text.rstrip().endswith("Andrew Baeten"))
+
     def test_auto_route_by_reviewed_text_only(self):
         from instantly_campaign_copy import AUTO_CAMPAIGN_ID,TARGET_CAMPAIGNS,resolve_language_destination
         class Provider:
@@ -75,10 +81,10 @@ class Tests(unittest.TestCase):
     def test_fact_cta_avoids_repeated_example_phrases(self):
         nl=campaign_steps("nl")[1]["variants"][0]["body"]
         en=campaign_steps("en")[1]["variants"][0]["body"]
-        self.assertIn("maken, zodat je ziet wat ik bedoel",nl)
-        self.assertIn("prepare {{leadscanner_value_action}} to make the idea tangible",en)
-        self.assertNotIn("als kort voorbeeld",nl)
-        self.assertNotIn("as a short example",en)
+        self.assertIn("{{leadscanner_value_action}} maken om mijn idee concreet",nl)
+        self.assertIn("prepare {{leadscanner_value_action}} to make the idea concrete",en)
+        self.assertNotIn("een kort voorbeeld maken",nl)
+        self.assertNotIn("a short example to prepare",en)
 
     def test_copy_quality_and_contact_handling(self):
         for lang in LANGS:
@@ -87,7 +93,7 @@ class Tests(unittest.TestCase):
                 body=step["variants"][0]["body"]
                 assert re.search(r"(?i)Andrew",body)
                 self.assertIn("Andrew Baeten",body)
-                self.assertNotIn("Webactueel",body)
+                self.assertNotIn("Andrew\\n",body)
                 self.assertLess(len(body.split()),125)
                 self.assertNotIn("€",body)
                 self.assertNotIn("ROI",body)
@@ -95,6 +101,7 @@ class Tests(unittest.TestCase):
             self.assertEqual(settings["email_list"],[])
             self.assertTrue(settings["stop_on_reply"])
             self.assertFalse(settings["open_tracking"])
+            self.assertFalse(settings["link_tracking"])
             self.assertTrue(settings["insert_unsubscribe_header"])
             self.assertNotIn("Geen interesse?",steps[1]["variants"][0]["body"])
     def test_exact_campaign_ids_and_names_are_kept_in_both_routers(self):
@@ -129,7 +136,7 @@ class Tests(unittest.TestCase):
                     "sequences": [{"steps": campaign_steps("nl")}],
                 }
                 return {**baseline, **self.override}
-        for override in ({"status": 1}, {"status": 2}, {"name": "Webactueel NL - Websiteadvies (Concept)"}):
+        for override in ({"status": 1}, {"status": 2}, {"name": "Incorrect NL campaign name"}):
             with self.subTest(override=override):
                 with self.assertRaisesRegex(ValueError, "auto_language_requires_matching_draft"):
                     resolve_language_destination(Provider(override), row, AUTO_CAMPAIGN_ID)

@@ -1,7 +1,8 @@
 """One auditable NL/EN three-step Instantly sequence for reviewed Andrew Baeten leads.
 
-First message is the EXACT lead-specific approved copy. Optional first-party
-observation/action enhance follow-ups, with generic fallbacks for legacy leads.
+First message is the EXACT lead-specific approved copy. Verified first-party
+observation/action are required before any target-campaign staging; both
+follow-ups refer to the actual recipient's verified observation.
 No facts, results, testimonials or contact permissions are manufactured.
 """
 from __future__ import annotations
@@ -9,27 +10,25 @@ from __future__ import annotations
 NL = {
  "step_2": """Hoi,
 
-Ik kom nog even terug op mijn bericht over jullie website.
-{% if leadscanner_observation and leadscanner_value_action %}
-Wat ik concreet zag: {{leadscanner_observation}}
-Ik kan {{leadscanner_value_action}} maken, zodat je ziet wat ik bedoel.
-{% else %}
-Ik kan in een paar regels laten zien welke 2–3 onderdelen ik als eerste zou bekijken.
-{% endif %}
+Ik kom nog even terug op mijn eerdere bericht. Op jullie website zag ik dit:
+
+"{{leadscanner_observation}}"
+
+Ik kan {{leadscanner_value_action}} maken om mijn idee concreet te laten zien.
 
 Zal ik dat kort toesturen?
 
-Groet,
-Andrew Baeten
+Als dit niet relevant is, antwoord gerust met 'nee'; dan stop ik.
 
-Als dit niet relevant is, antwoord gerust met 'nee'; dan stop ik.""",
+Groet,
+Andrew Baeten""",
  "step_3": """Hoi,
 
-Dit is mijn laatste bericht hierover.
-{% if leadscanner_observation %}
-Mijn eerdere opmerking over {{leadscanner_observation}} is vooral een mogelijk aanknopingspunt, geen oordeel over jullie website.
-{% endif %}
-Mocht je later behoefte hebben aan een kleine, concrete verbeterschets, dan kun je eenvoudig op dit bericht reageren. Anders laat ik het hierbij.
+Dit is mijn laatste bericht. Mijn idee kwam voort uit dit onderdeel van jullie website:
+
+"{{leadscanner_observation}}"
+
+Dat is slechts een mogelijk aanknopingspunt, geen oordeel over jullie huidige aanpak. Mocht een kort voorbeeld later nuttig zijn, dan kun je eenvoudig reageren. Anders laat ik het hierbij.
 
 Groet,
 Andrew Baeten""",
@@ -37,27 +36,25 @@ Andrew Baeten""",
 EN = {
  "step_2": """Hi,
 
-Just following up on my note about your website.
-{% if leadscanner_observation and leadscanner_value_action %}
-What caught my eye: {{leadscanner_observation}}
-I can prepare {{leadscanner_value_action}} to make the idea tangible.
-{% else %}
-I could outline the first 2–3 areas I'd look at, in a few short lines.
-{% endif %}
+Just following up on my earlier note. This was the detail I noticed on your website:
 
-Would you like me to send that over?
+"{{leadscanner_observation}}"
+
+I can prepare {{leadscanner_value_action}} to make the idea concrete.
+
+Would you like me to email that over?
+
+If it's not relevant, just reply 'no' and I'll stop.
 
 Best,
-Andrew Baeten
-
-If it's not relevant, just reply 'no' and I'll leave it there.""",
+Andrew Baeten""",
  "step_3": """Hi,
 
-This is my last note about this.
-{% if leadscanner_observation %}
-My earlier comment about {{leadscanner_observation}} was simply one possible starting point, not a judgment on your website.
-{% endif %}
-If a small, concrete improvement sketch would ever be useful, you can just reply. Otherwise I'll leave it there.
+This is my last note. My earlier idea came from this detail on your website:
+
+"{{leadscanner_observation}}"
+
+It's just a possible starting point, not a judgment on your current approach. If a short example would be useful later, feel free to reply. Otherwise I'll leave it here.
 
 Best,
 Andrew Baeten""",
@@ -157,6 +154,8 @@ def resolve_language_destination(client, row: dict, requested_campaign_id: str) 
     body=row.get("body")
     if not isinstance(subject,str) or not isinstance(body,str) or not subject.strip() or not body.strip():
         raise ValueError("auto_language_requires_reviewed_copy")
+    if "webactueel" in (subject+"\n"+body).casefold():
+        raise ValueError("reviewed_mail_obsolete_sender_brand_forbidden")
     # Avoid cycles through the existing mijn.host migration adapter.
     from instantly_language_campaigns import classify_language
     lang=classify_language(subject,body)

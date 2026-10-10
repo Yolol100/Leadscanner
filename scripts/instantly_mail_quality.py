@@ -11,7 +11,7 @@ from instantly_language_campaigns import classify_language, read_imported_leads
 UNRESOLVED=re.compile(r"\{\{[^}]{1,100}\}\}|\[(?:bedrijf|company|naam|name|website|voornaam|first.?name)\]",re.I)
 OPT_OUT_NL=("geen interesse","niet relevant","geen behoefte","niet geïnteresseerd","laat het weten als")
 OPT_OUT_EN=("not interested","not relevant","no thanks","no interest","let me know if this")
-SENDER=("andrew","webactueel")
+SENDER=("andrew baeten",)
 def mail_quality_audit(client) -> dict:
     source_id, rows = read_imported_leads(client)
     counts=Counter()
@@ -48,6 +48,14 @@ def mail_quality_audit(client) -> dict:
             counts["questions_three_or_more"] += 1
             counts["not_exactly_one_question"] += 1
         lower=body.casefold()
+        if "webactueel" in (subj+"\n"+body).casefold():
+            counts["legacy_brand_in_copy"]+=1
+        if "andrew baeten" not in lower:
+            counts["missing_andrew_baeten_signature"]+=1
+        if not all(isinstance(payload.get(key),str) and payload[key].strip() for key in (
+            "leadscanner_observation","leadscanner_value_action","leadscanner_evidence_url"
+        )):
+            counts["missing_verified_followup_fields"]+=1
         if not any(v in lower for v in SENDER):counts["no_sender_identification"]+=1
         if not any(v in lower for v in (OPT_OUT_NL if lang=="nl" else OPT_OUT_EN)):counts["no_obvious_optout_phrase"]+=1
         if payload.get("leadscanner_observation") and payload.get("leadscanner_value_action"):
@@ -63,6 +71,8 @@ def mail_quality_audit(client) -> dict:
         "mail_review_flags":{
             k:counts[k] for k in (
                 "missing_subject_or_body","short_under_35_words","long_over_130_words",
+                "legacy_brand_in_copy","missing_andrew_baeten_signature",
+                "missing_verified_followup_fields",
                 "subject_over_65_chars","unresolved_template_markers",
                 "not_exactly_one_question","no_sender_identification",
                 "no_obvious_optout_phrase",

@@ -13,7 +13,7 @@ outreach can legally be sent**.
 
 | Property | NL | EN |
 |---|---|---|
-| Exact campaign | Webactueel NL - Websiteadvies (Concept) | Webactueel EN - Website Advice (Draft) |
+| Exact campaign | Websiteadvies NL | Websiteadvies EN |
 | ID | `5c720281-fd07-4c47-8155-c88d7d3c09b8` | `fd405145-4bf5-40c5-b6ae-2e7f5af6120c` |
 | Instantly status | Draft (0) | Draft (0) |
 | Email steps / variants | 3 / 3 | 3 / 3 |

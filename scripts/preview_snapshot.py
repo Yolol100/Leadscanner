@@ -141,7 +141,7 @@ def _github_headers(token: str) -> dict:
         "Accept": "application/vnd.github+json",
         "Authorization": f"Bearer {token}",
         "X-GitHub-Api-Version": API_VERSION,
-        "User-Agent": "WebactueelLeadscanner/preview-resume",
+        "User-Agent": "Leadscanner/preview-resume",
     }
 
 

@@ -1,4 +1,4 @@
-"""Read-only private-data-safe go-live inventory for Webactueel Instantly.
+"""Read-only private-data-safe go-live inventory for Andrew Baeten Instantly.
 
 Exports no recipient addresses, sender emails, email copy, credentials or full
 provider responses. Names and IDs of campaigns are operationally necessary to

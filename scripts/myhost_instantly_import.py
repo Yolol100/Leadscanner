@@ -19,7 +19,9 @@ from myhost_draft import (
     normalize_text, plain_body, select_folder,
 )
 
-TARGET_LIST_NAME = "Webactueel - mijn.host concepten - NIET VERZENDEN"
+TARGET_LIST_NAME = "Andrew Baeten - mijn.host concepten - NIET VERZENDEN"
+# Fixed provider ID preserves identity of the 1,128 existing source-list leads.
+TARGET_LIST_ID = "24deb187-59e0-43b5-86b8-fe37a7b21e2a"
 MAX_SOURCE_DRAFTS = 20000
 MAX_IMPORT_DRAFTS = 5000
 MAX_BLOCKLIST_ROWS = 20000
@@ -36,7 +38,8 @@ def _text(value: object) -> str:
 
 def extract_lead_draft(msg, *, sender: str) -> dict | None:
     """None means a non-Leadscanner draft; tagged but invalid drafts are rejected."""
-    lead_id = _text(msg.get("X-Webactueel-Lead-ID", "")).casefold()
+    from myhost_draft import lead_id_from_message
+    lead_id = _text(lead_id_from_message(msg)).casefold()
     if not lead_id:
         return None
     if not LEAD_ID_RE.fullmatch(lead_id):
@@ -74,10 +77,14 @@ def read_source_drafts(*, connector=connect_imap) -> dict:
         folder = find_drafts_folder(client)
         select_folder(client, folder, readonly=True)
         # Search only tagged Leadscanner drafts; unrelated mailbox drafts stay unread.
-        status, data = client.uid("search", None, "HEADER", "X-Webactueel-Lead-ID", "growth-")
-        if status != "OK" or not isinstance(data, list):
-            raise RuntimeError("imap_uid_search_failed")
-        uids = (data[0] or b"").split() if data else []
+        from myhost_draft import LEAD_ID_HEADERS
+        found_uids = set()
+        for header in LEAD_ID_HEADERS:
+            status, data = client.uid("search", None, "HEADER", header, "growth-")
+            if status != "OK" or not isinstance(data, list):
+                raise RuntimeError("imap_uid_search_failed")
+            found_uids.update((data[0] or b"").split() if data else [])
+        uids = sorted(found_uids, key=int)
         if len(uids) > MAX_SOURCE_DRAFTS:
             raise RuntimeError("source_draft_limit_exceeded")
         rows, untagged, invalid_tagged = [], 0, 0
@@ -184,8 +191,8 @@ def workspace_contains(client: InstantlyClient, email: str) -> bool:
 def matching_list_ids(client: InstantlyClient) -> list[str]:
     matches = []
     for row in _iter_pages(client, "/lead-lists", max_rows=10000):
-        if _text(row.get("name")) == TARGET_LIST_NAME:
-            list_id = _text(row.get("id"))
+        list_id = _text(row.get("id"))
+        if _text(row.get("name")) == TARGET_LIST_NAME or list_id == TARGET_LIST_ID:
             if not list_id:
                 raise RuntimeError("matching_list_missing_id")
             matches.append(list_id)

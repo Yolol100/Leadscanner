@@ -32,11 +32,41 @@ class OutreachStagesTests(unittest.TestCase):
             self.assertIn(obs,mail)
             self.assertIn(action,mail)
             self.assertEqual(mail.count("?"),1)
-            self.assertIn("Webactueel",mail)
+            self.assertIn("Andrew Baeten",mail)
+            self.assertNotIn("Andrew\\n",mail)
             self.assertLess(len(mail.split()),100)
             self.assertNotIn("ROI",mail)
             self.assertNotIn("guarantee",mail.lower())
 
+
+    def test_ambiguous_website_language_is_held_regardless_of_domain(self):
+        from unittest.mock import patch
+        from outreach_stages import detect_language, select_one_reason
+        candidate = {"official_domain": "example.nl", "research_status": "ready",
+                     "evidence_candidates": [{"text": "Customers can book an appointment online via our booking form.",
+                                              "source_type": "official_site",
+                                              "source_url": "https://example.nl/booking",
+                                              "page_type": "process"}]}
+        self.assertEqual(detect_language(candidate, "ZXQ-4519"), "unknown")
+        with patch("outreach_stages.detect_language", return_value="unknown"):
+            selected = select_one_reason(candidate)
+        self.assertEqual(selected["outreach_status"], "hold")
+        self.assertEqual(selected["outreach_hold_reason"], "observation_language_ambiguous")
+
+    def test_generated_first_mail_has_only_andrew_baeten_branding(self):
+        from outreach_stages import body_for
+        for language, observation, action in (
+            ("nl", "Klanten kunnen online een afspraak maken.",
+             "een korte voorbeeldvariant voor de afspraakroute"),
+            ("en", "Customers can book an appointment online.",
+             "a short example for the booking flow"),
+        ):
+            body = body_for({"language": language,
+                             "verified_observation": observation,
+                             "value_first_action": action})
+            self.assertEqual(body.count("Andrew Baeten"), 1)
+            self.assertTrue(body.endswith("Andrew Baeten"))
+            self.assertEqual(body.count("?"), 1)
 
     def test_sequence_facts_skip_per_lead_mail_generation(self):
         source = {

@@ -117,6 +117,32 @@ def stable_lead_id(row: dict) -> str:
     return existing
 
 
+# New messages use neutral Leadscanner tags; old IMAP drafts retain legacy
+# X-* tags as read-only identity aliases until their source is migrated.
+LEAD_ID_HEADER = "X-Leadscanner-Lead-ID"
+LEGACY_LEAD_ID_HEADER = "X-Webactueel-Lead-ID"
+LEAD_ID_HEADERS = (LEAD_ID_HEADER, LEGACY_LEAD_ID_HEADER)
+REVIEW_HEADER = "X-Leadscanner-Review-Required"
+LEGACY_REVIEW_HEADER = "X-Webactueel-Review-Required"
+REVIEW_HEADERS = (REVIEW_HEADER, LEGACY_REVIEW_HEADER)
+
+
+def _canonical_tagged_value(msg: EmailMessage, headers: tuple[str, ...]) -> str:
+    values = {normalize_text(msg.get(header, "")) for header in headers
+              if normalize_text(msg.get(header, ""))}
+    if len(values) > 1:
+        raise RuntimeError("conflicting_historical_draft_headers")
+    return next(iter(values), "")
+
+
+def lead_id_from_message(msg: EmailMessage) -> str:
+    return _canonical_tagged_value(msg, LEAD_ID_HEADERS)
+
+
+def review_status_from_message(msg: EmailMessage) -> str:
+    return _canonical_tagged_value(msg, REVIEW_HEADERS)
+
+
 def build_message(row: dict) -> tuple[str, EmailMessage]:
     status = str(row.get("status") or "")
     basis = str(row.get("contact_basis_status") or "")
@@ -143,9 +169,9 @@ def build_message(row: dict) -> tuple[str, EmailMessage]:
     msg["Subject"] = subject
     msg["Date"] = formatdate(localtime=True)
     msg["Message-ID"] = make_msgid(domain=sender_email.split("@")[-1] if "@" in sender_email else None)
-    msg["X-Webactueel-Lead-ID"] = lead_id
+    msg[LEAD_ID_HEADER] = lead_id
     if status == "review_draft":
-        msg["X-Webactueel-Review-Required"] = "contact-basis"
+        msg[REVIEW_HEADER] = "contact-basis"
     msg.set_content(body)
     return lead_id, msg
 
@@ -221,10 +247,13 @@ def select_folder(client, folder: str, *, readonly: bool = True) -> None:
 def find_message_ids(client, folder: str, lead_id: str, *, ensure_selected: bool = True) -> list[bytes]:
     if ensure_selected:
         select_folder(client, folder)
-    status, data = client.search(None, "HEADER", "X-Webactueel-Lead-ID", f'"{lead_id}"')
-    if status != "OK":
-        raise RuntimeError(f"Could not search draft readback for {lead_id}")
-    return list((data[0] if data else b"").split())
+    matches = set()
+    for header in LEAD_ID_HEADERS:
+        status, data = client.search(None, "HEADER", header, f'"{lead_id}"')
+        if status != "OK":
+            raise RuntimeError(f"Could not search draft readback for {lead_id}")
+        matches.update((data[0] if data else b"").split())
+    return sorted(matches, key=int)
 
 
 def fetch_message(client, message_id: bytes) -> EmailMessage:
@@ -248,10 +277,8 @@ def exact_message_matches(actual: EmailMessage, expected: EmailMessage) -> bool:
     return (
         normalize_text(actual.get("To", "")) == normalize_text(expected.get("To", ""))
         and normalize_text(actual.get("Subject", "")) == normalize_text(expected.get("Subject", ""))
-        and normalize_text(actual.get("X-Webactueel-Lead-ID", ""))
-        == normalize_text(expected.get("X-Webactueel-Lead-ID", ""))
-        and normalize_text(actual.get("X-Webactueel-Review-Required", ""))
-        == normalize_text(expected.get("X-Webactueel-Review-Required", ""))
+        and lead_id_from_message(actual) == lead_id_from_message(expected)
+        and review_status_from_message(actual) == review_status_from_message(expected)
         and plain_body(actual) == plain_body(expected)
     )
 
@@ -269,13 +296,11 @@ def require_existing_drafts(
                 f"rewrite-existing-only requires exactly one existing draft for {lead_id}, found {len(existing)}"
             )
         actual = fetch_message(client, existing[0])
-        if normalize_text(actual.get("X-Webactueel-Lead-ID", "")) != lead_id:
+        if lead_id_from_message(actual) != lead_id:
             raise RuntimeError(f"Existing draft identity mismatch for {lead_id}")
         if normalize_text(actual.get("To", "")) != normalize_text(expected.get("To", "")):
             raise RuntimeError(f"Existing draft recipient mismatch for {lead_id}")
-        if normalize_text(actual.get("X-Webactueel-Review-Required", "")) != normalize_text(
-            expected.get("X-Webactueel-Review-Required", "")
-        ):
+        if review_status_from_message(actual) != review_status_from_message(expected):
             raise RuntimeError(f"Existing draft review status mismatch for {lead_id}")
 
 
@@ -340,7 +365,7 @@ def append_and_verify(client, folder: str, lead_id: str, msg: EmailMessage, *, r
 
         if existing:
             current_old = fetch_message_uid(client, existing_uid)
-            if normalize_text(current_old.get("X-Webactueel-Lead-ID", "")) != lead_id:
+            if lead_id_from_message(current_old) != lead_id:
                 raise RuntimeError(f"Existing draft identity changed before replacement for {lead_id}")
             if not exact_message_matches(current_old, existing_snapshot):
                 raise RuntimeError(f"Existing draft changed before target-only replacement for {lead_id}")
@@ -439,9 +464,7 @@ def create_drafts(batch: dict, *, rewrite_existing_only: bool = False, reject_ch
                         "to": normalize_text(actual.get("To", "")),
                         "subject": normalize_text(actual.get("Subject", "")),
                         "body": plain_body(actual),
-                        "review_status": normalize_text(
-                            actual.get("X-Webactueel-Review-Required", "")
-                        ) or "not-required",
+                        "review_status": review_status_from_message(actual) or "not-required",
                         "outcome": outcome,
                     }
                 )

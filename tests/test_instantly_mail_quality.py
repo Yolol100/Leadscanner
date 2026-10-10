@@ -5,19 +5,34 @@ from instantly_mail_quality import mail_quality_audit
 class Tests(unittest.TestCase):
     def test_aggregates_and_redacts_sensitive_copy(self):
         rows=[{"email":"private@company.example","payload":{
-            "leadscanner_subject":"Een vraag over uw website","leadscanner_body":"Hallo, ik bekeek jullie website. Ik heb een idee en stuur graag een kort voorbeeld. Is dat interessant? Groet, Andrew van Webactueel. Geen interesse, laat het me weten.",
+            "leadscanner_subject":"Een vraag over uw website","leadscanner_body":"Hallo, ik bekeek jullie website. Ik heb een idee en stuur graag een kort voorbeeld. Is dat interessant? Groet, Andrew Baeten. Geen interesse, laat het me weten.",
             "leadscanner_contact_basis":"review_required"}},
             {"email":"private2@company.example","payload":{
-            "leadscanner_subject":"A question","leadscanner_body":"Hello, I saw your website and had an idea about the content. Would you like to see a short example? Best, Andrew from Webactueel. Not interested is fine."}}]
+            "leadscanner_subject":"A question","leadscanner_body":"Hello, I saw your website and had an idea about the content. Would you like to see a short example? Best, Andrew Baeten. Not interested is fine."}}]
         with patch("instantly_mail_quality.read_imported_leads",return_value=("source123",rows)):
             out=mail_quality_audit(object())
         self.assertEqual(out["source_count"],2)
         self.assertEqual(out["documented_contact_basis_count"],0)
+        self.assertEqual(out["mail_review_flags"]["legacy_brand_in_copy"],0)
+        self.assertEqual(out["mail_review_flags"]["missing_andrew_baeten_signature"],0)
+        self.assertEqual(out["mail_review_flags"]["missing_verified_followup_fields"],2)
         self.assertEqual(out["question_count_distribution"]["one"],2)
         self.assertEqual(sum(out["question_count_distribution"].values()),2)
         self.assertFalse(out["writes"])
         self.assertNotIn("private@",str(out))
         self.assertNotIn("I saw your website",str(out))
+    def test_legacy_brand_is_counted_without_exposing_recipient_copy(self):
+        old_brand="Web"+"actueel"
+        item={"email":"private@example.org","payload":{
+            "leadscanner_subject":"Vraag over website",
+            "leadscanner_body":"Hoi, dit gaat over je site. Groet, Andrew van "+old_brand,
+        }}
+        with patch("instantly_mail_quality.read_imported_leads",return_value=("safe-list",[item])):
+            result=mail_quality_audit(object())
+        self.assertEqual(result["mail_review_flags"]["legacy_brand_in_copy"],1)
+        self.assertEqual(result["mail_review_flags"]["missing_andrew_baeten_signature"],1)
+        self.assertNotIn("private@example.org",str(result))
+
     def test_missing_copy_and_unresolved_token_count(self):
         rows=[{"payload":{"leadscanner_subject":"Idea {{firstName}}",
              "leadscanner_body":"Hello, website {{company}}"}},

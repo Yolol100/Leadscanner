@@ -96,6 +96,13 @@ def approval_for(target):
 
 
 class InstantlyClientTests(unittest.TestCase):
+    def test_reviewed_first_mail_never_contains_obsolete_sender_brand(self):
+        from instantly_client import approved_custom_variables
+        row=dict(approved_batch()["rows"][0])
+        row["body"]="Hi, regards from Andrew / "+"Web"+"actueel."
+        with self.assertRaisesRegex(ValueError, "obsolete_sender_brand_forbidden"):
+            approved_custom_variables(row)
+
     def test_nested_liquid_in_verified_website_observation_is_blocked(self):
         from instantly_client import approved_custom_variables
         for malicious in (
@@ -451,17 +458,46 @@ class InstantlyClientTests(unittest.TestCase):
             )
         self.assertFalse(any(m=="POST" and u.endswith("/leads") for m,u,_ in session.calls))
 
-    def test_legacy_copy_can_use_guarded_optional_fact_fields(self):
+    def test_new_campaign_requires_verified_facts_for_both_followups(self):
         from instantly_campaign_copy import campaign_steps
         from instantly_client import validate_campaign_personalization
         for lang in ("nl", "en"):
-            c={"id":"draft-id","status":0,"sequences":[{"steps":campaign_steps(lang)}]}
-            validate_campaign_personalization(
-                c, {"leadscanner_subject":"approved subject","leadscanner_body":"approved body"},
-                review_mode="reviewed_mail",
-            )
+            c = {"id": "draft-id", "status": 0,
+                 "sequences": [{"steps": campaign_steps(lang)}]}
+            with self.subTest(lang=lang):
+                with self.assertRaisesRegex(ValueError, "optional_evidence_unprotected"):
+                    validate_campaign_personalization(
+                        c, {"leadscanner_subject": "Reviewed subject",
+                            "leadscanner_body": "Reviewed mail"},
+                        review_mode="reviewed_mail",
+                    )
+                validate_campaign_personalization(
+                    c, {"leadscanner_subject": "Reviewed subject",
+                        "leadscanner_body": "Reviewed mail",
+                        "leadscanner_observation": "Customers can request a quote via the form.",
+                        "leadscanner_value_action": "a short example of the quote flow"},
+                    review_mode="reviewed_mail",
+                )
 
-    def test_unprotected_optional_fact_field_rejected_for_reviewed_copy(self):
+    def test_legacy_guarded_fallback_stays_safe_if_ever_inspected(self):
+        from instantly_campaign_copy import campaign_steps
+        from instantly_client import validate_campaign_personalization
+        steps = campaign_steps("en")
+        steps[1]["variants"][0]["body"] = (
+            "{% if leadscanner_observation and leadscanner_value_action %}"
+            "{{leadscanner_observation}}: {{leadscanner_value_action}}"
+            "{% else %}One generic line{% endif %}"
+        )
+        steps[2]["variants"][0]["body"] = "Closing with no optional merge fields"
+        target = {"id": "draft-id", "status": 0,
+                  "sequences": [{"steps": steps}]}
+        validate_campaign_personalization(
+            target, {"leadscanner_subject": "Reviewed subject",
+                     "leadscanner_body": "Reviewed mail"},
+            review_mode="reviewed_mail",
+        )
+
+    def test_missing_unguarded_fact_field_rejected_for_reviewed_copy(self):
         from instantly_campaign_copy import campaign_steps
         from instantly_client import validate_campaign_personalization
         steps=campaign_steps("nl")

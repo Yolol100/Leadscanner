@@ -136,6 +136,56 @@ def activation_approval_for(client):
 
 class InstantlyControlTests(unittest.TestCase):
 
+    def test_source_list_rebrand_preserves_exact_lead_identities_and_never_sends(self):
+        from instantly_control import _rename_source_lead_list
+        from myhost_instantly_import import TARGET_LIST_ID, TARGET_LIST_NAME
+
+        class Provider:
+            def __init__(self):
+                self.name = "Previous company source list"
+                self.calls = []
+            def _request(self, method, path, **kwargs):
+                self.calls.append((method, path, kwargs.get("json")))
+                if method == "GET":
+                    return {"id": TARGET_LIST_ID, "name": self.name}
+                if method == "PATCH":
+                    self.name = kwargs["json"]["name"]
+                    return {"id": TARGET_LIST_ID, "name": self.name}
+                raise AssertionError("unsupported provider mutation")
+
+        client = Provider()
+        records = [{"id": "lead-1"}, {"id": "lead-2"}]
+        args = {"list_id": TARGET_LIST_ID,
+                "expected_name": client.name, "expected_count": 2}
+        with patch("instantly_control.read_imported_leads",
+                   return_value=(TARGET_LIST_ID, records)):
+            result = _rename_source_lead_list(client, args)
+        self.assertEqual(client.name, TARGET_LIST_NAME)
+        self.assertEqual(result["lead_count_before"], 2)
+        self.assertEqual(result["lead_count_after"], 2)
+        self.assertTrue(result["lead_identities_unchanged"])
+        self.assertFalse(result["lead_mutation"])
+        self.assertFalse(result["automatic_send"])
+        self.assertEqual([method for method, _, _ in client.calls],["GET","PATCH","GET"])
+
+    def test_source_list_rebrand_fails_closed_on_unexpected_state(self):
+        from instantly_control import _rename_source_lead_list
+        from myhost_instantly_import import TARGET_LIST_ID
+
+        class Provider:
+            def __init__(self):
+                self.writes = 0
+            def _request(self, method, path, **kwargs):
+                if method != "GET":
+                    self.writes += 1
+                return {"id": TARGET_LIST_ID, "name": "Unexpected name"}
+
+        client = Provider()
+        with self.assertRaisesRegex(RuntimeError,"identity_or_name_mismatch"):
+            _rename_source_lead_list(client,{"list_id":TARGET_LIST_ID,
+                "expected_name":"Other name","expected_count":1128})
+        self.assertEqual(client.writes, 0)
+
     def test_activation_of_leadscanner_campaign_requires_fresh_sequence_approval(self):
         client = ActivationGuardClient(
             basis="consent_verified", reference="crm:consent-2026-123",
