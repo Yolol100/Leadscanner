@@ -159,7 +159,7 @@ def resolve_region_center(
     if not region:
         raise ValueError("region is required")
 
-    headers = {"User-Agent": "WebactueelLeadDiscovery/1.0 (+https://andrewbaeten.nl)"}
+    headers = {"User-Agent": "LeadscannerDiscovery/1.1 (+https://andrewbaeten.nl)"}
     fields = "id,weergavenaam,type,centroide_ll"
 
     for object_type in ("woonplaats", "gemeente"):
@@ -478,7 +478,7 @@ def probe_website(
                 allow_redirects=False,
                 timeout=timeout,
                 stream=True,
-                headers={"User-Agent": "WebactueelLeadDiscovery/1.0 (+https://andrewbaeten.nl)"},
+                headers={"User-Agent": "LeadscannerDiscovery/1.1 (+https://andrewbaeten.nl)"},
             )
             try:
                 status_code = int(response.status_code)
@@ -597,7 +597,7 @@ def discover(
             radius_km,
         )
 
-    with tempfile.TemporaryDirectory(prefix="webactueel-overture-") as tmpdir:
+    with tempfile.TemporaryDirectory(prefix="leadscanner-overture-") as tmpdir:
         data_path = Path(tmpdir) / "places.geojsonseq"
         download_overture_places(resolved_bbox, data_path)
         download_diagnostics = inspect_download(data_path)
@@ -623,7 +623,7 @@ def discover(
             candidate["website_probe"] = probe_result
 
     return {
-        "schema_version": "webactueel-overture-discovery/1.1",
+        "schema_version": "leadscanner-overture-discovery/1.1",
         "source": "Overture Maps Places",
         "source_access": "public cloud GeoParquet via official overturemaps client",
         "authentication": "none",
