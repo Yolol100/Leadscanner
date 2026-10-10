@@ -14,7 +14,11 @@ SUBJECT="Een korte vraag over jullie website"
 BODY="Hoi, ik zag jullie website en dacht aan een klein idee. Laat gerust weten als je graag een voorstel wilt."
 ROW={"id":"11111111-1111-1111-1111-111111111111","email":"contact@example.org","list_id":LID,"campaign":None,
 "payload":{"leadscanner_import_origin":"myhost_drafts","leadscanner_contact_basis":"consent_verified","leadscanner_contact_basis_ref":"verified-proof-2026","leadscanner_source_lead_id":"growth-"+"a"*20,
-"leadscanner_subject":SUBJECT,"leadscanner_body":BODY}}
+"leadscanner_subject":SUBJECT,"leadscanner_body":BODY,
+"leadscanner_observation":"Klanten kunnen online een afspraak aanvragen voor onderhoud of reparatie.",
+"leadscanner_value_action":"een korte voorbeeldvariant voor de afspraakroute",
+"leadscanner_evidence_url":"https://example.org/afspraak",
+"leadscanner_evidence_source_type":"official_site"}}
 SEQUENCE={"steps":campaign_steps("nl")}
 
 
@@ -104,6 +108,21 @@ class TestLanguageRouting(unittest.TestCase):
             out=route_exact_language(api,language="nl",campaign_id=CID,max_leads=1)
         self.assertEqual(out["held_counts"]["contact_basis_hold"],1)
         self.assertEqual(out["attempt_count"],0)
+        self.assertFalse(api.calls)
+
+    def test_imported_lead_without_website_provenance_cannot_route(self):
+        api=Fake()
+        no_evidence=dict(ROW, payload={
+            k:v for k,v in ROW["payload"].items()
+            if k not in {"leadscanner_observation","leadscanner_value_action",
+                         "leadscanner_evidence_url","leadscanner_evidence_source_type"}
+        })
+        with patch("instantly_language_route.read_imported_leads",return_value=(LID,[no_evidence])),\
+             patch("instantly_language_route.fetch_live_registry",return_value=[]),\
+             patch("instantly_language_route.blocked_values",return_value=set()):
+            report=route_exact_language(api,language="nl",campaign_id=CID,max_leads=1)
+        self.assertEqual(report["attempt_count"],0)
+        self.assertEqual(report["held_counts"]["personalization_evidence_hold"],1)
         self.assertFalse(api.calls)
 
     def test_wrong_target_id_language_and_size_fail_before_provider(self):
