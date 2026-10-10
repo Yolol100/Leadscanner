@@ -1,4 +1,4 @@
-"""One auditable NL/EN three-step Instantly sequence for reviewed Webactueel leads.
+"""One auditable NL/EN three-step Instantly sequence for reviewed Andrew Baeten leads.
 
 First message is the EXACT lead-specific approved copy. Optional first-party
 observation/action enhance follow-ups, with generic fallbacks for legacy leads.
@@ -20,8 +20,7 @@ Ik kan in een paar regels laten zien welke 2–3 onderdelen ik als eerste zou be
 Zal ik dat kort toesturen?
 
 Groet,
-Andrew
-Webactueel
+Andrew Baeten
 
 Als dit niet relevant is, antwoord gerust met 'nee'; dan stop ik.""",
  "step_3": """Hoi,
@@ -33,8 +32,7 @@ Mijn eerdere opmerking over {{leadscanner_observation}} is vooral een mogelijk a
 Mocht je later behoefte hebben aan een kleine, concrete verbeterschets, dan kun je eenvoudig op dit bericht reageren. Anders laat ik het hierbij.
 
 Groet,
-Andrew
-Webactueel""",
+Andrew Baeten""",
 }
 EN = {
  "step_2": """Hi,
@@ -50,8 +48,7 @@ I could outline the first 2–3 areas I'd look at, in a few short lines.
 Would you like me to send that over?
 
 Best,
-Andrew
-Webactueel
+Andrew Baeten
 
 If it's not relevant, just reply 'no' and I'll leave it there.""",
  "step_3": """Hi,
@@ -63,8 +60,7 @@ My earlier comment about {{leadscanner_observation}} was simply one possible sta
 If a small, concrete improvement sketch would ever be useful, you can just reply. Otherwise I'll leave it there.
 
 Best,
-Andrew
-Webactueel""",
+Andrew Baeten""",
 }
 
 def campaign_steps(language: str) -> list[dict]:
@@ -96,8 +92,8 @@ def campaign_payload(language: str) -> dict:
 
 AUTO_CAMPAIGN_ID = "auto_language"
 TARGET_CAMPAIGNS = {
-    "nl": ("5c720281-fd07-4c47-8155-c88d7d3c09b8", "Webactueel NL - Websiteadvies (Concept)"),
-    "en": ("fd405145-4bf5-40c5-b6ae-2e7f5af6120c", "Webactueel EN - Website Advice (Draft)"),
+    "nl": ("5c720281-fd07-4c47-8155-c88d7d3c09b8", "Websiteadvies NL"),
+    "en": ("fd405145-4bf5-40c5-b6ae-2e7f5af6120c", "Websiteadvies EN"),
 }
 
 
