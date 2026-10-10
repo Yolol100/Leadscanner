@@ -41,6 +41,8 @@ class Provider:
             for _, (cid, name) in TARGET_CAMPAIGNS.items()
         }
         self.corrupt_readback = False
+        self.stale_get_count = 0
+        self.before_patch_snapshot = None
 
     def get_campaign(self, cid):
         return copy.deepcopy(self.campaigns[cid])
@@ -50,6 +52,9 @@ class Provider:
         return {"items": [], "next_starting_after": None}
 
     def get_lead(self, lead_id):
+        if self.before_patch_snapshot is not None and self.stale_get_count > 0:
+            self.stale_get_count -= 1
+            return copy.deepcopy(self.before_patch_snapshot)
         rows = [row for row in self.rows if row["id"] == lead_id]
         if len(rows) != 1:
             raise AssertionError("unexpected lead ID")
@@ -61,6 +66,7 @@ class Provider:
             raise AssertionError("unexpected provider write")
         lead_id = path.removeprefix("/leads/")
         record = next(row for row in self.rows if row["id"] == lead_id)
+        self.before_patch_snapshot = copy.deepcopy(record)
         new_fields = copy.deepcopy(kwargs["json"]["custom_variables"])
         if self.corrupt_readback:
             new_fields["other_review_field"] = "corrupted"
@@ -77,6 +83,7 @@ def run(client, **kwargs):
             client, list_id=kwargs.get("list_id", TARGET_LIST_ID),
             expected_count=kwargs.get("expected_count", len(client.rows)),
             max_updates=kwargs.get("max_updates", 1),
+            sleep_fn=lambda _: None,
         )
 
 
@@ -167,6 +174,16 @@ class Tests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "copy_changed_before_patch"):
             run(api)
         self.assertEqual(api.calls, [])
+
+    def test_eventually_consistent_postwrite_get_is_reconciled_without_a_second_patch(self):
+        api = Provider()
+        api.stale_get_count = 3
+        result = run(api)
+        self.assertEqual(result["updated_count"], 1)
+        self.assertEqual(result["remaining_after"], 0)
+        self.assertEqual(len(api.calls), 1)
+        self.assertEqual(api.stale_get_count, 0)
+        self.assertTrue(api.rows[0]["payload"]["leadscanner_body"].rstrip().endswith("Andrew Baeten"))
 
     def test_postwrite_silent_metadata_corruption_is_detected(self):
         api = Provider()

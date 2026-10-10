@@ -7,6 +7,7 @@ still required before commercial use. Never publish contact/mail content.
 from __future__ import annotations
 
 import re
+import time
 
 from instantly_campaign_copy import TARGET_CAMPAIGNS
 from instantly_language_campaigns import read_imported_leads
@@ -100,6 +101,7 @@ def _safe_replacement(variables: dict) -> str | None:
 
 def normalize_source_first_mail_signatures(
     client, *, list_id: str, expected_count: int, max_updates: int,
+    sleep_fn=time.sleep,
 ) -> dict:
     if list_id != TARGET_LIST_ID:
         raise ValueError("signature_repair_exact_source_list_required")
@@ -147,37 +149,59 @@ def normalize_source_first_mail_signatures(
         client._request(
             "PATCH", "/leads/" + lead_id, json={"custom_variables": new_variables}
         )
-        after = client.get_lead(lead_id)
-        if not isinstance(after, dict):
-            raise RuntimeError("signature_repair_postwrite_readback_invalid")
-        observed_after_id, after_values = _verified_row(after, source_list_id=list_id)
-        if (
-            observed_after_id != lead_id
-            or _text(after.get("email")).casefold() != _text(row.get("email")).casefold()
-            or after_values != new_variables
-            or _safe_replacement(after_values) is not None
-            or classify_signature_tail(new_body) != "full_name_tail"
-        ):
-            raise RuntimeError("signature_repair_postwrite_mismatch")
-        for key in ("status", "lt_interest_status", "verification_status", "timestamp_last_contact"):
-            if key in before and after.get(key) != before[key]:
-                raise RuntimeError("signature_repair_unexpected_lead_status_change")
+        # Instantly can expose an older lead snapshot immediately after a
+        # successful PATCH. Only repeat safe GET requests, never the PATCH.
+        matched = False
+        for attempt in range(8):
+            after = client.get_lead(lead_id)
+            if not isinstance(after, dict):
+                raise RuntimeError("signature_repair_postwrite_readback_invalid")
+            observed_after_id, after_values = _verified_row(after, source_list_id=list_id)
+            if (
+                observed_after_id != lead_id
+                or _text(after.get("email")).casefold() != _text(row.get("email")).casefold()
+            ):
+                raise RuntimeError("signature_repair_postwrite_recipient_changed")
+            for key in ("status", "lt_interest_status", "verification_status", "timestamp_last_contact"):
+                if key in before and after.get(key) != before[key]:
+                    raise RuntimeError("signature_repair_unexpected_lead_status_change")
+            if (
+                after_values == new_variables
+                and _safe_replacement(after_values) is None
+                and classify_signature_tail(new_body) == "full_name_tail"
+            ):
+                matched = True
+                break
+            if attempt < 7:
+                sleep_fn((0.4, 0.6, 1, 1.5, 2, 3, 4)[attempt])
+        if not matched:
+            raise RuntimeError("signature_repair_postwrite_mismatch_after_get_retries")
         updated += 1
 
     _campaigns_still_quiet(client)
-    after_list_id, after_rows = read_imported_leads(client)
-    if after_list_id != list_id or len(after_rows) != expected_count:
-        raise RuntimeError("signature_repair_final_list_identity_or_count_changed")
-    after_ids = {_text(row.get("id")) for row in after_rows}
-    if after_ids != seen or len(after_ids) != expected_count:
-        raise RuntimeError("signature_repair_original_leads_changed")
-    remaining_after = 0
-    for row in after_rows:
-        _, values = _verified_row(row, source_list_id=list_id)
-        if _safe_replacement(values) is not None:
-            remaining_after += 1
-    if remaining_after != remaining_before - updated:
-        raise RuntimeError("signature_repair_final_copy_count_changed")
+    final_matches = False
+    remaining_after = -1
+    for attempt in range(8):
+        # Bounded GET-only source-list reconciliation; provider pages may also
+        # lag a committed PATCH. Never treat a stale page as a new write target.
+        after_list_id, after_rows = read_imported_leads(client)
+        if after_list_id != list_id or len(after_rows) != expected_count:
+            raise RuntimeError("signature_repair_final_list_identity_or_count_changed")
+        after_ids = {_text(row.get("id")) for row in after_rows}
+        if after_ids != seen or len(after_ids) != expected_count:
+            raise RuntimeError("signature_repair_original_leads_changed")
+        remaining_after = 0
+        for row in after_rows:
+            _, values = _verified_row(row, source_list_id=list_id)
+            if _safe_replacement(values) is not None:
+                remaining_after += 1
+        if remaining_after == remaining_before - updated:
+            final_matches = True
+            break
+        if attempt < 7:
+            sleep_fn((0.4, 0.6, 1, 1.5, 2, 3, 4)[attempt])
+    if not final_matches:
+        raise RuntimeError("signature_repair_final_copy_count_changed_after_get_retries")
 
     return {
         "schema_version": "leadscanner-source-signature-repair/1.0",
