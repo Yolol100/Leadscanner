@@ -12,6 +12,28 @@ UNRESOLVED=re.compile(r"\{\{[^}]{1,100}\}\}|\[(?:bedrijf|company|naam|name|websi
 OPT_OUT_NL=("geen interesse","niet relevant","geen behoefte","niet geïnteresseerd","laat het weten als")
 OPT_OUT_EN=("not interested","not relevant","no thanks","no interest","let me know if this")
 SENDER=("andrew baeten",)
+# Only recognize unambiguous, single-name signatures at the very end of a
+# reviewed source email. Never guess which sender an unsigned mail represents.
+SIGNATURE_FULL = re.compile(r"(?i)(?:^|\n)[ \t]*andrew[ \t]+baeten[ \t]*[.!]?[ \t]*\Z")
+SIGNATURE_FIRST = re.compile(r"(?i)(?:^|\n)[ \t]*andrew[ \t]*[.!]?[ \t]*\Z")
+CLOSING_ONLY = re.compile(
+    r"(?i)(?:^|\n)[ \t]*(?:groet|met vriendelijke groet|hartelijke groet|"
+    r"vriendelijke groeten|best|kind regards|regards|cheers)[ \t]*[,!.]?[ \t]*\Z"
+)
+
+
+def classify_signature_tail(body: str) -> str:
+    if not isinstance(body, str) or not body.strip():
+        return "missing_copy"
+    normalized = body.strip()
+    if SIGNATURE_FULL.search(normalized):
+        return "full_name_tail"
+    if SIGNATURE_FIRST.search(normalized):
+        return "first_name_only_tail"
+    if CLOSING_ONLY.search(normalized):
+        return "closing_without_name_tail"
+    return "unrecognized_tail"
+
 def mail_quality_audit(client) -> dict:
     source_id, rows = read_imported_leads(client)
     counts=Counter()
@@ -48,6 +70,9 @@ def mail_quality_audit(client) -> dict:
             counts["questions_three_or_more"] += 1
             counts["not_exactly_one_question"] += 1
         lower=body.casefold()
+        counts["signature_tail_"+classify_signature_tail(body)]+=1
+        if row.get("campaign") is not None:
+            counts["source_lead_assigned_to_campaign"]+=1
         if "webactueel" in (subj+"\n"+body).casefold():
             counts["legacy_brand_in_copy"]+=1
         if "andrew baeten" not in lower:
@@ -87,6 +112,14 @@ def mail_quality_audit(client) -> dict:
         "question_count_is_a_review_heuristic_not_reply_rate": True,
         "both_verified_fact_placeholders_present":counts["both_verified_fact_placeholders_present"],
         "documented_contact_basis_count":counts["documented_contact_basis"],
+        "signature_tail_distribution":{
+            key:counts["signature_tail_"+key] for key in (
+                "full_name_tail","first_name_only_tail",
+                "closing_without_name_tail","unrecognized_tail","missing_copy"
+            )
+        },
+        "source_leads_assigned_to_campaign":counts["source_lead_assigned_to_campaign"],
+        "signature_fix_is_not_permission_or_content_approval":True,
         "copy_is_not_consent":True,
         "quality_guaranteed":False,
         "contains_subject_body_or_emails":False,
