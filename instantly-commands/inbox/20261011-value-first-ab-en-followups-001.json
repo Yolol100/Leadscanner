@@ -1,0 +1,51 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "20261011-value-first-ab-en-followups-001",
+  "action": "update_campaign",
+  "args": {
+    "campaign_id": "fd405145-4bf5-40c5-b6ae-2e7f5af6120c",
+    "payload": {
+      "sequences": [
+        {
+          "steps": [
+            {
+              "type": "email",
+              "delay": 4,
+              "delay_unit": "days",
+              "variants": [
+                {
+                  "subject": "{{leadscanner_subject}}",
+                  "body": "{{leadscanner_body}}"
+                }
+              ]
+            },
+            {
+              "type": "email",
+              "delay": 5,
+              "delay_unit": "days",
+              "variants": [
+                {
+                  "subject": "",
+                  "body": "Hi,\n\nFollowing up on this specific part of your website:\n\n\"{{leadscanner_observation}}\"\n\nI can put together {{leadscanner_value_action}} so you can judge a short, concrete example for yourself.\n\nWould you like me to send it over?\n\nIf it's not relevant, just reply 'no' and I'll stop.\n\nBest,\nAndrew Baeten"
+                }
+              ]
+            },
+            {
+              "type": "email",
+              "delay": 0,
+              "delay_unit": "days",
+              "variants": [
+                {
+                  "subject": "",
+                  "body": "Hi,\n\nThis is my final note about the specific detail I saw on your website:\n\n\"{{leadscanner_observation}}\"\n\nThe offer is still {{leadscanner_value_action}}. Not a generic website audit, just an optional example focused on this exact part of your site.\n\nIf that would be useful later, feel free to reply. Otherwise I'll leave it here.\n\nBest,\nAndrew Baeten"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "confirm": "EXECUTE update_campaign fd405145-4bf5-40c5-b6ae-2e7f5af6120c",
+  "requested_by": "chatgpt"
+}
