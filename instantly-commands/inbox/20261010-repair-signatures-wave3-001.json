@@ -1,0 +1,12 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "20261010-repair-signatures-wave3-001",
+  "action": "repair_imported_first_mail_signatures",
+  "args": {
+    "list_id": "24deb187-59e0-43b5-86b8-fe37a7b21e2a",
+    "expected_count": 1128,
+    "max_updates": 100
+  },
+  "confirm": "EXECUTE repair_imported_first_mail_signatures 24deb187-59e0-43b5-86b8-fe37a7b21e2a",
+  "requested_by": "chatgpt"
+}
