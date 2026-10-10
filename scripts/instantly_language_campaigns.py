@@ -36,8 +36,8 @@ EN_PHRASES = (
     "i have an idea", "if you're interested",
 )
 LANGUAGE_CAMPAIGN_NAMES = {
-    "nl": "Webactueel NL - Websiteadvies (Concept)",
-    "en": "Webactueel EN - Website Advice (Draft)",
+    "nl": "Websiteadvies NL",
+    "en": "Websiteadvies EN",
 }
 MAX_SOURCE_ROWS = 5000
 
