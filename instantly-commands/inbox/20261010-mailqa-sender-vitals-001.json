@@ -1,0 +1,7 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "20261010-mailqa-sender-vitals-001",
+  "action": "audit_sender_vitals",
+  "args": {},
+  "requested_by": "chatgpt"
+}
