@@ -40,16 +40,18 @@ class OutreachStagesTests(unittest.TestCase):
 
 
     def test_ambiguous_website_language_is_held_regardless_of_domain(self):
+        from unittest.mock import patch
         from outreach_stages import detect_language, select_one_reason
         candidate = {"official_domain": "example.nl", "research_status": "ready",
-                     "evidence_candidates": [{"text": "Users schedule an appointment online via our booking form.",
-                                              "source_type": "official_site", "source_url": "https://example.nl/booking",
+                     "evidence_candidates": [{"text": "Customers can book an appointment online via our booking form.",
+                                              "source_type": "official_site",
+                                              "source_url": "https://example.nl/booking",
                                               "page_type": "process"}]}
-        self.assertEqual(detect_language(candidate, "Neutral booking data"), "unknown")
-        selected = select_one_reason(candidate)
-        self.assertIn(selected["language"], {"en", "nl", None})
-        if selected["outreach_status"] == "ready":
-            self.assertIn(selected["language"], {"en", "nl"})
+        self.assertEqual(detect_language(candidate, "ZXQ-4519"), "unknown")
+        with patch("outreach_stages.detect_language", return_value="unknown"):
+            selected = select_one_reason(candidate)
+        self.assertEqual(selected["outreach_status"], "hold")
+        self.assertEqual(selected["outreach_hold_reason"], "observation_language_ambiguous")
 
     def test_generated_first_mail_has_only_andrew_baeten_branding(self):
         from outreach_stages import body_for
