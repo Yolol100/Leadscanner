@@ -32,7 +32,7 @@ COMMAND_PREFIX = "instantly-commands/inbox/"
 COMMAND_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{5,120}$")
 
 READ_ACTIONS = {
-    "audit_retired_archive", "audit_old_archive_metadata", "audit_old_archive_state", "audit_sender_vitals", "audit_old_campaign_retirement", "audit_two_campaign_options", "audit_imported_mail_quality", "audit_launch_inventory", "audit_myhost_drafts", "audit_language_split", "audit_campaign_schedule", "list_campaigns", "get_campaign", "audit_campaign_sequence", "audit_activation_readiness", "campaign_sending_status", "campaign_analytics",
+    "audit_retired_archive", "audit_old_archive_metadata", "audit_old_archive_state", "audit_sender_vitals", "audit_old_campaign_retirement", "audit_two_campaign_options", "audit_imported_mail_quality", "audit_launch_inventory", "audit_language_route_readiness", "audit_myhost_drafts", "audit_language_split", "audit_campaign_schedule", "list_campaigns", "get_campaign", "audit_campaign_sequence", "audit_activation_readiness", "campaign_sending_status", "campaign_analytics",
     "list_leads", "get_lead", "list_emails", "get_email", "count_unread_emails",
     "list_accounts", "get_account", "test_account_vitals", "warmup_analytics", "daily_account_analytics",
     "list_blocklist", "get_blocklist_entry", "get_background_job",
@@ -812,6 +812,19 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
         data = audit_launch_inventory(client)
     elif action == "audit_language_split":
         data = audit_language_split(client)
+    elif action == "audit_language_route_readiness":
+        language = _text(args.get("language"))
+        if language not in TARGET_CAMPAIGNS:
+            raise ValueError("readiness_language_must_be_nl_or_en")
+        data = route_exact_language(
+            client, language=language, campaign_id=TARGET_CAMPAIGNS[language][0],
+            max_leads=250, registry_url=os.getenv("DEDUPE_REGISTRY_CSV_URL", DEFAULT_REGISTRY_URL),
+            dry_run=True,
+        )
+        if data["attempt_count"] != 0 or data["confirmed_copied_count"] != 0:
+            raise RuntimeError("readiness_audit_must_never_stage_a_lead")
+        data["mutation"] = False
+        data["send"] = False
     elif action == "route_language_drafts":
         data = route_exact_language(
             client, language=_text(args.get("language")), campaign_id=_text(args.get("campaign_id")),
