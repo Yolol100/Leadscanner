@@ -187,6 +187,48 @@ class Tests(unittest.TestCase):
         self.assertEqual(second["remaining_after"], 0)
         self.assertEqual(len(api.calls), 2)
 
+    def test_control_requires_exact_explicit_bounded_confirmation(self):
+        from instantly_control import execute_command, expected_confirmation
+        args = {"list_id": TARGET_LIST_ID, "expected_count": 1128, "max_updates": 1}
+        action = "repair_imported_first_mail_signatures"
+        confirmation = expected_confirmation(action, args)
+        self.assertEqual(confirmation, "EXECUTE repair_imported_first_mail_signatures " + TARGET_LIST_ID)
+        settings = {
+            "schema_version": "leadscanner-instantly-control/1.0",
+            "write_actions_enabled": True, "send_actions_enabled": False,
+            "destructive_actions_enabled": False, "require_exact_confirmation": True,
+        }
+        command = {
+            "schema_version": "leadscanner-instantly-command/1.0",
+            "command_id": "safe-signature-batch-001", "action": action, "args": args,
+            "confirm": confirmation, "requested_by": "chatgpt",
+        }
+        mocked_result = {
+            "source_count": 1128, "updated_count": 1, "remaining_after": 1127,
+            "emails_sent": False, "contains_email_addresses_or_copy": False,
+        }
+        with patch("instantly_control.normalize_source_first_mail_signatures",
+                   return_value=mocked_result) as repair:
+            result = execute_command(command, settings, Provider())
+        self.assertEqual(result["status"], "green")
+        self.assertEqual(result["result"]["updated_count"], 1)
+        self.assertFalse(result["result"]["emails_sent"])
+        self.assertEqual(repair.call_args.kwargs["max_updates"], 1)
+        with self.assertRaisesRegex(ValueError, "exact_confirmation_required"):
+            execute_command({**command, "confirm": "EXECUTE anything"}, settings, Provider())
+        with self.assertRaisesRegex(RuntimeError, "write_commands_cannot_run_on_workflow_rerun"):
+            execute_command(command, settings, Provider(), run_attempt="2")
+
+    def test_repository_disables_global_send_and_destructive_actions(self):
+        import json
+        from pathlib import Path
+        config_path = Path(__file__).resolve().parents[1] / "config/instantly-control.json"
+        settings = json.loads(config_path.read_text(encoding="utf-8"))
+        self.assertTrue(settings["write_actions_enabled"])
+        self.assertFalse(settings["send_actions_enabled"])
+        self.assertFalse(settings["destructive_actions_enabled"])
+        self.assertTrue(settings["require_exact_confirmation"])
+
     def test_normalization_never_overwrites_an_unsigned_body(self):
         value = _safe_replacement({
             "leadscanner_import_origin": "myhost_drafts",
