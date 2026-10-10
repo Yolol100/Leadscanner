@@ -133,9 +133,16 @@ class InstantlyServiceTests(unittest.TestCase):
         self, access_mock, registry_mock, validate_mock, write_mock
     ):
         from instantly_campaign_copy import TARGET_CAMPAIGNS,campaign_steps
-        row={**resolved()["row"],
-             "subject":"Een korte vraag over jullie website",
-             "body":"Hoi, ik zag jullie website en dacht aan een klein idee voor de pagina. Als je wilt, stuur ik graag een concreet voorstel. Laat gerust weten."}
+        source=resolved()["row"]
+        row={**source,
+             "subject":"idee voor jullie afspraakroute",
+             "body":(
+                 "Hoi, ik zag dit op jullie website: " + source["verified_observation"]
+                 + "\\n\\nAls je wilt, kan ik " + source["value_first_action"]
+                 + " maken. Zal ik dit voorbeeld toesturen?"
+                 + "\\n\\nGeen interesse, laat het weten; dan stop ik."
+                 + "\\n\\nGroet,\\nAndrew Baeten"
+             ).replace("\\n","\n")}
         data={"schema_version":"leadscanner-approved-review-draft-batch/1.0",
               "rows":[row],"approval":{"approved_count":1,"automatic_send":False}}
         validate_mock.return_value={**resolved()["approved_current"],"rows":[row]}
