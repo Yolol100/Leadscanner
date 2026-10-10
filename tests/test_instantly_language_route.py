@@ -184,8 +184,8 @@ class TestLanguageRouting(unittest.TestCase):
     def test_imported_legacy_sender_brand_cannot_be_staged(self):
         api=Fake()
         bad=dict(ROW,payload={**ROW["payload"],
-                   "leadscanner_body":BODY.replace(
-                       "Groet,\\nAndrew Baeten", "Groet,\\nAndrew van " + "Web" + "actueel")})
+                   "leadscanner_body":BODY.replace("Andrew Baeten",
+                                                     "Andrew van " + "Web" + "actueel")})
         with patch("instantly_language_route.read_imported_leads",return_value=(LID,[bad])),\
              patch("instantly_language_route.fetch_live_registry",return_value=[]),\
              patch("instantly_language_route.blocked_values",return_value=set()):
