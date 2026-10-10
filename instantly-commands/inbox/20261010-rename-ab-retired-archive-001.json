@@ -1,0 +1,8 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "20261010-rename-ab-retired-archive-001",
+  "action": "rename_retired_archive",
+  "args": {},
+  "confirm": "EXECUTE rename_retired_archive",
+  "requested_by": "chatgpt"
+}
