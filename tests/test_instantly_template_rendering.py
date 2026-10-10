@@ -63,6 +63,7 @@ class TemplateSimulation(unittest.TestCase):
             self.assertIn(vars["leadscanner_observation"], rendered[1])
             self.assertIn(vars["leadscanner_value_action"], rendered[1])
             self.assertIn(vars["leadscanner_observation"], rendered[2])
+            self.assertIn(vars["leadscanner_value_action"], rendered[2])
             self.assertEqual(rendered[0], vars["leadscanner_body"])
 
     def test_two_distinct_businesses_get_different_first_and_followup_mails(self):
@@ -96,6 +97,7 @@ class TemplateSimulation(unittest.TestCase):
                 self.assertIn(variables["leadscanner_observation"], rendered[1])
                 self.assertIn(variables["leadscanner_value_action"], rendered[1])
                 self.assertIn(variables["leadscanner_observation"], rendered[2])
+                self.assertIn(variables["leadscanner_value_action"], rendered[2])
                 self.assertEqual(rendered[1].count("?"), 1)
                 self.assertTrue(all("Andrew Baeten" in step for step in rendered[1:]))
                 self.assertTrue(all("{{" not in step for step in rendered))

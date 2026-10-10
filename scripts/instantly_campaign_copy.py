@@ -12,13 +12,13 @@ from urllib.parse import urlparse
 NL = {
  "step_2": """Hoi,
 
-Ik kom nog even terug op mijn eerdere bericht. Op jullie website zag ik dit:
+Ik kom nog even terug op dit specifieke onderdeel van jullie website:
 
 "{{leadscanner_observation}}"
 
-Ik kan {{leadscanner_value_action}} maken om mijn idee concreet te laten zien.
+Daarvoor kan ik {{leadscanner_value_action}} uitwerken. Dan kun je aan een kort, concreet voorbeeld zien of het nuttig is.
 
-Zal ik dat kort toesturen?
+Zal ik dat voorbeeld toesturen?
 
 Als dit niet relevant is, antwoord gerust met 'nee'; dan stop ik.
 
@@ -26,11 +26,13 @@ Groet,
 Andrew Baeten""",
  "step_3": """Hoi,
 
-Dit is mijn laatste bericht. Mijn idee kwam voort uit dit onderdeel van jullie website:
+Dit is mijn laatste bericht over het onderdeel dat ik op jullie website zag:
 
 "{{leadscanner_observation}}"
 
-Dat is slechts een mogelijk aanknopingspunt, geen oordeel over jullie huidige aanpak. Mocht een kort voorbeeld later nuttig zijn, dan kun je eenvoudig reageren. Anders laat ik het hierbij.
+Mijn aanbod blijft {{leadscanner_value_action}}. Geen algemene website-audit, maar alleen een voorbeeld voor dit specifieke onderdeel, zonder verplichtingen.
+
+Als dat later nuttig is, kun je gewoon reageren. Anders laat ik het hierbij.
 
 Groet,
 Andrew Baeten""",
@@ -38,13 +40,13 @@ Andrew Baeten""",
 EN = {
  "step_2": """Hi,
 
-Just following up on my earlier note. This was the detail I noticed on your website:
+Following up on this specific part of your website:
 
 "{{leadscanner_observation}}"
 
-I can prepare {{leadscanner_value_action}} to make the idea concrete.
+I can put together {{leadscanner_value_action}} so you can judge a short, concrete example for yourself.
 
-Would you like me to email that over?
+Would you like me to send it over?
 
 If it's not relevant, just reply 'no' and I'll stop.
 
@@ -52,11 +54,13 @@ Best,
 Andrew Baeten""",
  "step_3": """Hi,
 
-This is my last note. My earlier idea came from this detail on your website:
+This is my final note about the specific detail I saw on your website:
 
 "{{leadscanner_observation}}"
 
-It's just a possible starting point, not a judgment on your current approach. If a short example would be useful later, feel free to reply. Otherwise I'll leave it here.
+The offer is still {{leadscanner_value_action}}. Not a generic website audit, just an optional example focused on this exact part of your site.
+
+If that would be useful later, feel free to reply. Otherwise I'll leave it here.
 
 Best,
 Andrew Baeten""",
