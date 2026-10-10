@@ -33,7 +33,8 @@ class FakeIMAP:
         found = []
         for index, raw in enumerate(self.messages, start=1):
             msg = BytesParser(policy=default).parsebytes(raw)
-            if str(msg.get("X-Webactueel-Lead-ID", "")) == lead_id:
+            header = str(criteria[-2])
+            if str(msg.get(header, "")) == lead_id:
                 found.append(str(index).encode())
         return "OK", [b" ".join(found)]
 
@@ -101,11 +102,28 @@ class DraftTests(unittest.TestCase):
         _, msg = build_message(self.row())
         self.assertEqual(msg["To"], "info@voorbeeld.nl")
         self.assertEqual(msg["Subject"], "Idee voor Voorbeeld BV")
-        self.assertEqual(msg["X-Webactueel-Review-Required"], "contact-basis")
+        self.assertEqual(msg["X-Leadscanner-Review-Required"], "contact-basis")
 
     def test_passed_draft_ready_has_no_review_header(self):
         _, msg = build_message(self.row(status="draft_ready", basis="pass"))
-        self.assertIsNone(msg["X-Webactueel-Review-Required"])
+        self.assertIsNone(msg["X-Leadscanner-Review-Required"])
+
+    def test_new_drafts_use_neutral_tags_and_old_drafts_remain_readable(self):
+        from myhost_draft import lead_id_from_message, review_status_from_message
+        _, created = build_message(self.row())
+        self.assertEqual(created["X-Leadscanner-Lead-ID"],self.row()["lead_id"])
+        self.assertIsNone(created.get("X-Webactueel-Lead-ID"))
+        self.assertIsNone(created.get("X-Webactueel-Review-Required"))
+        legacy = BytesParser(policy=default).parsebytes(created.as_bytes())
+        value = legacy["X-Leadscanner-Lead-ID"]
+        status = legacy["X-Leadscanner-Review-Required"]
+        del legacy["X-Leadscanner-Lead-ID"]
+        del legacy["X-Leadscanner-Review-Required"]
+        legacy["X-Webactueel-Lead-ID"] = value
+        legacy["X-Webactueel-Review-Required"] = status
+        self.assertEqual(lead_id_from_message(legacy),self.row()["lead_id"])
+        self.assertEqual(review_status_from_message(legacy),"contact-basis")
+        self.assertTrue(exact_message_matches(legacy,created))
 
     def test_noncanonical_growth_lead_id_is_rejected(self):
         row = self.row()
