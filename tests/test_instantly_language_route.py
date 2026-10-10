@@ -110,6 +110,18 @@ class TestLanguageRouting(unittest.TestCase):
         self.assertEqual(out["attempt_count"],0)
         self.assertFalse(api.calls)
 
+    def test_imported_legacy_sender_brand_cannot_be_staged(self):
+        api=Fake()
+        bad=dict(ROW,payload={**ROW["payload"],
+                   "leadscanner_body":"Hoi. Groet, Andrew van "+"Web"+"actueel."})
+        with patch("instantly_language_route.read_imported_leads",return_value=(LID,[bad])),\
+             patch("instantly_language_route.fetch_live_registry",return_value=[]),\
+             patch("instantly_language_route.blocked_values",return_value=set()):
+            report=route_exact_language(api,language="nl",campaign_id=CID,max_leads=1)
+        self.assertEqual(report["held_counts"]["obsolete_sender_brand_hold"],1)
+        self.assertEqual(report["attempt_count"],0)
+        self.assertFalse(api.calls)
+
     def test_imported_lead_without_website_provenance_cannot_route(self):
         api=Fake()
         no_evidence=dict(ROW, payload={
