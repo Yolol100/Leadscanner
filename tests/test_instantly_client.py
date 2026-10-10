@@ -96,6 +96,13 @@ def approval_for(target):
 
 
 class InstantlyClientTests(unittest.TestCase):
+    def test_reviewed_first_mail_never_contains_obsolete_sender_brand(self):
+        from instantly_client import approved_custom_variables
+        row=dict(approved_batch()["rows"][0])
+        row["body"]="Hi, regards from Andrew / "+"Web"+"actueel."
+        with self.assertRaisesRegex(ValueError, "obsolete_sender_brand_forbidden"):
+            approved_custom_variables(row)
+
     def test_nested_liquid_in_verified_website_observation_is_blocked(self):
         from instantly_client import approved_custom_variables
         for malicious in (
