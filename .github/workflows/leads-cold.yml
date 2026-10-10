@@ -101,6 +101,7 @@ on:
       - 'scripts/instantly_language_campaigns.py'
       - 'scripts/instantly_campaign_copy.py'
       - 'scripts/instantly_mail_quality.py'
+      - 'scripts/instantly_preview_audit.py'
       - 'scripts/instantly_signature_repair.py'
       - 'scripts/instantly_language_route.py'
       - 'scripts/instantly_launch_audit.py'
@@ -130,6 +131,7 @@ on:
       - 'tests/test_instantly_campaign_copy.py'
       - 'tests/test_instantly_template_rendering.py'
       - 'tests/test_instantly_mail_quality.py'
+      - 'tests/test_instantly_preview_audit.py'
       - 'tests/test_instantly_signature_repair.py'
       - 'tests/test_instantly_language_route.py'
       - 'tests/test_instantly_launch_audit.py'
@@ -169,6 +171,7 @@ on:
       - 'scripts/instantly_language_campaigns.py'
       - 'scripts/instantly_campaign_copy.py'
       - 'scripts/instantly_mail_quality.py'
+      - 'scripts/instantly_preview_audit.py'
       - 'scripts/instantly_signature_repair.py'
       - 'scripts/instantly_language_route.py'
       - 'scripts/instantly_launch_audit.py'
@@ -198,6 +201,7 @@ on:
       - 'tests/test_instantly_campaign_copy.py'
       - 'tests/test_instantly_template_rendering.py'
       - 'tests/test_instantly_mail_quality.py'
+      - 'tests/test_instantly_preview_audit.py'
       - 'tests/test_instantly_signature_repair.py'
       - 'tests/test_instantly_language_route.py'
       - 'tests/test_instantly_launch_audit.py'
@@ -262,6 +266,7 @@ jobs:
             scripts/instantly_language_campaigns.py \
             scripts/instantly_campaign_copy.py \
             scripts/instantly_mail_quality.py \
+            scripts/instantly_preview_audit.py \
             scripts/instantly_signature_repair.py \
             scripts/instantly_language_route.py \
             scripts/instantly_launch_audit.py \
@@ -293,6 +298,7 @@ jobs:
             tests.test_instantly_campaign_copy \
             tests.test_instantly_template_rendering \
             tests.test_instantly_mail_quality \
+            tests.test_instantly_preview_audit \
             tests.test_instantly_signature_repair \
             tests.test_instantly_language_route \
             tests.test_instantly_launch_audit \

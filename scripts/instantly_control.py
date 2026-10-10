@@ -21,6 +21,7 @@ from instantly_service import DEFAULT_REGISTRY_URL, DEFAULT_REPOSITORY, fetch_li
 from myhost_instantly_import import execute_migration, blocked_values, TARGET_LIST_ID, TARGET_LIST_NAME
 from instantly_language_campaigns import audit_language_split, read_imported_leads
 from instantly_mail_quality import mail_quality_audit
+from instantly_preview_audit import audit_synthetic_campaign_previews
 from instantly_signature_repair import normalize_source_first_mail_signatures
 from instantly_language_route import route_exact_language
 from instantly_launch_audit import audit_launch_inventory, audit_sender_vitals, audit_old_campaign_retirement, audit_two_campaign_options, _list_pages
@@ -33,7 +34,7 @@ COMMAND_PREFIX = "instantly-commands/inbox/"
 COMMAND_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{5,120}$")
 
 READ_ACTIONS = {
-    "audit_retired_archive", "audit_old_archive_metadata", "audit_old_archive_state", "audit_sender_vitals", "audit_old_campaign_retirement", "audit_two_campaign_options", "audit_imported_mail_quality", "audit_launch_inventory", "audit_language_route_readiness", "audit_myhost_drafts", "audit_language_split", "audit_campaign_schedule", "list_campaigns", "get_campaign", "audit_campaign_sequence", "audit_activation_readiness", "campaign_sending_status", "campaign_analytics",
+    "audit_retired_archive", "audit_old_archive_metadata", "audit_old_archive_state", "audit_sender_vitals", "audit_old_campaign_retirement", "audit_two_campaign_options", "audit_imported_mail_quality", "audit_synthetic_campaign_previews", "audit_launch_inventory", "audit_language_route_readiness", "audit_myhost_drafts", "audit_language_split", "audit_campaign_schedule", "list_campaigns", "get_campaign", "audit_campaign_sequence", "audit_activation_readiness", "campaign_sending_status", "campaign_analytics",
     "list_leads", "get_lead", "list_emails", "get_email", "count_unread_emails",
     "list_accounts", "get_account", "test_account_vitals", "warmup_analytics", "daily_account_analytics",
     "list_blocklist", "get_blocklist_entry", "get_background_job",
@@ -805,6 +806,8 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
         data = audit_old_archive_metadata(client)
     elif action == "audit_imported_mail_quality":
         data = mail_quality_audit(client)
+    elif action == "audit_synthetic_campaign_previews":
+        data = audit_synthetic_campaign_previews(client)
     elif action == "audit_old_archive_state":
         data = audit_old_archive_state(client)
     elif action == "audit_old_campaign_retirement":
