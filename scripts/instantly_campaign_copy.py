@@ -154,6 +154,8 @@ def resolve_language_destination(client, row: dict, requested_campaign_id: str) 
     body=row.get("body")
     if not isinstance(subject,str) or not isinstance(body,str) or not subject.strip() or not body.strip():
         raise ValueError("auto_language_requires_reviewed_copy")
+    if "webactueel" in (subject+"\n"+body).casefold():
+        raise ValueError("reviewed_mail_obsolete_sender_brand_forbidden")
     # Avoid cycles through the existing mijn.host migration adapter.
     from instantly_language_campaigns import classify_language
     lang=classify_language(subject,body)
