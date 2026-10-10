@@ -93,10 +93,37 @@ Explicit writes:
 `update_interest`, `reply_email`, `forward_email`, `send_test_email`,
 `mark_thread_read`, `update_account`, `pause_account`, `resume_account`,
 `rename_source_lead_list`, `rename_retired_archive`,
+`repair_imported_first_mail_signatures`,
 `enable_warmup`, `disable_warmup`, `block_email`, `block_domain`,
 `delete_blocklist_entry`, `stage_approved_lead`.
 
 There is deliberately **no generic HTTP method/path action**.
+
+## Repair Andrew Baeten sign-offs in the isolated source list
+
+The `repair_imported_first_mail_signatures` action **only** replaces a verified
+`Groet,` / `Andrew` or `Best,` / `Andrew` *last-line* first-name signature
+with `Andrew Baeten` in an already imported, unassigned, `review_required` lead
+in the existing isolated list. Original subjects, recipients, opt-outs, statements
+and all other custom variables are kept byte-for-byte. Each PATCH has an
+independent GET preflight and post-write readback; unknown outcomes are not retried.
+Both target campaigns must remain Paused with zero assigned senders and zero leads.
+The action refuses unexpected list IDs/counts and is bounded to 100 contacts
+per execution; new immutable commands are needed for subsequent batches.
+
+Only include `args.list_id`, `args.expected_count` and `args.max_updates`.
+Confirmation: `EXECUTE repair_imported_first_mail_signatures <list_id>`.
+The public artifact contains aggregate counts only. Never commit recipient
+addresses, original message copy, inferred consent or API keys into GitHub.
+
+**No contact basis is inferred** and no outbound send, campaign activation
+or lead move is performed. Separate first-party website evidence, approved
+recipient-specific copy and documented lawful contact permission are still
+required before a recipient may be staged for sending.
+
+By default, send and destructive actions are disabled in
+`config/instantly-control.json`. A separate human review and explicit
+configuration change are required before any sending can be enabled.
 
 ## Rebrand the existing isolated lead list without touching recipients
 

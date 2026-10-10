@@ -1,8 +1,8 @@
 {
   "schema_version": "leadscanner-instantly-control/1.0",
   "write_actions_enabled": true,
-  "send_actions_enabled": true,
-  "destructive_actions_enabled": true,
+  "send_actions_enabled": false,
+  "destructive_actions_enabled": false,
   "require_exact_confirmation": true,
   "sync_interval_minutes": 15,
   "sync_max_leads": 10000
