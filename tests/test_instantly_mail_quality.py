@@ -33,7 +33,7 @@ class Tests(unittest.TestCase):
         }
         for value, expected in examples.items():
             with self.subTest(tail=expected):
-                self.assertEqual(classify_signature_tail(value.replace('\\\\n','\\n')), expected)
+                self.assertEqual(classify_signature_tail(value.replace(chr(92)+"n", chr(10))), expected)
 
     def test_signature_counts_do_not_reveal_content_or_overwrite_any_leads(self):
         leads=[{"email":"hidden@firm.example","campaign":None,"payload":{
@@ -42,6 +42,8 @@ class Tests(unittest.TestCase):
             {"email":"hidden2@firm.example","campaign":None,"payload":{
             "leadscanner_subject":"Website vraag",
             "leadscanner_body":"Hoi, ik heb een vraag.\\n\\nGroet,\\nAndrew Baeten"}}]
+        for row in leads:
+            row["payload"]["leadscanner_body"] = row["payload"]["leadscanner_body"].replace(chr(92)+"n", chr(10))
         with patch("instantly_mail_quality.read_imported_leads",return_value=("source",leads)):
             out=mail_quality_audit(object())
         self.assertEqual(out["signature_tail_distribution"]["first_name_only_tail"],1)
