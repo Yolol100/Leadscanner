@@ -40,6 +40,19 @@ def _items(raw: object) -> tuple[list[dict], str]:
     return items, _text(raw.get("next_starting_after"))
 
 
+def _private_first_mail_pair(row: dict) -> tuple[str, str] | None:
+    """Normalize only for in-memory duplicate detection, never publish copy."""
+    values = row.get("payload")
+    if not isinstance(values, dict):
+        values = row.get("custom_variables")
+    if not isinstance(values, dict):
+        return None
+    subject, body = values.get("leadscanner_subject"), values.get("leadscanner_body")
+    if not isinstance(subject, str) or not subject.strip() or not isinstance(body, str) or not body.strip():
+        return None
+    return (" ".join(subject.casefold().split()), " ".join(body.casefold().split()))
+
+
 def destination_emails(client: InstantlyClient, cid: str) -> set[str]:
     emails, seen, cursor = set(), set(), ""
     for _ in range(60):
@@ -134,6 +147,12 @@ def route_exact_language(client: InstantlyClient, *, language: str, campaign_id:
 
     _step('campaign_preflight', preflight_campaign, client, language, campaign_id)
     source_id, rows = _step('source_list', read_imported_leads, client)
+    # Two real imported contacts have an identical normalized subject/body pair.
+    # Identical first-mail copy is not independently reviewed as recipient-specific.
+    # Hold both copies until differentiated copy is reviewed; do not guess edits.
+    private_first_mail_counts = Counter(
+        pair for row in rows if (pair := _private_first_mail_pair(row)) is not None
+    )
     registry = _step('registry', fetch_live_registry, registry_url=registry_url)
     blocklist = _step('blocklist', blocked_values, client)
     already = _step('destination_before', destination_emails, client, campaign_id)
@@ -180,6 +199,10 @@ def route_exact_language(client: InstantlyClient, *, language: str, campaign_id:
         if not re.search(r"(?im)^\s*(?:groet|met vriendelijke groet|best|kind regards),?\s*\n\s*andrew baeten\s*$", reviewed_body):
             counters["sender_identity_hold"] += 1
             continue
+        private_pair = _private_first_mail_pair(row)
+        if private_pair is None or private_first_mail_counts[private_pair] > 1:
+            counters["duplicate_first_mail_copy_hold"] += 1
+            continue
         # Legacy mail copy alone is not enough to personalize follow-ups.
         # Only move leads with concrete first-party evidence and an offer tied
         # to that evidence. Missing facts stay in the unsendable source list.
@@ -214,14 +237,15 @@ def route_exact_language(client: InstantlyClient, *, language: str, campaign_id:
                                            - counters["blocklist_hold"] - counters["contact_basis_hold"]
                                            - counters["personalization_evidence_hold"] - counters["obsolete_sender_brand_hold"]
                                            - counters["missing_reviewed_first_mail_hold"] - counters["sender_identity_hold"]
-                                           - counters["registry_hold"] - counters["missing_provider_id_hold"]),
+                                           - counters["duplicate_first_mail_copy_hold"] - counters["registry_hold"] - counters["missing_provider_id_hold"]),
         "already_present_count": counters["already_present"],
         "held_counts": {
             k: counters[k] for k in (
                 "personal_email_hold", "blocklist_hold",
                 "contact_basis_hold", "personalization_evidence_hold",
                 "obsolete_sender_brand_hold", "missing_reviewed_first_mail_hold",
-                "sender_identity_hold", "registry_hold", "missing_provider_id_hold"
+                "sender_identity_hold", "duplicate_first_mail_copy_hold",
+                "registry_hold", "missing_provider_id_hold"
             )
         },
         "eligible_candidate_count": eligible_count,
