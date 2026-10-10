@@ -7,6 +7,8 @@ No facts, results, testimonials or contact permissions are manufactured.
 """
 from __future__ import annotations
 
+from urllib.parse import urlparse
+
 NL = {
  "step_2": """Hoi,
 
@@ -143,6 +145,43 @@ def campaign_activation_baseline_matches(campaign: dict, language: str) -> bool:
     )
 
 
+def first_mail_uses_verified_recipient_detail(
+    body: object, observation: object, action: object,
+    source_type: object, evidence_url: object,
+) -> bool:
+    """Conservative recipient-specificity gate; never a claim of human approval.
+
+    Changing only the company name cannot satisfy this check. The first mail
+    must literally mention both a usable first-party customer journey detail
+    AND the related value-first offer that also personalize the follow-ups.
+    """
+    if not all(isinstance(value, str) and value.strip()
+               for value in (body, observation, action, evidence_url)):
+        return False
+    if source_type != "official_site" or len(action.split()) < 3:
+        return False
+    try:
+        url = urlparse(evidence_url)
+        if (url.scheme not in {"https", "http"} or not url.hostname
+            or url.username is not None or url.password is not None
+            or url.hostname in {"localhost", "127.0.0.1", "::1"}):
+            return False
+    except ValueError:
+        return False
+    # Share the already established Leadscanner signal vocabulary. A generic
+    # compliment about a website never becomes evidence just by being unique.
+    from outreach_stages import classify_evidence, normalize_text
+    if classify_evidence({
+        "text": observation, "source_type": source_type, "source_url": evidence_url,
+    }) is None:
+        return False
+    normalized = normalize_text(body)
+    return (
+        normalize_text(observation) in normalized
+        and normalize_text(action) in normalized
+    )
+
+
 def resolve_language_destination(client, row: dict, requested_campaign_id: str) -> str:
     """Route reviewed NL/EN copy only to the exact Draft/Paused campaign without senders."""
     known={x[0] for x in TARGET_CAMPAIGNS.values()}
@@ -185,6 +224,12 @@ def resolve_language_destination(client, row: dict, requested_campaign_id: str) 
         raise ValueError("auto_language_first_step_copy_contract_invalid")
     if not campaign_copy_matches(observed, lang):
         raise ValueError("auto_language_copy_readback_mismatch")
+    if not first_mail_uses_verified_recipient_detail(
+        body, row.get("verified_observation"), row.get("value_first_action"),
+        row.get("verified_observation_source_type"),
+        row.get("verified_observation_source_url"),
+    ):
+        raise ValueError("auto_language_first_mail_lacks_verified_specificity")
     from instantly_client import inspect_campaign_sequence
     report=inspect_campaign_sequence(observed)
     if report["unsupported_leadscanner_variables"] or report["unresolved_template_variables"]:
