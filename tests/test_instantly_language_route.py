@@ -10,13 +10,19 @@ from instantly_language_campaigns import LANGUAGE_CAMPAIGN_NAMES
 CID="5c720281-fd07-4c47-8155-c88d7d3c09b8"
 LID="24deb187-59e0-43b5-86b8-fe37a7b21e2a"
 NAME=LANGUAGE_CAMPAIGN_NAMES["nl"]
-SUBJECT="Een korte vraag over jullie website"
-BODY="Hoi, ik zag jullie website en dacht aan een klein idee. Laat gerust weten als je graag een voorstel wilt.\n\nGroet,\nAndrew Baeten"
+SUBJECT="idee voor jullie afspraakroute"
+OBSERVATION="Klanten kunnen online een afspraak aanvragen voor onderhoud of reparatie."
+ACTION="een korte voorbeeldvariant voor de afspraakroute"
+BODY=("Hoi, op jullie website zag ik dit: " + OBSERVATION
+      + "\\n\\nAls je wilt, kan ik " + ACTION
+      + " maken. Zal ik een voorbeeld toesturen?"
+      + "\\n\\nGeen interesse, laat het gerust weten; dan stop ik."
+      + "\\n\\nGroet,\\nAndrew Baeten").replace("\\n", "\n")
 ROW={"id":"11111111-1111-1111-1111-111111111111","email":"contact@example.org","list_id":LID,"campaign":None,
 "payload":{"leadscanner_import_origin":"myhost_drafts","leadscanner_contact_basis":"consent_verified","leadscanner_contact_basis_ref":"verified-proof-2026","leadscanner_source_lead_id":"growth-"+"a"*20,
 "leadscanner_subject":SUBJECT,"leadscanner_body":BODY,
-"leadscanner_observation":"Klanten kunnen online een afspraak aanvragen voor onderhoud of reparatie.",
-"leadscanner_value_action":"een korte voorbeeldvariant voor de afspraakroute",
+"leadscanner_observation":OBSERVATION,
+"leadscanner_value_action":ACTION,
 "leadscanner_evidence_url":"https://example.org/afspraak",
 "leadscanner_evidence_source_type":"official_site"}}
 SEQUENCE={"steps":campaign_steps("nl")}
@@ -225,8 +231,12 @@ class TestLanguageRouting(unittest.TestCase):
         other["id"]="22222222-2222-2222-2222-222222222222"
         other["email"]="second@example.org"
         other["payload"]["leadscanner_source_lead_id"]="growth-"+"b"*20
+        second_fact="Gasten kunnen online een tafel reserveren via het formulier."
+        second_action="een korte voorbeeldvariant voor de reserveringsroute"
+        other["payload"]["leadscanner_observation"]=second_fact
+        other["payload"]["leadscanner_value_action"]=second_action
         other["payload"]["leadscanner_body"]=BODY.replace(
-            "dacht aan een klein idee.", "dacht aan jullie afspraakformulier.")
+            OBSERVATION, second_fact).replace(ACTION, second_action)
         with patch("instantly_language_route.read_imported_leads",return_value=(LID,[ROW,other])),\
              patch("instantly_language_route.fetch_live_registry",return_value=[]),\
              patch("instantly_language_route.blocked_values",return_value=set()):
@@ -234,6 +244,55 @@ class TestLanguageRouting(unittest.TestCase):
         self.assertEqual(result["held_counts"]["duplicate_first_mail_copy_hold"],0)
         self.assertEqual(result["eligible_candidate_count"],2)
         self.assertEqual(result["attempt_count"],0)
+        self.assertFalse(api.calls)
+
+    def test_name_swap_only_first_mail_is_held_despite_verified_fact_fields(self):
+        api=Fake()
+        generic=deepcopy(ROW)
+        generic["payload"]["leadscanner_body"]=(
+            "Hoi Bedrijf A, ik bekeek jullie website. "
+            "Ik heb een interessant idee. Zal ik dit toesturen?"
+            "\\n\\nGeen interesse is prima.\\n\\nGroet,\\nAndrew Baeten"
+        ).replace("\\n","\n")
+        with patch("instantly_language_route.read_imported_leads",return_value=(LID,[generic])),\
+             patch("instantly_language_route.fetch_live_registry",return_value=[]),\
+             patch("instantly_language_route.blocked_values",return_value=set()):
+            report=route_exact_language(api,language="nl",campaign_id=CID,max_leads=1,dry_run=True)
+        self.assertEqual(report["eligible_candidate_count"],0)
+        self.assertEqual(report["held_counts"]["first_mail_not_recipient_specific_hold"],1)
+        self.assertEqual(report["attempt_count"],0)
+        self.assertFalse(api.calls)
+
+    def test_reused_website_observation_is_held_even_with_different_messages(self):
+        api=Fake()
+        other=deepcopy(ROW)
+        other["id"]="22222222-2222-2222-2222-222222222222"
+        other["email"]="another@different-company.example.org"
+        other["payload"]["leadscanner_source_lead_id"]="growth-"+"b"*20
+        other["payload"]["leadscanner_body"]=BODY.replace(
+            "Hoi, op jullie website zag ik dit:",
+            "Goedemorgen, op jullie website viel me het volgende op:")
+        with patch("instantly_language_route.read_imported_leads",return_value=(LID,[ROW,other])),\
+             patch("instantly_language_route.fetch_live_registry",return_value=[]),\
+             patch("instantly_language_route.blocked_values",return_value=set()):
+            report=route_exact_language(api,language="nl",campaign_id=CID,max_leads=2,dry_run=True)
+        self.assertEqual(report["eligible_candidate_count"],0)
+        self.assertEqual(report["held_counts"]["reused_website_observation_hold"],2)
+        self.assertFalse(api.calls)
+        self.assertNotIn(OBSERVATION,str(report))
+
+    def test_weak_observation_is_not_sufficient_personalization(self):
+        api=Fake()
+        item=deepcopy(ROW)
+        weak="Wij zijn een familiebedrijf met veel ervaring."
+        item["payload"]["leadscanner_observation"]=weak
+        item["payload"]["leadscanner_body"]=BODY.replace(OBSERVATION,weak)
+        with patch("instantly_language_route.read_imported_leads",return_value=(LID,[item])),\
+             patch("instantly_language_route.fetch_live_registry",return_value=[]),\
+             patch("instantly_language_route.blocked_values",return_value=set()):
+            report=route_exact_language(api,language="nl",campaign_id=CID,max_leads=1,dry_run=True)
+        self.assertEqual(report["held_counts"]["first_mail_not_recipient_specific_hold"],1)
+        self.assertEqual(report["attempt_count"],0)
         self.assertFalse(api.calls)
 
     def test_wrong_target_id_language_and_size_fail_before_provider(self):
