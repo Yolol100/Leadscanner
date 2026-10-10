@@ -38,22 +38,18 @@ class TemplateSimulation(unittest.TestCase):
         return [simulate_local(step["variants"][0]["body"], variables)
                 for step in campaign_steps(language)]
 
-    def test_legacy_copy_without_verified_extra_facts(self):
+    def test_missing_verified_facts_cannot_render_followups(self):
         for language in ("nl", "en"):
             variables = {
                 "leadscanner_subject": "Websitevraag",
-                "leadscanner_body": "Approved subject-specific first email."
+                "leadscanner_body": "Approved subject-specific first email.",
             }
-            steps = self._render(language, variables)
-            self.assertEqual(steps[0], variables["leadscanner_body"])
-            self.assertTrue(all(step.strip() for step in steps))
-            if language == "nl":
-                self.assertIn("als eerste", steps[1])
-                self.assertIn("laatste bericht", steps[2])
-            else:
-                self.assertIn("first 2", steps[1])
-                self.assertIn("last note", steps[2])
-            self.assertNotIn("Verified first-party", "\n".join(steps))
+            self.assertEqual(
+                simulate_local(campaign_steps(language)[0]["variants"][0]["body"], variables),
+                variables["leadscanner_body"],
+            )
+            with self.assertRaisesRegex(AssertionError, "fixture_required_variable_missing"):
+                self._render(language, variables)
 
     def test_new_lead_with_verified_observation_and_action(self):
         for language in ("nl", "en"):
@@ -69,16 +65,15 @@ class TemplateSimulation(unittest.TestCase):
             self.assertIn(vars["leadscanner_observation"], rendered[2])
             self.assertEqual(rendered[0], vars["leadscanner_body"])
 
-    def test_partial_fact_uses_generic_second_step_but_specific_third(self):
+    def test_partial_website_fact_cannot_render_any_followup(self):
         for language in ("nl", "en"):
             vars = {
                 "leadscanner_subject": "Websitevraag",
                 "leadscanner_body": "Approved first mail.",
                 "leadscanner_observation": "Verified first-party appointment route",
             }
-            rendered = self._render(language, vars)
-            self.assertNotIn(vars["leadscanner_observation"], rendered[1])
-            self.assertIn(vars["leadscanner_observation"], rendered[2])
+            with self.assertRaisesRegex(AssertionError, "fixture_required_variable_missing"):
+                self._render(language, vars)
 
     def test_unknown_or_missing_variables_fail_closed(self):
         with self.assertRaisesRegex(AssertionError, "fixture_unresolved_template"):
