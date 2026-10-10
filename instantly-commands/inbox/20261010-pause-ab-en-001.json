@@ -1,0 +1,10 @@
+{
+  "schema_version": "leadscanner-instantly-command/1.0",
+  "command_id": "20261010-pause-ab-en-001",
+  "action": "pause_campaign",
+  "args": {
+    "campaign_id": "fd405145-4bf5-40c5-b6ae-2e7f5af6120c"
+  },
+  "confirm": "EXECUTE pause_campaign fd405145-4bf5-40c5-b6ae-2e7f5af6120c",
+  "requested_by": "chatgpt"
+}
