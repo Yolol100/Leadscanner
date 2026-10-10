@@ -5,6 +5,34 @@ from instantly_campaign_copy import campaign_steps, campaign_payload
 from instantly_client import inspect_campaign_sequence
 
 LANGS=["nl","en"]
+
+def reviewed_row(language):
+    if language=="nl":
+        observation="Klanten kunnen online een afspraak aanvragen voor onderhoud of reparatie."
+        action="een korte voorbeeldvariant voor de afspraakroute"
+        subject="idee voor jullie afspraakroute"
+        body=("Hoi, op jullie website viel dit op: " + observation
+              + "\\n\\nIk kan " + action + " maken. Zal ik dat toesturen?"
+              + "\\n\\nGeen interesse, laat het gerust weten; dan stop ik."
+              + "\\n\\nGroet,\\nAndrew Baeten").replace("\\n","\n")
+    else:
+        observation="Customers can book an appointment for bike repairs online."
+        action="a short example for the booking flow"
+        subject="idea for your booking flow"
+        body=("Hi, I noticed this on your website: " + observation
+              + "\\n\\nI can prepare " + action + ". Would you like me to send it?"
+              + "\\n\\nIf not relevant, reply no and I'll stop."
+              + "\\n\\nBest,\\nAndrew Baeten").replace("\\n","\n")
+    return {
+        "status":"review_draft","review_mode":"reviewed_mail",
+        "subject":subject,"body":body,
+        "verified_observation":observation,
+        "value_first_action":action,
+        "verified_observation_source_type":"official_site",
+        "verified_observation_source_url":"https://example.org/appointments",
+        "official_domain":"example.org",
+    }
+
 class Tests(unittest.TestCase):
     def test_sequences_have_personalized_approved_first_mail_and_two_followups(self):
         for language in LANGS:
@@ -52,12 +80,8 @@ class Tests(unittest.TestCase):
                 lang=next(k for k,v in TARGET_CAMPAIGNS.items() if v[0]==cid)
                 return {"id":cid,"name":TARGET_CAMPAIGNS[lang][1],"status":0,
                         "email_list":[],"sequences":[{"steps":campaign_steps(lang)}]}
-        examples={
-          "nl":("Een korte vraag over jullie website","Hoi, ik zag jullie website en dacht aan een klein idee voor de pagina. Als je wilt, stuur ik graag een concreet voorstel. Laat gerust weten."),
-          "en":("Quick question about your website","Hi, I noticed your website and thought of an idea. Would you like me to send a short example? Let me know if you're interested. Best regards.")
-        }
-        for language,(subject,body) in examples.items():
-            row={"status":"review_draft","review_mode":"reviewed_mail","subject":subject,"body":body}
+        for language in LANGS:
+            row=reviewed_row(language)
             self.assertEqual(resolve_language_destination(Provider(),row,AUTO_CAMPAIGN_ID),TARGET_CAMPAIGNS[language][0])
             wrong="nl" if language=="en" else "en"
             with self.assertRaisesRegex(ValueError,"reviewed_mail_campaign_language_mismatch"):
@@ -67,14 +91,61 @@ class Tests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"auto_language_requires_reviewed_mail"):
             resolve_language_destination(Provider(),{"status":"sequence_facts_review","review_mode":"instantly_sequence"},AUTO_CAMPAIGN_ID)
 
+    def test_first_mail_name_swap_litmus_rejects_generic_copy_even_with_facts(self):
+        from instantly_campaign_copy import (
+            AUTO_CAMPAIGN_ID, TARGET_CAMPAIGNS, resolve_language_destination,
+            first_mail_uses_verified_recipient_detail,
+        )
+        class Provider:
+            def get_campaign(self,cid):
+                lang=next(k for k,v in TARGET_CAMPAIGNS.items() if v[0]==cid)
+                return {"id":cid,"name":TARGET_CAMPAIGNS[lang][1],
+                        "status":2,"email_list":[],
+                        "sequences":[{"steps":campaign_steps(lang)}]}
+
+        row=reviewed_row("nl")
+        self.assertTrue(first_mail_uses_verified_recipient_detail(
+            row["body"],row["verified_observation"],row["value_first_action"],
+            row["verified_observation_source_type"],row["verified_observation_source_url"]))
+        generic={**row,"body":"Hoi Bedrijf A, ik zag jullie website. "
+                            "Ik heb een goed idee. Zal ik dit toesturen? "
+                            "Geen interesse, laat het weten. Groet, Andrew Baeten"}
+        with self.assertRaisesRegex(ValueError,"lacks_verified_specificity"):
+            resolve_language_destination(Provider(),generic,AUTO_CAMPAIGN_ID)
+        # Merely changing the recipient name does not make it specific.
+        other={**generic,"body":generic["body"].replace("Bedrijf A","Bedrijf B")}
+        with self.assertRaisesRegex(ValueError,"lacks_verified_specificity"):
+            resolve_language_destination(Provider(),other,AUTO_CAMPAIGN_ID)
+
+    def test_first_mail_must_mention_both_observed_detail_and_related_offer(self):
+        from instantly_campaign_copy import first_mail_uses_verified_recipient_detail
+        row=reviewed_row("nl")
+        args=lambda body,observation=None,action=None,kind=None,url=None: (
+            body,
+            row["verified_observation"] if observation is None else observation,
+            row["value_first_action"] if action is None else action,
+            row["verified_observation_source_type"] if kind is None else kind,
+            row["verified_observation_source_url"] if url is None else url,
+        )
+        self.assertFalse(first_mail_uses_verified_recipient_detail(
+            *args(row["body"].replace(row["verified_observation"],"een leuk detail"))))
+        self.assertFalse(first_mail_uses_verified_recipient_detail(
+            *args(row["body"].replace(row["value_first_action"],"een voorbeeld"))))
+        self.assertFalse(first_mail_uses_verified_recipient_detail(
+            *args(row["body"],kind="directory")))
+        self.assertFalse(first_mail_uses_verified_recipient_detail(
+            *args(row["body"],observation="Wij zijn een familiebedrijf met ervaring.")))
+        self.assertFalse(first_mail_uses_verified_recipient_detail(
+            *args(row["body"],url="http://localhost/internal")))
+        self.assertTrue(first_mail_uses_verified_recipient_detail(*args(row["body"])))
+
     def test_auto_route_never_uses_campaign_with_senders(self):
         from instantly_campaign_copy import AUTO_CAMPAIGN_ID,TARGET_CAMPAIGNS,resolve_language_destination
         class Unsafe:
             def get_campaign(self,cid):
                 return {"id":cid,"name":TARGET_CAMPAIGNS["nl"][1],"status":0,
                         "email_list":["sender@example.org"],"sequences":[{"steps":campaign_steps("nl")}]}
-        row={"status":"review_draft","subject":"Een korte vraag over jullie website",
-             "body":"Hoi, ik zag jullie website en dacht aan een klein idee voor de pagina. Als je wilt, stuur ik graag een concreet voorstel. Laat gerust weten."}
+        row=reviewed_row("nl")
         with self.assertRaisesRegex(ValueError,"auto_language_requires_zero_senders"):
             resolve_language_destination(Unsafe(),row,AUTO_CAMPAIGN_ID)
 
@@ -119,11 +190,7 @@ class Tests(unittest.TestCase):
     def test_auto_route_fails_closed_on_active_completed_or_wrong_name(self):
         from instantly_campaign_copy import AUTO_CAMPAIGN_ID, TARGET_CAMPAIGNS, resolve_language_destination
         cid, name = TARGET_CAMPAIGNS["nl"]
-        row = {
-            "status": "review_draft", "review_mode": "reviewed_mail",
-            "subject": "Een korte vraag over jullie website",
-            "body": "Hoi, ik zag jullie website en dacht aan een klein idee voor de pagina. Als je wilt, stuur ik graag een concreet voorstel. Laat gerust weten.",
-        }
+        row=reviewed_row("nl")
         class Provider:
             def __init__(self, override):
                 self.override = override
@@ -161,9 +228,7 @@ class Tests(unittest.TestCase):
                 steps[1]["variants"][0]["body"] += " Unreviewed extra claim."
                 return {"id":cid,"name":TARGET_CAMPAIGNS["nl"][1],
                         "status":0,"email_list":[],"sequences":[{"steps":steps}]}
-        row={"status":"review_draft","review_mode":"reviewed_mail",
-             "subject":"Een korte vraag over jullie website",
-             "body":"Hoi, ik zag jullie website en dacht aan een klein idee voor de pagina. Als je wilt, stuur ik graag een concreet voorstel. Laat gerust weten."}
+        row=reviewed_row("nl")
         with self.assertRaisesRegex(ValueError,"auto_language_copy_readback_mismatch"):
             resolve_language_destination(Drifted(),row,AUTO_CAMPAIGN_ID)
 
