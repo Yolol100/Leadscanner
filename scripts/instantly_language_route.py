@@ -15,7 +15,7 @@ from instantly_language_campaigns import (
     LANGUAGE_CAMPAIGN_NAMES, classify_language, inspect_lead_language, read_imported_leads,
 )
 from instantly_client import InstantlyClient, SAFE_CAMPAIGN_STATUSES
-from instantly_campaign_copy import campaign_copy_matches
+from instantly_campaign_copy import campaign_copy_matches, first_mail_uses_verified_recipient_detail
 from myhost_instantly_import import blocked_values, registry_allows_draft
 from instantly_service import DEFAULT_REGISTRY_URL, fetch_live_registry
 
@@ -153,6 +153,14 @@ def route_exact_language(client: InstantlyClient, *, language: str, campaign_id:
     private_first_mail_counts = Counter(
         pair for row in rows if (pair := _private_first_mail_pair(row)) is not None
     )
+    # Equal observations for different contacts can pass a name-swap test.
+    # Until an actual distinct website detail is reviewed, both stay held.
+    first_party_observation_counts = Counter(
+        " ".join(text.casefold().split())
+        for row in rows
+        if isinstance((values := row.get("payload") or row.get("custom_variables")), dict)
+        if isinstance((text := values.get("leadscanner_observation")), str) and text.strip()
+    )
     registry = _step('registry', fetch_live_registry, registry_url=registry_url)
     blocklist = _step('blocklist', blocked_values, client)
     already = _step('destination_before', destination_emails, client, campaign_id)
@@ -214,6 +222,19 @@ def route_exact_language(client: InstantlyClient, *, language: str, campaign_id:
         ):
             counters["personalization_evidence_hold"] += 1
             continue
+        if not first_mail_uses_verified_recipient_detail(
+            reviewed_body, variables["leadscanner_observation"],
+            variables["leadscanner_value_action"],
+            variables["leadscanner_evidence_source_type"],
+            variables["leadscanner_evidence_url"],
+        ):
+            counters["first_mail_not_recipient_specific_hold"] += 1
+            continue
+        if first_party_observation_counts[
+            " ".join(variables["leadscanner_observation"].casefold().split())
+        ] > 1:
+            counters["reused_website_observation_hold"] += 1
+            continue
         if not registry_allows_draft({
             "email":email, "lead_id":_text(variables.get("leadscanner_source_lead_id")),
         }, registry):
@@ -237,7 +258,9 @@ def route_exact_language(client: InstantlyClient, *, language: str, campaign_id:
                                            - counters["blocklist_hold"] - counters["contact_basis_hold"]
                                            - counters["personalization_evidence_hold"] - counters["obsolete_sender_brand_hold"]
                                            - counters["missing_reviewed_first_mail_hold"] - counters["sender_identity_hold"]
-                                           - counters["duplicate_first_mail_copy_hold"] - counters["registry_hold"] - counters["missing_provider_id_hold"]),
+                                           - counters["duplicate_first_mail_copy_hold"]
+                                           - counters["first_mail_not_recipient_specific_hold"]
+                                           - counters["reused_website_observation_hold"] - counters["registry_hold"] - counters["missing_provider_id_hold"]),
         "already_present_count": counters["already_present"],
         "held_counts": {
             k: counters[k] for k in (
@@ -245,6 +268,8 @@ def route_exact_language(client: InstantlyClient, *, language: str, campaign_id:
                 "contact_basis_hold", "personalization_evidence_hold",
                 "obsolete_sender_brand_hold", "missing_reviewed_first_mail_hold",
                 "sender_identity_hold", "duplicate_first_mail_copy_hold",
+                "first_mail_not_recipient_specific_hold",
+                "reused_website_observation_hold",
                 "registry_hold", "missing_provider_id_hold"
             )
         },

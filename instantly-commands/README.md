@@ -37,6 +37,33 @@ campaign is Draft/Paused. It does not return email subjects, bodies or leads.
 An `evidence_only_template_candidate` decision is structural only: it is not
 permission to change the campaign, bypass review or send email.
 
+## Recipient-specific copy litmus (NL and EN, all 3 steps)
+
+The user's review question is: **could this first email make sense for another
+company after only changing its name?** If yes, it is not ready. This is a
+conservative screening test, not a guarantee of verified personalization.
+
+For the existing `Websiteadvies NL` and `Websiteadvies EN` campaigns, mail 1
+must visibly include **both** an official-site customer journey observation
+and a concrete small action derived from that same observation. Generic
+compliments, industry claims, name swaps, guessed friction, fabricated
+success metrics or vague 'I saw your website' phrases fail closed. The
+first-party signal must be an identifiable booking, appointment, quote,
+reservation or ordering process, not mere homepage marketing copy.
+
+Mail 2 must reuse the **same verified observation and the related action**;
+mail 3 must reuse that observation again without introducing a new claim.
+Leadscanner compares approved copy to the exact live paused provider
+sequence, and it holds a pair of leads sharing identical first-mail
+subject/body or sharing the exact same first-party observation even when
+the subject/greeting differs. Both require independent re-review.
+
+These checks apply before staging both to the imported unsendable draft list
+and to newly approved reviewed-mail routing. They do not edit, stage or
+send historical contacts; they do not infer a lawful marketing contact
+basis from a public email address. A human still checks the linked official
+source, recipient/company match, contact authorization and final copy.
+
 ## Paused campaign safety and read-only source eligibility
 
 The existing `Websiteadvies NL` and `Websiteadvies EN` campaigns may safely remain **Paused** (provider status 2); a provider PATCH does not turn Paused back into Draft. For reviewed-mail staging only, Leadscanner accepts **Draft 0 or Paused 2**, and refuses Active or any other state, any assigned sender, an unexpected campaign ID/name, changed steps, risky contacts, or disabled stop-on-reply. A paused campaign cannot send without separate, explicitly approved activation and a newly assigned verified sender. Fact-only `instantly_sequence` approval still requires Draft and an exact sequence fingerprint.
