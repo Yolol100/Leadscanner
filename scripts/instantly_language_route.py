@@ -1,7 +1,8 @@
 """Copy confirmed NL/EN mijn.host draft leads into non-sending Instantly campaigns.
 
 Every mutation is an allowlisted GitHub command. Never send, activate, delete, or
-change the source lead list. The campaign must be Draft with zero sender accounts.
+change the source lead list. The campaign must be Draft or Paused with zero sender accounts. Active,
+completed, unrecognized, or sender-assigned campaigns are rejected.
 Provider jobs are not retried if their outcome is uncertain.
 """
 from __future__ import annotations
@@ -13,7 +14,7 @@ from collections import Counter
 from instantly_language_campaigns import (
     LANGUAGE_CAMPAIGN_NAMES, classify_language, inspect_lead_language, read_imported_leads,
 )
-from instantly_client import InstantlyClient
+from instantly_client import InstantlyClient, SAFE_CAMPAIGN_STATUSES
 from instantly_campaign_copy import campaign_copy_matches
 from myhost_instantly_import import blocked_values, registry_allows_draft
 from instantly_service import DEFAULT_REGISTRY_URL, fetch_live_registry
@@ -63,8 +64,8 @@ def preflight_campaign(client: InstantlyClient, language: str, cid: str) -> None
         raise RuntimeError("routing_campaign_identity_mismatch")
     if campaign.get("name") != LANGUAGE_CAMPAIGN_NAMES[language]:
         raise ValueError("routing_target_name_mismatch")
-    if type(campaign.get("status")) is not int or campaign["status"] != 0:
-        raise ValueError("routing_target_must_be_draft")
+    if type(campaign.get("status")) is not int or campaign["status"] not in SAFE_CAMPAIGN_STATUSES:
+        raise ValueError("routing_target_must_be_draft_or_paused")
     if campaign.get("email_list") != []:
         raise ValueError("routing_campaign_must_have_no_senders")
     sequences = campaign.get("sequences")
@@ -121,13 +122,15 @@ def _step(label, func, *args, **kwargs):
 
 
 def route_exact_language(client: InstantlyClient, *, language: str, campaign_id: str, max_leads: int = 25,
-                         registry_url: str = DEFAULT_REGISTRY_URL) -> dict:
+                         registry_url: str = DEFAULT_REGISTRY_URL, dry_run: bool = False) -> dict:
     if language not in {"nl","en"}:
         raise ValueError("routing_language_invalid")
     if type(max_leads) is not int or not 1 <= max_leads <= MAX_ROUTE_BATCH:
         raise ValueError("routing_batch_limit_invalid")
     if not re.fullmatch(r"[0-9a-fA-F-]{36}", campaign_id or ""):
         raise ValueError("routing_campaign_id_invalid")
+    if type(dry_run) is not bool:
+        raise ValueError("routing_dry_run_must_be_boolean")
 
     _step('campaign_preflight', preflight_campaign, client, language, campaign_id)
     source_id, rows = _step('source_list', read_imported_leads, client)
@@ -162,11 +165,20 @@ def route_exact_language(client: InstantlyClient, *, language: str, campaign_id:
         ):
             counters["contact_basis_hold"] += 1
             continue
-        if "webactueel" in (
-            str(variables.get("leadscanner_subject") or "")+"\n"+
-            str(variables.get("leadscanner_body") or "")
-        ).casefold():
+        reviewed_subject = variables.get("leadscanner_subject")
+        reviewed_body = variables.get("leadscanner_body")
+        if not isinstance(reviewed_subject, str) or not reviewed_subject.strip() or (
+            not isinstance(reviewed_body, str) or not reviewed_body.strip()
+        ):
+            counters["missing_reviewed_first_mail_hold"] += 1
+            continue
+        if "webactueel" in (reviewed_subject + "\n" + reviewed_body).casefold():
             counters["obsolete_sender_brand_hold"] += 1
+            continue
+        # Signed full business identity is required for step 1; do not silently
+        # rewrite already reviewed imported mail. Missing signatures need review.
+        if not re.search(r"(?im)^\s*(?:groet|met vriendelijke groet|best|kind regards),?\s*\n\s*andrew baeten\s*$", reviewed_body):
+            counters["sender_identity_hold"] += 1
             continue
         # Legacy mail copy alone is not enough to personalize follow-ups.
         # Only move leads with concrete first-party evidence and an offer tied
@@ -189,6 +201,7 @@ def route_exact_language(client: InstantlyClient, *, language: str, campaign_id:
             counters["missing_provider_id_hold"] += 1
             continue
         selected.append(row)
+    eligible_count = len(selected)
     selected = selected[:max_leads]
     result = {
         "schema_version": "leadscanner-instantly-language-route/1.0",
@@ -200,24 +213,27 @@ def route_exact_language(client: InstantlyClient, *, language: str, campaign_id:
                                            - counters["already_present"] - counters["personal_email_hold"]
                                            - counters["blocklist_hold"] - counters["contact_basis_hold"]
                                            - counters["personalization_evidence_hold"] - counters["obsolete_sender_brand_hold"]
+                                           - counters["missing_reviewed_first_mail_hold"] - counters["sender_identity_hold"]
                                            - counters["registry_hold"] - counters["missing_provider_id_hold"]),
         "already_present_count": counters["already_present"],
         "held_counts": {
             k: counters[k] for k in (
                 "personal_email_hold", "blocklist_hold",
                 "contact_basis_hold", "personalization_evidence_hold",
-                "obsolete_sender_brand_hold",
-                "registry_hold", "missing_provider_id_hold"
+                "obsolete_sender_brand_hold", "missing_reviewed_first_mail_hold",
+                "sender_identity_hold", "registry_hold", "missing_provider_id_hold"
             )
         },
-        "attempt_count": len(selected),
+        "eligible_candidate_count": eligible_count,
+        "attempt_count": 0 if dry_run else len(selected),
+        "dry_run": dry_run,
         "confirmed_copied_count": 0,
         "campaign_activated": False,
         "automatic_send": False,
         "original_list_modified": False,
         "sensitive_contact_data": False,
     }
-    if not selected:
+    if dry_run or not selected:
         return result
 
     # Exact pre-write preflight, never allow a changed campaign to receive leads.

@@ -1,4 +1,4 @@
-"""No-network regression tests for safe draft-only language routing."""
+"""No-network regression tests for verified Draft/Paused no-sender routing."""
 import unittest
 from unittest.mock import patch
 from copy import deepcopy
@@ -11,7 +11,7 @@ CID="5c720281-fd07-4c47-8155-c88d7d3c09b8"
 LID="24deb187-59e0-43b5-86b8-fe37a7b21e2a"
 NAME=LANGUAGE_CAMPAIGN_NAMES["nl"]
 SUBJECT="Een korte vraag over jullie website"
-BODY="Hoi, ik zag jullie website en dacht aan een klein idee. Laat gerust weten als je graag een voorstel wilt."
+BODY="Hoi, ik zag jullie website en dacht aan een klein idee. Laat gerust weten als je graag een voorstel wilt.\n\nGroet,\nAndrew Baeten"
 ROW={"id":"11111111-1111-1111-1111-111111111111","email":"contact@example.org","list_id":LID,"campaign":None,
 "payload":{"leadscanner_import_origin":"myhost_drafts","leadscanner_contact_basis":"consent_verified","leadscanner_contact_basis_ref":"verified-proof-2026","leadscanner_source_lead_id":"growth-"+"a"*20,
 "leadscanner_subject":SUBJECT,"leadscanner_body":BODY,
@@ -66,7 +66,8 @@ class TestLanguageRouting(unittest.TestCase):
         api.campaign["status"]=1
         with self.assertRaisesRegex(ValueError,"must_be_draft"):
             preflight_campaign(api,"nl",CID)
-        api.campaign["status"]=0
+        api.campaign["status"]=2
+        preflight_campaign(api,"nl",CID)
         api.campaign["email_list"]=["connected@example.org"]
         with self.assertRaisesRegex(ValueError,"no_senders"):
             preflight_campaign(api,"nl",CID)
@@ -88,6 +89,70 @@ class TestLanguageRouting(unittest.TestCase):
         self.assertFalse(report["automatic_send"])
         self.assertFalse(report["original_list_modified"])
         self.assertEqual(api.calls,[("POST","/leads/move"),("GET","/background-jobs/22222222-2222-2222-2222-222222222222")])
+
+    def test_exact_copy_into_paused_campaign_without_senders_never_sends(self):
+        api=Fake()
+        api.campaign["status"]=2
+        with patch("instantly_language_route.read_imported_leads",return_value=(LID,[ROW])),\
+             patch("instantly_language_route.fetch_live_registry",return_value=[]),\
+             patch("instantly_language_route.blocked_values",return_value=set()):
+            report=route_exact_language(api,language="nl",campaign_id=CID,max_leads=1)
+        self.assertEqual(report["confirmed_copied_count"],1)
+        self.assertEqual(report["eligible_candidate_count"],1)
+        self.assertFalse(report["automatic_send"])
+        self.assertFalse(report["campaign_activated"])
+        self.assertEqual(api.campaign["status"],2)
+        self.assertEqual(api.campaign["email_list"],[])
+
+    def test_dry_run_with_verified_eligible_lead_never_writes(self):
+        api=Fake()
+        api.campaign["status"]=2
+        with patch("instantly_language_route.read_imported_leads",return_value=(LID,[ROW])),\
+             patch("instantly_language_route.fetch_live_registry",return_value=[]),\
+             patch("instantly_language_route.blocked_values",return_value=set()):
+            report=route_exact_language(api,language="nl",campaign_id=CID,max_leads=1,dry_run=True)
+        self.assertTrue(report["dry_run"])
+        self.assertEqual(report["eligible_candidate_count"],1)
+        self.assertEqual(report["attempt_count"],0)
+        self.assertEqual(report["confirmed_copied_count"],0)
+        self.assertEqual(api.calls,[])
+        self.assertEqual(api.destination,[])
+
+    def test_paused_audit_holds_unverified_permission(self):
+        api=Fake()
+        api.campaign["status"]=2
+        row=dict(ROW,payload=dict(ROW["payload"],leadscanner_contact_basis="review_required"))
+        with patch("instantly_language_route.read_imported_leads",return_value=(LID,[row])),\
+             patch("instantly_language_route.fetch_live_registry",return_value=[]),\
+             patch("instantly_language_route.blocked_values",return_value=set()):
+            report=route_exact_language(api,language="nl",campaign_id=CID,max_leads=1,dry_run=True)
+        self.assertEqual(report["eligible_candidate_count"],0)
+        self.assertEqual(report["held_counts"]["contact_basis_hold"],1)
+        self.assertFalse(api.calls)
+
+    def test_rejects_unreviewed_or_ambiguous_sender_identity(self):
+        api=Fake()
+        bad=dict(ROW,payload={**ROW["payload"],"leadscanner_body":
+                   "Hoi, ik zag de website. Laat het weten als dit passend is. Groet, Andrew."})
+        with patch("instantly_language_route.read_imported_leads",return_value=(LID,[bad])),\
+             patch("instantly_language_route.fetch_live_registry",return_value=[]),\
+             patch("instantly_language_route.blocked_values",return_value=set()):
+            report=route_exact_language(api,language="nl",campaign_id=CID,max_leads=1,dry_run=True)
+        self.assertEqual(report["held_counts"]["sender_identity_hold"],1)
+        self.assertEqual(report["eligible_candidate_count"],0)
+        self.assertFalse(api.calls)
+
+    def test_active_completed_boolean_or_sender_assigned_fail_before_any_lead_read(self):
+        api=Fake()
+        for bad_status in (1,3,-1,True,None):
+            api.campaign["status"]=bad_status
+            with self.subTest(status=bad_status),self.assertRaisesRegex(ValueError,"must_be_draft_or_paused"):
+                preflight_campaign(api,"nl",CID)
+        api.campaign["status"]=2
+        api.campaign["email_list"]=["sender@example.org"]
+        with self.assertRaisesRegex(ValueError,"no_senders"):
+            preflight_campaign(api,"nl",CID)
+        self.assertFalse(api.calls)
 
     def test_ambiguous_or_existing_lead_skipped(self):
         api=Fake();api.destination=[dict(ROW,campaign=CID)]

@@ -116,7 +116,7 @@ class Tests(unittest.TestCase):
             language: name for language, (_, name) in expected.items()
         })
 
-    def test_auto_route_fails_closed_on_active_paused_or_wrong_name(self):
+    def test_auto_route_fails_closed_on_active_completed_or_wrong_name(self):
         from instantly_campaign_copy import AUTO_CAMPAIGN_ID, TARGET_CAMPAIGNS, resolve_language_destination
         cid, name = TARGET_CAMPAIGNS["nl"]
         row = {
@@ -136,9 +136,11 @@ class Tests(unittest.TestCase):
                     "sequences": [{"steps": campaign_steps("nl")}],
                 }
                 return {**baseline, **self.override}
-        for override in ({"status": 1}, {"status": 2}, {"name": "Incorrect NL campaign name"}):
+        self.assertEqual(resolve_language_destination(Provider({"status": 2}),row,AUTO_CAMPAIGN_ID),cid)
+        for override in ({"status": 1}, {"status": 3}, {"status": -1},
+                         {"status": True}, {"name": "Incorrect NL campaign name"}):
             with self.subTest(override=override):
-                with self.assertRaisesRegex(ValueError, "auto_language_requires_matching_draft"):
+                with self.assertRaisesRegex(ValueError, "auto_language_requires_matching_non_sending_campaign"):
                     resolve_language_destination(Provider(override), row, AUTO_CAMPAIGN_ID)
 
     def test_actual_sequence_inspector_accepts_supported_fields(self):
