@@ -37,6 +37,14 @@ campaign is Draft/Paused. It does not return email subjects, bodies or leads.
 An `evidence_only_template_candidate` decision is structural only: it is not
 permission to change the campaign, bypass review or send email.
 
+## Paused campaign safety and read-only source eligibility
+
+The existing `Websiteadvies NL` and `Websiteadvies EN` campaigns may safely remain **Paused** (provider status 2); a provider PATCH does not turn Paused back into Draft. For reviewed-mail staging only, Leadscanner accepts **Draft 0 or Paused 2**, and refuses Active or any other state, any assigned sender, an unexpected campaign ID/name, changed steps, risky contacts, or disabled stop-on-reply. A paused campaign cannot send without separate, explicitly approved activation and a newly assigned verified sender. Fact-only `instantly_sequence` approval still requires Draft and an exact sequence fingerprint.
+
+Check **all source contacts without writing any leads** by adding immutable read commands for NL and EN with action `audit_language_route_readiness` and args `{ "language": "nl" }` or `{ "language": "en" }`. Each command runs the same provider campaign/list/suppression/registry eligibility logic with `dry_run=true`; returns counts only; and performs no lead moves, mail sends, or campaign changes. The report distinguishes missing contact-basis proof, missing full sender identity `Andrew Baeten`, missing verified first-party website observation/action/source and remaining dedupe/suppression holds. A public company email, a reviewed first message or a simulated Preview is **not** contact-permission evidence.
+
+A successful dry-run is **not** Instantly's live preview. With no eligible lead in either campaign, the real preview with filled variables is still pending; perform that in the Instantly Editor with an individually reviewed, eligible lead once available. Do not attach a sender, activate a campaign, or stage historical contacts just to make the preview work. No automatic send is authorized by this workflow.
+
 ## Evidence-only three-email campaign approval
 
 An explicitly selected `instantly_sequence` preview does not generate a separate email. To stage an approved lead, first audit a **Draft** campaign using `audit_campaign_sequence`. The audit must show exactly one sequence and **three email steps**, no unresolved template fields, no `leadscanner_subject` or `leadscanner_body`, and both `leadscanner_observation` and `leadscanner_value_action` in the template. Review the actual subjects, bodies, variants and legal/contact basis in Instantly independently; the copy-free audit does not certify those.
@@ -74,7 +82,7 @@ idempotency-key mechanism. Create a fresh command file for an intentional retry.
 
 Read:
 `list_campaigns`, `get_campaign`, `audit_campaign_sequence`, `campaign_sending_status`,
-`campaign_analytics`, `list_leads`, `get_lead`, `list_emails`,
+`campaign_analytics`, `audit_language_route_readiness`, `list_leads`, `get_lead`, `list_emails`,
 `get_email`, `count_unread_emails`, `list_accounts`, `get_account`,
 `warmup_analytics`, `daily_account_analytics`, `list_blocklist`,
 `get_blocklist_entry`, `get_background_job`.
