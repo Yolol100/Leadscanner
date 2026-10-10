@@ -84,10 +84,17 @@ Explicit writes:
 `activate_campaign`, `delete_campaign`, `update_lead`, `delete_lead`,
 `update_interest`, `reply_email`, `forward_email`, `send_test_email`,
 `mark_thread_read`, `update_account`, `pause_account`, `resume_account`,
+`rename_source_lead_list`,
 `enable_warmup`, `disable_warmup`, `block_email`, `block_domain`,
 `delete_blocklist_entry`, `stage_approved_lead`.
 
 There is deliberately **no generic HTTP method/path action**.
+
+## Rebrand the existing isolated lead list without touching recipients
+
+The allowlisted `rename_source_lead_list` action is restricted to the exact already-imported source list ID `24deb187-59e0-43b5-86b8-fe37a7b21e2a`. It checks the old list name and expected lead count before the name-only PATCH, reads back the same ID, and verifies every lead ID is unchanged. It cannot stage, delete, send, or activate.
+
+Use a **new immutable command file** with `args.list_id`, `args.expected_name`, and `args.expected_count` and the exact `confirm` string `EXECUTE rename_source_lead_list <list_id>`. Never repeat an unknown PATCH outcome without a new read-only reconciliation.
 
 ## Repository visibility
 
@@ -126,7 +133,7 @@ The scheduled reconciliation uploads
 
 ## mijn.host Drafts -> isolated Instantly list (no sending)
 
-Only drafts created by Leadscanner with a valid X-Webactueel-Lead-ID are eligible.
+Only drafts created by Leadscanner with a valid `X-Leadscanner-Lead-ID` or historical legacy lead-ID tag are eligible. New drafts use the neutral header; old header values remain readable to preserve exact lead identity.
 The source mailbox is opened read-only and original drafts are retained. Duplicate
 lead IDs and email addresses, invalid drafts, suppressed registry identities,
 Instantly blocklisted addresses/domains and emails already in the workspace are
