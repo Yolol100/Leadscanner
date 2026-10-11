@@ -144,6 +144,15 @@ class FirstPartyContactsTests(unittest.TestCase):
         self.assertEqual(contact["contact_status"], "no_public_contact_found")
         self.assertIsNone(contact["public_business_email"])
 
+    def test_named_owner_without_email_is_discovered_but_not_fabricated(self):
+        result = select_site_contact([
+            page("/over-ons", "<h2>Jan Jansen</h2><p>Eigenaar van Acme Fietsen</p>"),
+            page("/contact", "<p>Vul ons contactformulier in voor uw vraag.</p>"),
+        ], "acmefietsen.nl")
+        self.assertTrue(result["named_owner_found_on_site"])
+        self.assertEqual(result["contact_status"], "no_public_contact_found")
+        self.assertIsNone(result["public_business_email"])
+
     def test_about_and_team_links_are_prioritized_for_research(self):
         home = parse_html(
             "<a href='/producten'>Catalogus</a><a href='/contact'>Contact</a>"

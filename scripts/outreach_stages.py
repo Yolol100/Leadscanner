@@ -153,15 +153,47 @@ def normalize_text(value: object) -> str:
     return re.sub(r"\s+", " ", text).strip().casefold()
 
 
+def _language_scores(text: str) -> tuple[int, int]:
+    haystack = " " + normalize_text(text) + " "
+    return (
+        sum(haystack.count(marker) for marker in NL_MARKERS),
+        sum(haystack.count(marker) for marker in EN_MARKERS),
+    )
+
+
 def detect_language(candidate: dict, observation: str) -> str:
-    haystack = " " + normalize_text(observation) + " "
-    nl_score = sum(haystack.count(marker) for marker in NL_MARKERS)
-    en_score = sum(haystack.count(marker) for marker in EN_MARKERS)
+    nl_score, en_score = _language_scores(observation)
     if nl_score > en_score:
         return "nl"
     if en_score > nl_score:
         return "en"
-    # Never guess a recipient language from a domain or country.
+
+    # Short, specific observations may contain no reliable language marker.
+    # Require corroborating official-site sentences instead of guessing from
+    # a region or TLD. Mixed-language evidence remains unclassified.
+    domain = normalize_domain(candidate.get("official_domain"))
+    nl_total, en_total = 0, 0
+    nl_support, en_support = 0, 0
+    for item in (candidate.get("evidence_candidates") or [])[:30]:
+        if (
+            not isinstance(item, dict)
+            or item.get("source_type") != "official_site"
+            or not domain
+            or normalize_domain(item.get("source_url")) != domain
+        ):
+            continue
+        nl, en = _language_scores(str(item.get("text") or "")[:300])
+        nl_total += nl
+        en_total += en
+        if nl > en:
+            nl_support += 1
+        elif en > nl:
+            en_support += 1
+    # One stray translated sentence must not choose an outreach language.
+    if nl_support >= 2 and nl_total >= en_total + 2:
+        return "nl"
+    if en_support >= 2 and en_total >= nl_total + 2:
+        return "en"
     return "unknown"
 
 

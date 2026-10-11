@@ -53,6 +53,46 @@ class OutreachStagesTests(unittest.TestCase):
         self.assertEqual(selected["outreach_status"], "hold")
         self.assertEqual(selected["outreach_hold_reason"], "observation_language_ambiguous")
 
+    def test_language_of_neutral_observation_uses_only_official_site_context(self):
+        from outreach_stages import detect_language, select_one_reason
+        ambiguous = "Bezorging van boeketten gebeurt dagelijks in Utrecht."
+        site_context = [
+            {
+                "text": "Onze klanten kunnen online een afspraak aanvragen voor het ophalen van bloemen.",
+                "source_url": "https://example.nl/afhalen",
+                "source_type": "official_site", "page_type": "process",
+            },
+            {
+                "text": "Wij verzorgen vanuit onze winkel een bezorgservice voor alle bezoekers.",
+                "source_url": "https://example.nl/diensten",
+                "source_type": "official_site", "page_type": "services",
+            },
+        ]
+        candidate = {
+            "research_status": "ready", "official_domain": "example.nl",
+            "evidence_candidates": [{
+                "text": ambiguous, "source_type": "official_site",
+                "source_url": "https://example.nl/bezoek", "page_type": "detail",
+            }] + site_context,
+        }
+        self.assertEqual(detect_language(candidate, ambiguous), "nl")
+        selected = select_one_reason(candidate)
+        self.assertEqual(selected["outreach_status"], "ready")
+        self.assertEqual(selected["language"], "nl")
+
+    def test_cross_domain_context_cannot_override_unknown_language(self):
+        from outreach_stages import detect_language
+        ambiguous = "Bezorging van boeketten gebeurt dagelijks in Utrecht."
+        row = {
+            "official_domain": "example.nl",
+            "evidence_candidates": [{
+                "text": "Onze klanten kunnen online een afspraak aanvragen voor het ophalen.",
+                "source_type": "official_site",
+                "source_url": "https://unrelated.example/aanvraag",
+            }],
+        }
+        self.assertEqual(detect_language(row, ambiguous), "unknown")
+
     def test_generated_first_mail_has_only_andrew_baeten_branding(self):
         from outreach_stages import body_for
         for language, observation, action in (

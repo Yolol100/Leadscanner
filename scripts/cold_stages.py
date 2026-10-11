@@ -636,13 +636,16 @@ def research_candidate(candidate: dict, *, session_factory=requests.Session) -> 
     page_failures: Counter[str] = Counter()
     session = _site_session(session_factory, domain)
 
-    # Prioritize Team/About/Owner/Contact to locate a named decision-maker,
-    # then spend the rest of the bounded budget on broader site topics.
-    # Additional team/person pages discovered within About pages are allowed.
-    pending = []
-    for link in (candidate.get("contact_links") or []) + (candidate.get("research_links") or []):
-        if link not in pending and link != official_url:
-            pending.append(link)
+    # Visit business pages before a contact-heavy navigation consumes the
+    # bounded research budget. Contact pages still receive dedicated slots.
+    contact_links = list(dict.fromkeys(
+        link for link in candidate.get("contact_links") or [] if link != official_url
+    ))
+    business_links = list(dict.fromkeys(
+        link for link in candidate.get("research_links") or []
+        if link != official_url and link not in contact_links
+    ))
+    pending = business_links[:4] + contact_links[:4] + business_links[4:] + contact_links[4:]
     attempted = {official_url}
     while pending and len(attempted) - 1 < MAX_RESEARCH_PAGES:
         link = pending.pop(0)
@@ -673,10 +676,18 @@ def research_candidate(candidate: dict, *, session_factory=requests.Session) -> 
         evidence_pages.append(evidence_sentences(
             parsed.get("text") or "", final_url, page_type_for_url(final_url)
         ))
-        # Deep first-party person pages get the next available research slot.
-        child_links = preferred_contact_links(parsed, final_url, domain, limit=3)
-        new_links = [url for url in child_links if url not in attempted and url not in pending]
-        pending = new_links + pending
+        # Follow deeper services, products, help and person pages when linked
+        # internally; all reads still share the same twelve-page budget.
+        child_contacts = preferred_contact_links(parsed, final_url, domain, limit=3)
+        child_research = broad_research_links(parsed, final_url, domain, limit=6)
+        new_contacts = [
+            url for url in child_contacts if url not in attempted and url not in pending
+        ]
+        new_research = [
+            url for url in child_research
+            if url not in attempted and url not in pending and url not in new_contacts
+        ]
+        pending = new_contacts + pending[:3] + new_research[:4] + pending[3:]
         if len(pending) > 2 * MAX_RESEARCH_PAGES:
             pending = pending[:2 * MAX_RESEARCH_PAGES]
 

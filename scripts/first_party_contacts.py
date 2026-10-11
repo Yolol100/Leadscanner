@@ -271,10 +271,12 @@ def select_site_contact(parsed_pages: list[dict], domain: str) -> dict:
             "contact_role": None,
             "contact_status": "no_public_contact_found",
             "contact_search_pages_checked": len(parsed_pages),
+            "named_owner_found_on_site": bool(owners),
         }
     best = min(candidates, key=lambda item: item[:5])[-1]
     return {
         **best,
         "contact_status": "verified_official_site",
         "contact_search_pages_checked": len(parsed_pages),
+        "named_owner_found_on_site": bool(owners),
     }

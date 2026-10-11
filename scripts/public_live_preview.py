@@ -27,7 +27,7 @@ from cold_run_manifest import build_manifest
 from dedupe_preflight import load_registry, match_candidate
 from funnel_metrics import build_funnel
 from outreach_stages import (
-    select_reasons, choose_value_actions, generate_mails,
+    ALL_SIGNALS, select_reasons, choose_value_actions, generate_mails,
     generate_sequence_facts, review_findings,
 )
 from overture_discovery import discover
@@ -40,8 +40,38 @@ MAX_DISCOVERY = 80
 MAX_VERIFY = 80
 MAX_WORKERS = 8
 MAX_RADIUS_KM = 12.0
-# Only enum-like status codes, never untrusted text, may enter public results.
-SAFE_CODE = re.compile(r"^[a-z][a-z0-9_]{0,49}$")
+# Use explicit enum allowlists; an untrusted company name could resemble a
+# valid snake_case status code and must never become a public metric label.
+SAFE_CATEGORIES = frozenset({entry[0] for entry in ALL_SIGNALS} | {"other"})
+SAFE_PRIORITIES = frozenset({"high", "medium", "low"})
+SAFE_FINDING_COUNTS = frozenset(f"n{n}" for n in range(1, 7))
+SAFE_LANGUAGES = frozenset({"nl", "en"})
+SAFE_CONTACT_ROLES = frozenset({"named_owner", "named_person", "personal_mailbox", "general_inbox"})
+SAFE_VERIFICATION_HOLDS = frozenset({
+    "hold_missing_domain", "hold_robots_policy", "hold_unreachable_official_site",
+    "hold_identity_not_proven", "skipped_competitor",
+})
+SAFE_RESEARCH_HOLDS = frozenset({
+    "hold_not_ready", "hold_missing_verification_handoff", "hold_no_first_party_evidence",
+})
+SAFE_OUTREACH_HOLDS = frozenset({
+    "research_not_ready", "observation_language_ambiguous",
+    "weak_generic_marketing_signal", "no_outreach_worthy_first_party_signal",
+})
+SAFE_PAGE_FAILURES = frozenset({
+    "robots_policy", "http_blocked", "http_not_found", "http_server_error",
+    "redirect_disallowed", "request_unavailable",
+})
+SAFE_COPY_HOLDS = frozenset({
+    "value_action_not_ready", "no_published_business_contact", "unverified_business_contact",
+    "draft_quality_hold", "subject_must_be_lowercase", "subject_too_long",
+    "subject_trick_or_exclamation_not_allowed", "body_too_long",
+    "exactly_one_question_cta_required", "andrew_baeten_sender_identity_required",
+    "review_findings_missing_or_unverified", "verified_observation_missing_from_body",
+    "observation_must_be_first_party", "value_action_must_be_proposed",
+    "value_action_missing_from_body", "unsupported_or_high_friction_claim",
+    "price_or_percentage_not_allowed", "recipient_email_must_not_appear_in_body",
+})
 
 
 class PreviewFailed(RuntimeError):
@@ -50,12 +80,14 @@ class PreviewFailed(RuntimeError):
         self.stage = stage
 
 
-def safe_counts(items: list[object] | tuple[object, ...]) -> dict[str, int]:
+def safe_counts(
+    items: list[object] | tuple[object, ...], allowed: frozenset[str],
+) -> dict[str, int]:
     out: Counter[str] = Counter()
     for item in items:
         value = str(item or "").casefold()
-        # Unknown values are counted, never reproduced.
-        out[value if SAFE_CODE.fullmatch(value) else "other"] += 1
+        # Unknown website-supplied labels must never reach public output.
+        out[value if value in allowed else "other"] += 1
     return dict(sorted(out.items()))
 
 
@@ -152,14 +184,14 @@ def audit_live_findings(*, researched: dict, reasons: dict, mail: dict) -> dict:
             for row in (researched.get("candidates") or [])
             for reason, count in (row.get("research_page_failure_counts") or {}).items()
             for _ in range(int(count))
-        ]),
+        ], SAFE_PAGE_FAILURES),
         "first_party_observations": sum(len(x.get("evidence_candidates") or []) for x in (researched.get("candidates") or [])),
         "ranked_findings": len(findings),
         "sites_with_ranked_findings": len(sites),
-        "findings_per_site": safe_counts([f"n{n}" for n in sites]),
-        "finding_priorities": safe_counts([x.get("priority") for x in findings]),
-        "finding_categories": safe_counts([x.get("category") for x in findings]),
-        "mail_languages": safe_counts([x.get("language") for x in ready_mails]),
+        "findings_per_site": safe_counts([f"n{n}" for n in sites], SAFE_FINDING_COUNTS),
+        "finding_priorities": safe_counts([x.get("priority") for x in findings], SAFE_PRIORITIES),
+        "finding_categories": safe_counts([x.get("category") for x in findings], SAFE_CATEGORIES),
+        "mail_languages": safe_counts([x.get("language") for x in ready_mails], SAFE_LANGUAGES),
         "mail_words_min": min(lengths, default=0),
         "mail_words_median": int(statistics.median(lengths)) if lengths else 0,
         "mail_words_max": max(lengths, default=0),
@@ -169,7 +201,7 @@ def audit_live_findings(*, researched: dict, reasons: dict, mail: dict) -> dict:
             if candidate.get("value_action_status") == "proposed"
             and candidate.get("mail_status") != "ready_for_human_review"
             for reason in (candidate.get("copy_validation_reasons") or ["other"])
-        ]),
+        ], SAFE_COPY_HOLDS),
     }
 
 
@@ -297,6 +329,10 @@ def run_live_preview(
                 "verified_websites": counts["verified_for_research"],
                 "verified_contacts": researched.get("contacts_found_count", 0),
                 "named_contacts": researched.get("named_contacts_found_count", 0),
+                "sites_with_named_owner_evidence": sum(
+                    bool(x.get("named_owner_found_on_site"))
+                    for x in researched.get("candidates") or []
+                ),
                 "specific_person_emails": sum(
                     x.get("contact_role") in {"named_owner", "named_person"}
                     for x in researched.get("candidates") or []
@@ -316,22 +352,22 @@ def run_live_preview(
                 "verification": safe_counts([
                     x.get("contact_status") for x in verified.get("candidates") or []
                     if x.get("ready_for_research") is not True
-                ]),
+                ], SAFE_VERIFICATION_HOLDS),
                 "research": safe_counts([
                     x.get("research_status") for x in researched.get("candidates") or []
                     if x.get("research_status") != "ready"
-                ]),
+                ], SAFE_RESEARCH_HOLDS),
                 "outreach": safe_counts([
                     x.get("outreach_hold_reason") for x in reasons.get("candidates") or []
                     if x.get("outreach_status") != "ready"
-                ]),
+                ], SAFE_OUTREACH_HOLDS),
             },
             "quality": {
                 **research_quality,
                 "contact_types": safe_counts([
                     x.get("contact_role") for x in researched.get("candidates") or []
                     if x.get("contact_status") == "verified_official_site"
-                ]),
+                ], SAFE_CONTACT_ROLES),
                 "researched_without_published_email": sum(
                     x.get("research_status") == "ready" and not x.get("public_business_email")
                     for x in researched.get("candidates") or []
