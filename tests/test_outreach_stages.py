@@ -70,6 +70,7 @@ class OutreachStagesTests(unittest.TestCase):
 
     def test_sequence_facts_skip_per_lead_mail_generation(self):
         source = {
+            "public_business_email": "info@example.nl",
             "outreach_status": "ready",
             "value_action_status": "proposed",
             "verified_observation_source_type": "official_site",
@@ -85,6 +86,44 @@ class OutreachStagesTests(unittest.TestCase):
         self.assertEqual(row["mail_status"], "ready_for_sequence_review")
         self.assertIsNone(row["subject"])
         self.assertIsNone(row["body"])
+        self.assertFalse(row["automatic_send"])
+
+    def test_missing_email_does_not_hide_site_opportunity_but_holds_mail(self):
+        candidate = candidate_with_evidence([{
+            "text": "Klanten kunnen online een afspraak aanvragen via onze website.",
+            "source_url": "https://acmefietsen.nl/afspraak",
+            "source_type": "official_site",
+            "page_type": "process",
+        }])
+        candidate["public_business_email"] = None
+        candidate["contact_status"] = "no_public_contact_found"
+        opportunities = select_reasons({"candidates": [candidate]})
+        self.assertEqual(opportunities["ready_count"], 1)
+        valued = choose_value_actions(opportunities)
+        mails = generate_mails(valued)
+        self.assertEqual(mails["ready_for_human_review_count"], 0)
+        self.assertEqual(
+            mails["candidates"][0]["copy_validation_reasons"], ["no_published_business_contact"]
+        )
+        self.assertIsNone(mails["candidates"][0]["body"])
+        facts = generate_sequence_facts(valued)
+        self.assertEqual(facts["ready_for_human_review_count"], 0)
+
+    def test_named_owner_receives_personalized_greeting_not_generic_mailbox(self):
+        candidate = candidate_with_evidence([{
+            "text": "Klanten kunnen online een afspraak aanvragen via onze website.",
+            "source_url": "https://acmefietsen.nl/afspraak",
+            "source_type": "official_site",
+            "page_type": "process",
+        }])
+        candidate["public_business_email"] = "jan@acmefietsen.nl"
+        candidate["contact_person_name"] = "Jan Jansen"
+        candidate["contact_role"] = "named_owner"
+        candidate["contact_status"] = "verified_official_site"
+        result = generate_mails(choose_value_actions(select_reasons({"candidates": [candidate]})))
+        row = result["candidates"][0]
+        self.assertEqual(row["mail_status"], "ready_for_human_review")
+        self.assertTrue(row["body"].startswith("Hoi Jan,\n\n"))
         self.assertFalse(row["automatic_send"])
 
     def test_sequence_facts_hold_without_official_evidence(self):
