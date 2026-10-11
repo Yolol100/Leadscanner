@@ -58,6 +58,8 @@ class PublicLivePreviewTests(unittest.TestCase):
         filtered = {"candidate_count": 1, "candidates": []}
         source = example()
         source["ready_for_research"] = True
+        source["contact_status"] = "verified_official_site"
+        source["contact_role"] = "general_inbox"
         source["homepage_text_excerpt"] = "Klanten kunnen online een afspraak aanvragen voor onderhoud."
         verified = {"candidate_count": 1, "ready_for_research_count": 1, "candidates": [source]}
         researched = {"candidate_count": 1, "research_ready_count": 1, "candidates": [source]}
@@ -78,6 +80,9 @@ class PublicLivePreviewTests(unittest.TestCase):
                 run_id=123456, run_number=1, head_sha="a" * 40,
             )
         self.assertEqual(report["counts"]["review_queue"], 1)
+        self.assertEqual(report["counts"]["verified_websites"], 1)
+        self.assertEqual(report["counts"]["verified_contacts"], 1)
+        self.assertEqual(report["counts"]["named_contacts"], 0)
         self.assertTrue(report["snapshot_in_memory_valid"])
         self.assertFalse(report["contains_real_recipient_data"])
         self.assertEqual(report["emails_sent"], 0)
@@ -96,6 +101,20 @@ class PublicLivePreviewTests(unittest.TestCase):
                     run_id=123, run_number=1, head_sha="a" * 40,
                 )
         self.assertEqual(cm.exception.stage, "registry")
+
+    def test_public_audit_covers_more_than_sixteen_without_entering_send_path(self):
+        from pathlib import Path
+        from public_live_preview import MAX_VERIFY
+        self.assertGreaterEqual(MAX_VERIFY, 60)
+        workflow = (Path(__file__).resolve().parents[1] / ".github" / "workflows" / "leads-cold.yml").read_text(encoding="utf-8")
+        public = workflow[workflow.index("  public_live_preview_once:"):workflow.index("  execute:")]
+        execute = workflow[workflow.index("  execute:"):workflow.index("  instantly_control:")]
+        self.assertIn("public_audit", public)
+        self.assertIn("inputs.execution_mode != 'public_audit'", execute)
+        self.assertIn("--verify-limit 60", public)
+        self.assertNotIn("upload-artifact", public)
+        self.assertNotIn("INSTANTLY_API_KEY", public)
+        self.assertIn("Require private repository for prospect artifacts", execute)
 
     def test_limits_prevent_unbounded_scanning(self):
         with self.assertRaises(PreviewFailed):
