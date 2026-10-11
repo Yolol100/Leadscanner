@@ -649,7 +649,7 @@ def research_candidate(candidate: dict, *, session_factory=requests.Session) -> 
     official_url = _text(candidate.get("official_url"))
     domain = _text(candidate.get("official_domain"))
     homepage_text = _text(candidate.get("homepage_text_excerpt"))
-    if not official_url or not domain or not homepage_text:
+    if not official_url or not domain or candidate.get("homepage_text_excerpt") is None:
         result["research_status"] = "hold_missing_verification_handoff"
         return result
 
