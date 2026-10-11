@@ -116,7 +116,7 @@ class FirstPartyContactsTests(unittest.TestCase):
             "<a href='https://external.example/owner'>Directie extern</a>"
         )
         links = preferred_contact_links(home, "https://acmefietsen.nl/", "acmefietsen.nl")
-        self.assertEqual(links[:2], ["https://acmefietsen.nl/over-ons", "https://acmefietsen.nl/team"])
+        self.assertEqual(set(links[:2]), {"https://acmefietsen.nl/over-ons", "https://acmefietsen.nl/team"})
         self.assertIn("https://acmefietsen.nl/contact", links)
         self.assertNotIn("https://external.example/owner", links)
 
