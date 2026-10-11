@@ -1,5 +1,12 @@
 # Leadscanner repository agent contract
 
+## Eenvoudig gebruik (bovenop ongewijzigde veiligheidsregels)
+- Voor de gebruiker zijn er vier stappen: **zoeken → onderzoeken → kiezen → beoordelen**.
+- Begin elke handmatige run bij het geanonimiseerde `overzicht.md` en vervolgens de review-queue met bronvermeldingen. De vele JSON-bestanden zijn technische bewijsstukken, geen extra gebruikersacties.
+- Onderzoek breed; categorieën zijn hulpmiddelen om te rangschikken, geen harde uitsluitingen. Neem maximaal zes echte, controleerbare observaties mee (minder indien minder bewezen is). Beschrijf iets dat opvalt niet automatisch als een fout.
+- Nieuwe en historische reviews gebruiken dezelfde broncontrole en e-mailrenderer; verwijder geen toestemming-/contact-, bron-, dedupe-, status-, campagne- of handmatige bevestigingspoort om het proces korter te laten lijken.
+- De volledige lijst van reviewbevindingen wordt tot en met de menselijke goedkeuring aan één inhoudsgebonden token gekoppeld. Voor Instantly fact-only blijft de bestaande primair-observatie-templatecontract gelden tot een afzonderlijk geaudite wijziging is goedgekeurd.
+
 ## Current scope
 - Build a fast cold-lead pipeline from a clean slate.
 - Keep only the active cold-pipeline dependency closure. Legacy Google Maps adapters, remediation scripts, old mailbox bridges, pricing/scoring code and their tests have been removed.
@@ -19,10 +26,11 @@
 - Map the selected observations to one small proposed example; never claim an artifact already exists.
 - Default `preview_copy_mode=reviewed_mail` generates one evidence-backed NL/EN email for human approval. Explicit `preview_copy_mode=instantly_sequence` reviews verified official-site facts only and must never generate a per-lead email. If generating legacy copy, use one CTA, no meeting pressure, and no price/ROI/result claim.
 - Every preview must emit privacy-safe `funnel-metrics.json` with stage rejection totals and `coverage-audit.json` with Overture operational-supply status.
+- Every successful manual run also emits one readable, aggregate-only `overzicht.md` and GitHub job summary; never include contact details, company names or prospect copy.
 - Do not add a second discovery source from a single thin/gap run; broaden the current query first and require repeated independent gap evidence before deliberate source expansion.
 - Default every manual execution to `preview`; preview must not require mailbox or Google write credentials and must not mutate either system.
 - Every preview must emit `review-queue.json`, `review-queue.md`, and `review-queue.csv` with one approval token per reviewable lead.
-- Bind each approval token to the exact lead ID, verified evidence and proposed action; bind subject/body as well in legacy mail mode. Changed reviewed content must invalidate the token.
+- Bind each approval token to the exact lead ID, **all selected official-site findings**, verified evidence and proposed action; bind subject/body as well in reviewed-mail mode. Changed reviewed content must invalidate the token.
 - Seal every preview into a digest-bound `preview-snapshot.json` containing source repository/run/commit, the review batch, review queue, request and preview manifest.
 - The primary mutation mode is `execution_mode=instantly_stage`. It requires `confirm_instantly_stage=true`, a numeric `preview_run_id`, at least one exact `approved_review_tokens` value, and an explicit `instantly_campaign_id`.
 - Instantly stage mode must resume the exact successful, non-expired preview artifact from `main`; it must not rerun discovery, verification, research or copy generation.
