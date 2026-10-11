@@ -219,7 +219,17 @@ def select_site_contact(parsed_pages: list[dict], domain: str) -> dict:
             # A clearly published employee/owner mailbox on the official site
             # may use another business domain. Do not grab an unrelated agency
             # or widget address merely because it appears in the footer.
-            if not (same_domain or provider or owner or named):
+            page_path = _normalize(urlparse(url).path)
+            business_contact_page = any(x in page_path for x in (
+                "contact", "over-ons", "about", "team", "medewerker", "directie", "eigenaar",
+            ))
+            explicit_contact = any(x in context for x in (
+                "email", "e-mail", "mail", "contact", "stuur", "vragen",
+            ))
+            # The public official Contact/Team page may legitimately list an
+            # ISP, custom-mail or external mailbox provider. Its domain is not
+            # grounds to reject a visibly published business contact.
+            if not (same_domain or provider or owner or named or (business_contact_page and explicit_contact)):
                 continue
             generic = local in GENERIC_LOCAL_PARTS
             tier = 0 if owner else 1 if named else 2 if not generic else 3
