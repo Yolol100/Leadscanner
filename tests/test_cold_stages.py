@@ -116,6 +116,58 @@ class ColdStagesTests(unittest.TestCase):
         self.assertEqual(session.calls, ["https://acmefietsen.nl/"])
 
     @patch("cold_stages.is_public_http_url", return_value=True)
+    def test_stale_subpage_404_recovers_to_verified_same_domain_home(self, _safe):
+        missing = FakeResponse(
+            "https://acmefietsen.nl/obsolete",
+            "<p>Niet gevonden</p>",
+            status=404,
+        )
+        home = FakeResponse(
+            "https://acmefietsen.nl/",
+            "<title>Acme Fietsen</title><p>Acme Fietsen verkoopt en onderhoudt stadsfietsen.</p>",
+        )
+        session = FakeSession([missing, home])
+        verified = verify_candidate({
+            "name_hint": "Acme Fietsen",
+            "website_hint": "https://acmefietsen.nl/obsolete",
+        }, session_factory=lambda: session)
+        self.assertTrue(verified["ready_for_research"])
+        self.assertEqual(verified["official_url"], "https://acmefietsen.nl/")
+        self.assertEqual(session.calls, [
+            "https://acmefietsen.nl/obsolete", "https://acmefietsen.nl/",
+        ])
+
+    @patch("cold_stages.is_public_http_url", return_value=True)
+    def test_protected_site_never_retried_on_403(self, _safe):
+        protected = FakeResponse(
+            "https://acmefietsen.nl/",
+            "<p>Toegang geweigerd</p>",
+            status=403,
+        )
+        session = FakeSession([protected])
+        result = verify_candidate({
+            "name_hint": "Acme Fietsen", "website_hint": "https://acmefietsen.nl/",
+        }, session_factory=lambda: session)
+        self.assertFalse(result["ready_for_research"])
+        self.assertEqual(result["contact_status"], "hold_unreachable_official_site")
+        self.assertEqual(session.calls, ["https://acmefietsen.nl/"])
+
+    @patch("cold_stages.is_public_http_url", return_value=True)
+    def test_cross_domain_redirect_is_not_recovered_implicitly(self, _safe):
+        moved = FakeResponse(
+            "https://acmefietsen.nl/",
+            "",
+            status=302,
+            headers={"content-type": "text/html", "location": "https://other.example/"},
+        )
+        session = FakeSession([moved])
+        result = verify_candidate({
+            "name_hint": "Acme Fietsen", "website_hint": "https://acmefietsen.nl/",
+        }, session_factory=lambda: session)
+        self.assertFalse(result["ready_for_research"])
+        self.assertEqual(session.calls, ["https://acmefietsen.nl/"])
+
+    @patch("cold_stages.is_public_http_url", return_value=True)
     def test_verify_researches_before_choosing_official_email(self, _safe):
         home = FakeResponse(
             "https://acmefietsen.nl/",
