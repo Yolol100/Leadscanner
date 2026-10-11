@@ -36,7 +36,7 @@ Instantly-staging of mijn.host-conceptopslag wordt uitgevoerd.
 | 3. Kiezen | Deel opvallende feiten in categorieën in, rangschik ze en neem de **maximaal zes belangrijkste onderbouwde punten** mee. Herhaal hetzelfde onderwerp niet meer dan twee keer en vul een sterke selectie niet met zwakke opmerkingen. Minder als er minder bewijs is. | Prioriteit, categorie, observatie, bron |
 | 4. Beoordelen | Kies eerst een aantoonbaar persoonlijk adres van eigenaar/team, anders een gepubliceerd algemeen adres (ook via externe mailprovider). Zonder adres blijft het websiteonderzoek geldig, maar ontstaat geen geadresseerde conceptmail. | Openbare `public_audit`: alleen tellingen; privé `preview`: review-queue en tokens |
 
-Een observatie is niet automatisch een bewezen probleem. Leadscanner mag geen gebreken, resultaten of omzetverbeteringen verzinnen. Algemene reclamezinnen zijn onvoldoende onderbouwing.
+Een observatie is niet automatisch een bewezen probleem. Leadscanner mag geen gebreken, resultaten of omzetverbeteringen verzinnen. Algemene reclamezinnen zijn onvoldoende onderbouwing. De scanner volgt ook relevante interne vervolgpagina's binnen het vaste paginabudget. Een korte zin met onduidelijke taal kan alleen via extra, officiële site-inhoud worden geduid. Publieke tellingen tonen uitsluitend bekende statuscategorieën, nooit vrije website- of prospectteksten.
 
 ## Aan de slag
 
