@@ -208,6 +208,7 @@ on:
       - 'scripts/public_live_preview.py'
       - 'tests/test_dedupe_preflight.py'
       - 'tests/test_cold_stages.py'
+      - 'tests/test_first_party_contacts.py'
       - 'tests/test_outreach_stages.py'
       - 'tests/test_simple_review_flow.py'
       - 'tests/test_simple_overview.py'
