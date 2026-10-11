@@ -59,6 +59,38 @@ class Tests(unittest.TestCase):
         self.assertFalse(review["raw_copy_or_fingerprints_returned"])
         for private in ("first@studio.example.org",obs,proposed,action):
             self.assertNotIn(private,str(report))
+    def test_site_question_inside_evidence_is_not_an_extra_outreach_question(self):
+        observation = "Kunnen bezoekers online een afspraak aanvragen?"
+        action = "een korte voorbeeldvariant voor de afspraakroute"
+        body = (
+            'Hoi, op jullie website staat: "' + observation + '"\\n\\n'
+            'Ik kan ' + action + ' schetsen. Zal ik dat sturen?\\n\\n'
+            'Geen interesse: antwoord nee; dan mail ik niet meer.\\n\\n'
+            'Groet,\\nAndrew Baeten'
+        ).replace("\\\\n", "\\n")
+        payload = {
+            "leadscanner_site_research_status": "candidate_review_required",
+            "leadscanner_site_candidate_observation": observation,
+            "leadscanner_site_candidate_value_action": action,
+            "leadscanner_site_candidate_source_type": "official_site",
+            "leadscanner_site_candidate_evidence_url": "https://firma.example.org/afspraak",
+            "leadscanner_site_candidate_contact_url": "https://firma.example.org/contact",
+            "leadscanner_site_candidate_official_domain": "firma.example.org",
+            "leadscanner_site_candidate_subject": "idee voor afspraakroute",
+            "leadscanner_site_candidate_body": body,
+            "leadscanner_subject": "oud",
+            "leadscanner_body": "Oud concept. Geen interesse. Groet, Andrew Baeten",
+            "leadscanner_contact_basis": "review_required",
+        }
+        self.assertEqual(body.count("?"), 2)
+        with patch("instantly_mail_quality.read_imported_leads", return_value=("list", [{"payload": payload}])):
+            report = mail_quality_audit(object())
+        review = report["site_candidate_review"]
+        self.assertEqual(review["complete_review_candidate"], 1)
+        self.assertEqual(review["copy_quality_flags"]["not_one_primary_question"], 0)
+        self.assertEqual(review["permission_still_unverified"], 1)
+        self.assertNotIn(observation, str(report))
+
     def test_signature_tail_classification_is_strict_and_private(self):
         examples={
             "Hi, I noticed the quote page. Best,\\nAndrew": "unrecognized_tail",
