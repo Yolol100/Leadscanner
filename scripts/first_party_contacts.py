@@ -18,8 +18,7 @@ EMAIL_RE = re.compile(r"(?<![A-Z0-9._%+-])([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,6
 PERSON_RE = re.compile(
     r"(?<![A-Za-zÀ-ÿ])([A-ZÀ-Ý][a-zà-ÿ]{1,}(?:[-'][A-ZÀ-Ý]?[a-zà-ÿ]+)?"
     r"(?:\s+(?:van|de|den|der|ten|ter|von))?\s+"
-    r"[A-ZÀ-Ý][a-zà-ÿ]{1,}(?:[-'][A-ZÀ-Ý]?[a-zà-ÿ]+)?"
-    r"(?:\s+[A-ZÀ-Ý][a-zà-ÿ]{1,})?)(?![A-Za-zÀ-ÿ])"
+    r"[A-ZÀ-Ý][a-zà-ÿ]{1,}(?:[-'][A-ZÀ-Ý]?[a-zà-ÿ]+)?)(?![A-Za-zÀ-ÿ])"
 )
 OWNER_ROLE_RE = re.compile(
     r"\b(?:eigenaar|eigenaresse|mede-eigenaar|oprichter|medeoprichter|"
