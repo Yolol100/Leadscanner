@@ -283,3 +283,24 @@ cannot be silently staged through the automatic reviewed-mail route.
 **Before any launch**, record genuine per-lead evidence for contact permission,
 confirm suppression rules and reconnect/test the sender accounts. A successful
 copy, staging action or review is never evidence of consent.
+
+## Historical website and draft-copy review (2026-10-11)
+
+The controlled `historical_site_scan` job checks the 1,128 imported source contacts
+in twelve one-time batches of at most 100, with at most three batches in flight.
+It follows only public first-party pages and requires the exact historical recipient
+address on that official domain before accepting a candidate observation.
+Evidence must describe a real website process; no performance defect is inferred.
+
+Evidence-based first-mail alternatives are stored separately in
+`leadscanner_site_candidate_subject` and `leadscanner_site_candidate_body`.
+Other `leadscanner_site_candidate_*` fields contain the linked first-party
+observation, proposed small example action, source and review date.
+All candidate results remain `candidate_review_required`.
+
+Original mail bodies/subjects, source lead IDs, legal-basis fields, sendable
+merge variables, campaign assignments and sending accounts are NOT modified.
+Every candidate write uses a fresh per-lead preflight and independent readback.
+Public GitHub logs/artifacts contain only status counts, not private lead data.
+Records with unverified domains, unreachable pages, ambiguous language or missing
+evidence stay on hold. Never interpret this job as a compliant-sending approval.
