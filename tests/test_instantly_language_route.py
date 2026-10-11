@@ -57,6 +57,25 @@ class TestLanguageRouting(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "^routing_stage_blocklist_InstantlyError_http404$"):
             _step("blocklist", lambda: (_ for _ in ()).throw(InstantlyError("instantly_api_error status=404")))
 
+    def test_stage_failure_traceback_does_not_expose_provider_copy(self):
+        import traceback
+        from instantly_language_route import _step
+
+        private_detail = "private-test-recipient@example.invalid"
+
+        def fail():
+            raise RuntimeError("provider response contained " + private_detail)
+
+        try:
+            _step("source_list", fail)
+        except RuntimeError as exc:
+            rendered = "".join(traceback.format_exception(exc))
+            self.assertIn("routing_stage_source_list_RuntimeError", rendered)
+            self.assertNotIn(private_detail, rendered)
+            self.assertNotIn("provider response contained", rendered)
+        else:
+            self.fail("expected a sanitized routing error")
+
     def test_stage_label_redacts_connection_details(self):
         from instantly_language_route import _step
 
