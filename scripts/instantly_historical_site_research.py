@@ -138,7 +138,9 @@ def draft_for_review(observation: str, action: str, signal: str, language: str) 
             "Not interested: reply no and I won't follow up.\n\n"
             "Best,\nAndrew Baeten"
         )
-    if body.count("?") != 1 or len(body.split()) > 125:
+    # The quoted official-site observation can itself contain a question.
+    # Count only our own CTA outside that unchanged, source-backed quote.
+    if body.replace(observation, "", 1).count("?") != 1 or len(body.split()) > 125:
         return "", ""
     return subject, body
 

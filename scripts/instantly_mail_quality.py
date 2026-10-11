@@ -115,7 +115,9 @@ def mail_quality_audit(client) -> dict:
                     candidate_counts["proof_url_domain_mismatch"]+=1
                 if obs not in cb or act not in cb:
                     candidate_counts["source_observation_or_action_not_in_copy"]+=1
-                if cb.count("?")!=1:
+                # A verified website quotation may contain its own question.
+                # Only the outreach CTA outside that quote is our question.
+                if cb.replace(obs, "", 1).count("?")!=1:
                     candidate_counts["not_one_primary_question"]+=1
                 if len(cb.split())>125:
                     candidate_counts["over_125_words"]+=1

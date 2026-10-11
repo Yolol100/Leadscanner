@@ -105,6 +105,19 @@ class Tests(unittest.TestCase):
                 self.assertLessEqual(len(body.split()), 125)
                 self.assertNotIn('have already', body.lower())
 
+    def test_quoted_site_question_does_not_count_as_second_outreach_cta(self):
+        for language, source_text, action in (
+            ("nl", "Kunnen klanten online een afspraak aanvragen?", "een voorbeeld voor de afspraakroute"),
+            ("en", "Can customers book an appointment online?", "a short example for the booking flow"),
+        ):
+            with self.subTest(language=language):
+                subject, body = draft_for_review(source_text, action, "appointment", language)
+                self.assertTrue(subject)
+                self.assertIn(source_text, body)
+                self.assertEqual(body.count("?"), 2)
+                self.assertEqual(body.replace(source_text, "", 1).count("?"), 1)
+                self.assertIn("Andrew Baeten", body)
+
     def test_draft_rejects_missing_or_untrusted_inputs(self):
         self.assertEqual(draft_for_review(OBSERVATION, 'example', 'appointment', 'unknown'), ('', ''))
         self.assertEqual(draft_for_review(OBSERVATION, '{{hack}}', 'appointment', 'nl'), ('', ''))
