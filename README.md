@@ -11,11 +11,10 @@ bevatten zakelijke contactadressen en persoonlijke conceptteksten; deze horen
 niet in publiek downloadbare GitHub Actions-artifacts.
 
 Ook **oude Actions-artifacts** moeten apart worden beoordeeld en verwijderd.
-Bij controle bleek minstens één nog beschikbaar preview-artifact afkomstig van
-run 37611570538 reviewbestanden met contactadressen te bevatten. Er zijn geen
-contactadressen overgenomen in dit rapport. Maak de repository privé via
-GitHub Settings > General > Danger Zone > Change repository visibility; verwijder
-vervolgens de oude risicovolle artifacts bij Actions (ook oudere workflows).
+Maak de repository privé via GitHub Settings > General > Danger Zone >
+Change repository visibility; controleer en verwijder daarna eerder
+gepubliceerde review-artifacts onder GitHub Actions. Vermeld geen details
+van mogelijk gevoelige bestaande artifacts in publieke documentatie.
 Alleen de code aanpassen verwijdert geen eerder gepubliceerde inhoud en
 bewijst niet dat niemand de gegevens eerder heeft gedownload.
 
