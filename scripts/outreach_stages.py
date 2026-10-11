@@ -36,6 +36,8 @@ GENERIC_EVIDENCE_PATTERNS = (
     r"\bsince \d{4}\b",
     r"^bekijk ons overzicht\b",
     r"^view our overview\b",
+    r"\bwij werken op afspraak\b",
+    r"\bwe work by appointment\b",
 )
 OPENING_HOURS_RE = re.compile(
     r"\b(maandag|dinsdag|woensdag|donderdag|vrijdag|zaterdag|zondag|"
