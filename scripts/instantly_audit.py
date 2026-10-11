@@ -30,6 +30,20 @@ def evaluate(root: str | Path = ".") -> dict:
             and "--save-candidates" in _read(root, ".github/workflows/historical-site-research.yml"),
         },
         {
+            "name": "private_only_review_and_command_artifacts",
+            "ok": (
+                workflow.count("REPOSITORY_IS_PRIVATE: ${{ github.event.repository.private }}") >= 2
+                and "Require private repository for prospect artifacts" in workflow
+                and "Block Instantly command artifacts in public repository" in workflow
+                and 0 <= workflow.find("Require private repository for prospect artifacts")
+                < workflow.find("Install preview runtime")
+                and 0 <= workflow.find("Block Instantly command artifacts in public repository")
+                < workflow.find("Execute only newly-added immutable Instantly commands")
+                and 'if [ "$REPOSITORY_IS_PRIVATE" != 'true\u0027 ]; then' in workflow
+                and "results/review-queue.md" in workflow
+            ),
+        },
+        {
             "name": "approval_and_live_dedupe_boundary",
             "ok": (
                 all(token in service for token in (
