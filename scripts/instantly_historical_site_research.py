@@ -368,7 +368,7 @@ def research_imported_sites_batch(
             raise RuntimeError("site_research_unknown_scanner_status")
         if status == "candidate":
             proposal = outcome.get("proposal") if isinstance(outcome, dict) else None
-            if not isinstance(proposal, dict) or set(proposal) != set(REVIEW_KEYS):
+            if not isinstance(proposal, dict) or not set(proposal).issubset(set(REVIEW_KEYS)) or set(proposal) != set(REVIEW_KEYS) - {"leadscanner_site_candidate_findings"} and set(proposal) != set(REVIEW_KEYS):
                 raise RuntimeError("site_research_candidate_contract_invalid")
             counts["candidates_found"] += 1
             if save_candidates:
