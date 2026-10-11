@@ -63,6 +63,13 @@ class ReviewDraftStagesTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "sequence_facts_require_verified_official_site_evidence"):
             prepare_review_batch({"candidates": [candidate]})
 
+    def test_unverified_person_source_outside_official_domain_is_rejected(self):
+        candidate = self.mail_candidate()
+        candidate["contact_person_name"] = "Jan Jansen"
+        candidate["contact_name_source_url"] = "https://external.example/contact"
+        with self.assertRaisesRegex(ValueError, "review_contact_name_source_not_first_party"):
+            prepare_review_batch({"candidates": [candidate]})
+
     def test_stable_lead_id_is_deterministic(self):
         a = stable_lead_id("https://www.acmefietsen.nl/", "INFO@AcmeFietsen.nl")
         b = stable_lead_id("acmefietsen.nl", "info@acmefietsen.nl")

@@ -39,7 +39,7 @@
 - Do not add a second discovery source from a single thin/gap run; broaden the current query first and require repeated independent gap evidence before deliberate source expansion.
 - Default public manual execution to `public_audit`: read-only live research with no recipient data, review text or tokens in public logs or artifacts. Personal `preview` is available only in private visibility and cannot mutate mailbox/registry; `instantly_stage` and `draft` require explicit human authorization.
 - Every preview must emit `review-queue.json`, `review-queue.md`, and `review-queue.csv` with one approval token per reviewable lead.
-- Bind each approval token to the exact lead ID, **all selected official-site findings**, verified evidence and proposed action; bind subject/body as well in reviewed-mail mode. Changed reviewed content must invalidate the token.
+- Bind each approval token to the exact lead ID, **all selected official-site findings**, verified evidence and proposed action; bind subject/body as well in reviewed-mail mode. Record first-party name/role/email source URLs in human review and bind any available source URLs to the token. Changed reviewed content must invalidate the token.
 - Seal every preview into a digest-bound `preview-snapshot.json` containing source repository/run/commit, the review batch, review queue, request and preview manifest.
 - The primary mutation mode is `execution_mode=instantly_stage`. It requires `confirm_instantly_stage=true`, a numeric `preview_run_id`, at least one exact `approved_review_tokens` value, and an explicit `instantly_campaign_id`.
 - Instantly stage mode must resume the exact successful, non-expired preview artifact from `main`; it must not rerun discovery, verification, research or copy generation.

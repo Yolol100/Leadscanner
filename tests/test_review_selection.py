@@ -79,6 +79,30 @@ class ReviewSelectionTests(unittest.TestCase):
         self.assertEqual(first["body"], batch["rows"][0]["body"])
         self.assertFalse(queue["instructions"]["automatic_send"])
 
+    def test_named_contact_sources_survive_review_and_change_invalidates_approval(self):
+        candidate = self.candidate(email="jan@acmefietsen.nl")
+        candidate.update({
+            "contact_person_name": "Jan Jansen",
+            "contact_role": "named_owner",
+            "email_source_url": "https://acmefietsen.nl/contact",
+            "contact_name_source_url": "https://acmefietsen.nl/over-ons",
+            "contact_role_source_url": "https://acmefietsen.nl/over-ons",
+        })
+        batch = prepare_review_batch({"candidates": [candidate]})
+        queue = build_review_queue(batch)
+        item = queue["items"][0]
+        self.assertEqual(item["contact_name_source_url"], "https://acmefietsen.nl/over-ons")
+        self.assertEqual(item["contact_role_source_url"], "https://acmefietsen.nl/over-ons")
+        self.assertIn("Naam bron: https://acmefietsen.nl/over-ons", render_markdown(queue))
+        from review_selection import render_csv
+        csv_data = render_csv(queue)
+        self.assertIn("contact_name_source_url", csv_data)
+        self.assertIn("contact_role_source_url", csv_data)
+        token = item["approval_token"]
+        batch["rows"][0]["contact_role_source_url"] = "https://acmefietsen.nl/team"
+        with self.assertRaisesRegex(ValueError, "unknown_or_stale_approval_token"):
+            select_approved(batch, token)
+
     def test_review_token_changes_when_copy_changes(self):
         batch = self.batch()
         row = dict(batch["rows"][0])
