@@ -429,6 +429,51 @@ def body_for(candidate: dict) -> str:
         "Best,\nAndrew Baeten"
     )
 
+def draft_for_review(
+    observation: str, action: str, signal: str, language: str,
+    findings: list[dict] | None = None,
+) -> tuple[str, str]:
+    """One shared, review-only email renderer for new and historical leads.
+
+    The caller must already have verified first-party identity and contact.
+    This function never stages or sends anything.
+    """
+    if language not in {"nl", "en"} or not observation or not action:
+        return "", ""
+    if any(markup in observation + action for markup in ("{{", "}}", "{%", "%}", "\x00")):
+        return "", ""
+    selected = findings or []
+    if not isinstance(selected, list) or len(selected) > 6:
+        return "", ""
+    if selected and any(
+        not isinstance(item, dict)
+        or item.get("source_type") != "official_site"
+        or not _text(item.get("observation"))
+        or not _text(item.get("source_url"))
+        or normalize_domain(item["source_url"]) != normalize_domain(selected[0]["source_url"])
+        or any(markup in _text(item.get("observation")) for markup in ("{{", "}}", "{%", "%}", "\x00"))
+        for item in selected
+    ):
+        return "", ""
+    candidate = {
+        "verified_observation": observation,
+        "value_first_action": action,
+        "signal_type": signal,
+        "language": language,
+        "selected_findings": selected,
+    }
+    subject, body = subject_for(candidate), body_for(candidate)
+    # Website quotes may themselves contain questions; only our own CTA counts.
+    quoted_questions = 0 if len(selected) > 1 else observation.count("?")
+    if (
+        not subject or not body or body.count("?") - quoted_questions != 1
+        or len(body.split()) > MAX_BODY_WORDS
+        or any(markup in body for markup in ("{{", "}}", "{%", "%}", "\x00"))
+    ):
+        return "", ""
+    return subject, body
+
+
 def validate_mail(candidate: dict, subject: str, body: str) -> list[str]:
     reasons: list[str] = []
     subject_words = subject.split()
