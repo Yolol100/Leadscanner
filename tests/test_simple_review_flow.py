@@ -97,6 +97,29 @@ class SimpleReviewFlowTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unknown_or_stale_approval_token"):
             select_approved(altered, token)
 
+    def test_named_contact_source_is_visible_and_approval_bound(self):
+        candidate = _selected()
+        candidate["contact_person_name"] = "Jan Jansen"
+        candidate["contact_role"] = "named_owner"
+        candidate["contact_status"] = "verified_official_site"
+        candidate["public_business_email"] = "jan@sample.nl"
+        candidate["email_source_url"] = "https://sample.nl/over-ons"
+        mail = generate_one_mail(candidate)
+        self.assertEqual(mail["mail_status"], "ready_for_human_review")
+        self.assertTrue(mail["body"].startswith("Hoi Jan,"))
+        batch = prepare_review_batch({"candidates": [mail]})
+        queue = build_review_queue(batch)
+        item = queue["items"][0]
+        self.assertEqual(item["contact_person_name"], "Jan Jansen")
+        self.assertEqual(item["contact_role"], "named_owner")
+        self.assertEqual(item["email_source_url"], "https://sample.nl/over-ons")
+        self.assertIn("Jan Jansen", render_markdown(queue))
+        token = item["approval_token"]
+        tampered = deepcopy(batch)
+        tampered["rows"][0]["email_source_url"] = "https://sample.nl/ander"
+        with self.assertRaisesRegex(ValueError, "unknown_or_stale_approval_token"):
+            select_approved(tampered, token)
+
     def test_fact_only_review_keeps_evidence_without_drafting_mail(self):
         facts = generate_sequence_facts({"candidates": [_selected()]})
         self.assertEqual(facts["ready_for_human_review_count"], 1)
