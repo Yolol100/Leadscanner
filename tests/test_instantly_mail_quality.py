@@ -91,6 +91,54 @@ class Tests(unittest.TestCase):
         self.assertEqual(review["permission_still_unverified"], 1)
         self.assertNotIn(observation, str(report))
 
+    def test_review_reports_exact_uuid_sorted_batches_without_personal_copy(self):
+        obs = "Bezoekers kunnen online een afspraak aanvragen voor onderhoud."
+        action = "een korte voorbeeldvariant voor de afspraakroute"
+        rewritten = ("Hoi, op jullie website staat: " + obs + " Ik kan " + action
+                     + " laten zien. Zal ik een voorbeeld sturen? Geen interesse: antwoord"
+                     + " nee; dan stop ik. Groet, Andrew Baeten")
+        rows = []
+        for index in range(205):
+            body = ("Hoi, via jullie website kunnen bezoekers informatie opvragen. "
+                    "Zal ik een klein voorbeeld toesturen? Geen interesse: dan stop ik. "
+                    "Groet, Andrew Baeten")
+            if index == 0:
+                body = body.replace("Zal ik", "Kan ik helpen? Zal ik")
+            if index == 104:
+                body = body.replace("Geen interesse: dan stop ik.", "Ik heb nog een idee.")
+            payload = {
+                "leadscanner_subject": "vraag over jullie website",
+                "leadscanner_body": body,
+                "leadscanner_contact_basis": "review_required",
+            }
+            if index == 0:
+                payload.update({
+                    "leadscanner_site_research_status": "candidate_review_required",
+                    "leadscanner_site_candidate_source_type": "official_site",
+                    "leadscanner_site_candidate_observation": obs,
+                    "leadscanner_site_candidate_value_action": action,
+                    "leadscanner_site_candidate_evidence_url": "https://firma.example.org/afspraak",
+                    "leadscanner_site_candidate_contact_url": "https://firma.example.org/contact",
+                    "leadscanner_site_candidate_official_domain": "firma.example.org",
+                    "leadscanner_site_candidate_subject": "idee voor afspraakroute",
+                    "leadscanner_site_candidate_body": rewritten,
+                })
+            rows.append({"id": f"{index:04d}", "email": f"hidden{index}@example.org", "payload": payload})
+        with patch("instantly_mail_quality.read_imported_leads", return_value=("isolated", list(reversed(rows)))):
+            report = mail_quality_audit(object())
+        batches = report["batch_copy_review"]
+        self.assertEqual([b["offset"] for b in batches], [0, 100, 200])
+        self.assertEqual([b["contact_count"] for b in batches], [100, 100, 5])
+        self.assertEqual([b["candidate_rewrite_count"] for b in batches], [1, 0, 0])
+        self.assertEqual([b["source_question_review"] for b in batches], [1, 0, 0])
+        self.assertEqual([b["source_optout_unclear"] for b in batches], [0, 1, 0])
+        self.assertEqual([b["contact_basis_unverified"] for b in batches], [100, 100, 5])
+        self.assertEqual(sum(b["pending_specific_evidence_count"] for b in batches), 204)
+        self.assertFalse(report["writes"])
+        self.assertNotIn("hidden0@example.org", str(report))
+        self.assertNotIn(obs, str(report))
+        self.assertNotIn(rewritten, str(report))
+
     def test_signature_tail_classification_is_strict_and_private(self):
         examples={
             "Hi, I noticed the quote page. Best,\\nAndrew": "unrecognized_tail",
