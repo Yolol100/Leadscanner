@@ -21,6 +21,7 @@ from urllib.parse import urlparse
 
 import requests
 
+from instantly_site_crawl import PoliteSiteSession
 from cold_stages import (
     CONTACT_HINTS, RESEARCH_EXCLUDES, RESEARCH_HINTS, evidence_sentences,
     PUBLIC_MAIL_DOMAINS, extract_emails, internal_links, normalize_domain, page_type_for_url,
@@ -34,7 +35,7 @@ from outreach_stages import SUBJECTS, select_one_reason, value_action_for
 
 EXPECTED_SOURCE_COUNT = 1128
 BATCH_SIZE = 100
-MAX_WORKERS = 6
+MAX_WORKERS = 48
 UUID = re.compile(r"^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$")
 REVIEW_KEYS = (
     "leadscanner_site_candidate_observation",
@@ -164,7 +165,8 @@ def _scan_site(row: dict) -> dict:
         return {"status": "existing_research_hold"}
 
     hint = _text(row.get("website") or values.get("website"))
-    with requests.Session() as session:
+    with requests.Session() as raw_session:
+        session = PoliteSiteSession(raw_session, domain)
         html, url = _fetch_home(session, domain, hint)
         if not html or not url:
             return {"status": "unreachable_website"}
@@ -173,7 +175,7 @@ def _scan_site(row: dict) -> dict:
         contact_parsed = []
         home_domain = normalize_domain(url)
         if not confirmed_page:
-            for link in internal_links(parsed, url, home_domain, CONTACT_HINTS, limit=2):
+            for link in internal_links(parsed, url, home_domain, CONTACT_HINTS, limit=6):
                 linked_html, linked_url, _ = safe_fetch_html(session, link, home_domain)
                 if not linked_html or not linked_url:
                     continue
@@ -189,7 +191,7 @@ def _scan_site(row: dict) -> dict:
         evidence = []
         for link in internal_links(
             parsed, url, home_domain, RESEARCH_HINTS,
-            exclude=RESEARCH_EXCLUDES, limit=2,
+            exclude=RESEARCH_EXCLUDES, limit=8,
         ):
             linked_html, linked_url, _ = safe_fetch_html(session, link, home_domain)
             if linked_html and linked_url:
