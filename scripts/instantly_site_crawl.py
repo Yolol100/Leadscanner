@@ -18,7 +18,7 @@ from cold_stages import is_public_http_url, normalize_domain
 
 USER_AGENT = "Leadscanner/2.1 (+https://andrewbaeten.nl)"
 ROBOTS_AGENT = "Leadscanner"
-MAX_SITE_HTTP_REQUESTS = 32
+MAX_SITE_HTTP_REQUESTS = 20
 MAX_ROBOTS_BYTES = 128_000
 MAX_ROBOTS_REDIRECTS = 4
 ROBOTS_TIMEOUT_SECONDS = 5
