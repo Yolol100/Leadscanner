@@ -1,5 +1,12 @@
 # Leadscanner repository agent contract
 
+## Public repository privacy gate
+- The repository may remain public for source inspection, but **no preview, draft, Instantly staging or Instantly command producing sensitive artifacts may run in public visibility**. Require the GitHub Actions repository-private preflight before any reads or writes that produce such artifacts.
+- This gate is fail-closed. A failed privacy gate must not upload partial review or prospect artifacts and must not bypass prior identity, dedupe, authorization, campaign or send checks.
+- Existing public workflow artifacts containing contacts, researched prospect facts, or email copy need separate deletion/retention review. Never claim they were removed solely because a new gate passed.
+- Repository visibility changes are operational decisions. Do not silently make a public repository private; the owner must approve the access change.
+
+
 ## Eenvoudig gebruik (bovenop ongewijzigde veiligheidsregels)
 - Voor de gebruiker zijn er vier stappen: **zoeken → onderzoeken → kiezen → beoordelen**.
 - Begin elke handmatige run bij het geanonimiseerde `overzicht.md` en vervolgens de review-queue met bronvermeldingen. De vele JSON-bestanden zijn technische bewijsstukken, geen extra gebruikersacties.

@@ -252,22 +252,20 @@ def select_one_reason(candidate: dict) -> dict:
 
     ranked.sort(key=lambda entry: (entry[0], entry[1]))
     language = ranked[0][4]
-    same_language = [entry for entry in ranked if entry[4] == language]
-    # One finding per category first; fill the remaining places by strength.
-    # Never fabricate four points when only one or two are supported.
-    distinct, remainder, used_categories, seen = [], [], set(), set()
-    for entry in same_language:
-        observation = entry[5]
-        key = normalize_text(observation)
+    # Rank by importance first: a weak new category must not displace a
+    # better-supported observation merely to make the categories diverse.
+    # Suppress duplicate observations and use fewer than six when appropriate.
+    selected, seen = [], set()
+    for entry in ranked:
+        if entry[4] != language:
+            continue
+        key = normalize_text(entry[5])
         if key in seen:
             continue
         seen.add(key)
-        if entry[3]["signal_type"] in used_categories:
-            remainder.append(entry)
-        else:
-            distinct.append(entry)
-            used_categories.add(entry[3]["signal_type"])
-    selected = sorted((distinct + remainder)[:6], key=lambda entry: (entry[0], entry[1]))
+        selected.append(entry)
+        if len(selected) == 6:
+            break
     findings = []
     for negative_score, _, item, classification, _, observation in selected:
         score = -negative_score
