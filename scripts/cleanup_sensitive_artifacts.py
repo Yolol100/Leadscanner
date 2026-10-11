@@ -29,12 +29,20 @@ SENSITIVE_HINTS = (
 )
 
 
+
+def is_explicit_aggregate(name: str) -> bool:
+    """Only the audited aggregate-only artifact formats are trusted."""
+    return isinstance(name, str) and any(
+        pattern.fullmatch(name.casefold()) for pattern in SAFE_AGGREGATE
+    )
+
+
 def should_delete(name: str) -> bool:
     if not isinstance(name, str) or not name.strip():
         # Unidentifiable archives are not assumed safe on a public repository.
         return True
     text = name.casefold()
-    if any(pattern.fullmatch(text) for pattern in SAFE_AGGREGATE):
+    if is_explicit_aggregate(text):
         return False
     return any(fragment in text for fragment in SENSITIVE_HINTS)
 
@@ -122,7 +130,12 @@ def cleanup(token: str, *, repository: str, dry_run: bool = False) -> dict:
             len(matches) if dry_run else 0
         ),
         "aggregate_only_artifacts_preserved": sum(
-            not should_delete(x.get("name")) for x in remaining
+            is_explicit_aggregate(x.get("name")) for x in remaining
+        ),
+        "unclassified_artifacts_remaining": sum(
+            not should_delete(x.get("name"))
+            and not is_explicit_aggregate(x.get("name"))
+            for x in remaining
         ),
         "automatic_send": False,
         "changes_campaigns": False,
