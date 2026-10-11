@@ -155,70 +155,9 @@ def build_manifest(
     }
 
 
-def render_operator_summary(manifest: dict) -> str:
-    """Short privacy-safe status; the exact manifest remains canonical."""
-    mode = str(manifest.get("execution_mode") or "")
-    counts = manifest.get("counts") or {}
-    closure = manifest.get("closure") or {}
-    safety = manifest.get("safety") or {}
-    if mode not in {"preview", "draft", "instantly_stage"}:
-        raise ValueError("unknown_operator_summary_mode")
-    if not isinstance(counts, dict) or safety.get("automatic_send") is not False:
-        raise ValueError("operator_summary_requires_safe_manifest")
-
-    def count(name: str) -> int:
-        number = counts.get(name) or 0
-        if type(number) is not int or number < 0:
-            raise ValueError("operator_summary_requires_nonnegative_counts")
-        return number
-
-    phase = [
-        ("1. Gevonden", count("discovery_after_cheap_filters")),
-        ("2. Geverifieerd", count("verified_for_research")),
-        ("3. Websitebevindingen beoordeeld", count("outreach_reason_ready")),
-        ("4. Klaar voor menselijke beoordeling", count("review_queue_candidates")),
-    ]
-    if mode == "instantly_stage":
-        phase = [
-            ("1. Eerder ter beoordeling aangeboden", count("review_queue_candidates")),
-            ("2. Expliciet goedgekeurd", count("approved_for_instantly")),
-            ("3. Veilig overgeslagen", count("suppressed_after_preview")),
-            ("4. In conceptcampagne geplaatst", count("instantly_staged")),
-        ]
-    elif mode == "draft":
-        phase = [
-            ("1. Eerder ter beoordeling aangeboden", count("review_queue_candidates")),
-            ("2. Expliciet goedgekeurd", count("approved_for_draft")),
-            ("3. Veilig overgeslagen", count("suppressed_after_preview")),
-            ("4. Opgeslagen als mailboxconcept", count("review_draft_candidates")),
-        ]
-    if not closure.get("status"):
-        raise ValueError("operator_summary_requires_closure")
-    lines = [
-        "# Leadscanner - overzicht",
-        "",
-        f"Uitvoering: **{mode}**",
-        "",
-    ]
-    lines.extend(f"- {label}: **{value}**" for label, value in phase)
-    lines.extend([
-        "",
-        f"Status: **{closure['status']}**",
-        "",
-        "**Geen e-mails automatisch verzonden.**",
-        "Het plaatsen van concepten is niet hetzelfde als het activeren van verzending.",
-        "Voor verzending zijn de afzonderlijke toestemming- en campagnecontroles verplicht.",
-        "",
-        "Details staan in run-manifest.json; individuele bevindingen in review-queue.md.",
-    ])
-    return "\n".join(lines) + "\n"
-
-
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=("preview", "draft"))
-    parser.add_argument("--summary-from")
-    parser.add_argument("--summary-output")
+    parser.add_argument("--mode", required=True, choices=("preview", "draft"))
     parser.add_argument("--request")
     parser.add_argument("--filtered")
     parser.add_argument("--dedupe")
@@ -227,7 +166,7 @@ def main() -> int:
     parser.add_argument("--reasons")
     parser.add_argument("--values")
     parser.add_argument("--mail")
-    parser.add_argument("--draft-batch")
+    parser.add_argument("--draft-batch", required=True)
     parser.add_argument("--review-queue")
     parser.add_argument("--approved-batch")
     parser.add_argument("--revalidation")
@@ -239,17 +178,6 @@ def main() -> int:
     parser.add_argument("--registry-update")
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
-    if args.summary_from:
-        if not args.summary_output:
-            raise SystemExit("summary_output_required")
-        source = _load(args.summary_from)
-        output = Path(args.summary_output)
-        output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(render_operator_summary(source), encoding="utf-8")
-        print("OPERATOR_SUMMARY=green automatic_send=false")
-        return 0
-    if not args.mode or not args.draft_batch:
-        raise SystemExit("mode_and_draft_batch_required")
 
     source_manifest = _load(args.source_preview_manifest)
     if args.mode == "preview":
