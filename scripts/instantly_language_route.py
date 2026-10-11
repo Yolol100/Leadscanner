@@ -131,7 +131,9 @@ def _step(label, func, *args, **kwargs):
         suffix = ("_http" + match.group(1)) if match else (
             "_network" if raw == "instantly_network_error" else ""
         )
-        # Suppress the provider exception chain: Actions tracebacks are public.\n        # A sanitized outer message alone would still print sensitive causes.\n        raise RuntimeError(f"routing_stage_{label}_{type(exc).__name__}{suffix}") from None
+        # Suppress the provider exception chain: Actions tracebacks are public.
+        # A sanitized outer message alone would still print sensitive causes.
+        raise RuntimeError(f"routing_stage_{label}_{type(exc).__name__}{suffix}") from None
 
 
 def route_exact_language(client: InstantlyClient, *, language: str, campaign_id: str, max_leads: int = 25,
