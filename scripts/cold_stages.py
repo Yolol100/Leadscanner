@@ -808,7 +808,7 @@ def research_candidate(candidate: dict, *, session_factory=requests.Session) -> 
     result["research_evidence_status"] = "usable" if deduped else "no_eligible_sentence"
     # No contact requirement above this line. All valid first-party pages
     # contribute evidence even when the business uses only a contact form.
-    result.update(select_site_contact(pages, domain))
+    result.update(select_site_contact(pages, domain, company_name=_text(candidate.get("name_hint"))))
     return result
 
 def research_candidates(payload: dict, *, limit: int, max_workers: int = MAX_RESEARCH_WORKERS, session_factory=requests.Session) -> dict:
