@@ -43,9 +43,10 @@ class BroadFindingsTests(unittest.TestCase):
         }
         selected = select_one_reason(row)
         findings = selected["selected_findings"]
-        self.assertEqual(len(findings), 6)
+        self.assertEqual(len(findings), 5)
         self.assertEqual(findings[0]["category"], "appointment")
-        self.assertEqual(len({f["category"] for f in findings}), 6)
+        self.assertEqual(len({f["category"] for f in findings}), 5)
+        self.assertTrue(all(f["score"] >= 70 for f in findings))
         self.assertTrue(all(f["source_url"].startswith("https://sample.nl/") for f in findings))
         valued = value_action_for(selected)
         self.assertEqual(valued["value_action_status"], "proposed")
@@ -60,6 +61,17 @@ class BroadFindingsTests(unittest.TestCase):
         )
         self.assertTrue(subject)
         self.assertEqual(draft.count("?"), 1)
+
+    def test_portfolio_is_not_promoted_by_irrelevant_process_context(self):
+        from outreach_stages import classify_evidence
+        result = classify_evidence({
+            "text": "Bekijk onze projecten met praktijkvoorbeelden van gerealiseerde installaties.",
+            "source_type": "official_site",
+            "source_url": "https://sample.nl/werkwijze",
+            "page_type": "process",
+        })
+        self.assertEqual(result["signal_type"], "portfolio")
+        self.assertEqual(result["signal_score"], 63)
 
     def test_weak_other_does_not_fill_email_to_six_points(self):
         row = {

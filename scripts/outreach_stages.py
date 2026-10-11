@@ -194,7 +194,10 @@ def classify_evidence(item: dict) -> dict | None:
         hits = [pattern for pattern in patterns if re.search(pattern, observed, flags=re.I)]
         if not hits:
             continue
-        score = base_score + (15 if page_type == "process" else 0)
+        # Only transactional journeys benefit from being on a process page;
+        # a generic portfolio or navigation mention must not be inflated.
+        process_journey = signal_type in {"appointment", "quote_request", "reservation", "ordering", "services"}
+        score = base_score + (15 if page_type == "process" and process_journey else 0)
         candidate = {
             "signal_type": signal_type,
             "signal_score": score,
@@ -272,25 +275,31 @@ def select_one_reason(candidate: dict) -> dict:
     # better-supported observation merely to make the categories diverse.
     # Suppress duplicate observations and use fewer than six when appropriate.
     selected, seen = [], set()
+    category_counts: dict[str, int] = {}
     other_count = 0
     low_count = 0
+    strong_count = 0
     for entry in ranked:
         if entry[4] != language:
             continue
         score, category = -entry[0], entry[3]["signal_type"]
-        # Evidence that merely falls outside the known categories may be
-        # useful, but must not fill most of the email with low-priority filler.
+        # Repeating one website journey is not six distinct opportunities.
+        # Do not pad strong observations with unrelated, weak copy.
+        if category_counts.get(category, 0) >= 2:
+            continue
         if category == "other" and other_count >= 1:
             continue
-        if score < 70 and low_count >= 2:
+        if score < 70 and (low_count >= 2 or strong_count >= 2):
             continue
         key = normalize_text(entry[5])
         if key in seen:
             continue
         seen.add(key)
         selected.append(entry)
+        category_counts[category] = category_counts.get(category, 0) + 1
         other_count += category == "other"
         low_count += score < 70
+        strong_count += score >= 70
         if len(selected) == 6:
             break
     findings = []

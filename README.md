@@ -33,7 +33,7 @@ Instantly-staging of mijn.host-conceptopslag wordt uitgevoerd.
 | --- | --- | --- |
 | 1. Zoeken | Vind bedrijven met een publieke website, controleer bestaande uitsluitingen en bevestig de site. **Een e-mailadres is hier niet vereist.** | Aantal vindbare websites |
 | 2. Onderzoeken | Bekijk de homepage en maximaal twaalf extra bereikbare publieke pagina's; onderzoek eerst Over ons, Team, Eigenaar en Contact, daarna diensten, producten en andere kansen. Vind pas daarna het beste gepubliceerd e-mailadres. | Websiteobservaties, persoon + e-mailbron indien gevonden |
-| 3. Kiezen | Deel opvallende feiten in categorieën in, rangschik ze en neem de **maximaal zes belangrijkste onderbouwde punten** mee. Minder als er minder bewijs is. | Prioriteit, categorie, observatie, bron |
+| 3. Kiezen | Deel opvallende feiten in categorieën in, rangschik ze en neem de **maximaal zes belangrijkste onderbouwde punten** mee. Herhaal hetzelfde onderwerp niet meer dan twee keer en vul een sterke selectie niet met zwakke opmerkingen. Minder als er minder bewijs is. | Prioriteit, categorie, observatie, bron |
 | 4. Beoordelen | Kies eerst een aantoonbaar persoonlijk adres van eigenaar/team, anders een gepubliceerd algemeen adres (ook via externe mailprovider). Zonder adres blijft het websiteonderzoek geldig, maar ontstaat geen geadresseerde conceptmail. | Openbare `public_audit`: alleen tellingen; privé `preview`: review-queue en tokens |
 
 Een observatie is niet automatisch een bewezen probleem. Leadscanner mag geen gebreken, resultaten of omzetverbeteringen verzinnen. Algemene reclamezinnen zijn onvoldoende onderbouwing.
