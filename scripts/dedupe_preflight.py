@@ -59,8 +59,12 @@ def normalize_domain(value: object) -> str:
     if not raw:
         return ""
     candidate = raw if "://" in raw else f"//{raw}"
-    parsed = urlparse(candidate)
-    host = (parsed.hostname or "").rstrip(".")
+    # Malformed untrusted hosts must return no identity, not crash a batch.
+    try:
+        parsed = urlparse(candidate)
+        host = (parsed.hostname or "").rstrip(".")
+    except ValueError:
+        return ""
     if host.startswith("www."):
         host = host[4:]
     return host

@@ -31,7 +31,7 @@ from instantly_language_campaigns import inspect_lead_language, read_imported_le
 from instantly_language_route import HOLD_FREE_MAIL
 from instantly_signature_repair import _campaigns_still_quiet
 from myhost_instantly_import import TARGET_LIST_ID
-from outreach_stages import SUBJECTS, select_one_reason, value_action_for, finding_excerpt
+from outreach_stages import select_one_reason, value_action_for, draft_for_review
 
 EXPECTED_SOURCE_COUNT = 1128
 BATCH_SIZE = 100
@@ -115,63 +115,6 @@ def _fetch_home(session, domain: str, website_hint: str) -> tuple[str | None, st
     return None, None
 
 
-def draft_for_review(observation: str, action: str, signal: str, language: str, findings: list[dict] | None = None) -> tuple[str, str]:
-    """Propose concise literal first-mail copy. Never stage or send it."""
-    if language not in {"nl", "en"}:
-        return "", ""
-    if any(item in observation + action for item in ILLEGAL_MARKUP):
-        return "", ""
-    subject = SUBJECTS.get(signal, {"nl": "idee voor jullie website", "en": "idea for your website"})[language]
-    if findings and len(findings) > 1:
-        if len(findings) > 6 or any(
-            not isinstance(item, dict) or item.get("source_type") != "official_site"
-            or not _text(item.get("source_url")) or not _text(item.get("observation"))
-            for item in findings
-        ):
-            return "", ""
-        lines = "\n".join("- " + finding_excerpt(item) for item in findings)
-        subject = {"nl": "ideeën op basis van jullie website", "en": "ideas from your website"}[language]
-        if language == "nl":
-            body = (
-                "Hoi,\n\nOp jullie website vielen me deze punten op:\n"
-                f"{lines}\n\nIk kan {action} schetsen. Zal ik een kort voorbeeld opsturen?\n\n"
-                "Geen interesse: laat het gerust weten; dan stop ik.\n\nGroet,\nAndrew Baeten"
-            )
-        else:
-            body = (
-                "Hi,\n\nI noticed these details on your website:\n"
-                f"{lines}\n\nI could sketch {action}. May I share a short example?\n\n"
-                "Not relevant: just reply no and I'll stop.\n\nBest,\nAndrew Baeten"
-            )
-        if body.count("?") != 1 or len(body.split()) > 155 or any(
-            fragment in body for fragment in ILLEGAL_MARKUP
-        ):
-            return "", ""
-        return subject, body
-    if language == "nl":
-        body = (
-            "Hoi,\n\n"
-            f"Op jullie website staat: \"{observation}\"\n\n"
-            f"Daarbij kan ik {action} schetsen, zodat je ziet hoe een mogelijke "
-            "bezoekersroute eruit kan zien. Zal ik zo'n voorbeeld maken en opsturen?\n\n"
-            "Geen interesse: antwoord gerust met nee; dan mail ik niet meer.\n\n"
-            "Groet,\nAndrew Baeten"
-        )
-    else:
-        body = (
-            "Hi,\n\n"
-            f"Your website says: \"{observation}\"\n\n"
-            f"I could sketch {action} to illustrate one possible visitor flow. "
-            "Would you like me to create and share a short example?\n\n"
-            "Not interested: reply no and I won't follow up.\n\n"
-            "Best,\nAndrew Baeten"
-        )
-    # The quoted official-site observation can itself contain a question.
-    # Count only our own CTA outside that unchanged, source-backed quote.
-    if body.replace(observation, "", 1).count("?") != 1 or len(body.split()) > 125:
-        return "", ""
-    return subject, body
-
 def _scan_site(row: dict) -> dict:
     values = _custom(row)
     address = _email_and_domain(row)
@@ -214,7 +157,7 @@ def _scan_site(row: dict) -> dict:
         if not confirmed_page:
             return {"status": "recipient_not_confirmed_on_website"}
 
-        # Relevant process pages are prioritized over broad homepage marketing.
+        # Read a bounded, diverse set of public pages before prioritizing observations.
         evidence = []
         for link in broad_research_links(parsed, url, home_domain, limit=15):
             linked_html, linked_url, _ = safe_fetch_html(session, link, home_domain)
@@ -365,7 +308,9 @@ def research_imported_sites_batch(
             raise RuntimeError("site_research_unknown_scanner_status")
         if status == "candidate":
             proposal = outcome.get("proposal") if isinstance(outcome, dict) else None
-            if not isinstance(proposal, dict) or not set(proposal).issubset(set(REVIEW_KEYS)) or set(proposal) != set(REVIEW_KEYS) - {"leadscanner_site_candidate_findings"} and set(proposal) != set(REVIEW_KEYS):
+            expected_keys = set(REVIEW_KEYS)
+            legacy_keys = expected_keys - {"leadscanner_site_candidate_findings"}
+            if not isinstance(proposal, dict) or set(proposal) not in (expected_keys, legacy_keys):
                 raise RuntimeError("site_research_candidate_contract_invalid")
             counts["candidates_found"] += 1
             if save_candidates:

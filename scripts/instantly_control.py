@@ -798,26 +798,22 @@ def execute_command(command: dict, config: dict, client: InstantlyClient, *, run
     validate_write_gate(command, config, run_attempt=run_attempt)
     action, args = command["action"], command["args"]
 
-    if action == "audit_two_campaign_options":
-        data = audit_two_campaign_options(client)
-    elif action == "audit_retired_archive":
-        data = audit_retired_archive(client)
-    elif action == "audit_old_archive_metadata":
-        data = audit_old_archive_metadata(client)
-    elif action == "audit_imported_mail_quality":
-        data = mail_quality_audit(client)
-    elif action == "audit_synthetic_campaign_previews":
-        data = audit_synthetic_campaign_previews(client)
-    elif action == "audit_old_archive_state":
-        data = audit_old_archive_state(client)
-    elif action == "audit_old_campaign_retirement":
-        data = audit_old_campaign_retirement(client)
-    elif action == "audit_sender_vitals":
-        data = audit_sender_vitals(client)
-    elif action == "audit_launch_inventory":
-        data = audit_launch_inventory(client)
-    elif action == "audit_language_split":
-        data = audit_language_split(client)
+    # One allowlisted dispatch table for passive audits. All mutations retain
+    # their separate exact-confirmation and sender/registry protection below.
+    read_only_audits = {
+        "audit_two_campaign_options": audit_two_campaign_options,
+        "audit_retired_archive": audit_retired_archive,
+        "audit_old_archive_metadata": audit_old_archive_metadata,
+        "audit_imported_mail_quality": mail_quality_audit,
+        "audit_synthetic_campaign_previews": audit_synthetic_campaign_previews,
+        "audit_old_archive_state": audit_old_archive_state,
+        "audit_old_campaign_retirement": audit_old_campaign_retirement,
+        "audit_sender_vitals": audit_sender_vitals,
+        "audit_launch_inventory": audit_launch_inventory,
+        "audit_language_split": audit_language_split,
+    }
+    if action in read_only_audits:
+        data = read_only_audits[action](client)
     elif action == "audit_language_route_readiness":
         language = _text(args.get("language"))
         if language not in TARGET_CAMPAIGNS:

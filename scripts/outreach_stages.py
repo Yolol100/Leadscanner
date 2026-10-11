@@ -12,6 +12,7 @@ import json
 import re
 import unicodedata
 from pathlib import Path
+from urllib.parse import urlparse
 from cold_stages import normalize_domain
 
 MAX_CANDIDATES = 100
@@ -429,6 +430,81 @@ def body_for(candidate: dict) -> str:
         "Best,\nAndrew Baeten"
     )
 
+def review_findings(findings: object, domain: object) -> list[dict]:
+    """Return verified, ordered first-party findings; reject unsafe review data.
+
+    Legacy single-observation reviews may pass no list. This one contract is
+    shared by mail generation, review queues, approvals and historical drafts.
+    """
+    if findings is None or findings == []:
+        return []
+    if not isinstance(findings, list) or len(findings) > 6:
+        raise ValueError("review_findings_must_be_list_of_at_most_six")
+    expected_domain = normalize_domain(domain)
+    if not expected_domain:
+        raise ValueError("review_findings_require_official_domain")
+    verified = []
+    seen = set()
+    for item in findings:
+        if not isinstance(item, dict):
+            raise ValueError("review_finding_must_be_object")
+        observation = _text(item.get("observation"))
+        url = _text(item.get("source_url"))
+        parsed = urlparse(url)
+        if (
+            item.get("source_type") != "official_site"
+            or not observation or not url
+            or parsed.scheme not in {"http", "https"}
+            or parsed.username is not None or parsed.password is not None
+            or normalize_domain(url) != expected_domain
+            or any(marker in observation for marker in ("{{", "}}", "{%", "%}", "\x00"))
+        ):
+            raise ValueError("review_findings_require_verified_official_site")
+        key = (normalize_text(observation), url)
+        if key in seen:
+            raise ValueError("duplicate_review_finding")
+        seen.add(key)
+        verified.append(dict(item))
+    return verified
+
+
+def draft_for_review(
+    observation: str, action: str, signal: str, language: str,
+    findings: list[dict] | None = None,
+) -> tuple[str, str]:
+    """One shared, review-only email renderer for new and historical leads.
+
+    The caller must already have verified first-party identity and contact.
+    This function never stages or sends anything.
+    """
+    if language not in {"nl", "en"} or not observation or not action:
+        return "", ""
+    if any(markup in observation + action for markup in ("{{", "}}", "{%", "%}", "\x00")):
+        return "", ""
+    try:
+        source_domain = normalize_domain((findings or [{}])[0].get("source_url"))
+        selected = review_findings(findings, source_domain)
+    except (ValueError, AttributeError, TypeError):
+        return "", ""
+    candidate = {
+        "verified_observation": observation,
+        "value_first_action": action,
+        "signal_type": signal,
+        "language": language,
+        "selected_findings": selected,
+    }
+    subject, body = subject_for(candidate), body_for(candidate)
+    # Website quotes may themselves contain questions; only our own CTA counts.
+    quoted_questions = 0 if len(selected) > 1 else observation.count("?")
+    if (
+        not subject or not body or body.count("?") - quoted_questions != 1
+        or len(body.split()) > MAX_BODY_WORDS
+        or any(markup in body for markup in ("{{", "}}", "{%", "%}", "\x00"))
+    ):
+        return "", ""
+    return subject, body
+
+
 def validate_mail(candidate: dict, subject: str, body: str) -> list[str]:
     reasons: list[str] = []
     subject_words = subject.split()
@@ -442,22 +518,20 @@ def validate_mail(candidate: dict, subject: str, body: str) -> list[str]:
         reasons.append("subject_trick_or_exclamation_not_allowed")
     if len(body_words) > MAX_BODY_WORDS:
         reasons.append("body_too_long")
-    if body.count("?") != 1:
+    # A literal website observation may include its own question mark; only
+    # our call-to-action counts toward the single-question rule.
+    quote_questions = 0 if len(candidate.get("selected_findings") or []) > 1 else _text(candidate.get("verified_observation")).count("?")
+    if body.count("?") - quote_questions != 1:
         reasons.append("exactly_one_question_cta_required")
     if "Andrew Baeten" not in body or "Webactueel" in body:
         reasons.append("andrew_baeten_sender_identity_required")
-    findings = candidate.get("selected_findings") or []
+    try:
+        findings = review_findings(candidate.get("selected_findings"), candidate.get("official_domain"))
+    except (ValueError, TypeError):
+        findings = []
+        reasons.append("review_findings_missing_or_unverified")
     if len(findings) > 1:
-        if len(findings) > 6 or any(
-            not isinstance(item, dict)
-            or item.get("source_type") != "official_site"
-            or not _text(item.get("source_url"))
-            or (candidate.get("official_domain") and
-                normalize_domain(item["source_url"]) != candidate["official_domain"])
-            or not _text(item.get("observation"))
-            or finding_excerpt(item) not in body
-            for item in findings
-        ):
+        if any(finding_excerpt(item) not in body for item in findings):
             reasons.append("review_findings_missing_or_unverified")
     elif _text(candidate.get("verified_observation")) not in body:
         reasons.append("verified_observation_missing_from_body")
@@ -499,9 +573,14 @@ def generate_one_mail(candidate: dict) -> dict:
         result["copy_validation_reasons"] = ["value_action_not_ready"]
         return result
 
-    subject = subject_for(candidate)
-    body = body_for(candidate)
-    reasons = validate_mail(candidate, subject, body)
+    subject, body = draft_for_review(
+        _text(candidate.get("verified_observation")),
+        _text(candidate.get("value_first_action")),
+        _text(candidate.get("signal_type")),
+        _text(candidate.get("language")),
+        candidate.get("selected_findings"),
+    )
+    reasons = validate_mail(candidate, subject, body) if subject and body else ["draft_quality_hold"]
     result.update({
         "subject": subject,
         "body": body,
@@ -536,6 +615,12 @@ def prepare_one_sequence_fact(candidate: dict) -> dict:
         or not _text(candidate.get("signal_type"))
     ):
         result["copy_validation_reasons"] = ["first_party_facts_required"]
+        return result
+    # Fact-only review must carry the same verified source list as reviewed mail.
+    try:
+        review_findings(candidate.get("selected_findings"), candidate.get("official_domain"))
+    except (ValueError, TypeError):
+        result["copy_validation_reasons"] = ["review_findings_missing_or_unverified"]
         return result
     result["mail_status"] = "ready_for_sequence_review"
     return result

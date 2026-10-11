@@ -13,24 +13,14 @@ import json
 from pathlib import Path
 from urllib.parse import urlparse
 
-from dedupe_preflight import domains_match
+from dedupe_preflight import domains_match, normalize_domain
+from outreach_stages import review_findings
 
 MAX_DRAFTS = 100
 
 
 def _text(value: object) -> str:
     return str(value or "").strip()
-
-
-def normalize_domain(value: object) -> str:
-    raw = _text(value).casefold()
-    if not raw:
-        return ""
-    candidate = raw if "://" in raw else f"//{raw}"
-    host = (urlparse(candidate).hostname or "").rstrip(".")
-    if host.startswith("www."):
-        host = host[4:]
-    return host
 
 
 def stable_lead_id(domain: str, email: str) -> str:
@@ -102,6 +92,8 @@ def prepare_review_batch(payload: dict) -> dict:
         if normalize_domain(email.rsplit("@", 1)[1]) == "":
             raise ValueError("review_mail_invalid_email_domain")
 
+        # Keep all selected official-site findings visible through human review.
+        findings = review_findings(candidate.get("selected_findings"), domain)
         lead_id = stable_lead_id(domain, email)
         if (
             any(domains_match(domain, seen) for seen in seen_domains)
@@ -130,6 +122,7 @@ def prepare_review_batch(payload: dict) -> dict:
             "verified_observation_source_type": _text(candidate.get("verified_observation_source_type")),
             "signal_type": _text(candidate.get("signal_type")),
             "value_first_action": _text(candidate.get("value_first_action")),
+            "selected_findings": findings,
         })
 
     if len(rows) > MAX_DRAFTS:

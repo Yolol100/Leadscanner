@@ -20,7 +20,7 @@ from urllib.parse import unquote, urljoin, urlparse
 
 import requests
 
-from dedupe_preflight import domains_match
+from dedupe_preflight import domains_match, normalize_domain
 from url_safety import is_public_http_url
 
 MAX_DISCOVERY = 5000
@@ -109,20 +109,6 @@ def normalize_text(value: object) -> str:
 
 def normalize_company(value: object) -> str:
     return re.sub(r"[^a-z0-9]+", "", normalize_text(value))
-
-
-def normalize_domain(value: object) -> str:
-    raw = _text(value).casefold()
-    if not raw:
-        return ""
-    candidate = raw if "://" in raw else f"//{raw}"
-    try:
-        host = (urlparse(candidate).hostname or "").rstrip(".")
-    except Exception:
-        return ""
-    if host.startswith("www."):
-        host = host[4:]
-    return host
 
 
 def cheap_competitor_reason(candidate: dict) -> str | None:

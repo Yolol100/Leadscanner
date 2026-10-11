@@ -92,6 +92,7 @@ on:
       - 'scripts/funnel_metrics.py'
       - 'scripts/coverage_audit.py'
       - 'scripts/cold_run_manifest.py'
+      - 'scripts/simple_overview.py'
       - 'scripts/review_draft_stages.py'
       - 'scripts/review_selection.py'
       - 'scripts/preview_snapshot.py'
@@ -119,12 +120,16 @@ on:
       - 'tests/test_broad_site_findings.py'
       - 'tests/test_cold_stages.py'
       - 'tests/test_outreach_stages.py'
+      - 'tests/test_simple_review_flow.py'
+      - 'tests/test_simple_overview.py'
+      - 'tests/test_simple_control_dispatch.py'
       - 'tests/test_funnel_metrics.py'
       - 'tests/test_coverage_audit.py'
       - 'tests/test_overture_discovery.py'
       - 'tests/test_cold_run_manifest.py'
       - 'tests/test_review_draft_stages.py'
       - 'tests/test_review_selection.py'
+      - 'tests/test_simple_review_flow.py'
       - 'tests/test_preview_snapshot.py'
       - 'tests/test_approval_revalidation.py'
       - 'tests/test_myhost_draft.py'
@@ -165,6 +170,7 @@ on:
       - 'scripts/funnel_metrics.py'
       - 'scripts/coverage_audit.py'
       - 'scripts/cold_run_manifest.py'
+      - 'scripts/simple_overview.py'
       - 'scripts/review_draft_stages.py'
       - 'scripts/review_selection.py'
       - 'scripts/preview_snapshot.py'
@@ -191,12 +197,16 @@ on:
       - 'tests/test_dedupe_preflight.py'
       - 'tests/test_cold_stages.py'
       - 'tests/test_outreach_stages.py'
+      - 'tests/test_simple_review_flow.py'
+      - 'tests/test_simple_overview.py'
+      - 'tests/test_simple_control_dispatch.py'
       - 'tests/test_funnel_metrics.py'
       - 'tests/test_coverage_audit.py'
       - 'tests/test_overture_discovery.py'
       - 'tests/test_cold_run_manifest.py'
       - 'tests/test_review_draft_stages.py'
       - 'tests/test_review_selection.py'
+      - 'tests/test_simple_review_flow.py'
       - 'tests/test_preview_snapshot.py'
       - 'tests/test_approval_revalidation.py'
       - 'tests/test_myhost_draft.py'
@@ -262,6 +272,7 @@ jobs:
             scripts/funnel_metrics.py \
             scripts/coverage_audit.py \
             scripts/cold_run_manifest.py \
+            scripts/simple_overview.py \
             scripts/review_draft_stages.py \
             scripts/review_selection.py \
             scripts/preview_snapshot.py \
@@ -291,12 +302,16 @@ jobs:
             tests.test_cold_stages \
             tests.test_broad_site_findings \
             tests.test_outreach_stages \
+            tests.test_simple_review_flow \
+            tests.test_simple_overview \
+            tests.test_simple_control_dispatch \
             tests.test_funnel_metrics \
             tests.test_coverage_audit \
             tests.test_overture_discovery \
             tests.test_cold_run_manifest \
             tests.test_review_draft_stages \
             tests.test_review_selection \
+            tests.test_simple_review_flow \
             tests.test_preview_snapshot \
             tests.test_approval_revalidation \
             tests.test_myhost_draft \
@@ -914,6 +929,17 @@ jobs:
             --registry-update results/registry-update.json \
             --output results/run-manifest.json
 
+      - name: Eenvoudig overzicht voor de gebruiker
+        if: success()
+        env:
+          PYTHONPATH: scripts
+        run: |
+          set -euo pipefail
+          python3 scripts/simple_overview.py \
+            --input results/run-manifest.json \
+            --output results/overzicht.md
+          cat results/overzicht.md >> "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: leads-cold-${{ inputs.execution_mode }}-${{ github.run_id }}
@@ -940,6 +966,7 @@ jobs:
             results/approved-current-batch.json
             results/instantly-stage.json
             results/run-manifest.json
+            results/overzicht.md
             results/myhost-drafts.json
             results/myhost-drafts.txt
             results/review-draft-readback.json
