@@ -14,7 +14,7 @@ from pathlib import Path
 COUNT_LABELS = {
     "discovery_after_cheap_filters": "Websites na eerste selectie",
     "dedupe_kept": "Nog niet eerder benaderd",
-    "verified_for_research": "Contacten geverifieerd",
+    "verified_for_research": "Officiële websites geverifieerd",
     "research_ready": "Websites onderzocht",
     "outreach_reason_ready": "Bruikbare observaties gevonden",
     "review_queue_candidates": "Klaar voor beoordeling",
@@ -66,7 +66,7 @@ def render_overview(manifest: dict) -> str:
             "## 1. Zoeken en controleren", "",
             f"- Websites na eerste selectie: **{counts.get('discovery_after_cheap_filters', 0)}**",
             f"- Na de historische dubbele-contactcontrole: **{counts.get('dedupe_kept', 0)}**",
-            f"- Contacten geverifieerd: **{counts.get('verified_for_research', 0)}**", "",
+            f"- Websites geverifieerd: **{counts.get('verified_for_research', 0)}**", "",
             "## 2. Website onderzoeken", "",
             f"- Onderzochte websites met bruikbare bronnen: **{counts.get('research_ready', 0)}**",
             f"- Websites met concrete bevindingen: **{counts.get('outreach_reason_ready', 0)}**", "",
