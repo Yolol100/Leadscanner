@@ -118,6 +118,8 @@ def build_manifest(
             "dedupe_kept": int(dedupe.get("kept_count") or 0),
             "verified_for_research": int(verified.get("ready_for_research_count") or 0),
             "research_ready": int(research.get("research_ready_count") or 0),
+            "contacts_found": int(research.get("contacts_found_count") or 0),
+            "named_contacts": int(research.get("named_contacts_found_count") or 0),
             "outreach_reason_ready": int(reasons.get("ready_count") or 0),
             "value_action_ready": int(values.get("ready_count") or 0),
             "mail_ready_for_human_review": int(mail.get("ready_for_human_review_count") or 0),
