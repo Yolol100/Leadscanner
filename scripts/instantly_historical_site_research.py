@@ -23,7 +23,7 @@ import requests
 
 from instantly_site_crawl import PoliteSiteSession
 from cold_stages import (
-    CONTACT_HINTS, RESEARCH_EXCLUDES, RESEARCH_HINTS, evidence_sentences,
+    CONTACT_HINTS, broad_research_links, evidence_sentences,
     PUBLIC_MAIL_DOMAINS, extract_emails, internal_links, normalize_domain, page_type_for_url,
     parse_html, safe_fetch_html,
 )
@@ -216,10 +216,7 @@ def _scan_site(row: dict) -> dict:
 
         # Relevant process pages are prioritized over broad homepage marketing.
         evidence = []
-        for link in internal_links(
-            parsed, url, home_domain, RESEARCH_HINTS,
-            exclude=RESEARCH_EXCLUDES, limit=15,
-        ):
+        for link in broad_research_links(parsed, url, home_domain, limit=15):
             linked_html, linked_url, _ = safe_fetch_html(session, link, home_domain)
             if linked_html and linked_url:
                 linked = parse_html(linked_html)
