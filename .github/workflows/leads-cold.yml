@@ -87,6 +87,7 @@ on:
       - 'instantly-commands/inbox/*.json'
       - 'scripts/dedupe_preflight.py'
       - 'scripts/cold_stages.py'
+      - 'scripts/first_party_contacts.py'
       - 'scripts/overture_discovery.py'
       - 'scripts/outreach_stages.py'
       - 'scripts/funnel_metrics.py'
@@ -122,6 +123,7 @@ on:
       - 'tests/test_dedupe_preflight.py'
       - 'tests/test_broad_site_findings.py'
       - 'tests/test_cold_stages.py'
+      - 'tests/test_first_party_contacts.py'
       - 'tests/test_outreach_stages.py'
       - 'tests/test_simple_review_flow.py'
       - 'tests/test_simple_overview.py'
@@ -280,6 +282,7 @@ jobs:
           python3 -m compileall -q \
             scripts/dedupe_preflight.py \
             scripts/cold_stages.py \
+            scripts/first_party_contacts.py \
             scripts/outreach_stages.py \
             scripts/funnel_metrics.py \
             scripts/coverage_audit.py \
@@ -315,6 +318,7 @@ jobs:
           python3 -m unittest \
             tests.test_dedupe_preflight \
             tests.test_cold_stages \
+            tests.test_first_party_contacts \
             tests.test_broad_site_findings \
             tests.test_outreach_stages \
             tests.test_simple_review_flow \
@@ -639,9 +643,20 @@ jobs:
             --input results/verification.json \
             --limit "$VERIFY_LIMIT" \
             --max-workers 6 \
+            --output results/research-pending-dedupe.json
+
+      - name: Phase 6b - Recheck newly found contact email against live exclusions
+        if: inputs.execution_mode == 'preview'
+        env:
+          PYTHONPATH: scripts
+        run: |
+          set -euo pipefail
+          python3 scripts/cold_stages.py contact-dedupe \
+            --input results/research-pending-dedupe.json \
+            --registry-csv results/dedupe-registry.csv \
             --output results/research.json
 
-      - name: Phase 7 - Select one evidence-backed outreach reason
+      - name: Phase 7 - Select up to six ranked first-party observations
         if: inputs.execution_mode == 'preview'
         env:
           PYTHONPATH: scripts
