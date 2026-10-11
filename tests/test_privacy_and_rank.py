@@ -48,6 +48,16 @@ class PrivacyAndRankingTests(unittest.TestCase):
         )
         self.assertIn("exit 1", control)
 
+    def test_public_or_empty_command_run_never_uploads_an_artifact(self):
+        source = WORKFLOW.read_text(encoding="utf-8")
+        control = source[source.index("  instantly_control:\n"):source.index("  instantly_sync:\n")]
+        self.assertIn("id: new_commands", control)
+        self.assertIn("echo 'has_commands=false' >> \"$GITHUB_OUTPUT\"", control)
+        self.assertIn(
+            "if: always() && steps.new_commands.outputs.has_commands == 'true' && github.event.repository.private == true",
+            control,
+        )
+
     def test_six_stronger_observations_are_not_displaced_by_weak_category(self):
         strong = [
             ("Klanten kunnen online een afspraak maken voor de jaarlijkse onderhoudsbeurt.", "one"),
