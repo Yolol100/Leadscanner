@@ -10,13 +10,19 @@ daarom bewust geblokkeerd totdat de repository **privé** is. De reviewbestanden
 bevatten zakelijke contactadressen en persoonlijke conceptteksten; deze horen
 niet in publiek downloadbare GitHub Actions-artifacts.
 
-Ook **oude Actions-artifacts** moeten apart worden beoordeeld en verwijderd.
-Maak de repository privé via GitHub Settings > General > Danger Zone >
-Change repository visibility; controleer en verwijder daarna eerder
-gepubliceerde review-artifacts onder GitHub Actions. Vermeld geen details
-van mogelijk gevoelige bestaande artifacts in publieke documentatie.
-Alleen de code aanpassen verwijdert geen eerder gepubliceerde inhoud en
-bewijst niet dat niemand de gegevens eerder heeft gedownload.
+**Oude artifact-opslag gecontroleerd (11 oktober 2026):** tijdens drie eenmalige
+Actions-opschonings-/verificatieruns zijn 105 artifacts verwijderd (waaronder
+tijdelijke controlerapporten uit die runs). Bij de laatste API-readback bleven
+40 artifacts over; allemaal met een expliciet toegelaten naam voor
+geanonimiseerde site-research- of Instantly-sync-tellingen. Volgens die
+inventaris bleven 0 verdachte of niet-geclassificeerde artifacts over.
+Zie [het technische auditbewijs](docs/operations/artifact-cleanup-and-smoke-20261011.md).
+
+Deze opschoning verwijdert **geen oude Actions-logs** of externe kopieën die
+mogelijk al zijn gedownload; die moeten zo nodig afzonderlijk worden
+beoordeeld. Maak de repository privé via GitHub Settings > General >
+Danger Zone > Change repository visibility voordat een echte preview,
+Instantly-staging of mijn.host-conceptopslag weer wordt uitgevoerd.
 
 
 ## De vier stappen
