@@ -103,6 +103,21 @@ class ReviewSelectionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unknown_or_stale_approval_token"):
             select_approved(batch, token)
 
+    def test_fourth_finding_not_in_short_draft_still_invalidates_approval(self):
+        candidate = self.candidate()
+        candidate["selected_findings"] = [{
+            "category": "appointment", "priority": "medium", "score": 85 - index,
+            "observation": f"Klanten kunnen via de website verschillende afspraakroutes bekijken voor service {index}.",
+            "source_url": f"https://acmefietsen.nl/route-{index}",
+            "source_type": "official_site", "page_type": "process",
+        } for index in range(4)]
+        batch = prepare_review_batch({"candidates": [candidate]})
+        approval = build_review_queue(batch)["items"][0]["approval_token"]
+        self.assertEqual(len(batch["rows"][0]["selected_findings"]), 4)
+        batch["rows"][0]["selected_findings"][3]["observation"] += " Nieuwe informatie."
+        with self.assertRaisesRegex(ValueError, "unknown_or_stale_approval_token"):
+            select_approved(batch, approval)
+
     def test_review_token_changes_when_copy_changes(self):
         batch = self.batch()
         row = dict(batch["rows"][0])
