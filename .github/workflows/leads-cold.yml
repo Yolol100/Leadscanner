@@ -1110,7 +1110,7 @@ jobs:
           python3 scripts/instantly_historical_site_research.py \
             --offset "${{ matrix.offset }}" \
             --expected-count 1128 \
-            --workers 48 \
+            --workers 100 \
             --save-candidates \
             --output "results/site-batch-${{ matrix.offset }}.json"
       - name: Upload aggregate-only batch evidence
