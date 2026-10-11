@@ -86,6 +86,17 @@ class FirstPartyContactsTests(unittest.TestCase):
         self.assertEqual(contact["contact_role"], "general_inbox")
         self.assertIsNone(contact["contact_person_name"])
 
+    def test_official_contact_page_accepts_any_explicit_provider(self):
+        contact = select_site_contact([
+            page("/contact", """
+                <p>Zakelijk contact: mail ons rechtstreeks.</p>
+                <a href="mailto:info@xs4all.nl">Contact per e-mail</a>
+            """),
+        ], "acmefietsen.nl")
+        self.assertEqual(contact["contact_status"], "verified_official_site")
+        self.assertEqual(contact["public_business_email"], "info@xs4all.nl")
+        self.assertEqual(contact["contact_role"], "general_inbox")
+
     def test_personal_email_fallback_without_verified_person_name(self):
         contact = select_site_contact([
             page("/contact", "<p>Neem contact op met onze fietsmonteur.</p><a href='mailto:peter@acmefietsen.nl'>E-mail</a>"),
