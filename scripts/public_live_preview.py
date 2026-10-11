@@ -37,8 +37,8 @@ from review_selection import build_review_queue, review_token, select_approved
 
 REGISTRY_MAX_BYTES = 8_000_000
 MAX_DISCOVERY = 80
-MAX_VERIFY = 20
-MAX_WORKERS = 6
+MAX_VERIFY = 80
+MAX_WORKERS = 8
 MAX_RADIUS_KM = 12.0
 # Only enum-like status codes, never untrusted text, may enter public results.
 SAFE_CODE = re.compile(r"^[a-z][a-z0-9_]{0,49}$")
@@ -327,7 +327,7 @@ def main() -> int:
     parser.add_argument("--keywords", default="fietsenwinkel,bloemist,kapsalon")
     parser.add_argument("--radius-km", type=float, default=5.0)
     parser.add_argument("--discovery-limit", type=int, default=60)
-    parser.add_argument("--verify-limit", type=int, default=16)
+    parser.add_argument("--verify-limit", type=int, default=60)
     args = parser.parse_args()
     keywords = list(dict.fromkeys(x.strip() for x in re.split(r"[,\n]+", args.keywords) if x.strip()))
     try:
