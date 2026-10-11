@@ -97,6 +97,32 @@ class PublicLivePreviewTests(unittest.TestCase):
                 )
         self.assertEqual(cm.exception.stage, "registry")
 
+    def test_public_mode_is_isolated_from_private_preview_and_mutations(self):
+        from pathlib import Path
+        workflow = (Path(__file__).resolve().parents[1] / ".github" / "workflows" / "leads-cold.yml").read_text(encoding="utf-8")
+        public = workflow[workflow.index("  public_live_preview_once:"):workflow.index("  execute:")]
+        execute = workflow[workflow.index("  execute:"):workflow.index("  instantly_control:")]
+        self.assertIn("inputs.execution_mode == 'public_audit'", public)
+        self.assertIn("inputs.execution_mode != 'public_audit'", execute)
+        self.assertIn("contents: read", public)
+        self.assertNotIn("upload-artifact", public)
+        self.assertNotIn("INSTANTLY_API_KEY", public)
+        self.assertNotIn("OUTREACH_MAIL_PASSWORD", public)
+        self.assertNotIn("LEAD_REGISTRY_SERVICE_ACCOUNT_JSON", public)
+        self.assertIn("Require private repository for prospect artifacts", execute)
+
+    def test_public_quality_histogram_has_only_numeric_bins(self):
+        src = example()
+        reasons = select_reasons({"candidates": [src]})
+        values = choose_value_actions(reasons)
+        mail = generate_mails(values)
+        audit = audit_live_findings(
+            researched={"candidates": [dict(src, researched_urls=["https://example.invalid/"])]},
+            reasons=reasons, mail=mail,
+        )
+        self.assertEqual(sum(audit["findings_per_site"].values()), 1)
+        self.assertEqual(set(audit["findings_per_site"]), {"2"})
+
     def test_limits_prevent_unbounded_scanning(self):
         with self.assertRaises(PreviewFailed):
             run_live_preview(
