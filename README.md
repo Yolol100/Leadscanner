@@ -54,10 +54,10 @@ De **eerste output** die je als gebruiker nodig hebt, is `overzicht.md` in het r
 Een bedrijf wordt niet automatisch geschikt omdat het een website heeft. Mogelijke oorzaken:
 
 - Bedrijf al bekend, onderdrukt of eerder onderzocht; nooit blind opnieuw benaderen.
-- Geen gepubliceerd e-mailadres: **websiteonderzoek gaat gewoon door**. Een aantoonbaar contactformulier, telefoonlink of bezochte Contact-pagina wordt apart geregistreerd. Een Contact-pagina bewijst niet dat het formulier werkt; geen van deze routes is een e-mailadres en niets wordt automatisch gebruikt. Een geadresseerde conceptmail blijft achterwege.
+- Geen gepubliceerd e-mailadres: **websiteonderzoek gaat gewoon door**. Publiek gepubliceerde zakelijke e-mails in bij het bedrijf passende schema.org JSON-LD tellen ook mee wanneer de koppeling met het bedrijf bevestigd is. Een aantoonbaar contactformulier, telefoonlink of bezochte Contact-pagina wordt apart geregistreerd. Een Contact-pagina bewijst niet dat het formulier werkt; geen van deze routes is een e-mailadres en niets wordt automatisch gebruikt. Een geadresseerde conceptmail blijft achterwege.
 - Een geverifieerde website telt als onderzocht na bezoek, ook zonder voldoende concrete observaties. De kwaliteitsmeting telt bruikbaar bewijs **apart**; geen geforceerde bevindingen om een hoog cijfer te halen.
 - De openbare onderzoeksrun toont aparte **anonieme** aantallen voor bezochte sites, bruikbaar bewijs, gevonden e-mailadressen, contactformulieren, telefoonlinks en contactpagina's. Een gevonden contactroute is niet hetzelfde als een geverifieerd e-mailadres of een goedgekeurd concept.
-- Website onbereikbaar of robots-/domeinveiligheid laat lezen niet toe.
+- Website onbereikbaar of robots-/domeinveiligheid laat lezen niet toe. Bij een verouderde URL probeert de scanner maximaal twee veilige alternatieven op hetzelfde domein; robots- of toegangswigeringen worden nooit omzeild.
 - Geen concrete, controleerbare observatie of geen betrouwbare taalherkenning.
 - Concept of broncontrole voldoet niet aan het contract.
 
