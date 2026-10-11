@@ -30,7 +30,7 @@ from instantly_language_campaigns import inspect_lead_language, read_imported_le
 from instantly_language_route import HOLD_FREE_MAIL
 from instantly_signature_repair import _campaigns_still_quiet
 from myhost_instantly_import import TARGET_LIST_ID
-from outreach_stages import select_one_reason, value_action_for
+from outreach_stages import SUBJECTS, select_one_reason, value_action_for
 
 EXPECTED_SOURCE_COUNT = 1128
 BATCH_SIZE = 100
@@ -39,6 +39,8 @@ UUID = re.compile(r"^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$")
 REVIEW_KEYS = (
     "leadscanner_site_candidate_observation",
     "leadscanner_site_candidate_value_action",
+    "leadscanner_site_candidate_subject",
+    "leadscanner_site_candidate_body",
     "leadscanner_site_candidate_evidence_url",
     "leadscanner_site_candidate_source_type",
     "leadscanner_site_candidate_signal_type",
@@ -110,6 +112,35 @@ def _fetch_home(session, domain: str, website_hint: str) -> tuple[str | None, st
             return html, final_url
     return None, None
 
+
+def draft_for_review(observation: str, action: str, signal: str, language: str) -> tuple[str, str]:
+    """Propose concise literal first-mail copy. Never stage or send it."""
+    if language not in {"nl", "en"} or signal not in SUBJECTS:
+        return "", ""
+    if any(item in observation + action for item in ILLEGAL_MARKUP):
+        return "", ""
+    subject = SUBJECTS[signal][language]
+    if language == "nl":
+        body = (
+            "Hoi,\n\n"
+            f"Op jullie website staat: \"{observation}\"\n\n"
+            f"Daarbij kan ik {action} schetsen, zodat je ziet hoe een mogelijke "
+            "bezoekersroute eruit kan zien. Zal ik zo'n voorbeeld maken en opsturen?\n\n"
+            "Geen interesse: antwoord gerust met nee; dan mail ik niet meer.\n\n"
+            "Groet,\nAndrew Baeten"
+        )
+    else:
+        body = (
+            "Hi,\n\n"
+            f"Your website says: \"{observation}\"\n\n"
+            f"I could sketch {action} to illustrate one possible visitor flow. "
+            "Would you like me to create and share a short example?\n\n"
+            "Not interested: reply no and I won't follow up.\n\n"
+            "Best,\nAndrew Baeten"
+        )
+    if body.count("?") != 1 or len(body.split()) > 125:
+        return "", ""
+    return subject, body
 
 def _scan_site(row: dict) -> dict:
     values = _custom(row)
@@ -190,11 +221,19 @@ def _scan_site(row: dict) -> dict:
             or normalize_domain(confirmed_page) != home_domain
         ):
             return {"status": "unsafe_or_unbound_candidate"}
+        subject, body = draft_for_review(
+            observation, action, _text(proposal.get("signal_type")),
+            _text(result.get("language")),
+        )
+        if not subject or not body:
+            return {"status": "draft_quality_hold"}
         return {
             "status": "candidate",
             "proposal": {
                 "leadscanner_site_candidate_observation": observation,
                 "leadscanner_site_candidate_value_action": action,
+                "leadscanner_site_candidate_subject": subject,
+                "leadscanner_site_candidate_body": body,
                 "leadscanner_site_candidate_evidence_url": evidence_url,
                 "leadscanner_site_candidate_source_type": "official_site",
                 "leadscanner_site_candidate_signal_type": _text(proposal.get("signal_type")),
@@ -287,7 +326,7 @@ def research_imported_sites_batch(
         "existing_research_hold", "unreachable_website",
         "recipient_not_confirmed_on_website", "no_specific_first_party_signal",
         "observation_language_mismatch", "no_relevant_action",
-        "unsafe_or_unbound_candidate", "site_scan_exception", "invalid_scan",
+        "unsafe_or_unbound_candidate", "draft_quality_hold", "site_scan_exception", "invalid_scan",
     })
     for row, outcome in zip(batch, outcomes):
         status = _text(outcome.get("status")) if isinstance(outcome, dict) else "invalid_scan"
