@@ -152,6 +152,7 @@ on:
       - 'tests/test_instantly_control.py'
       - 'tests/test_instantly_sync.py'
       - 'tests/test_instantly_audit.py'
+      - 'tests/test_privacy_and_rank.py'
       - 'tests/test_pipeline_contract_scenarios.py'
       - 'AGENTS.md'
       - 'README.md'
@@ -229,6 +230,7 @@ on:
       - 'tests/test_instantly_control.py'
       - 'tests/test_instantly_sync.py'
       - 'tests/test_instantly_audit.py'
+      - 'tests/test_privacy_and_rank.py'
       - 'tests/test_pipeline_contract_scenarios.py'
       - 'AGENTS.md'
       - 'README.md'
@@ -333,6 +335,7 @@ jobs:
             tests.test_instantly_service \
             tests.test_instantly_control \
             tests.test_instantly_sync \
+            tests.test_privacy_and_rank \
             tests.test_instantly_audit \
             tests.test_pipeline_contract_scenarios -v
           python3 scripts/instantly_audit.py
