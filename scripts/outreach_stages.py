@@ -173,6 +173,7 @@ def detect_language(candidate: dict, observation: str) -> str:
     # a region or TLD. Mixed-language evidence remains unclassified.
     domain = normalize_domain(candidate.get("official_domain"))
     nl_total, en_total = 0, 0
+    nl_support, en_support = 0, 0
     for item in (candidate.get("evidence_candidates") or [])[:30]:
         if (
             not isinstance(item, dict)
@@ -184,9 +185,14 @@ def detect_language(candidate: dict, observation: str) -> str:
         nl, en = _language_scores(str(item.get("text") or "")[:300])
         nl_total += nl
         en_total += en
-    if nl_total >= en_total + 2 and nl_total >= 2:
+        if nl > en:
+            nl_support += 1
+        elif en > nl:
+            en_support += 1
+    # One stray translated sentence must not choose an outreach language.
+    if nl_support >= 2 and nl_total >= en_total + 2:
         return "nl"
-    if en_total >= nl_total + 2 and en_total >= 2:
+    if en_support >= 2 and en_total >= nl_total + 2:
         return "en"
     return "unknown"
 
