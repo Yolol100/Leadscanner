@@ -89,6 +89,16 @@ def prepare_review_batch(payload: dict) -> dict:
             raise ValueError("review_mail_missing_required_field")
         if email.count("@") != 1:
             raise ValueError("review_mail_invalid_email")
+        email_source_url = _text(candidate.get("email_source_url"))
+        if email_source_url:
+            parsed_contact_url = urlparse(email_source_url)
+            if (
+                parsed_contact_url.scheme not in {"http", "https"}
+                or parsed_contact_url.username is not None
+                or parsed_contact_url.password is not None
+                or normalize_domain(email_source_url) != domain
+            ):
+                raise ValueError("review_contact_email_source_not_first_party")
         if normalize_domain(email.rsplit("@", 1)[1]) == "":
             raise ValueError("review_mail_invalid_email_domain")
 
@@ -111,6 +121,9 @@ def prepare_review_batch(payload: dict) -> dict:
             "website": website,
             "official_domain": domain,
             "email": email,
+            "email_source_url": email_source_url,
+            "contact_person_name": _text(candidate.get("contact_person_name")),
+            "contact_role": _text(candidate.get("contact_role")),
             "subject": subject,
             "body": body,
             "status": "sequence_facts_review" if sequence_facts else "review_draft",

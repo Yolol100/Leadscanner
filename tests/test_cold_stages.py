@@ -112,7 +112,7 @@ class ColdStagesTests(unittest.TestCase):
         self.assertEqual(session.calls, ["https://acmefietsen.nl/"])
 
     @patch("cold_stages.is_public_http_url", return_value=True)
-    def test_verify_proves_identity_and_official_site_email(self, _safe):
+    def test_verify_researches_before_choosing_official_email(self, _safe):
         home = FakeResponse(
             "https://acmefietsen.nl/",
             """<html><head><title>Acme Fietsen</title></head><body>
@@ -124,19 +124,30 @@ class ColdStagesTests(unittest.TestCase):
             "https://acmefietsen.nl/contact",
             "<html><body><p>Neem voor vragen contact op met ons team.</p><a href='mailto:info@acmefietsen.nl'>Mail ons</a></body></html>",
         )
-        session = FakeSession([home, contact])
+        detail = FakeResponse(
+            "https://acmefietsen.nl/diensten",
+            "<html><body><p>Klanten kunnen bij ons online een afspraak maken voor onderhoud.</p></body></html>",
+        )
+        session = FakeSession([home, contact, detail])
         candidate = {
             "name_hint": "Acme Fietsen B.V.",
             "website_hint": "https://acmefietsen.nl/",
             "category_hint": "bicycle store",
         }
-        result = verify_candidate(candidate, session_factory=lambda: session)
-        self.assertEqual(result["identity_status"], "verified")
-        self.assertEqual(result["public_business_email"], "info@acmefietsen.nl")
-        self.assertEqual(result["contact_status"], "verified_official_site")
-        self.assertTrue(result["ready_for_research"])
-        self.assertEqual(session.calls, ["https://acmefietsen.nl/", "https://acmefietsen.nl/contact"])
-        self.assertIn("https://acmefietsen.nl/diensten", result["research_links"])
+        verified = verify_candidate(candidate, session_factory=lambda: session)
+        self.assertEqual(verified["identity_status"], "verified")
+        self.assertIsNone(verified["public_business_email"])
+        self.assertEqual(verified["contact_status"], "pending_post_research")
+        self.assertTrue(verified["ready_for_research"])
+        self.assertEqual(session.calls, ["https://acmefietsen.nl/"])
+        researched = research_candidate(verified, session_factory=lambda: session)
+        self.assertEqual(researched["research_status"], "ready")
+        self.assertEqual(researched["public_business_email"], "info@acmefietsen.nl")
+        self.assertEqual(researched["contact_role"], "general_inbox")
+        self.assertEqual(researched["email_source_url"], "https://acmefietsen.nl/contact")
+        self.assertEqual(session.calls, [
+            "https://acmefietsen.nl/", "https://acmefietsen.nl/contact", "https://acmefietsen.nl/diensten"
+        ])
 
     @patch("cold_stages.is_public_http_url", return_value=True)
     def test_verify_holds_when_identity_not_proven(self, _safe):
@@ -154,7 +165,7 @@ class ColdStagesTests(unittest.TestCase):
         self.assertFalse(result["ready_for_research"])
 
     @patch("cold_stages.is_public_http_url", return_value=True)
-    def test_verify_rejects_third_party_footer_email(self, _safe):
+    def test_research_does_not_treat_third_party_site_partner_as_contact(self, _safe):
         home = FakeResponse(
             "https://acmefietsen.nl/",
             """<html><head><title>Acme Fietsen</title></head><body>
@@ -164,14 +175,17 @@ class ColdStagesTests(unittest.TestCase):
             </body></html>""",
         )
         session = FakeSession([home])
-        result = verify_candidate(
+        verified = verify_candidate(
             {"name_hint": "Acme Fietsen", "website_hint": "https://acmefietsen.nl/"},
             session_factory=lambda: session,
         )
-        self.assertEqual(result["identity_status"], "verified")
-        self.assertFalse(result["excluded_competitor"])
-        self.assertEqual(result["contact_status"], "hold_no_public_business_email")
+        self.assertEqual(verified["identity_status"], "verified")
+        self.assertTrue(verified["ready_for_research"])
+        self.assertEqual(verified["contact_status"], "pending_post_research")
+        result = research_candidate(verified, session_factory=lambda: session)
+        self.assertEqual(result["contact_status"], "no_public_contact_found")
         self.assertIsNone(result["public_business_email"])
+        self.assertEqual(session.calls, ["https://acmefietsen.nl/"])
 
     def test_verify_limit_is_hard_bounded(self):
         with self.assertRaisesRegex(ValueError, "verify_limit"):

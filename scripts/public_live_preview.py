@@ -22,7 +22,7 @@ import tempfile
 
 import requests
 
-from cold_stages import filter_discovery, verify_candidates, research_candidates
+from cold_stages import filter_discovery, verify_candidates, research_candidates, suppress_previously_used_contact_emails
 from cold_run_manifest import build_manifest
 from dedupe_preflight import load_registry, match_candidate
 from funnel_metrics import build_funnel
@@ -37,8 +37,8 @@ from review_selection import build_review_queue, review_token, select_approved
 
 REGISTRY_MAX_BYTES = 8_000_000
 MAX_DISCOVERY = 80
-MAX_VERIFY = 20
-MAX_WORKERS = 6
+MAX_VERIFY = 80
+MAX_WORKERS = 8
 MAX_RADIUS_KM = 12.0
 # Only enum-like status codes, never untrusted text, may enter public results.
 SAFE_CODE = re.compile(r"^[a-z][a-z0-9_]{0,49}$")
@@ -216,7 +216,9 @@ def run_live_preview(
         stage = "verification"
         verified = verify_candidates(dedupe, limit=verify_limit, max_workers=MAX_WORKERS)
         stage = "research"
-        researched = research_candidates(verified, limit=verify_limit, max_workers=4)
+        researched = research_candidates(verified, limit=verify_limit, max_workers=6)
+        stage = "contact_dedupe"
+        researched = suppress_previously_used_contact_emails(researched, registry)
         stage = "prioritization"
         reasons = select_reasons(researched)
         stage = "proposal"
@@ -282,8 +284,11 @@ def run_live_preview(
                 "after_filters": counts["after_cheap_filters"],
                 "excluded_historical": len(excluded),
                 "after_dedupe": counts["after_dedupe"],
-                "verified_contacts": counts["verified_for_research"],
+                "verified_websites": counts["verified_for_research"],
+                "verified_contacts": researched.get("contacts_found_count", 0),
+                "named_contacts": researched.get("named_contacts_found_count", 0),
                 "researched_sites": counts["research_ready"],
+                "suppressed_contact_addresses": researched.get("contact_dedupe_suppressed_count", 0),
                 "ready_outreach_reasons": counts["outreach_ready"],
                 "review_ready_emails": counts["mail_ready"],
                 "review_queue": queue["review_candidate_count"],
@@ -303,7 +308,17 @@ def run_live_preview(
                     if x.get("outreach_status") != "ready"
                 ]),
             },
-            "quality": research_quality,
+            "quality": {
+                **research_quality,
+                "contact_types": safe_counts([
+                    x.get("contact_role") for x in researched.get("candidates") or []
+                    if x.get("contact_status") == "verified_official_site"
+                ]),
+                "researched_without_published_email": sum(
+                    x.get("research_status") == "ready" and not x.get("public_business_email")
+                    for x in researched.get("candidates") or []
+                ),
+            },
             "review_integrity": integrity,
             "snapshot_in_memory_valid": True,
             "public_artifacts_uploaded": False,
@@ -327,7 +342,7 @@ def main() -> int:
     parser.add_argument("--keywords", default="fietsenwinkel,bloemist,kapsalon")
     parser.add_argument("--radius-km", type=float, default=5.0)
     parser.add_argument("--discovery-limit", type=int, default=60)
-    parser.add_argument("--verify-limit", type=int, default=16)
+    parser.add_argument("--verify-limit", type=int, default=60)
     args = parser.parse_args()
     keywords = list(dict.fromkeys(x.strip() for x in re.split(r"[,\n]+", args.keywords) if x.strip()))
     try:

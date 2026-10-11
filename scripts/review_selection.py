@@ -44,6 +44,14 @@ def review_token(row: dict) -> str:
         canonical += "\0" + json.dumps(
             findings, sort_keys=True, ensure_ascii=False, separators=(",", ":"),
         )
+    # Bind the chosen personal contact and first-party email evidence to the
+    # approval token, without invalidating historical previews lacking it.
+    if any(_text(row.get(key)) for key in ("contact_person_name", "contact_role", "email_source_url")):
+        canonical += "\0" + "\0".join([
+            _text(row.get("contact_person_name")),
+            _text(row.get("contact_role")),
+            _text(row.get("email_source_url")),
+        ])
     mode = _text(row.get("review_mode"))
     if mode == "instantly_sequence":
         canonical += "\0" + "\0".join([
@@ -104,6 +112,9 @@ def build_review_queue(batch: dict) -> dict:
             "website": _text(row.get("website")),
             "official_domain": _text(row.get("official_domain")),
             "email": _text(row.get("email")),
+            "contact_person_name": _text(row.get("contact_person_name")),
+            "contact_role": _text(row.get("contact_role")),
+            "email_source_url": _text(row.get("email_source_url")),
             "signal_type": _text(row.get("signal_type")),
             "verified_observation": _text(row.get("verified_observation")),
             "verified_observation_source_url": _text(row.get("verified_observation_source_url")),
@@ -144,6 +155,9 @@ def render_markdown(queue: dict) -> str:
             f"- Approval token: `{_text(item.get('approval_token'))}`",
             f"- Domain: {_text(item.get('official_domain'))}",
             f"- Email: {_text(item.get('email'))}",
+            f"- Contact: {_text(item.get('contact_person_name')) or 'Geen persoonsnaam bevestigd'}",
+            f"- Contacttype: {_text(item.get('contact_role')) or 'Niet gespecificeerd'}",
+            f"- E-mail bron: {_text(item.get('email_source_url')) or 'Ouder beoordeeld concept'}",
             f"- Signal: {_text(item.get('signal_type'))}",
             f"- Evidence: {_text(item.get('verified_observation'))}",
             f"- Evidence URL: {_text(item.get('verified_observation_source_url'))}",
@@ -179,6 +193,7 @@ def render_csv(queue: dict) -> str:
     output = io.StringIO()
     fields = [
         "approval_token", "lead_id", "company", "official_domain", "email",
+        "contact_person_name", "contact_role", "email_source_url",
         "signal_type", "verified_observation", "verified_observation_source_url",
         "value_first_action", "review_mode", "findings_count", "findings_overview", "subject", "body",
     ]

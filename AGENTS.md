@@ -1,7 +1,7 @@
 # Leadscanner repository agent contract
 
 ## Public repository privacy gate
-- The repository may remain public for source inspection, but **no preview, draft, Instantly staging or Instantly command producing sensitive artifacts may run in public visibility**. Require the GitHub Actions repository-private preflight before any reads or writes that produce such artifacts.
+- The repository may remain public for source inspection and the bounded **public_audit** workflow that exports aggregate metrics only. **Personal review files, previews containing recipients, drafts, Instantly staging and sensitive command artifacts still require private visibility**. Require the GitHub Actions repository-private preflight before any reads or writes that produce such artifacts.
 - This gate is fail-closed. A failed privacy gate must not upload partial review or prospect artifacts and must not bypass prior identity, dedupe, authorization, campaign or send checks.
 - Existing public workflow artifacts containing contacts, researched prospect facts, or email copy need separate deletion/retention review. Never claim they were removed solely because a new gate passed.
 - Repository visibility changes are operational decisions. Do not silently make a public repository private; the owner must approve the access change.
@@ -18,7 +18,7 @@
 - Build a fast cold-lead pipeline from a clean slate.
 - Keep only the active cold-pipeline dependency closure. Legacy Google Maps adapters, remediation scripts, old mailbox bridges, pricing/scoring code and their tests have been removed.
 - The Google Sheet Lead Dedupe Registry is the only retained historical lead source and is suppression-only.
-- The primary active phases are preview discovery/filter -> historical dedupe -> identity/domain/contact verification -> bounded first-party research -> ranked first-party observations (up to six) -> one proposed value-first action -> validated reviewed-mail copy by default or explicitly selected fact-only review -> human review queue -> immutable preview snapshot -> exact approval selection -> fresh live dedupe revalidation -> Instantly staging into a Draft/Paused campaign -> exact Instantly readback -> canonical dedupe-registry closure -> explicit separate campaign activation -> scheduled Instantly reconciliation.
+- The primary active phases are preview discovery/filter -> historical dedupe -> official website verification -> bounded first-party research -> named-owner/team/business-email discovery -> exact email dedupe -> ranked first-party observations (up to six) -> one proposed value-first action -> validated reviewed-mail copy by default or explicitly selected fact-only review -> human review queue -> immutable preview snapshot -> exact approval selection -> fresh live dedupe revalidation -> Instantly staging into a Draft/Paused campaign -> exact Instantly readback -> canonical dedupe-registry closure -> explicit separate campaign activation -> scheduled Instantly reconciliation.
 - The cold discovery/review pipeline and Instantly staging must never auto-send. Campaign activation is a separate user-confirmed send-capable action. The optional mijn.host draft path is fallback-only and not part of the primary outbound route.
 
 ## Execution rules
@@ -27,7 +27,9 @@
 - Put cheap gates before network-heavy research: website presence/category -> competitor hint -> historical dedupe -> official-site verification -> research.
 - Pass explicit JSON contracts between stages; never rely on hidden state from a previous stage.
 - Discovery data is a locator only, not prospect fact evidence.
-- Verify official domain and public business email from the official site before research.
+- Verify official website/domain identity before research. Never use email presence, provider, personal-vs-generic mailbox or contact page availability as a gate on website research.
+- After website research, inspect official About/Team/Owner/Contact pages and select an explicitly published email: personally named owner > named team member > personal-looking mailbox > general inbox. An address listed on the business's own contact page is not rejected for being on an external mail provider. Do not guess addresses or repurpose third-party footer contacts.
+- Before turning selected email contacts into recipient-specific copy, check newly discovered addresses against the current dedupe registry, in addition to the earlier company/domain suppression gate.
 - Research only candidates with `ready_for_research=true` and fetch at most twelve extra first-party pages per candidate.
 - After research, classify and rank all sufficiently specific first-party observations regardless of category; retain up to six strongest diverse findings, or fewer when fewer are supported. Preserve a primary finding for compatibility. Generic promotional copy and unsupported claims never qualify.
 - Map the selected observations to one small proposed example; never claim an artifact already exists.
@@ -35,7 +37,7 @@
 - Every preview must emit privacy-safe `funnel-metrics.json` with stage rejection totals and `coverage-audit.json` with Overture operational-supply status.
 - Every successful manual run also emits one readable, aggregate-only `overzicht.md` and GitHub job summary; never include contact details, company names or prospect copy.
 - Do not add a second discovery source from a single thin/gap run; broaden the current query first and require repeated independent gap evidence before deliberate source expansion.
-- Default every manual execution to `preview`; preview must not require mailbox or Google write credentials and must not mutate either system.
+- Default public manual execution to `public_audit`: read-only live research with no recipient data, review text or tokens in public logs or artifacts. Personal `preview` is available only in private visibility and cannot mutate mailbox/registry; `instantly_stage` and `draft` require explicit human authorization.
 - Every preview must emit `review-queue.json`, `review-queue.md`, and `review-queue.csv` with one approval token per reviewable lead.
 - Bind each approval token to the exact lead ID, **all selected official-site findings**, verified evidence and proposed action; bind subject/body as well in reviewed-mail mode. Changed reviewed content must invalidate the token.
 - Seal every preview into a digest-bound `preview-snapshot.json` containing source repository/run/commit, the review batch, review queue, request and preview manifest.

@@ -6,11 +6,12 @@ on:
   workflow_dispatch:
     inputs:
       execution_mode:
-        description: 'preview = research/review; instantly_stage = approved leads naar Instantly; draft = optionele mijn.host fallback'
+        description: 'public_audit = veilige openbare live test; preview = private review; instantly_stage/draft = alleen na goedkeuring'
         required: true
-        default: preview
+        default: public_audit
         type: choice
         options:
+          - public_audit
           - preview
           - instantly_stage
           - draft
@@ -87,6 +88,7 @@ on:
       - 'instantly-commands/inbox/*.json'
       - 'scripts/dedupe_preflight.py'
       - 'scripts/cold_stages.py'
+      - 'scripts/first_party_contacts.py'
       - 'scripts/overture_discovery.py'
       - 'scripts/outreach_stages.py'
       - 'scripts/funnel_metrics.py'
@@ -122,6 +124,7 @@ on:
       - 'tests/test_dedupe_preflight.py'
       - 'tests/test_broad_site_findings.py'
       - 'tests/test_cold_stages.py'
+      - 'tests/test_first_party_contacts.py'
       - 'tests/test_outreach_stages.py'
       - 'tests/test_simple_review_flow.py'
       - 'tests/test_simple_overview.py'
@@ -280,6 +283,7 @@ jobs:
           python3 -m compileall -q \
             scripts/dedupe_preflight.py \
             scripts/cold_stages.py \
+            scripts/first_party_contacts.py \
             scripts/outreach_stages.py \
             scripts/funnel_metrics.py \
             scripts/coverage_audit.py \
@@ -315,6 +319,7 @@ jobs:
           python3 -m unittest \
             tests.test_dedupe_preflight \
             tests.test_cold_stages \
+            tests.test_first_party_contacts \
             tests.test_broad_site_findings \
             tests.test_outreach_stages \
             tests.test_simple_review_flow \
@@ -359,10 +364,10 @@ jobs:
   # Only aggregate anonymized quality metrics leave runner memory.
   # No individual review tokens or candidate details are exported.
   public_live_preview_once:
-    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[public-live-preview-20261011]')
+    if: (github.event_name == 'workflow_dispatch' && inputs.execution_mode == 'public_audit') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[research-coverage-audit-20261011]'))
     needs: test
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 45
     permissions:
       contents: read
     steps:
@@ -378,14 +383,16 @@ jobs:
         env:
           PYTHONPATH: scripts
           DEDUPE_REGISTRY_CSV_URL: ${{ env.DEDUPE_REGISTRY_CSV_URL }}
+          PUBLIC_REGION: ${{ inputs.region }}
+          PUBLIC_KEYWORDS: ${{ inputs.keywords }}
         run: |
           set -euo pipefail
           python3 scripts/public_live_preview.py \
-            --region Amsterdam \
-            --keywords "fietsenwinkel,bloemist,kapsalon" \
+            --region "${PUBLIC_REGION:-Amsterdam}" \
+            --keywords "${PUBLIC_KEYWORDS:-fietsenwinkel,bloemist,kapsalon}" \
             --radius-km 5 \
             --discovery-limit 60 \
-            --verify-limit 16 | tee "$RUNNER_TEMP/public-live-preview-audit.json"
+            --verify-limit 60 | tee "$RUNNER_TEMP/public-live-preview-audit.json"
           python3 - <<'PY'
           import json, os
           from pathlib import Path
@@ -406,7 +413,7 @@ jobs:
           PY
 
   execute:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.execution_mode != 'public_audit'
     needs: test
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -639,9 +646,20 @@ jobs:
             --input results/verification.json \
             --limit "$VERIFY_LIMIT" \
             --max-workers 6 \
+            --output results/research-pending-dedupe.json
+
+      - name: Phase 6b - Recheck newly found contact email against live exclusions
+        if: inputs.execution_mode == 'preview'
+        env:
+          PYTHONPATH: scripts
+        run: |
+          set -euo pipefail
+          python3 scripts/cold_stages.py contact-dedupe \
+            --input results/research-pending-dedupe.json \
+            --registry-csv results/dedupe-registry.csv \
             --output results/research.json
 
-      - name: Phase 7 - Select one evidence-backed outreach reason
+      - name: Phase 7 - Select up to six ranked first-party observations
         if: inputs.execution_mode == 'preview'
         env:
           PYTHONPATH: scripts
