@@ -20,7 +20,7 @@ from urllib.parse import unquote, urljoin, urlparse
 
 import requests
 
-from dedupe_preflight import domains_match, normalize_domain
+from dedupe_preflight import domains_match, normalize_domain, match_candidate, load_registry
 from first_party_contacts import preferred_contact_links, select_site_contact
 from url_safety import is_public_http_url
 
@@ -700,6 +700,45 @@ def research_candidates(payload: dict, *, limit: int, max_workers: int = MAX_RES
     }
 
 
+def suppress_previously_used_contact_emails(research: dict, registry_rows: list[dict]) -> dict:
+    """Fail closed on emails already suppressed under ANY prior company.
+
+    The company and domain suppression gate runs before website research.
+    This second check is necessary for shared personal/free email domains that
+    become known only AFTER research. Never discard the website observations.
+    """
+    result = dict(research)
+    candidates = research.get("candidates") or []
+    if not isinstance(candidates, list):
+        raise ValueError("research_candidates_must_be_list")
+    checked = []
+    suppressed = 0
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            raise ValueError("research_candidate_must_be_object")
+        row = dict(candidate)
+        email = _text(row.get("public_business_email"))
+        if email and match_candidate({"email": email}, registry_rows):
+            row.update({
+                "public_business_email": None,
+                "email_source_url": None,
+                "contact_person_name": None,
+                "contact_role": None,
+                "contact_status": "suppressed_existing_email",
+            })
+            suppressed += 1
+        checked.append(row)
+    result["candidates"] = checked
+    result["contact_dedupe_suppressed_count"] = suppressed
+    result["contacts_found_count"] = sum(
+        row.get("contact_status") == "verified_official_site" for row in checked
+    )
+    result["named_contacts_found_count"] = sum(
+        row.get("contact_role") in {"named_owner", "named_person"} for row in checked
+    )
+    return result
+
+
 def _read(path: str) -> dict:
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
@@ -733,6 +772,11 @@ def main() -> int:
     p_research.add_argument("--max-workers", type=int, default=MAX_RESEARCH_WORKERS)
     p_research.add_argument("--output", required=True)
 
+    p_dedupe = sub.add_parser("contact-dedupe")
+    p_dedupe.add_argument("--input", required=True)
+    p_dedupe.add_argument("--registry-csv", required=True)
+    p_dedupe.add_argument("--output", required=True)
+
     args = parser.parse_args()
     if args.command == "filter":
         result = filter_discovery(_read(args.input))
@@ -742,10 +786,24 @@ def main() -> int:
         result = verify_candidates(_read(args.input), limit=args.limit, max_workers=args.max_workers)
         _write(args.output, result)
         print(f"COLD_VERIFY=green checked={result['candidate_count']} ready={result['ready_for_research_count']}")
-    else:
+    elif args.command == "research":
         result = research_candidates(_read(args.input), limit=args.limit, max_workers=args.max_workers)
         _write(args.output, result)
-        print(f"COLD_RESEARCH=green checked={result['candidate_count']} ready={result['research_ready_count']}")
+        print(
+            f"COLD_RESEARCH=green checked={result['candidate_count']} "
+            f"ready={result['research_ready_count']} "
+            f"contacts={result.get('contacts_found_count', 0)} "
+            "email_required_for_research=false"
+        )
+    else:
+        result = suppress_previously_used_contact_emails(
+            _read(args.input), load_registry(Path(args.registry_csv))
+        )
+        _write(args.output, result)
+        print(
+            f"COLD_CONTACT_DEDUPE=green suppressed={result['contact_dedupe_suppressed_count']} "
+            f"contacts={result['contacts_found_count']} research_preserved=true"
+        )
     return 0
 
 
