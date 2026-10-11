@@ -86,8 +86,16 @@ def _email(value: object) -> str:
 
 
 def _names(text: str) -> list[str]:
+    # Remove explicitly stated roles before matching capitalized personal
+    # names. Otherwise "Eigenaar Jan Jansen" can be misread as "Eigenaar Jan".
+    cleaned = OWNER_ROLE_RE.sub(" ", text)
+    cleaned = re.sub(
+        r"\b(?:monteur|medewerker|adviseur|contactpersoon|accountmanager|"
+        r"manager|receptionist|receptioniste|behandelaar)\b",
+        " ", cleaned, flags=re.I,
+    )
     names = []
-    for match in PERSON_RE.finditer(text):
+    for match in PERSON_RE.finditer(cleaned):
         name = match.group(1)
         words = _normalize(name).split()
         if (

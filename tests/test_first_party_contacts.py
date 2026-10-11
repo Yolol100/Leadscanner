@@ -58,6 +58,28 @@ class FirstPartyContactsTests(unittest.TestCase):
         self.assertEqual(contact["contact_role"], "named_owner")
         self.assertEqual(contact["email_source_url"], "https://acmefietsen.nl/over-ons")
 
+    def test_owner_role_directly_before_full_name_is_not_mistaken_for_name(self):
+        contact = select_site_contact([
+            page("/over-ons", """
+                <p>Eigenaar Jan Jansen</p>
+                <a href="mailto:jan@acmefietsen.nl">Mail Jan</a>
+            """),
+            page("/contact", '<a href="mailto:info@acmefietsen.nl">Info</a>'),
+        ], "acmefietsen.nl")
+        self.assertEqual(contact["public_business_email"], "jan@acmefietsen.nl")
+        self.assertEqual(contact["contact_person_name"], "Jan Jansen")
+        self.assertEqual(contact["contact_role"], "named_owner")
+
+    def test_team_role_before_name_does_not_leak_into_greeting(self):
+        contact = select_site_contact([
+            page("/team", """
+                <p>Monteur Lisa de Vries</p>
+                <a href="mailto:lisa@acmefietsen.nl">E-mail Lisa</a>
+            """),
+        ], "acmefietsen.nl")
+        self.assertEqual(contact["contact_person_name"], "Lisa de Vries")
+        self.assertEqual(contact["contact_role"], "named_person")
+
     def test_owner_found_on_about_and_personal_email_on_contact(self):
         contact = select_site_contact([
             page("/over-ons", "<p>Oprichter: Jan van Dijk</p>"),
