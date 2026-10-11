@@ -61,6 +61,29 @@ class BroadFindingsTests(unittest.TestCase):
         self.assertTrue(subject)
         self.assertEqual(draft.count("?"), 1)
 
+    def test_weak_other_does_not_fill_email_to_six_points(self):
+        row = {
+            "research_status": "ready", "official_domain": "sample.nl",
+            "evidence_candidates": [
+                item("Onze klanten ontvangen een persoonlijke handleiding na iedere installatie.", "installatie"),
+                item("Bezoekers bekijken vooraf een demonstratie van onze apparatuur op de website.", "demo"),
+                item("Zakelijke klanten kiezen vooraf een persoonlijke uitleg over onze werkwijze.", "uitleg"),
+                item("Gebruikers downloaden op verzoek een praktische introductie van onze producten.", "intro"),
+            ],
+        }
+        findings = select_one_reason(row)["selected_findings"]
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["category"], "other")
+
+    def test_generic_other_without_action_is_not_promoted(self):
+        result = select_one_reason({
+            "research_status": "ready", "official_domain": "sample.nl",
+            "evidence_candidates": [
+                item("Onze medewerkers werken iedere dag met veel enthousiasme in de werkplaats.", "team"),
+            ],
+        })
+        self.assertEqual(result["outreach_status"], "hold")
+
     def test_only_same_domain_evidence_is_selected(self):
         row = {
             "research_status": "ready", "official_domain": "sample.nl",

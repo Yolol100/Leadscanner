@@ -143,10 +143,20 @@ def audit_live_findings(*, researched: dict, reasons: dict, mail: dict) -> dict:
         raise ValueError("reviewed_mail_length_out_of_bounds")
     return {
         "website_pages_read": sum(len(x.get("researched_urls") or []) for x in (researched.get("candidates") or [])),
+        "website_pages_attempted": sum(
+            int(x.get("research_pages_attempted") or len(x.get("researched_urls") or []))
+            for x in (researched.get("candidates") or [])
+        ),
+        "page_failure_reasons": safe_counts([
+            reason
+            for row in (researched.get("candidates") or [])
+            for reason, count in (row.get("research_page_failure_counts") or {}).items()
+            for _ in range(int(count))
+        ]),
         "first_party_observations": sum(len(x.get("evidence_candidates") or []) for x in (researched.get("candidates") or [])),
         "ranked_findings": len(findings),
         "sites_with_ranked_findings": len(sites),
-        "findings_per_site": safe_counts([str(n) for n in sites]),
+        "findings_per_site": safe_counts([f"n{n}" for n in sites]),
         "finding_priorities": safe_counts([x.get("priority") for x in findings]),
         "finding_categories": safe_counts([x.get("category") for x in findings]),
         "mail_languages": safe_counts([x.get("language") for x in ready_mails]),
@@ -287,6 +297,14 @@ def run_live_preview(
                 "verified_websites": counts["verified_for_research"],
                 "verified_contacts": researched.get("contacts_found_count", 0),
                 "named_contacts": researched.get("named_contacts_found_count", 0),
+                "specific_person_emails": sum(
+                    x.get("contact_role") in {"named_owner", "named_person"}
+                    for x in researched.get("candidates") or []
+                ),
+                "general_fallback_emails": sum(
+                    x.get("contact_role") == "general_inbox"
+                    for x in researched.get("candidates") or []
+                ),
                 "researched_sites": counts["research_ready"],
                 "suppressed_contact_addresses": researched.get("contact_dedupe_suppressed_count", 0),
                 "ready_outreach_reasons": counts["outreach_ready"],
@@ -317,6 +335,10 @@ def run_live_preview(
                 "researched_without_published_email": sum(
                     x.get("research_status") == "ready" and not x.get("public_business_email")
                     for x in researched.get("candidates") or []
+                ),
+                "sites_with_findings_but_no_email": sum(
+                    x.get("outreach_status") == "ready" and not x.get("public_business_email")
+                    for x in reasons.get("candidates") or []
                 ),
             },
             "review_integrity": integrity,

@@ -53,6 +53,8 @@ class PublicLivePreviewTests(unittest.TestCase):
             reasons=reasons, mail=mail,
         )
         self.assertGreaterEqual(audit["ranked_findings"], 1)
+        self.assertEqual(audit["findings_per_site"]["n2"], 1)
+        self.assertEqual(audit["website_pages_attempted"], 1)
 
     def test_real_pipeline_can_run_without_prospect_data_in_report(self):
         filtered = {"candidate_count": 1, "candidates": []}

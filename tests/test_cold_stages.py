@@ -1,6 +1,10 @@
 import unittest
 from unittest.mock import patch
 
+import requests
+from instantly_site_crawl import PoliteSiteSession
+from cold_stages import _site_session
+
 from cold_stages import (
     filter_discovery,
     research_candidate,
@@ -187,6 +191,27 @@ class ColdStagesTests(unittest.TestCase):
         self.assertIsNone(result["public_business_email"])
         self.assertEqual(session.calls, ["https://acmefietsen.nl/"])
 
+    def test_production_session_uses_robots_aware_wrapper(self):
+        with requests.Session() as raw:
+            session = _site_session(lambda: raw, "acmefietsen.nl")
+            self.assertIsInstance(session, PoliteSiteSession)
+
+    @patch("instantly_site_crawl.is_public_http_url", return_value=True)
+    @patch("cold_stages.is_public_http_url", return_value=True)
+    def test_robots_disallow_prevents_cold_html_request(self, _url_safe, _robot_url_safe):
+        robots = FakeResponse(
+            "https://acmefietsen.nl/robots.txt",
+            "User-agent: *\nDisallow: /\n",
+            headers={"content-type": "text/plain"},
+        )
+        raw = FakeSession([robots])
+        polite = PoliteSiteSession(raw, "acmefietsen.nl", clock=lambda: 0.0, sleeper=lambda _: None)
+        html, _, status = safe_fetch_html(polite, "https://acmefietsen.nl/", "acmefietsen.nl")
+        self.assertIsNone(html)
+        self.assertIsNone(status)
+        self.assertTrue(polite.policy_hold)
+        self.assertEqual(raw.calls, ["https://acmefietsen.nl/robots.txt"])
+
     def test_verify_limit_is_hard_bounded(self):
         with self.assertRaisesRegex(ValueError, "verify_limit"):
             verify_candidates({"kept": [{}]}, limit=101)
@@ -222,8 +247,36 @@ class ColdStagesTests(unittest.TestCase):
         result = research_candidate(candidate, session_factory=lambda: session)
         self.assertEqual(result["research_status"], "ready")
         self.assertEqual(len(session.calls), 3)
+        self.assertEqual(result["research_pages_attempted"], 4)
+        self.assertEqual(result["research_pages_fetched"], 4)
+        self.assertEqual(result["research_page_failure_counts"], {})
         self.assertLessEqual(len(result["researched_urls"]), 13)
         self.assertTrue(any(item["page_type"] == "process" for item in result["evidence_candidates"]))
+
+    @patch("cold_stages.is_public_http_url", return_value=True)
+    def test_page_balancing_preserves_service_evidence_after_long_homepage(self, _safe):
+        home = "\n".join(
+            f"Onze medewerkers verzorgen persoonlijk het onderhoud van speciale fietsen voor iedere klantgroep {i}."
+            for i in range(55)
+        )
+        detail = FakeResponse(
+            "https://acmefietsen.nl/diensten",
+            "<p>Klanten kunnen online een afspraak aanvragen voor onderhoud aan hun fietsen.</p>",
+        )
+        row = {
+            "name_hint": "Acme Fietsen",
+            "official_url": "https://acmefietsen.nl/",
+            "official_domain": "acmefietsen.nl",
+            "ready_for_research": True,
+            "homepage_text_excerpt": home,
+            "research_links": ["https://acmefietsen.nl/diensten"],
+        }
+        result = research_candidate(row, session_factory=lambda: FakeSession([detail]))
+        self.assertEqual(len(result["evidence_candidates"]), 48)
+        self.assertTrue(any(
+            item["source_url"] == "https://acmefietsen.nl/diensten"
+            for item in result["evidence_candidates"]
+        ))
 
     def test_research_skips_not_ready_candidates_without_network(self):
         result = research_candidates(

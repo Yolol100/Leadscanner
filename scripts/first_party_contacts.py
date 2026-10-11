@@ -199,7 +199,11 @@ def _emails(parsed: dict) -> list[str]:
 
 def select_site_contact(parsed_pages: list[dict], domain: str) -> dict:
     """Choose a sourced business contact. A missing email never vetoes research."""
-    owners = owner_names(parsed_pages)
+    owner_sources = {}
+    for page in parsed_pages:
+        for name in owner_names([page]):
+            owner_sources.setdefault(name, str(page.get("source_url") or ""))
+    owners = list(owner_sources)
     candidates = []
     for page_index, page in enumerate(parsed_pages):
         url = str(page.get("source_url") or "")
@@ -249,6 +253,8 @@ def select_site_contact(parsed_pages: list[dict], domain: str) -> dict:
                     "public_business_email": email,
                     "email_source_url": url,
                     "contact_person_name": owner or named,
+                    "contact_name_source_url": owner_sources.get(owner) if owner else url if named else None,
+                    "contact_role_source_url": owner_sources.get(owner) if owner else None,
                     "contact_role": (
                         "named_owner" if owner else "named_person" if named
                         else "personal_mailbox" if not generic else "general_inbox"
@@ -260,6 +266,8 @@ def select_site_contact(parsed_pages: list[dict], domain: str) -> dict:
             "public_business_email": None,
             "email_source_url": None,
             "contact_person_name": None,
+            "contact_name_source_url": None,
+            "contact_role_source_url": None,
             "contact_role": None,
             "contact_status": "no_public_contact_found",
             "contact_search_pages_checked": len(parsed_pages),

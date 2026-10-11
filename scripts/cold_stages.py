@@ -12,6 +12,7 @@ import argparse
 import json
 import re
 import unicodedata
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from html import unescape
 from html.parser import HTMLParser
@@ -22,6 +23,7 @@ import requests
 
 from dedupe_preflight import domains_match, normalize_domain, match_candidate, load_registry
 from first_party_contacts import preferred_contact_links, select_site_contact
+from instantly_site_crawl import PoliteSiteSession
 from url_safety import is_public_http_url
 
 MAX_DISCOVERY = 5000
@@ -110,6 +112,15 @@ def normalize_text(value: object) -> str:
 
 def normalize_company(value: object) -> str:
     return re.sub(r"[^a-z0-9]+", "", normalize_text(value))
+
+
+def _site_session(session_factory, domain: str):
+    """Enforce robots and per-host budgets on real network sessions.
+
+    Injected non-requests sessions are deterministic test doubles only.
+    """
+    session = session_factory()
+    return PoliteSiteSession(session, domain) if isinstance(session, requests.Session) else session
 
 
 def cheap_competitor_reason(candidate: dict) -> str | None:
@@ -467,11 +478,14 @@ def verify_candidate(candidate: dict, *, session_factory=requests.Session) -> di
     if not website or not domain:
         result["contact_status"] = "hold_missing_domain"
         return result
-    session = session_factory()
+    session = _site_session(session_factory, domain)
     html, final_url, status = safe_fetch_html(session, website, domain)
     result["website_http_status"] = status
     if not html or not final_url:
-        result["contact_status"] = "hold_unreachable_official_site"
+        result["contact_status"] = (
+            "hold_robots_policy" if getattr(session, "policy_hold", False)
+            else "hold_unreachable_official_site"
+        )
         return result
 
     parsed = parse_html(html)
@@ -595,6 +609,9 @@ def research_candidate(candidate: dict, *, session_factory=requests.Session) -> 
     result["research_status"] = "hold_not_ready"
     result["researched_urls"] = []
     result["evidence_candidates"] = []
+    result["research_pages_attempted"] = 0
+    result["research_pages_fetched"] = 0
+    result["research_page_failure_counts"] = {}
     if not candidate.get("ready_for_research"):
         return result
 
@@ -614,9 +631,10 @@ def research_candidate(candidate: dict, *, session_factory=requests.Session) -> 
         },
     }
     pages = [homepage]
-    evidence = evidence_sentences(homepage_text, official_url, "home")
+    evidence_pages = [evidence_sentences(homepage_text, official_url, "home")]
     researched_urls = [official_url]
-    session = session_factory()
+    page_failures: Counter[str] = Counter()
+    session = _site_session(session_factory, domain)
 
     # Prioritize Team/About/Owner/Contact to locate a named decision-maker,
     # then spend the rest of the bounded budget on broader site topics.
@@ -631,13 +649,28 @@ def research_candidate(candidate: dict, *, session_factory=requests.Session) -> 
         if link in attempted:
             continue
         attempted.add(link)
-        html, final_url, _ = safe_fetch_html(session, link, domain)
+        if hasattr(session, "policy_hold"):
+            session.policy_hold = False
+        html, final_url, status = safe_fetch_html(session, link, domain)
         if not html or not final_url:
+            if getattr(session, "policy_hold", False) and status is None:
+                reason = "robots_policy"
+            elif status in {401, 403, 429}:
+                reason = "http_blocked"
+            elif status == 404:
+                reason = "http_not_found"
+            elif status is not None and status >= 500:
+                reason = "http_server_error"
+            elif final_url and normalize_domain(final_url) != domain:
+                reason = "redirect_disallowed"
+            else:
+                reason = "request_unavailable"
+            page_failures[reason] += 1
             continue
         parsed = parse_html(html)
         researched_urls.append(final_url)
         pages.append({"source_url": final_url, "parsed": parsed})
-        evidence.extend(evidence_sentences(
+        evidence_pages.append(evidence_sentences(
             parsed.get("text") or "", final_url, page_type_for_url(final_url)
         ))
         # Deep first-party person pages get the next available research slot.
@@ -647,18 +680,29 @@ def research_candidate(candidate: dict, *, session_factory=requests.Session) -> 
         if len(pending) > 2 * MAX_RESEARCH_PAGES:
             pending = pending[:2 * MAX_RESEARCH_PAGES]
 
+    # Interleave pages so a long homepage or About page cannot consume the
+    # entire evidence budget before products, services and support are read.
     deduped: list[dict] = []
     seen: set[str] = set()
-    for item in evidence:
-        key = re.sub(r"[^a-z0-9]+", "", normalize_text(item["text"]))
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append(item)
+    for position in range(max((len(items) for items in evidence_pages), default=0)):
+        for items in evidence_pages:
+            if position >= len(items):
+                continue
+            item = items[position]
+            key = re.sub(r"[^a-z0-9]+", "", normalize_text(item["text"]))
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(item)
+            if len(deduped) >= MAX_EVIDENCE_PER_CANDIDATE:
+                break
         if len(deduped) >= MAX_EVIDENCE_PER_CANDIDATE:
             break
 
     result["researched_urls"] = researched_urls[: 1 + MAX_RESEARCH_PAGES]
+    result["research_pages_attempted"] = len(attempted)
+    result["research_pages_fetched"] = len(researched_urls)
+    result["research_page_failure_counts"] = dict(sorted(page_failures.items()))
     result["evidence_candidates"] = deduped
     result["research_status"] = "ready" if deduped else "hold_no_first_party_evidence"
     # No contact requirement above this line. All valid first-party pages
