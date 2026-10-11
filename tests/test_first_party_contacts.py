@@ -205,6 +205,68 @@ class FirstPartyContactsTests(unittest.TestCase):
         self.assertEqual(result["public_business_email"], "info@acmefietsen.nl")
         self.assertEqual(result["contact_form_source_url"], "https://acmefietsen.nl/contact")
 
+    def test_structured_business_email_external_provider_is_accepted_with_source(self):
+        result = select_site_contact([
+            page("/", """<script type="application/ld+json">
+            {"@context":"https://schema.org","@type":"LocalBusiness",
+             "name":"Acme Fietsen","contactPoint":{"@type":"ContactPoint","email":"info@xs4all.nl"}}
+            </script><p>Acme Fietsen verkoopt elektrische fietsen.</p>"""),
+        ], "acmefietsen.nl", company_name="Acme Fietsen B.V.")
+        self.assertEqual(result["contact_status"], "verified_official_site")
+        self.assertEqual(result["contact_role"], "general_inbox")
+        self.assertEqual(result["public_business_email"], "info@xs4all.nl")
+        self.assertEqual(result["email_source_url"], "https://acmefietsen.nl/")
+
+    def test_structured_graph_business_mailbox_is_extracted_not_unrelated_vendor(self):
+        contact = select_site_contact([
+            page("/", """<script type="application/ld+json">
+            {"@context":"https://schema.org","@graph":[
+              {"@type":"Organization","name":"Web Agency BV","email":"agency@webagency.nl"},
+              {"@type":"Store","name":"Acme Fietsen","email":"contact@postprovider.nl"}
+            ]}
+            </script>"""),
+        ], "acmefietsen.nl", company_name="Acme Fietsen B.V.")
+        self.assertEqual(contact["public_business_email"], "contact@postprovider.nl")
+        self.assertEqual(contact["contact_role"], "general_inbox")
+
+    def test_structured_person_and_mismatched_organization_are_not_business_contacts(self):
+        result = select_site_contact([
+            page("/", """<script type="application/ld+json">
+            {"@graph":[
+              {"@type":"Person","name":"Jan Jansen","email":"jan@gmail.com"},
+              {"@type":"Organization","name":"Completely Other Supplier","email":"vendor@othermail.nl"}
+            ]}</script>"""),
+        ], "acmefietsen.nl", company_name="Acme Fietsen")
+        self.assertEqual(result["contact_status"], "no_public_contact_found")
+        self.assertIsNone(result["public_business_email"])
+
+    def test_malformed_structured_data_never_produces_mailbox(self):
+        result = select_site_contact([
+            page("/", '<script type="application/ld+json">{"@type":"Organization","name":</script>'),
+        ], "acmefietsen.nl", company_name="Acme Fietsen")
+        self.assertEqual(result["contact_status"], "no_public_contact_found")
+
+    @patch("cold_stages.is_public_http_url", return_value=True)
+    def test_structured_email_survives_homepage_verification_and_research(self, _safe):
+        homepage = Response("https://acmefietsen.nl/", """
+            <title>Acme Fietsen</title>
+            <p>Acme Fietsen verkoopt en onderhoudt elektrische fietsen.</p>
+            <script type="application/ld+json">
+            {"@type":"LocalBusiness","name":"Acme Fietsen","email":"info@xs4all.nl"}
+            </script>
+        """)
+        raw = Session([homepage])
+        verified = verify_candidate(
+            {"name_hint": "Acme Fietsen", "website_hint": "https://acmefietsen.nl/"},
+            session_factory=lambda: raw,
+        )
+        self.assertTrue(verified["ready_for_research"])
+        self.assertEqual(len(verified["homepage_structured_data"]), 1)
+        result = research_candidate(verified, session_factory=lambda: raw)
+        self.assertEqual(result["public_business_email"], "info@xs4all.nl")
+        self.assertEqual(result["email_source_url"], "https://acmefietsen.nl/")
+        self.assertEqual(raw.urls, ["https://acmefietsen.nl/"])
+
     def test_about_and_team_links_are_prioritized_for_research(self):
         home = parse_html(
             "<a href='/producten'>Catalogus</a><a href='/contact'>Contact</a>"
