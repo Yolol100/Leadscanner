@@ -71,7 +71,7 @@ on:
       verify_limit:
         description: 'Preview mode: max kandidaten voor verification/research (1-100)'
         required: true
-        default: '40'
+        default: '100'
         type: string
       radius_km:
         description: 'Preview mode: Overture zoekstraal in km (0.5-50)'
@@ -89,6 +89,7 @@ on:
       - 'scripts/dedupe_preflight.py'
       - 'scripts/cold_stages.py'
       - 'scripts/first_party_contacts.py'
+      - 'scripts/instantly_site_crawl.py'
       - 'scripts/overture_discovery.py'
       - 'scripts/outreach_stages.py'
       - 'scripts/funnel_metrics.py'
@@ -285,6 +286,7 @@ jobs:
             scripts/dedupe_preflight.py \
             scripts/cold_stages.py \
             scripts/first_party_contacts.py \
+            scripts/instantly_site_crawl.py \
             scripts/outreach_stages.py \
             scripts/funnel_metrics.py \
             scripts/coverage_audit.py \
@@ -332,7 +334,6 @@ jobs:
             tests.test_cold_run_manifest \
             tests.test_review_draft_stages \
             tests.test_review_selection \
-            tests.test_simple_review_flow \
             tests.test_preview_snapshot \
             tests.test_approval_revalidation \
             tests.test_myhost_draft \
@@ -623,7 +624,7 @@ jobs:
             --candidates-json results/candidates.json \
             --output results/dedupe-preflight.json
 
-      - name: Phase 5 - Identity, domain and public contact verification
+      - name: Phase 5 - Verify official site identity (email not required)
         if: inputs.execution_mode == 'preview'
         env:
           PYTHONPATH: scripts

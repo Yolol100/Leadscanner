@@ -14,7 +14,8 @@ from urllib.robotparser import RobotFileParser
 
 import requests
 
-from cold_stages import is_public_http_url, normalize_domain
+from dedupe_preflight import normalize_domain
+from url_safety import is_public_http_url
 
 USER_AGENT = "Leadscanner/2.1 (+https://andrewbaeten.nl)"
 ROBOTS_AGENT = "Leadscanner"

@@ -113,6 +113,18 @@ BROAD_SIGNALS = (
 )
 ALL_SIGNALS = SIGNALS + BROAD_SIGNALS
 OTHER_LABELS = {"nl": "websitebezoekersroute", "en": "website visitor journey"}
+# Unknown categories remain possible, but a generic descriptive sentence is
+# not by itself an actionable outreach opportunity.
+SPECIFIC_OTHER_ACTION_RE = re.compile(
+    r"\b(?:ontvang\w*|lever\w*|install\w*|kies|kiezen|selecteer\w*|"
+    r"bekijk\w*|download\w*|vergelijk\w*|aanvraag\w*|boek\w*|"
+    r"afhaal\w*|opha\w*|bestel\w*|repar\w*|zoek\w*|vind\w*|"
+    r"invul\w*|aanmeld\w*|registreer\w*|"
+    r"receive\w*|deliver\w*|install\w*|choose|select\w*|"
+    r"view\w*|download\w*|compar\w*|request\w*|book\w*|"
+    r"order\w*|repair\w*|find|search\w*|register\w*)\b",
+    re.I,
+)
 
 WEAK_OUTREACH_TERMS = (
     "kwaliteit", "quality", "goede service", "great service", "service staat centraal",
@@ -193,7 +205,11 @@ def classify_evidence(item: dict) -> dict | None:
             best = candidate
     # A category is NOT required for a factual, source-backed observation.
     # This fallback is deliberately lower priority than recognized journeys.
-    if best is None and not any(term in observed for term in WEAK_OUTREACH_TERMS):
+    if (
+        best is None
+        and SPECIFIC_OTHER_ACTION_RE.search(observed)
+        and not any(term in observed for term in WEAK_OUTREACH_TERMS)
+    ):
         best = {
             "signal_type": "other",
             "signal_score": 40 + (5 if page_type != "home" else 0),
@@ -256,14 +272,25 @@ def select_one_reason(candidate: dict) -> dict:
     # better-supported observation merely to make the categories diverse.
     # Suppress duplicate observations and use fewer than six when appropriate.
     selected, seen = [], set()
+    other_count = 0
+    low_count = 0
     for entry in ranked:
         if entry[4] != language:
+            continue
+        score, category = -entry[0], entry[3]["signal_type"]
+        # Evidence that merely falls outside the known categories may be
+        # useful, but must not fill most of the email with low-priority filler.
+        if category == "other" and other_count >= 1:
+            continue
+        if score < 70 and low_count >= 2:
             continue
         key = normalize_text(entry[5])
         if key in seen:
             continue
         seen.add(key)
         selected.append(entry)
+        other_count += category == "other"
+        low_count += score < 70
         if len(selected) == 6:
             break
     findings = []
