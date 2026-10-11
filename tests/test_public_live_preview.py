@@ -73,6 +73,8 @@ class PublicLivePreviewTests(unittest.TestCase):
         source["ready_for_research"] = True
         source["contact_status"] = "verified_official_site"
         source["contact_role"] = "general_inbox"
+        source["contact_form_source_url"] = "https://example.invalid/contact"
+        source["contact_page_source_url"] = "https://example.invalid/contact"
         source["homepage_text_excerpt"] = "Klanten kunnen online een afspraak aanvragen voor onderhoud."
         verified = {"candidate_count": 1, "ready_for_research_count": 1, "candidates": [source]}
         researched = {"candidate_count": 1, "research_ready_count": 1, "candidates": [source]}
@@ -96,6 +98,13 @@ class PublicLivePreviewTests(unittest.TestCase):
         self.assertEqual(report["counts"]["verified_websites"], 1)
         self.assertEqual(report["counts"]["verified_contacts"], 1)
         self.assertEqual(report["counts"]["named_contacts"], 0)
+        self.assertEqual(report["counts"]["sites_with_public_contact_form"], 1)
+        self.assertEqual(report["counts"]["sites_with_verified_contact_page"], 1)
+        self.assertEqual(report["counts"]["sites_with_any_observed_contact_channel"], 1)
+        self.assertEqual(report["counts"]["sites_with_any_observed_contact_route"], 1)
+        self.assertEqual(report["quality"]["researched_with_usable_evidence"], 1)
+        self.assertEqual(report["quality"]["researched_without_eligible_evidence"], 0)
+        self.assertEqual(report["quality"]["contact_form_without_published_email"], 0)
         self.assertTrue(report["snapshot_in_memory_valid"])
         self.assertFalse(report["contains_real_recipient_data"])
         self.assertEqual(report["emails_sent"], 0)

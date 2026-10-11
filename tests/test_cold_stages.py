@@ -327,6 +327,42 @@ class ColdStagesTests(unittest.TestCase):
         ])
         self.assertEqual(result["research_pages_attempted"], 5)
 
+    def test_verified_empty_homepage_still_counts_research_and_form(self):
+        row = {
+            "official_url": "https://acmefietsen.nl/",
+            "official_domain": "acmefietsen.nl",
+            "ready_for_research": True,
+            "homepage_text_excerpt": "",
+            "homepage_contact_form_present": True,
+            "homepage_phone_link_present": False,
+        }
+        result = research_candidate(row, session_factory=lambda: FakeSession([]))
+        self.assertEqual(result["research_status"], "ready")
+        self.assertEqual(result["research_evidence_status"], "no_eligible_sentence")
+        self.assertEqual(result["research_pages_fetched"], 1)
+        self.assertEqual(result["evidence_candidates"], [])
+        self.assertEqual(result["contact_status"], "contact_form_only")
+        self.assertEqual(result["contact_form_source_url"], "https://acmefietsen.nl/")
+        self.assertIsNone(result["public_business_email"])
+
+    def test_form_only_site_can_have_real_findings_without_mail_recipient(self):
+        from outreach_stages import select_one_reason, value_action_for, generate_one_mail
+        row = {
+            "official_url": "https://acmefietsen.nl/",
+            "official_domain": "acmefietsen.nl",
+            "ready_for_research": True,
+            "homepage_text_excerpt": "Klanten kunnen online een afspraak aanvragen voor onderhoud aan elektrische fietsen.",
+            "homepage_contact_form_present": True,
+        }
+        researched = research_candidate(row, session_factory=lambda: FakeSession([]))
+        self.assertEqual(researched["contact_status"], "contact_form_only")
+        selected = select_one_reason(researched)
+        self.assertEqual(selected["outreach_status"], "ready")
+        result = generate_one_mail(value_action_for(selected))
+        self.assertEqual(result["copy_validation_reasons"], ["no_published_business_contact"])
+        self.assertIsNone(result["body"])
+        self.assertFalse(result["automatic_send"])
+
     def test_research_skips_not_ready_candidates_without_network(self):
         result = research_candidates(
             {"candidates": [{"name_hint": "Hold", "ready_for_research": False}]},

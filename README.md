@@ -54,7 +54,8 @@ De **eerste output** die je als gebruiker nodig hebt, is `overzicht.md` in het r
 Een bedrijf wordt niet automatisch geschikt omdat het een website heeft. Mogelijke oorzaken:
 
 - Bedrijf al bekend, onderdrukt of eerder onderzocht; nooit blind opnieuw benaderen.
-- Geen gepubliceerd e-mailadres: **websiteonderzoek gaat gewoon door**; alleen een persoonlijke conceptmail blijft achterwege.
+- Geen gepubliceerd e-mailadres: **websiteonderzoek gaat gewoon door**. Een aantoonbaar contactformulier, telefoonlink of bezochte Contact-pagina wordt apart geregistreerd. Een Contact-pagina bewijst niet dat het formulier werkt; geen van deze routes is een e-mailadres en niets wordt automatisch gebruikt. Een geadresseerde conceptmail blijft achterwege.
+- Een geverifieerde website telt als onderzocht na bezoek, ook zonder voldoende concrete observaties. De kwaliteitsmeting telt bruikbaar bewijs **apart**; geen geforceerde bevindingen om een hoog cijfer te halen.
 - Website onbereikbaar of robots-/domeinveiligheid laat lezen niet toe.
 - Geen concrete, controleerbare observatie of geen betrouwbare taalherkenning.
 - Concept of broncontrole voldoet niet aan het contract.

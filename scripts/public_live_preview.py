@@ -333,6 +333,31 @@ def run_live_preview(
                     bool(x.get("named_owner_found_on_site"))
                     for x in researched.get("candidates") or []
                 ),
+                "sites_with_public_contact_form": sum(
+                    bool(x.get("contact_form_source_url"))
+                    for x in researched.get("candidates") or []
+                ),
+                "sites_with_public_phone_link": sum(
+                    bool(x.get("phone_contact_source_url"))
+                    for x in researched.get("candidates") or []
+                ),
+                "sites_with_verified_contact_page": sum(
+                    bool(x.get("contact_page_source_url"))
+                    for x in researched.get("candidates") or []
+                ),
+                "sites_with_any_observed_contact_channel": sum(
+                    bool(
+                        x.get("public_business_email")
+                        or x.get("contact_form_source_url")
+                        or x.get("phone_contact_source_url")
+                    ) for x in researched.get("candidates") or []
+                ),
+                "sites_with_any_observed_contact_route": sum(
+                    bool(
+                        x.get("public_business_email") or x.get("contact_form_source_url")
+                        or x.get("phone_contact_source_url") or x.get("contact_page_source_url")
+                    ) for x in researched.get("candidates") or []
+                ),
                 "specific_person_emails": sum(
                     x.get("contact_role") in {"named_owner", "named_person"}
                     for x in researched.get("candidates") or []
@@ -372,8 +397,51 @@ def run_live_preview(
                     x.get("research_status") == "ready" and not x.get("public_business_email")
                     for x in researched.get("candidates") or []
                 ),
+                "researched_with_usable_evidence": sum(
+                    x.get("research_status") == "ready" and bool(x.get("evidence_candidates"))
+                    for x in researched.get("candidates") or []
+                ),
+                "researched_without_eligible_evidence": sum(
+                    x.get("research_status") == "ready" and not x.get("evidence_candidates")
+                    for x in researched.get("candidates") or []
+                ),
+                "contact_form_without_published_email": sum(
+                    x.get("research_status") == "ready"
+                    and not x.get("public_business_email")
+                    and bool(x.get("contact_form_source_url"))
+                    for x in researched.get("candidates") or []
+                ),
+                "phone_link_without_email_or_form": sum(
+                    x.get("research_status") == "ready"
+                    and not x.get("public_business_email")
+                    and not x.get("contact_form_source_url")
+                    and bool(x.get("phone_contact_source_url"))
+                    for x in researched.get("candidates") or []
+                ),
+                "researched_without_observed_contact_channel": sum(
+                    x.get("research_status") == "ready"
+                    and not (
+                        x.get("public_business_email") or x.get("contact_form_source_url")
+                        or x.get("phone_contact_source_url")
+                    )
+                    for x in researched.get("candidates") or []
+                ),
+                "contact_page_without_observed_contact_channel": sum(
+                    x.get("research_status") == "ready"
+                    and bool(x.get("contact_page_source_url"))
+                    and not (
+                        x.get("public_business_email") or x.get("contact_form_source_url")
+                        or x.get("phone_contact_source_url")
+                    )
+                    for x in researched.get("candidates") or []
+                ),
                 "sites_with_findings_but_no_email": sum(
                     x.get("outreach_status") == "ready" and not x.get("public_business_email")
+                    for x in reasons.get("candidates") or []
+                ),
+                "sites_with_findings_form_fallback_no_email": sum(
+                    x.get("outreach_status") == "ready" and not x.get("public_business_email")
+                    and bool(x.get("contact_form_source_url"))
                     for x in reasons.get("candidates") or []
                 ),
             },

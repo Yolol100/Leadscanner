@@ -197,21 +197,43 @@ class PageParser(HTMLParser):
         self._active_text: list[str] = []
         self._ignore = 0
         self._in_title = False
+        self.contact_form_present = False
+        self.phone_link_present = False
+        self._active_form: dict[str, bool] | None = None
 
     def handle_starttag(self, tag: str, attrs):
         tag = tag.casefold()
+        fields = dict(attrs)
         if tag in {"script", "style", "noscript", "svg"}:
             self._ignore += 1
         if tag == "title":
             self._in_title = True
+
+        # Detect an actual published message form, not a text claim that a
+        # form exists. Never follow the action or submit any form.
+        if not self._ignore:
+            if tag == "form":
+                self._active_form = {"recipient": False, "message": False}
+            elif self._active_form is not None and tag in {"input", "textarea"}:
+                field_type = str(fields.get("type") or "").casefold()
+                description = " ".join(str(fields.get(k) or "") for k in ("name", "id", "placeholder")).casefold()
+                if field_type in {"email", "tel"} or re.search(r"e-?mail|telefoon|phone", description):
+                    self._active_form["recipient"] = True
+                if tag == "textarea" or re.search(r"bericht|message|vraag|question|inquiry|comment", description):
+                    self._active_form["message"] = True
         if tag == "a":
-            href = dict(attrs).get("href")
+            href = fields.get("href")
             if href:
                 self._active_href = str(href)
                 self._active_text = []
+                if re.fullmatch(r"tel:\+?[0-9 ()-]{5,32}", str(href).strip(), flags=re.I):
+                    self.phone_link_present = True
 
     def handle_endtag(self, tag: str):
         tag = tag.casefold()
+        if tag == "form" and self._active_form is not None:
+            self.contact_form_present |= all(self._active_form.values())
+            self._active_form = None
         if tag in {"script", "style", "noscript", "svg"} and self._ignore:
             self._ignore -= 1
         if tag == "title":
@@ -255,6 +277,8 @@ def parse_html(html: str) -> dict:
         "links": parser.links,
         "mailtos": parser.mailtos,
         "mailto_contexts": parser.mailto_contexts,
+        "contact_form_present": parser.contact_form_present,
+        "phone_link_present": parser.phone_link_present,
     }
 
 
@@ -465,6 +489,8 @@ def verify_candidate(candidate: dict, *, session_factory=requests.Session) -> di
         "homepage_text_excerpt": None,
         "homepage_mailtos": [],
         "homepage_mailto_contexts": [],
+        "homepage_contact_form_present": False,
+        "homepage_phone_link_present": False,
     })
     reason = cheap_competitor_reason(candidate)
     if reason:
@@ -500,6 +526,8 @@ def verify_candidate(candidate: dict, *, session_factory=requests.Session) -> di
     result["homepage_text_excerpt"] = visible[:HOMEPAGE_CACHE_CHARS]
     result["homepage_mailtos"] = parsed["mailtos"]
     result["homepage_mailto_contexts"] = parsed["mailto_contexts"]
+    result["homepage_contact_form_present"] = parsed["contact_form_present"]
+    result["homepage_phone_link_present"] = parsed["phone_link_present"]
     result["contact_links"] = preferred_contact_links(parsed, final_url, domain, limit=MAX_CONTACT_PAGES)
     result["research_links"] = broad_research_links(parsed, final_url, domain)
     if not identity_ok:
@@ -604,7 +632,10 @@ def page_type_for_url(url: str) -> str:
 
 def research_candidate(candidate: dict, *, session_factory=requests.Session) -> dict:
     """Research the website FIRST, then choose a published business contact."""
-    drop = {"homepage_text_excerpt", "homepage_mailtos", "homepage_mailto_contexts"}
+    drop = {
+        "homepage_text_excerpt", "homepage_mailtos", "homepage_mailto_contexts",
+        "homepage_contact_form_present", "homepage_phone_link_present",
+    }
     result = {key: value for key, value in candidate.items() if key not in drop}
     result["research_status"] = "hold_not_ready"
     result["researched_urls"] = []
@@ -618,7 +649,7 @@ def research_candidate(candidate: dict, *, session_factory=requests.Session) -> 
     official_url = _text(candidate.get("official_url"))
     domain = _text(candidate.get("official_domain"))
     homepage_text = _text(candidate.get("homepage_text_excerpt"))
-    if not official_url or not domain or not homepage_text:
+    if not official_url or not domain or candidate.get("homepage_text_excerpt") is None:
         result["research_status"] = "hold_missing_verification_handoff"
         return result
 
@@ -628,6 +659,8 @@ def research_candidate(candidate: dict, *, session_factory=requests.Session) -> 
             "text": homepage_text,
             "mailtos": candidate.get("homepage_mailtos") or [],
             "mailto_contexts": candidate.get("homepage_mailto_contexts") or [],
+            "contact_form_present": bool(candidate.get("homepage_contact_form_present")),
+            "phone_link_present": bool(candidate.get("homepage_phone_link_present")),
         },
     }
     pages = [homepage]
@@ -715,7 +748,11 @@ def research_candidate(candidate: dict, *, session_factory=requests.Session) -> 
     result["research_pages_fetched"] = len(researched_urls)
     result["research_page_failure_counts"] = dict(sorted(page_failures.items()))
     result["evidence_candidates"] = deduped
-    result["research_status"] = "ready" if deduped else "hold_no_first_party_evidence"
+    # A reachable, verified website was researched even if its content is too
+    # brief for a reliable outreach observation. Never turn a weak finding
+    # into a claim merely to improve the coverage metric.
+    result["research_status"] = "ready"
+    result["research_evidence_status"] = "usable" if deduped else "no_eligible_sentence"
     # No contact requirement above this line. All valid first-party pages
     # contribute evidence even when the business uses only a contact form.
     result.update(select_site_contact(pages, domain))

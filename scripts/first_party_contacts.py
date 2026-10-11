@@ -205,12 +205,30 @@ def select_site_contact(parsed_pages: list[dict], domain: str) -> dict:
             owner_sources.setdefault(name, str(page.get("source_url") or ""))
     owners = list(owner_sources)
     candidates = []
+    contact_form_source_url = None
+    phone_contact_source_url = None
+    contact_page_source_url = None
     for page_index, page in enumerate(parsed_pages):
         url = str(page.get("source_url") or "")
         parsed = page.get("parsed") or {}
         source = urlparse(url)
         if source.scheme not in {"http", "https"} or source.username is not None or source.password is not None or normalize_domain(url) != domain:
             continue
+        # A fetched first-party Contact page provides a useful manual follow-up
+        # route, but does not prove a working form or published email.
+        if (
+            contact_page_source_url is None
+            and re.search(r"(?:^|[/_-])(?:contact|contacteer|contact-us|contactformulier)(?:$|[/_-])",
+                          _normalize(source.path))
+        ):
+            contact_page_source_url = url
+        # An actual published HTML contact form or tel: link is an alternative
+        # contact channel, not an email address. Never submit forms or guess
+        # recipient addresses. Preserve the verified first-party source page.
+        if parsed.get("contact_form_present") and contact_form_source_url is None:
+            contact_form_source_url = url
+        if parsed.get("phone_link_present") and phone_contact_source_url is None:
+            phone_contact_source_url = url
         for email in _emails(parsed):
             local, mail_domain = email.split("@", 1)
             same_domain = mail_domain == domain or mail_domain.endswith("." + domain)
@@ -269,7 +287,15 @@ def select_site_contact(parsed_pages: list[dict], domain: str) -> dict:
             "contact_name_source_url": None,
             "contact_role_source_url": None,
             "contact_role": None,
-            "contact_status": "no_public_contact_found",
+            "contact_status": (
+                "contact_form_only" if contact_form_source_url else
+                "phone_link_only" if phone_contact_source_url else
+                "contact_page_only" if contact_page_source_url else
+                "no_public_contact_found"
+            ),
+            "contact_form_source_url": contact_form_source_url,
+            "phone_contact_source_url": phone_contact_source_url,
+            "contact_page_source_url": contact_page_source_url,
             "contact_search_pages_checked": len(parsed_pages),
             "named_owner_found_on_site": bool(owners),
         }
@@ -277,6 +303,9 @@ def select_site_contact(parsed_pages: list[dict], domain: str) -> dict:
     return {
         **best,
         "contact_status": "verified_official_site",
+        "contact_form_source_url": contact_form_source_url,
+        "phone_contact_source_url": phone_contact_source_url,
+        "contact_page_source_url": contact_page_source_url,
         "contact_search_pages_checked": len(parsed_pages),
         "named_owner_found_on_site": bool(owners),
     }

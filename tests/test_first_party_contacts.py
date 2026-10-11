@@ -150,8 +150,60 @@ class FirstPartyContactsTests(unittest.TestCase):
             page("/contact", "<p>Vul ons contactformulier in voor uw vraag.</p>"),
         ], "acmefietsen.nl")
         self.assertTrue(result["named_owner_found_on_site"])
-        self.assertEqual(result["contact_status"], "no_public_contact_found")
+        self.assertEqual(result["contact_status"], "contact_page_only")
+        self.assertEqual(result["contact_page_source_url"], "https://acmefietsen.nl/contact")
+        self.assertIsNone(result["contact_form_source_url"])
         self.assertIsNone(result["public_business_email"])
+
+    def test_real_form_counts_as_alternative_contact_without_inventing_email(self):
+        result = select_site_contact([
+            page("/", "<p>Ons contactformulier is beschikbaar op de contactpagina.</p>"),
+            page("/contact", """
+                <form action="/send" method="post">
+                    <input type="email" name="email">
+                    <textarea name="message"></textarea>
+                    <button type="submit">Verstuur</button>
+                </form>
+            """),
+        ], "acmefietsen.nl")
+        self.assertEqual(result["contact_status"], "contact_form_only")
+        self.assertEqual(result["contact_form_source_url"], "https://acmefietsen.nl/contact")
+        self.assertIsNone(result["public_business_email"])
+        self.assertIsNone(result["email_source_url"])
+        self.assertIsNone(result["contact_person_name"])
+
+    def test_contact_page_mention_is_a_manual_route_not_a_working_form(self):
+        result = select_site_contact([
+            page("/contact", "<p>Voor vragen gebruikt u de contactpagina.</p>"),
+        ], "acmefietsen.nl")
+        self.assertEqual(result["contact_status"], "contact_page_only")
+        self.assertEqual(result["contact_page_source_url"], "https://acmefietsen.nl/contact")
+        self.assertIsNone(result["contact_form_source_url"])
+        self.assertIsNone(result["public_business_email"])
+
+    def test_newsletter_field_is_not_a_contact_form(self):
+        parsed = parse_html('<form><input name="email" type="email"><button>Inschrijven</button></form>')
+        self.assertFalse(parsed["contact_form_present"])
+        self.assertFalse(parsed["phone_link_present"])
+
+    def test_phone_link_is_an_alternative_but_not_an_email(self):
+        result = select_site_contact([
+            page("/contact", '<a href="tel:+31201234567">Bel ons</a>'),
+        ], "acmefietsen.nl")
+        self.assertEqual(result["contact_status"], "phone_link_only")
+        self.assertEqual(result["phone_contact_source_url"], "https://acmefietsen.nl/contact")
+        self.assertIsNone(result["public_business_email"])
+
+    def test_published_email_still_beats_form_only_and_keeps_both_sources(self):
+        result = select_site_contact([
+            page("/contact", """
+                <form><input type="email" name="email"><textarea name="message"></textarea></form>
+                <a href="mailto:info@acmefietsen.nl">Mail ons</a>
+            """),
+        ], "acmefietsen.nl")
+        self.assertEqual(result["contact_status"], "verified_official_site")
+        self.assertEqual(result["public_business_email"], "info@acmefietsen.nl")
+        self.assertEqual(result["contact_form_source_url"], "https://acmefietsen.nl/contact")
 
     def test_about_and_team_links_are_prioritized_for_research(self):
         home = parse_html(
