@@ -58,7 +58,7 @@ class PrivacyAndRankingTests(unittest.TestCase):
             control,
         )
 
-    def test_six_stronger_observations_are_not_displaced_by_weak_category(self):
+    def test_repeated_high_scoring_journey_is_not_treated_as_six_opportunities(self):
         strong = [
             ("Klanten kunnen online een afspraak maken voor de jaarlijkse onderhoudsbeurt.", "one"),
             ("Onze klanten kunnen online een afspraak aanvragen voor de bandenservice.", "two"),
@@ -79,7 +79,8 @@ class PrivacyAndRankingTests(unittest.TestCase):
         })
         findings = result["selected_findings"]
         self.assertEqual(result["outreach_status"], "ready")
-        self.assertEqual(len(findings), 6)
+        self.assertEqual(len(findings), 2)
+        self.assertEqual({point["category"] for point in findings}, {"appointment"})
         self.assertNotIn("portfolio", {point["category"] for point in findings})
         self.assertEqual([point["score"] for point in findings], sorted(
             [point["score"] for point in findings], reverse=True,

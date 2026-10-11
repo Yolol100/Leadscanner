@@ -43,9 +43,10 @@ class BroadFindingsTests(unittest.TestCase):
         }
         selected = select_one_reason(row)
         findings = selected["selected_findings"]
-        self.assertEqual(len(findings), 6)
+        self.assertEqual(len(findings), 5)
         self.assertEqual(findings[0]["category"], "appointment")
-        self.assertEqual(len({f["category"] for f in findings}), 6)
+        self.assertEqual(len({f["category"] for f in findings}), 5)
+        self.assertTrue(all(f["score"] >= 70 for f in findings))
         self.assertTrue(all(f["source_url"].startswith("https://sample.nl/") for f in findings))
         valued = value_action_for(selected)
         self.assertEqual(valued["value_action_status"], "proposed")
