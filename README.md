@@ -36,6 +36,38 @@ Instantly-staging of mijn.host-conceptopslag weer wordt uitgevoerd.
 
 Een observatie is niet automatisch een bewezen probleem. Leadscanner mag geen gebreken, resultaten of omzetverbeteringen verzinnen. Algemene reclamezinnen zijn onvoldoende onderbouwing.
 
+## Openbare live preview (zonder verzending)
+
+De repository kan **openbaar blijven** voor de veilige onderzoekscontrole. Open
+[GitHub Actions — Leads Cold Pipeline](../../actions/workflows/leads-cold.yml)
+en kies bij **Run workflow** de modus `public_audit`. Er worden maximaal
+60 bedrijven ontdekt en 16 websites op de huidige officiële bronnen
+gecontroleerd, inclusief de live historische uitsluitingsregistratie.
+`region` en `keywords` zijn optioneel (standaard Amsterdam en
+fietsenwinkel,bloemist,kapsalon).
+
+De taak voert in het werkgeheugen het echte websiteonderzoek,
+prioriteitsselectie, conceptmailvalidatie en de exacte goedkeuringstokens uit.
+Hij **keurt niemand goed**, verstuurt niets en schrijft niets naar Instantly,
+mailbox of dedupe-register. Openbare uitvoer bevat **uitsluitend tellingen,
+kwaliteitscategorieën en veiligheidsstatussen**. Ook bij fouten worden geen
+contacten, URL's, e-mailteksten of ruwe antwoorden gepubliceerd.
+
+**Belangrijk:** de openbare modus is een **kwaliteitscontrole**, niet een
+bruikbare persoonlijke reviewlijst. Het heeft geen bewaarbare
+contact-/goedkeuringsgegevens; voor het later persoonlijk beoordelen en
+goedkeuren van echte concepten blijft een **privéomgeving** nodig.
+
+De eerste live proef op 11 oktober 2026 ([run 38150763872](../../actions/runs/38150763872))
+vond 60 websites, verifieerde 6 zakelijke contactadressen, onderzocht 55
+pagina's en controleerde 6 conceptmails. Alle zes voldeden aan automatische
+copyvalidatie en gewijzigde goedkeuringstokens werden geweigerd. De
+inhoudskwaliteit verdient nog menselijke beoordeling: 30 van de 36
+geselecteerde bevindingen hadden de prioriteit **laag**, waarvan er 29 in de
+categorie **overig** vielen. Daarom rapporteert `public_audit` een aparte
+kwaliteitswaarschuwing en is een technisch groene run geen menselijke
+inhoudsgoedkeuring.
+
 ## Aan de slag
 
 Gebruik [GitHub Actions — Leads Cold Pipeline](../../actions/workflows/leads-cold.yml) en kies **Run workflow** op `main`.
