@@ -8,8 +8,12 @@ change. Public command artifacts contain aggregate counts only.
 """
 from __future__ import annotations
 
+import argparse
+import json
+import os
 import re
 import time
+from pathlib import Path
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -19,7 +23,7 @@ import requests
 
 from cold_stages import (
     CONTACT_HINTS, RESEARCH_EXCLUDES, RESEARCH_HINTS, evidence_sentences,
-    extract_emails, internal_links, normalize_domain, page_type_for_url,
+    PUBLIC_MAIL_DOMAINS, extract_emails, internal_links, normalize_domain, page_type_for_url,
     parse_html, safe_fetch_html,
 )
 from instantly_language_campaigns import inspect_lead_language, read_imported_leads
@@ -113,7 +117,7 @@ def _scan_site(row: dict) -> dict:
     if address is None:
         return {"status": "invalid_email"}
     email, domain = address
-    if domain in HOLD_FREE_MAIL:
+    if domain in HOLD_FREE_MAIL | PUBLIC_MAIL_DOMAINS:
         return {"status": "personal_email_domain"}
     if (
         values.get("leadscanner_import_origin") != "myhost_drafts"
@@ -267,13 +271,28 @@ def research_imported_sites_batch(
         raise ValueError("site_research_offset_outside_source")
     batch = rows[offset:offset + BATCH_SIZE]
 
-    # Network reads in bounded parallel, source writes serial with exact readback.
+    # Network reads in bounded parallel; never expose unsafe provider/site exceptions.
+    def scan_one(row: dict) -> dict:
+        try:
+            return scanner(row)
+        except Exception:
+            return {"status": "site_scan_exception"}
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        outcomes = list(pool.map(scanner, batch))
+        outcomes = list(pool.map(scan_one, batch))
     counts = Counter()
     saved = 0
+    allowed_statuses = frozenset({
+        "candidate", "invalid_email", "personal_email_domain",
+        "source_not_review_required", "existing_live_observation_hold",
+        "existing_research_hold", "unreachable_website",
+        "recipient_not_confirmed_on_website", "no_specific_first_party_signal",
+        "observation_language_mismatch", "no_relevant_action",
+        "unsafe_or_unbound_candidate", "site_scan_exception", "invalid_scan",
+    })
     for row, outcome in zip(batch, outcomes):
         status = _text(outcome.get("status")) if isinstance(outcome, dict) else "invalid_scan"
+        if status not in allowed_statuses:
+            raise RuntimeError("site_research_unknown_scanner_status")
         if status == "candidate":
             proposal = outcome.get("proposal") if isinstance(outcome, dict) else None
             if not isinstance(proposal, dict) or set(proposal) != set(REVIEW_KEYS):
@@ -304,3 +323,38 @@ def research_imported_sites_batch(
         "automatic_send": False,
         "prospect_addresses_or_evidence_in_public_result": False,
     }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--offset", type=int, required=True)
+    parser.add_argument("--expected-count", type=int, default=EXPECTED_SOURCE_COUNT)
+    parser.add_argument("--workers", type=int, default=MAX_WORKERS)
+    parser.add_argument("--save-candidates", action="store_true")
+    parser.add_argument("--output", required=True)
+    args = parser.parse_args()
+    key = os.environ.get("INSTANTLY_API_KEY", "")
+    if not key:
+        raise SystemExit("site_research_instantly_key_missing")
+    from instantly_client import InstantlyClient
+    from instantly_control import _redact_sensitive
+    try:
+        result = research_imported_sites_batch(
+            InstantlyClient(key), offset=args.offset, expected_count=args.expected_count,
+            workers=args.workers, save_candidates=args.save_candidates,
+        )
+    except Exception:
+        # The true exception may contain private provider or prospect data.
+        raise SystemExit("site_research_batch_failed_reconciliation_required") from None
+    output = Path(args.output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(_redact_sensitive(result), sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    print("SITE_RESEARCH_BATCH=green "
+          f"offset={args.offset} checked={result['batch_size']} "
+          f"candidate={result['candidate_count']} saved={result['saved_candidate_count']} "
+          f"hold={sum(result['holds'].values())}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
