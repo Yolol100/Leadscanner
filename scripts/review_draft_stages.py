@@ -102,6 +102,26 @@ def prepare_review_batch(payload: dict) -> dict:
         if normalize_domain(email.rsplit("@", 1)[1]) == "":
             raise ValueError("review_mail_invalid_email_domain")
 
+        # Contact provenance remains first-party and reviewable. Legacy previews
+        # without these fields remain valid; new sources must be real site URLs.
+        name_source = _text(candidate.get("contact_name_source_url"))
+        role_source = _text(candidate.get("contact_role_source_url"))
+        for field, source, associated in (
+            ("name", name_source, _text(candidate.get("contact_person_name"))),
+            ("role", role_source, _text(candidate.get("contact_role"))),
+        ):
+            if not source:
+                continue
+            parsed_source = urlparse(source)
+            if (
+                not associated
+                or parsed_source.scheme not in {"http", "https"}
+                or parsed_source.username is not None
+                or parsed_source.password is not None
+                or normalize_domain(source) != domain
+            ):
+                raise ValueError(f"review_contact_{field}_source_not_first_party")
+
         # Keep all selected official-site findings visible through human review.
         findings = review_findings(candidate.get("selected_findings"), domain)
         lead_id = stable_lead_id(domain, email)
@@ -123,7 +143,9 @@ def prepare_review_batch(payload: dict) -> dict:
             "email": email,
             "email_source_url": email_source_url,
             "contact_person_name": _text(candidate.get("contact_person_name")),
+            "contact_name_source_url": name_source,
             "contact_role": _text(candidate.get("contact_role")),
+            "contact_role_source_url": role_source,
             "subject": subject,
             "body": body,
             "status": "sequence_facts_review" if sequence_facts else "review_draft",
