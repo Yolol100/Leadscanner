@@ -69,12 +69,72 @@ def mail_quality_audit(client) -> dict:
     body_fingerprints=Counter()
     pair_fingerprints=Counter()
     language_quality={language:Counter() for language in ("nl", "en", "unknown")}
+    candidate_counts=Counter()
+    candidate_pairs=Counter()
+    candidate_observations=Counter()
+
     for row in rows:
         payload=row.get("payload")
         if not isinstance(payload,dict):
             payload=row.get("custom_variables")
         if not isinstance(payload,dict):
             payload={}
+        marker=payload.get("leadscanner_site_research_status")
+        fields=("leadscanner_site_candidate_observation",
+                "leadscanner_site_candidate_value_action",
+                "leadscanner_site_candidate_evidence_url",
+                "leadscanner_site_candidate_contact_url",
+                "leadscanner_site_candidate_official_domain",
+                "leadscanner_site_candidate_subject",
+                "leadscanner_site_candidate_body")
+        has_candidate=bool(marker) or any(payload.get(key) for key in fields)
+        if has_candidate:
+            candidate_counts["present"]+=1
+            complete=marker=="candidate_review_required" and all(
+                isinstance(payload.get(k),str) and payload[k].strip() for k in fields
+            ) and payload.get("leadscanner_site_candidate_source_type")=="official_site"
+            if not complete:
+                candidate_counts["incomplete_or_invalid"]+=1
+            else:
+                candidate_counts["complete_review_candidate"]+=1
+                cs=payload["leadscanner_site_candidate_subject"]
+                cb=payload["leadscanner_site_candidate_body"]
+                obs=payload["leadscanner_site_candidate_observation"]
+                act=payload["leadscanner_site_candidate_value_action"]
+                url=payload["leadscanner_site_candidate_evidence_url"]
+                contact_url=payload["leadscanner_site_candidate_contact_url"]
+                domain=payload["leadscanner_site_candidate_official_domain"]
+                pair=_private_copy_digest(cs+"|"+cb)
+                candidate_pairs[pair]+=1
+                candidate_observations[_private_copy_digest(obs)]+=1
+                from urllib.parse import urlparse
+                from cold_stages import normalize_domain
+                if (normalize_domain(url)!=domain or normalize_domain(contact_url)!=domain
+                        or urlparse(url).scheme not in {"https","http"}
+                        or urlparse(contact_url).scheme not in {"https","http"}):
+                    candidate_counts["proof_url_domain_mismatch"]+=1
+                if obs not in cb or act not in cb:
+                    candidate_counts["source_observation_or_action_not_in_copy"]+=1
+                if cb.count("?")!=1:
+                    candidate_counts["not_one_primary_question"]+=1
+                if len(cb.split())>125:
+                    candidate_counts["over_125_words"]+=1
+                if UNRESOLVED.search(cs+"\n"+cb):
+                    candidate_counts["unresolved_template_markers"]+=1
+                if "andrew baeten" not in cb.casefold():
+                    candidate_counts["sender_name_missing"]+=1
+                clang=classify_language(cs,cb)
+                if clang=="unknown":
+                    candidate_counts["copy_language_unknown"]+=1
+                elif not any(phrase in cb.casefold() for phrase in
+                             (OPT_OUT_NL if clang=="nl" else OPT_OUT_EN)):
+                    candidate_counts["opt_out_phrase_missing"]+=1
+                if cs==payload.get("leadscanner_subject") and cb==payload.get("leadscanner_body"):
+                    candidate_counts["unchanged_first_mail"]+=1
+                else:
+                    candidate_counts["new_first_mail_candidate"]+=1
+                if payload.get("leadscanner_contact_basis")=="review_required":
+                    candidate_counts["permission_still_unverified"]+=1
         subj=payload.get("leadscanner_subject")
         body=payload.get("leadscanner_body")
         if not isinstance(subj,str) or not isinstance(body,str) or not subj.strip() or not body.strip():
@@ -184,6 +244,25 @@ def mail_quality_audit(client) -> dict:
             )
         },
         "source_leads_assigned_to_campaign":counts["source_lead_assigned_to_campaign"],
+        "site_candidate_review":{
+            "present":candidate_counts["present"],
+            "complete_review_candidate":candidate_counts["complete_review_candidate"],
+            "incomplete_or_invalid":candidate_counts["incomplete_or_invalid"],
+            "new_first_mail_candidate":candidate_counts["new_first_mail_candidate"],
+            "unchanged_first_mail":candidate_counts["unchanged_first_mail"],
+            "permission_still_unverified":candidate_counts["permission_still_unverified"],
+            "copy_quality_flags":{key:candidate_counts[key] for key in (
+                "proof_url_domain_mismatch",
+                "source_observation_or_action_not_in_copy",
+                "not_one_primary_question","over_125_words",
+                "unresolved_template_markers","sender_name_missing",
+                "copy_language_unknown","opt_out_phrase_missing",
+            )},
+            "duplicate_mail_pairs":_reused_groups(candidate_pairs),
+            "reused_observations":_reused_groups(candidate_observations),
+            "human_review_still_required":True,
+            "raw_copy_or_fingerprints_returned":False,
+        },
         "signature_fix_is_not_permission_or_content_approval":True,
         "copy_is_not_consent":True,
         "quality_guaranteed":False,
