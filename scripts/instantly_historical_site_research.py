@@ -35,7 +35,7 @@ from outreach_stages import SUBJECTS, select_one_reason, value_action_for
 
 EXPECTED_SOURCE_COUNT = 1128
 BATCH_SIZE = 100
-MAX_WORKERS = 24
+MAX_WORKERS = 48
 UUID = re.compile(r"^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$")
 REVIEW_KEYS = (
     "leadscanner_site_candidate_observation",
