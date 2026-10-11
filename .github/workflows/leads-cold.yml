@@ -404,6 +404,7 @@ jobs:
               for label, value in payload["counts"].items():
                   out.write(f"- {label}: {int(value)}\n")
               out.write(f"- Ranked evidence points: {int(payload['quality']['ranked_findings'])}\n")
+              out.write(f"- Evidence quality status: {payload['quality_status']}\n")
               out.write(f"- Exact review tokens checked: {int(payload['review_integrity']['tokens_content_bound'])}\n")
               out.write("- Review copy, email addresses and approval tokens were not saved or uploaded.\n")
           PY
