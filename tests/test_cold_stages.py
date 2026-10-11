@@ -132,7 +132,7 @@ class ColdStagesTests(unittest.TestCase):
             "https://acmefietsen.nl/diensten",
             "<html><body><p>Klanten kunnen bij ons online een afspraak maken voor onderhoud.</p></body></html>",
         )
-        session = FakeSession([home, contact, detail])
+        session = FakeSession([home, detail, contact])
         candidate = {
             "name_hint": "Acme Fietsen B.V.",
             "website_hint": "https://acmefietsen.nl/",
@@ -150,7 +150,7 @@ class ColdStagesTests(unittest.TestCase):
         self.assertEqual(researched["contact_role"], "general_inbox")
         self.assertEqual(researched["email_source_url"], "https://acmefietsen.nl/contact")
         self.assertEqual(session.calls, [
-            "https://acmefietsen.nl/", "https://acmefietsen.nl/contact", "https://acmefietsen.nl/diensten"
+            "https://acmefietsen.nl/", "https://acmefietsen.nl/diensten", "https://acmefietsen.nl/contact"
         ])
 
     @patch("cold_stages.is_public_http_url", return_value=True)
@@ -277,6 +277,55 @@ class ColdStagesTests(unittest.TestCase):
             item["source_url"] == "https://acmefietsen.nl/diensten"
             for item in result["evidence_candidates"]
         ))
+
+    @patch("cold_stages.is_public_http_url", return_value=True)
+    def test_research_discovers_nested_service_and_faq_pages(self, _safe):
+        details = FakeResponse(
+            "https://acmefietsen.nl/diensten",
+            """<p>Wij helpen klanten met onderhoud aan hun stadsfietsen en elektrische fietsen.</p>
+            <a href="/faq">Veelgestelde vragen</a>""",
+        )
+        faq = FakeResponse(
+            "https://acmefietsen.nl/faq",
+            "<p>Klanten vinden antwoorden in onze kennisbank met veelgestelde vragen.</p>",
+        )
+        session = FakeSession([details, faq])
+        row = {
+            "official_url": "https://acmefietsen.nl/",
+            "official_domain": "acmefietsen.nl",
+            "ready_for_research": True,
+            "homepage_text_excerpt": "Acme Fietsen onderhoudt fietsen voor inwoners van Rotterdam.",
+            "research_links": ["https://acmefietsen.nl/diensten"],
+        }
+        result = research_candidate(row, session_factory=lambda: session)
+        self.assertEqual(session.calls, [
+            "https://acmefietsen.nl/diensten", "https://acmefietsen.nl/faq",
+        ])
+        self.assertEqual(result["research_pages_fetched"], 3)
+        self.assertTrue(any(x["source_url"].endswith("/faq") for x in result["evidence_candidates"]))
+
+    @patch("cold_stages.is_public_http_url", return_value=True)
+    def test_business_pages_keep_priority_when_contact_navigation_is_large(self, _safe):
+        pages = [
+            FakeResponse(f"https://acmefietsen.nl/{path}",
+                "<p>Klanten ontvangen hulp met onderhoud aan hun fiets in onze werkplaats.</p>")
+            for path in ("diensten", "producten", "contact", "team")
+        ]
+        session = FakeSession(pages)
+        row = {
+            "official_url": "https://acmefietsen.nl/",
+            "official_domain": "acmefietsen.nl",
+            "ready_for_research": True,
+            "homepage_text_excerpt": "Acme Fietsen onderhoudt fietsen voor klanten in Rotterdam.",
+            "research_links": ["https://acmefietsen.nl/diensten", "https://acmefietsen.nl/producten"],
+            "contact_links": ["https://acmefietsen.nl/contact", "https://acmefietsen.nl/team"],
+        }
+        result = research_candidate(row, session_factory=lambda: session)
+        self.assertEqual(session.calls, [
+            "https://acmefietsen.nl/diensten", "https://acmefietsen.nl/producten",
+            "https://acmefietsen.nl/contact", "https://acmefietsen.nl/team",
+        ])
+        self.assertEqual(result["research_pages_attempted"], 5)
 
     def test_research_skips_not_ready_candidates_without_network(self):
         result = research_candidates(
