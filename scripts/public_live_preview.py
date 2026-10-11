@@ -341,11 +341,21 @@ def run_live_preview(
                     bool(x.get("phone_contact_source_url"))
                     for x in researched.get("candidates") or []
                 ),
+                "sites_with_verified_contact_page": sum(
+                    bool(x.get("contact_page_source_url"))
+                    for x in researched.get("candidates") or []
+                ),
                 "sites_with_any_observed_contact_channel": sum(
                     bool(
                         x.get("public_business_email")
                         or x.get("contact_form_source_url")
                         or x.get("phone_contact_source_url")
+                    ) for x in researched.get("candidates") or []
+                ),
+                "sites_with_any_observed_contact_route": sum(
+                    bool(
+                        x.get("public_business_email") or x.get("contact_form_source_url")
+                        or x.get("phone_contact_source_url") or x.get("contact_page_source_url")
                     ) for x in researched.get("candidates") or []
                 ),
                 "specific_person_emails": sum(
@@ -410,6 +420,15 @@ def run_live_preview(
                 ),
                 "researched_without_observed_contact_channel": sum(
                     x.get("research_status") == "ready"
+                    and not (
+                        x.get("public_business_email") or x.get("contact_form_source_url")
+                        or x.get("phone_contact_source_url")
+                    )
+                    for x in researched.get("candidates") or []
+                ),
+                "contact_page_without_observed_contact_channel": sum(
+                    x.get("research_status") == "ready"
+                    and bool(x.get("contact_page_source_url"))
                     and not (
                         x.get("public_business_email") or x.get("contact_form_source_url")
                         or x.get("phone_contact_source_url")
