@@ -4,6 +4,22 @@ Leadscanner onderzoekt bedrijfswebsites en webshops, selecteert controleerbare b
 
 **Kort gezegd: zoeken → onderzoeken → kiezen → beoordelen.** Niets wordt automatisch verzonden.
 
+**Privacybeperking (11 oktober 2026):** deze repository is momenteel **openbaar**. De
+website-preview, het opslaan van mailboxconcepten en Instantly-staging zijn
+daarom bewust geblokkeerd totdat de repository **privé** is. De reviewbestanden
+bevatten zakelijke contactadressen en persoonlijke conceptteksten; deze horen
+niet in publiek downloadbare GitHub Actions-artifacts.
+
+Ook **oude Actions-artifacts** moeten apart worden beoordeeld en verwijderd.
+Bij controle bleek minstens één nog beschikbaar preview-artifact afkomstig van
+run 37611570538 reviewbestanden met contactadressen te bevatten. Er zijn geen
+contactadressen overgenomen in dit rapport. Maak de repository privé via
+GitHub Settings > General > Danger Zone > Change repository visibility; verwijder
+vervolgens de oude risicovolle artifacts bij Actions (ook oudere workflows).
+Alleen de code aanpassen verwijdert geen eerder gepubliceerde inhoud en
+bewijst niet dat niemand de gegevens eerder heeft gedownload.
+
+
 ## De vier stappen
 
 | Stap | Wat gebeurt er? | Wat zie je? |
