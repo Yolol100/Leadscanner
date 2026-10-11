@@ -1086,7 +1086,7 @@ jobs:
     timeout-minutes: 30
     strategy:
       fail-fast: false
-      max-parallel: 3
+      max-parallel: 1
       matrix:
         offset: [0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100]
     concurrency:
@@ -1110,7 +1110,7 @@ jobs:
           python3 scripts/instantly_historical_site_research.py \
             --offset "${{ matrix.offset }}" \
             --expected-count 1128 \
-            --workers 6 \
+            --workers 48 \
             --save-candidates \
             --output "results/site-batch-${{ matrix.offset }}.json"
       - name: Upload aggregate-only batch evidence
