@@ -940,16 +940,6 @@ jobs:
             --output results/overzicht.md
           cat results/overzicht.md >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Show simple operator overview (no addresses or prospect text)
-        env:
-          PYTHONPATH: scripts
-        run: |
-          set -euo pipefail
-          python3 scripts/cold_run_manifest.py \
-            --summary-from results/run-manifest.json \
-            --summary-output results/leadscanner-summary.md
-          cat results/leadscanner-summary.md
-
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: leads-cold-${{ inputs.execution_mode }}-${{ github.run_id }}
@@ -976,7 +966,6 @@ jobs:
             results/approved-current-batch.json
             results/instantly-stage.json
             results/run-manifest.json
-            results/leadscanner-summary.md
             results/overzicht.md
             results/myhost-drafts.json
             results/myhost-drafts.txt
