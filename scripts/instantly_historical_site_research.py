@@ -31,13 +31,14 @@ from instantly_language_campaigns import inspect_lead_language, read_imported_le
 from instantly_language_route import HOLD_FREE_MAIL
 from instantly_signature_repair import _campaigns_still_quiet
 from myhost_instantly_import import TARGET_LIST_ID
-from outreach_stages import SUBJECTS, select_one_reason, value_action_for
+from outreach_stages import SUBJECTS, select_one_reason, value_action_for, finding_excerpt
 
 EXPECTED_SOURCE_COUNT = 1128
 BATCH_SIZE = 100
 MAX_WORKERS = 100
 UUID = re.compile(r"^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$")
 REVIEW_KEYS = (
+    "leadscanner_site_candidate_findings",
     "leadscanner_site_candidate_observation",
     "leadscanner_site_candidate_value_action",
     "leadscanner_site_candidate_subject",
@@ -114,13 +115,39 @@ def _fetch_home(session, domain: str, website_hint: str) -> tuple[str | None, st
     return None, None
 
 
-def draft_for_review(observation: str, action: str, signal: str, language: str) -> tuple[str, str]:
+def draft_for_review(observation: str, action: str, signal: str, language: str, findings: list[dict] | None = None) -> tuple[str, str]:
     """Propose concise literal first-mail copy. Never stage or send it."""
-    if language not in {"nl", "en"} or signal not in SUBJECTS:
+    if language not in {"nl", "en"}:
         return "", ""
     if any(item in observation + action for item in ILLEGAL_MARKUP):
         return "", ""
-    subject = SUBJECTS[signal][language]
+    subject = SUBJECTS.get(signal, {"nl": "idee voor jullie website", "en": "idea for your website"})[language]
+    if findings and len(findings) > 1:
+        if len(findings) > 6 or any(
+            not isinstance(item, dict) or item.get("source_type") != "official_site"
+            or not _text(item.get("source_url")) or not _text(item.get("observation"))
+            for item in findings
+        ):
+            return "", ""
+        lines = "\n".join("- " + finding_excerpt(item) for item in findings)
+        subject = {"nl": "ideeën op basis van jullie website", "en": "ideas from your website"}[language]
+        if language == "nl":
+            body = (
+                "Hoi,\n\nOp jullie website vielen me deze punten op:\n"
+                f"{lines}\n\nIk kan {action} schetsen. Zal ik een kort voorbeeld opsturen?\n\n"
+                "Geen interesse: laat het gerust weten; dan stop ik.\n\nGroet,\nAndrew Baeten"
+            )
+        else:
+            body = (
+                "Hi,\n\nI noticed these details on your website:\n"
+                f"{lines}\n\nI could sketch {action}. May I share a short example?\n\n"
+                "Not relevant: just reply no and I'll stop.\n\nBest,\nAndrew Baeten"
+            )
+        if body.count("?") != 1 or len(body.split()) > 155 or any(
+            fragment in body for fragment in ILLEGAL_MARKUP
+        ):
+            return "", ""
+        return subject, body
     if language == "nl":
         body = (
             "Hoi,\n\n"
@@ -204,6 +231,7 @@ def _scan_site(row: dict) -> dict:
         evidence.extend(evidence_sentences(parsed.get("text") or "", url, "home"))
         result = select_one_reason({
             "research_status": "ready" if evidence else "hold_no_evidence",
+            "official_domain": home_domain,
             "evidence_candidates": evidence,
         })
         if result.get("outreach_status") != "ready":
@@ -225,15 +253,17 @@ def _scan_site(row: dict) -> dict:
             or normalize_domain(confirmed_page) != home_domain
         ):
             return {"status": "unsafe_or_unbound_candidate"}
+        findings = result.get("selected_findings") or []
         subject, body = draft_for_review(
             observation, action, _text(proposal.get("signal_type")),
-            _text(result.get("language")),
+            _text(result.get("language")), findings,
         )
         if not subject or not body:
             return {"status": "draft_quality_hold"}
         return {
             "status": "candidate",
             "proposal": {
+                "leadscanner_site_candidate_findings": json.dumps(findings, ensure_ascii=False, separators=(",", ":")),
                 "leadscanner_site_candidate_observation": observation,
                 "leadscanner_site_candidate_value_action": action,
                 "leadscanner_site_candidate_subject": subject,
