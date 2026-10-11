@@ -24,8 +24,10 @@ def evaluate(root: str | Path = ".") -> dict:
 
     checks = [
         {
-            "name": "single_active_workflow",
-            "ok": [path.name for path in workflow_files] == ["leads-cold.yml"],
+            "name": "only_allowlisted_workflows",
+            "ok": [path.name for path in workflow_files] == ["historical-site-research.yml", "leads-cold.yml"]
+            and "automatic_send" not in _read(root, ".github/workflows/historical-site-research.yml")
+            and "--save-candidates" in _read(root, ".github/workflows/historical-site-research.yml"),
         },
         {
             "name": "approval_and_live_dedupe_boundary",

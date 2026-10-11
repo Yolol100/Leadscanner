@@ -34,8 +34,8 @@ DEFAULT_TIMEOUT = 10
 HOMEPAGE_CACHE_CHARS = 12_000
 MAX_CONTACT_PAGES = 2
 MAX_RESEARCH_LINKS = 4
-MAX_RESEARCH_PAGES = 2
-MAX_EVIDENCE_PER_CANDIDATE = 8
+MAX_RESEARCH_PAGES = 12
+MAX_EVIDENCE_PER_CANDIDATE = 48
 
 EMAIL_RE = re.compile(r"(?<![A-Z0-9._%+-])([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,63})(?![A-Z0-9._%+-])", re.I)
 
@@ -66,13 +66,17 @@ CONTACT_HINTS = (
     "business", "sales", "zakelijk",
 )
 RESEARCH_HINTS = (
+    "home", "over-ons", "about", "faq", "help", "contact", "veelgestelde",
+    "levering", "bezorg", "shipping", "delivery", "retour", "returns",
+    "portfolio", "referenties", "cases", "klantenservice", "support",
+    "categorie", "category", "zoeken", "search", "filter", "collectie", "collection",
     "diensten", "services", "producten", "products", "assortiment", "aanbod", "solutions",
     "oplossingen", "werkwijze", "how-we-work", "afspraak", "reserver", "booking", "offerte",
     "menu", "behandelingen", "treatments", "cases", "projecten",
 )
 RESEARCH_EXCLUDES = (
     "privacy", "cookie", "voorwaarden", "terms", "vacature", "jobs", "career", "login",
-    "account", "cart", "checkout", "nieuws", "news", "blog", "contact",
+    "account", "cart", "checkout", "nieuws", "news", "blog",
 )
 LEGAL_TOKENS = {
     "bv", "b", "v", "nv", "vof", "vof", "stichting", "foundation", "company", "co",
@@ -400,6 +404,37 @@ def internal_links(parsed: dict, base_url: str, domain: str, hints: tuple[str, .
     return [url for _, url in ranked[:limit]]
 
 
+def broad_research_links(parsed: dict, base_url: str, domain: str, *, limit: int = MAX_RESEARCH_PAGES) -> list[str]:
+    """Select diverse public site pages, without category-based exclusion.
+
+    Prefer useful path labels, but allow any safe same-domain HTML link as
+    fallback. Authentication, transaction, legal and news routes stay excluded.
+    """
+    ranked = []
+    seen = {urlparse(base_url)._replace(fragment="", query="").geturl()}
+    for href, label in parsed.get("links") or []:
+        if not href or href.casefold().startswith(("mailto:", "tel:", "javascript:", "#")):
+            continue
+        url = urljoin(base_url, href)
+        parsed_url = urlparse(url)
+        if parsed_url.scheme not in {"https", "http"} or normalize_domain(url) != domain:
+            continue
+        path = parsed_url.path.casefold()
+        if any(term in path for term in RESEARCH_EXCLUDES):
+            continue
+        if re.search(r"\.(?:pdf|zip|jpg|jpeg|png|webp|gif|svg|xml|json|css|js)$", path):
+            continue
+        clean = parsed_url._replace(fragment="", query="").geturl()
+        if clean in seen:
+            continue
+        seen.add(clean)
+        hint_text = normalize_text(path + " " + str(label))
+        relevance = sum(term in hint_text for term in RESEARCH_HINTS)
+        ranked.append((-relevance, len(parsed_url.path.split("/")), clean))
+    ranked.sort()
+    return [url for _, _, url in ranked[:limit]]
+
+
 def verify_candidate(candidate: dict, *, session_factory=requests.Session) -> dict:
     result = dict(candidate)
     result.update({
@@ -448,9 +483,7 @@ def verify_candidate(candidate: dict, *, session_factory=requests.Session) -> di
     result["identity_evidence"] = identity_evidence
     result["verification_pages"].append(final_url)
     result["homepage_text_excerpt"] = visible[:HOMEPAGE_CACHE_CHARS]
-    result["research_links"] = internal_links(
-        parsed, final_url, domain, RESEARCH_HINTS, exclude=RESEARCH_EXCLUDES, limit=MAX_RESEARCH_LINKS
-    )
+    result["research_links"] = broad_research_links(parsed, final_url, domain)
 
     if not identity_ok:
         result["contact_status"] = "hold_identity_not_proven"
@@ -604,8 +637,8 @@ def research_candidate(candidate: dict, *, session_factory=requests.Session) -> 
         parsed = parse_html(html)
         researched_urls.append(final_url)
         evidence.extend(evidence_sentences(parsed.get("text") or "", final_url, page_type_for_url(final_url)))
-        if len(evidence) >= MAX_EVIDENCE_PER_CANDIDATE:
-            break
+        # Continue across the bounded page set: early homepage boilerplate
+        # must not crowd out stronger evidence from later product pages.
 
     deduped: list[dict] = []
     seen: set[str] = set()

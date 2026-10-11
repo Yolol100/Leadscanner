@@ -116,6 +116,7 @@ on:
       - 'scripts/instantly_sync.py'
       - 'scripts/instantly_audit.py'
       - 'tests/test_dedupe_preflight.py'
+      - 'tests/test_broad_site_findings.py'
       - 'tests/test_cold_stages.py'
       - 'tests/test_outreach_stages.py'
       - 'tests/test_funnel_metrics.py'
@@ -288,6 +289,7 @@ jobs:
           python3 -m unittest \
             tests.test_dedupe_preflight \
             tests.test_cold_stages \
+            tests.test_broad_site_findings \
             tests.test_outreach_stages \
             tests.test_funnel_metrics \
             tests.test_coverage_audit \
