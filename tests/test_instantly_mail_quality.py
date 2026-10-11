@@ -21,6 +21,44 @@ class Tests(unittest.TestCase):
         self.assertFalse(out["writes"])
         self.assertNotIn("private@",str(out))
         self.assertNotIn("I saw your website",str(out))
+    def test_site_candidate_aggregate_counts_rewrites_without_exposing_copy(self):
+        obs="Bezoekers kunnen online een afspraak aanvragen voor onderhoud."
+        action="een kort voorbeeld voor de afspraakroute"
+        proposed=("Hoi, op jullie website staat: "+obs+" Hierbij kan ik "+action+
+                  " uitwerken. Zal ik dat toesturen? Geen interesse: antwoord nee; "
+                  "dan mail ik niet meer.\nGroet,\nAndrew Baeten")
+        candidate={
+            "leadscanner_site_research_status":"candidate_review_required",
+            "leadscanner_site_candidate_source_type":"official_site",
+            "leadscanner_site_candidate_observation":obs,
+            "leadscanner_site_candidate_value_action":action,
+            "leadscanner_site_candidate_evidence_url":"https://studio.example.org/afspraak",
+            "leadscanner_site_candidate_contact_url":"https://studio.example.org/contact",
+            "leadscanner_site_candidate_official_domain":"studio.example.org",
+            "leadscanner_site_candidate_subject":"idee voor jullie afspraakroute",
+            "leadscanner_site_candidate_body":proposed,
+            "leadscanner_contact_basis":"review_required",
+            "leadscanner_subject":"oud onderwerp",
+            "leadscanner_body":"Oude eerste mail. Geen interesse. Groet, Andrew Baeten",
+        }
+        rows=[{"email":"first@studio.example.org","payload":dict(candidate)},
+              {"email":"second@studio.example.org","payload":dict(candidate)},
+              {"email":"third@studio.example.org","payload":{
+                   "leadscanner_subject":"Other topic",
+                   "leadscanner_body":"Hallo, tweede tekst. Groet, Andrew Baeten"}}]
+        with patch("instantly_mail_quality.read_imported_leads",return_value=("isolated",rows)):
+            report=mail_quality_audit(object())
+        review=report["site_candidate_review"]
+        self.assertEqual(review["present"],2)
+        self.assertEqual(review["complete_review_candidate"],2)
+        self.assertEqual(review["new_first_mail_candidate"],2)
+        self.assertEqual(review["permission_still_unverified"],2)
+        self.assertEqual(review["duplicate_mail_pairs"]["recipients_in_reused_groups"],2)
+        self.assertEqual(review["reused_observations"]["reused_group_count"],1)
+        self.assertEqual(sum(review["copy_quality_flags"].values()),0)
+        self.assertFalse(review["raw_copy_or_fingerprints_returned"])
+        for private in ("first@studio.example.org",obs,proposed,action):
+            self.assertNotIn(private,str(report))
     def test_signature_tail_classification_is_strict_and_private(self):
         examples={
             "Hi, I noticed the quote page. Best,\\nAndrew": "unrecognized_tail",
