@@ -32,6 +32,7 @@ from instantly_language_route import HOLD_FREE_MAIL
 from instantly_signature_repair import _campaigns_still_quiet
 from myhost_instantly_import import TARGET_LIST_ID
 from outreach_stages import SUBJECTS, select_one_reason, value_action_for
+from broad_site_observations import rank_observations
 
 EXPECTED_SOURCE_COUNT = 1128
 BATCH_SIZE = 100
@@ -202,6 +203,7 @@ def _scan_site(row: dict) -> dict:
         for contact_url, contact in contact_parsed:
             evidence.extend(evidence_sentences(contact.get("text") or "", contact_url, "process"))
         evidence.extend(evidence_sentences(parsed.get("text") or "", url, "home"))
+        ranked_observations = rank_observations(evidence)
         result = select_one_reason({
             "research_status": "ready" if evidence else "hold_no_evidence",
             "evidence_candidates": evidence,
