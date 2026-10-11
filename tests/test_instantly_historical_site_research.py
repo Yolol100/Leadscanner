@@ -208,7 +208,7 @@ class Tests(unittest.TestCase):
 
     def test_bad_offset_or_source_count_fails_before_provider(self):
         for kwargs in ({"offset": 1}, {"offset": -100}, {"offset": 0, "expected_count": 1127},
-                       {"offset": 0, "workers": 49}):
+                       {"offset": 0, "workers": 101}):
             with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
                 research_imported_sites_batch(object(), **kwargs)
         with patch("instantly_historical_site_research._campaigns_still_quiet"), \
