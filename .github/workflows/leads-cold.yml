@@ -118,6 +118,7 @@ on:
       - 'scripts/instantly_audit.py'
       - 'scripts/cleanup_sensitive_artifacts.py'
       - 'scripts/synthetic_preview_smoke.py'
+      - 'scripts/public_live_preview.py'
       - 'tests/test_dedupe_preflight.py'
       - 'tests/test_broad_site_findings.py'
       - 'tests/test_cold_stages.py'
@@ -156,6 +157,7 @@ on:
       - 'tests/test_instantly_audit.py'
       - 'tests/test_privacy_and_rank.py'
       - 'tests/test_artifact_cleanup_and_smoke.py'
+      - 'tests/test_public_live_preview.py'
       - 'tests/test_pipeline_contract_scenarios.py'
       - 'AGENTS.md'
       - 'README.md'
@@ -200,6 +202,7 @@ on:
       - 'scripts/instantly_audit.py'
       - 'scripts/cleanup_sensitive_artifacts.py'
       - 'scripts/synthetic_preview_smoke.py'
+      - 'scripts/public_live_preview.py'
       - 'tests/test_dedupe_preflight.py'
       - 'tests/test_cold_stages.py'
       - 'tests/test_outreach_stages.py'
@@ -237,6 +240,7 @@ on:
       - 'tests/test_instantly_audit.py'
       - 'tests/test_privacy_and_rank.py'
       - 'tests/test_artifact_cleanup_and_smoke.py'
+      - 'tests/test_public_live_preview.py'
       - 'tests/test_pipeline_contract_scenarios.py'
       - 'AGENTS.md'
       - 'README.md'
@@ -306,7 +310,8 @@ jobs:
             scripts/instantly_sync.py \
             scripts/instantly_audit.py \
             scripts/cleanup_sensitive_artifacts.py \
-            scripts/synthetic_preview_smoke.py
+            scripts/synthetic_preview_smoke.py \
+            scripts/public_live_preview.py
           python3 -m unittest \
             tests.test_dedupe_preflight \
             tests.test_cold_stages \
@@ -345,9 +350,60 @@ jobs:
             tests.test_instantly_sync \
             tests.test_privacy_and_rank \
             tests.test_artifact_cleanup_and_smoke \
+            tests.test_public_live_preview \
             tests.test_instantly_audit \
             tests.test_pipeline_contract_scenarios -v
           python3 scripts/instantly_audit.py
+
+  # Dedicated bounded, read-only public-repository LIVE smoke test.
+  # Only aggregate anonymized quality metrics leave runner memory.
+  # No individual review tokens or candidate details are exported.
+  public_live_preview_once:
+    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[public-live-preview-20261011]')
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Install website research runtime
+        run: python3 -m pip install --disable-pip-version-check -r requirements-cold.txt
+      - name: Execute live bounded preview; print aggregate diagnostics only
+        env:
+          PYTHONPATH: scripts
+          DEDUPE_REGISTRY_CSV_URL: ${{ env.DEDUPE_REGISTRY_CSV_URL }}
+        run: |
+          set -euo pipefail
+          python3 scripts/public_live_preview.py \
+            --region Amsterdam \
+            --keywords "fietsenwinkel,bloemist,kapsalon" \
+            --radius-km 5 \
+            --discovery-limit 60 \
+            --verify-limit 16 | tee "$RUNNER_TEMP/public-live-preview-audit.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          path = Path(os.environ["RUNNER_TEMP"]) / "public-live-preview-audit.json"
+          payload = json.loads(path.read_text(encoding="utf-8"))
+          if payload.get("status") not in {"green", "yellow"} or payload.get("emails_sent") != 0:
+              raise SystemExit("live_preview_failed_closed")
+          if payload.get("contains_real_recipient_data") is not False or payload.get("public_artifacts_uploaded") is not False:
+              raise SystemExit("live_preview_privacy_gate_failed")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as out:
+              out.write("### Public-safe live website preview (aggregate-only)\n")
+              out.write("**Live website research: completed. Emails sent: 0.**\n\n")
+              for label, value in payload["counts"].items():
+                  out.write(f"- {label}: {int(value)}\n")
+              out.write(f"- Ranked evidence points: {int(payload['quality']['ranked_findings'])}\n")
+              out.write(f"- Exact review tokens checked: {int(payload['review_integrity']['tokens_content_bound'])}\n")
+              out.write("- Review copy, email addresses and approval tokens were not saved or uploaded.\n")
+          PY
 
   execute:
     if: github.event_name == 'workflow_dispatch'
