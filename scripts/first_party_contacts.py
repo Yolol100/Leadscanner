@@ -13,7 +13,6 @@ import unicodedata
 from urllib.parse import unquote, urljoin, urlparse
 
 from dedupe_preflight import normalize_domain
-from url_safety import is_public_http_url
 
 EMAIL_RE = re.compile(r"(?<![A-Z0-9._%+-])([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,63})(?![A-Z0-9._%+-])", re.I)
 PERSON_RE = re.compile(
@@ -143,7 +142,7 @@ def preferred_contact_links(parsed: dict, base_url: str, domain: str, *, limit: 
             continue
         absolute = urljoin(base_url, str(href))
         url = urlparse(absolute)
-        if not is_public_http_url(absolute) or normalize_domain(absolute) != domain:
+        if url.scheme not in {"http", "https"} or url.username is not None or url.password is not None or normalize_domain(absolute) != domain:
             continue
         if any(term in url.path.casefold() for term in FORBIDDEN_PATH_PARTS):
             continue
@@ -198,7 +197,8 @@ def select_site_contact(parsed_pages: list[dict], domain: str) -> dict:
     for page_index, page in enumerate(parsed_pages):
         url = str(page.get("source_url") or "")
         parsed = page.get("parsed") or {}
-        if not is_public_http_url(url) or normalize_domain(url) != domain:
+        source = urlparse(url)
+        if source.scheme not in {"http", "https"} or source.username is not None or source.password is not None or normalize_domain(url) != domain:
             continue
         for email in _emails(parsed):
             local, mail_domain = email.split("@", 1)
