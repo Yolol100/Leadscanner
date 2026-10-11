@@ -12,9 +12,10 @@ import json
 import re
 import unicodedata
 from pathlib import Path
+from cold_stages import normalize_domain
 
 MAX_CANDIDATES = 100
-MAX_BODY_WORDS = 100
+MAX_BODY_WORDS = 155
 MAX_SUBJECT_WORDS = 8
 
 NL_MARKERS = (" jullie ", " onze ", " voor ", " een ", " het ", " met ", " kunnen ", " afspraak ", " offerte ")
@@ -33,6 +34,8 @@ GENERIC_EVIDENCE_PATTERNS = (
     r"\bbased in\b",
     r"\bsinds \d{4}\b",
     r"\bsince \d{4}\b",
+    r"^bekijk ons overzicht\b",
+    r"^view our overview\b",
 )
 OPENING_HOURS_RE = re.compile(
     r"\b(maandag|dinsdag|woensdag|donderdag|vrijdag|zaterdag|zondag|"
@@ -84,6 +87,29 @@ SIGNALS = (
         {"nl": "bestelroute", "en": "ordering flow"},
     ),
 )
+
+# Categories help with sorting, but they are not exclusion gates. Every specific,
+# sourced sentence can still be considered under "other" (lowest priority).
+BROAD_SIGNALS = (
+    ("delivery", 84, (r"\b(?:bezorg(?:ing|en)?|verzend(?:ing|en)?|afhalen|afhaalpunt|levering|delivery|shipping|pickup)\b",),
+     {"nl": "lever- en afhaalroute", "en": "delivery and pickup flow"}),
+    ("returns", 83, (r"\b(?:retourneren|retourbeleid|retourformulier|omruilen|returns?|refund|exchanges?)\b",),
+     {"nl": "retour- en omruilroute", "en": "returns and exchange flow"}),
+    ("product_information", 77, (r"\b(?:productvarianten|productdetails|producten vergelijken|maattabel|configurator|product filters|product variants|size guide|product comparison)\b",),
+     {"nl": "productoriëntatie", "en": "product exploration"}),
+    ("support", 73, (r"\b(?:veelgestelde vragen|faq|kennisbank|helpcentrum|supportformulier|knowledge base|help center|support request)\b",),
+     {"nl": "informatie- en hulproute", "en": "help and information journey"}),
+    ("contact", 71, (r"\b(?:contactformulier|contact form|stuur (?:ons )?een bericht|send us a message|neem contact op via)\b",),
+     {"nl": "contactroute", "en": "contact flow"}),
+    ("services", 68, (r"\b(?:onderhoudsbeurt aanvragen|reparatie aanvragen|service aanvragen|plan een onderhoud|request a repair|request a service|service request)\b",),
+     {"nl": "dienstenroute", "en": "service journey"}),
+    ("portfolio", 63, (r"\b(?:bekijk onze projecten|projectoverzicht|praktijkvoorbeelden|bekijk ons portfolio|view our projects|case studies)\b",),
+     {"nl": "project- en voorbeeldenroute", "en": "projects and examples journey"}),
+    ("navigation", 60, (r"\b(?:zoekfunctie|zoek op categorie|filter op|filter producten|find by category|search our catalog|browse categories)\b",),
+     {"nl": "navigatie- en zoekroute", "en": "navigation and search journey"}),
+)
+ALL_SIGNALS = SIGNALS + BROAD_SIGNALS
+OTHER_LABELS = {"nl": "websitebezoekersroute", "en": "website visitor journey"}
 
 WEAK_OUTREACH_TERMS = (
     "kwaliteit", "quality", "goede service", "great service", "service staat centraal",
@@ -146,11 +172,11 @@ def evidence_is_usable(item: dict) -> bool:
 def classify_evidence(item: dict) -> dict | None:
     if not evidence_is_usable(item):
         return None
-    text = normalize_text(item.get("text"))
+    observed = normalize_text(item.get("text"))
     page_type = _text(item.get("page_type")).casefold()
     best = None
-    for signal_type, base_score, patterns, labels in SIGNALS:
-        hits = [pattern for pattern in patterns if re.search(pattern, text, flags=re.I)]
+    for signal_type, base_score, patterns, labels in ALL_SIGNALS:
+        hits = [pattern for pattern in patterns if re.search(pattern, observed, flags=re.I)]
         if not hits:
             continue
         score = base_score + (15 if page_type == "process" else 0)
@@ -162,8 +188,16 @@ def classify_evidence(item: dict) -> dict | None:
         }
         if best is None or candidate["signal_score"] > best["signal_score"]:
             best = candidate
+    # A category is NOT required for a factual, source-backed observation.
+    # This fallback is deliberately lower priority than recognized journeys.
+    if best is None and not any(term in observed for term in WEAK_OUTREACH_TERMS):
+        best = {
+            "signal_type": "other",
+            "signal_score": 40 + (5 if page_type != "home" else 0),
+            "matched_terms": [],
+            "value_labels": OTHER_LABELS,
+        }
     return best
-
 
 def select_one_reason(candidate: dict) -> dict:
     result = dict(candidate)
@@ -174,48 +208,89 @@ def select_one_reason(candidate: dict) -> dict:
         "signal_type": None,
         "reason_for_outreach": None,
         "language": None,
+        "selected_findings": [],
     })
     if candidate.get("research_status") != "ready":
         result["outreach_hold_reason"] = "research_not_ready"
         return result
 
-    ranked: list[tuple[int, int, dict, dict]] = []
+    expected_domain = _text(candidate.get("official_domain"))
+    ranked = []
+    language_unknown = False
     for index, item in enumerate(candidate.get("evidence_candidates") or []):
+        if not isinstance(item, dict):
+            continue
+        source_url = _text(item.get("source_url"))
+        if expected_domain and normalize_domain(source_url) != expected_domain:
+            continue
         classification = classify_evidence(item)
-        if classification:
-            ranked.append((-classification["signal_score"], index, item, classification))
+        if not classification:
+            continue
+        observation = re.sub(r"\s+", " ", _text(item["text"])).strip()
+        language = detect_language(candidate, observation)
+        if language not in {"nl", "en"}:
+            language_unknown = True
+            continue
+        ranked.append((-classification["signal_score"], index, item, classification, language, observation))
+
     if not ranked:
         evidence_text = " ".join(
             normalize_text(item.get("text"))
             for item in candidate.get("evidence_candidates") or []
             if isinstance(item, dict)
         )
-        if any(term in evidence_text for term in WEAK_OUTREACH_TERMS):
+        if language_unknown:
+            result["outreach_hold_reason"] = "observation_language_ambiguous"
+        elif any(term in evidence_text for term in WEAK_OUTREACH_TERMS):
             result["outreach_hold_reason"] = "weak_generic_marketing_signal"
         else:
             result["outreach_hold_reason"] = "no_outreach_worthy_first_party_signal"
         return result
 
     ranked.sort(key=lambda entry: (entry[0], entry[1]))
-    _, _, item, classification = ranked[0]
-    observation = re.sub(r"\s+", " ", _text(item["text"])).strip()
-    language = detect_language(candidate, observation)
-    if language not in {"nl", "en"}:
-        result["outreach_hold_reason"] = "observation_language_ambiguous"
-        return result
+    language = ranked[0][4]
+    same_language = [entry for entry in ranked if entry[4] == language]
+    # One finding per category first; fill the remaining places by strength.
+    # Never fabricate four points when only one or two are supported.
+    distinct, remainder, used_categories, seen = [], [], set(), set()
+    for entry in same_language:
+        observation = entry[5]
+        key = normalize_text(observation)
+        if key in seen:
+            continue
+        seen.add(key)
+        if entry[3]["signal_type"] in used_categories:
+            remainder.append(entry)
+        else:
+            distinct.append(entry)
+            used_categories.add(entry[3]["signal_type"])
+    selected = sorted((distinct + remainder)[:6], key=lambda entry: (entry[0], entry[1]))
+    findings = []
+    for negative_score, _, item, classification, _, observation in selected:
+        score = -negative_score
+        findings.append({
+            "category": classification["signal_type"],
+            "priority": "high" if score >= 90 else "medium" if score >= 70 else "low",
+            "score": score,
+            "observation": observation,
+            "source_url": _text(item["source_url"]),
+            "source_type": "official_site",
+            "page_type": _text(item.get("page_type")) or "detail",
+        })
+    top = findings[0]
     result.update({
         "outreach_status": "ready",
         "outreach_hold_reason": None,
-        "verified_observation": observation,
-        "verified_observation_source_url": _text(item["source_url"]),
+        "verified_observation": top["observation"],
+        "verified_observation_source_url": top["source_url"],
         "verified_observation_source_type": "official_site",
-        "signal_type": classification["signal_type"],
-        "signal_score": classification["signal_score"],
-        "reason_for_outreach": observation,
+        "signal_type": top["category"],
+        "signal_score": top["score"],
+        "reason_for_outreach": top["observation"],
         "language": language,
+        "selected_findings": findings,
     })
     return result
-
 
 def select_reasons(payload: dict) -> dict:
     candidates = payload.get("candidates") or []
@@ -247,17 +322,21 @@ def value_action_for(candidate: dict) -> dict:
     if candidate.get("outreach_status") != "ready":
         return result
 
-    signal = _text(candidate.get("signal_type"))
-    language = _text(candidate.get("language")) or "nl"
-    match = next((entry for entry in SIGNALS if entry[0] == signal), None)
-    if not match:
-        result["value_action_hold_reason"] = "unsupported_signal_type"
+    language = _text(candidate.get("language"))
+    if language not in {"nl", "en"}:
+        result["value_action_hold_reason"] = "language_not_verified"
         return result
-
-    label = match[3][language]
-    if language == "nl":
-        action = f"een korte voorbeeldvariant voor de {label}"
+    findings = candidate.get("selected_findings") or []
+    signal = _text(candidate.get("signal_type"))
+    match = next((entry for entry in ALL_SIGNALS if entry[0] == signal), None)
+    labels = match[3] if match else OTHER_LABELS
+    if len(findings) > 1:
+        action = ("een korte voorbeeldschets voor de belangrijkste bezoekersroutes"
+                  if language == "nl" else "a short example of the main visitor journeys")
+    elif language == "nl":
+        action = f"een korte voorbeeldvariant voor de {labels['nl']}"
     else:
+        label = labels["en"]
         article = "an" if label[:1].lower() in "aeiou" else "a"
         action = f"{article} short example for the {label}"
 
@@ -269,7 +348,6 @@ def value_action_for(candidate: dict) -> dict:
         "value_action_hold_reason": None,
     })
     return result
-
 
 def choose_value_actions(payload: dict) -> dict:
     candidates = payload.get("candidates") or []
@@ -292,14 +370,45 @@ def choose_value_actions(payload: dict) -> dict:
 
 def subject_for(candidate: dict) -> str:
     signal = _text(candidate.get("signal_type"))
-    language = _text(candidate.get("language")) or "nl"
-    return SUBJECTS[signal][language].casefold()
+    language = _text(candidate.get("language"))
+    if language not in {"nl", "en"}:
+        return ""
+    if len(candidate.get("selected_findings") or []) > 1:
+        return {"nl": "ideeën op basis van jullie website", "en": "ideas from your website"}[language]
+    return SUBJECTS.get(signal, {"nl": "idee voor jullie website", "en": "idea for your website"})[language].casefold()
+
+
+def finding_excerpt(finding: dict, *, max_words: int = 11) -> str:
+    """A short, literal prefix of the cited observation; not a claimed defect."""
+    observation = re.sub(r"\s+", " ", _text(finding.get("observation"))).strip()
+    words = observation.replace("?", "").split()
+    return " ".join(words[:max_words]) + ("…" if len(words) > max_words else "")
 
 
 def body_for(candidate: dict) -> str:
-    language = _text(candidate.get("language")) or "nl"
+    language = _text(candidate.get("language"))
     observation = _text(candidate.get("verified_observation"))
     action = _text(candidate.get("value_first_action"))
+    findings = candidate.get("selected_findings") or []
+    if len(findings) > 1:
+        lines = "\n".join("- " + finding_excerpt(item) for item in findings[:6])
+        if language == "nl":
+            return (
+                "Hoi,\n\n"
+                "Op jullie website vielen me deze concrete punten op:\n"
+                f"{lines}\n\n"
+                f"Ik kan {action} schetsen. Zal ik een kort voorbeeld opsturen?\n\n"
+                "Geen interesse? Laat het gerust weten; dan stop ik.\n\n"
+                "Groet,\nAndrew Baeten"
+            ).replace("Geen interesse?", "Geen interesse:")
+        return (
+            "Hi,\n\n"
+            "I noticed these details on your website:\n"
+            f"{lines}\n\n"
+            f"I could sketch {action}. May I share a short example?\n\n"
+            "Not relevant? Just reply no and I'll stop.\n\n"
+            "Best,\nAndrew Baeten"
+        ).replace("Not relevant?", "Not relevant:")
     if language == "nl":
         return (
             "Hoi,\n\n"
@@ -318,7 +427,6 @@ def body_for(candidate: dict) -> str:
         "Best,\nAndrew Baeten"
     )
 
-
 def validate_mail(candidate: dict, subject: str, body: str) -> list[str]:
     reasons: list[str] = []
     subject_words = subject.split()
@@ -336,7 +444,20 @@ def validate_mail(candidate: dict, subject: str, body: str) -> list[str]:
         reasons.append("exactly_one_question_cta_required")
     if "Andrew Baeten" not in body or "Webactueel" in body:
         reasons.append("andrew_baeten_sender_identity_required")
-    if _text(candidate.get("verified_observation")) not in body:
+    findings = candidate.get("selected_findings") or []
+    if len(findings) > 1:
+        if len(findings) > 6 or any(
+            not isinstance(item, dict)
+            or item.get("source_type") != "official_site"
+            or not _text(item.get("source_url"))
+            or (candidate.get("official_domain") and
+                normalize_domain(item["source_url"]) != candidate["official_domain"])
+            or not _text(item.get("observation"))
+            or finding_excerpt(item) not in body
+            for item in findings
+        ):
+            reasons.append("review_findings_missing_or_unverified")
+    elif _text(candidate.get("verified_observation")) not in body:
         reasons.append("verified_observation_missing_from_body")
     if _text(candidate.get("verified_observation_source_type")) != "official_site":
         reasons.append("observation_must_be_first_party")
