@@ -308,7 +308,17 @@ def run_live_preview(
                     if x.get("outreach_status") != "ready"
                 ]),
             },
-            "quality": research_quality,
+            "quality": {
+                **research_quality,
+                "contact_types": safe_counts([
+                    x.get("contact_role") for x in researched.get("candidates") or []
+                    if x.get("contact_status") == "verified_official_site"
+                ]),
+                "researched_without_published_email": sum(
+                    x.get("research_status") == "ready" and not x.get("public_business_email")
+                    for x in researched.get("candidates") or []
+                ),
+            },
             "review_integrity": integrity,
             "snapshot_in_memory_valid": True,
             "public_artifacts_uploaded": False,
