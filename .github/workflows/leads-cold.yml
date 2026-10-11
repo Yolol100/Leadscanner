@@ -352,8 +352,8 @@ jobs:
   # One-time authorization via the exact squash-commit marker; never repeats
   # on scheduled runs, PRs, or unrelated pushes. No recipient artifacts emitted.
   cleanup_sensitive_artifacts_once:
-    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[artifact-cleanup-20261011]')
-    needs: test
+    if: always() && github.event_name == 'push' && contains(github.event.head_commit.message, '[artifact-cleanup-20261011]') && needs.test.result == 'success'
+    needs: [test, instantly_control]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
