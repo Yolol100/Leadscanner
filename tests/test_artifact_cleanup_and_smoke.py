@@ -42,14 +42,18 @@ class ArtifactCleanupTests(unittest.TestCase):
         self.assertEqual(readback.call_count, 2)
         self.assertEqual([call.args[0] for call in api.call_args_list], ["DELETE", "DELETE"])
 
-    def test_unclassified_retained_artifacts_are_not_implicitly_safe(self):
+    def test_unknown_old_outputs_are_purged_not_assumed_safe(self):
         unknown = artifact(25, "neutral-build-output")
-        with patch("cleanup_sensitive_artifacts.list_all", side_effect=[[unknown], [unknown]]):
+        with patch("cleanup_sensitive_artifacts.list_all", side_effect=[[unknown], []]), \
+             patch("cleanup_sensitive_artifacts._api") as api:
             result = cleanup("dummy", repository=REPOSITORY)
         self.assertEqual(result["remaining_suspected_sensitive"], 0)
         self.assertEqual(result["aggregate_only_artifacts_preserved"], 0)
-        self.assertEqual(result["unclassified_artifacts_remaining"], 1)
+        self.assertEqual(result["unclassified_artifacts_remaining"], 0)
+        self.assertEqual(result["deleted"], 1)
+        self.assertTrue(should_delete(unknown["name"]))
         self.assertFalse(is_explicit_aggregate(unknown["name"]))
+        api.assert_called_once()
 
     def test_dry_run_has_no_mutation(self):
         planned = [artifact(7, "leads-cold-preview-5678")]
