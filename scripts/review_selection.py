@@ -11,6 +11,8 @@ import os
 import re
 from pathlib import Path
 
+from outreach_stages import finding_excerpt, review_findings
+
 MAX_APPROVALS = 100
 TOKEN_RE = re.compile(r"^(growth-[0-9a-f]{20})@([0-9a-f]{16})$")
 
@@ -35,6 +37,13 @@ def review_token(row: dict) -> str:
         _text(row.get("signal_type")),
         _text(row.get("value_first_action")),
     ])
+    findings = review_findings(row.get("selected_findings"), row.get("official_domain"))
+    # Keep the original token contract for previews created before ranked
+    # findings existed; bind every multi-finding change for new previews.
+    if findings:
+        canonical += "\0" + json.dumps(
+            findings, sort_keys=True, ensure_ascii=False, separators=(",", ":"),
+        )
     mode = _text(row.get("review_mode"))
     if mode == "instantly_sequence":
         canonical += "\0" + "\0".join([
@@ -82,6 +91,7 @@ def build_review_queue(batch: dict) -> dict:
         if row.get("automatic_send") is not False:
             raise ValueError("automatic_send_must_be_false")
 
+        findings = review_findings(row.get("selected_findings"), row.get("official_domain"))
         token = review_token(row)
         if token in seen_tokens:
             raise ValueError("duplicate_review_token")
@@ -98,6 +108,8 @@ def build_review_queue(batch: dict) -> dict:
             "verified_observation": _text(row.get("verified_observation")),
             "verified_observation_source_url": _text(row.get("verified_observation_source_url")),
             "value_first_action": _text(row.get("value_first_action")),
+            "selected_findings": findings,
+            "findings_count": len(findings),
             "subject": _text(row.get("subject")),
             "body": _text(row.get("body")),
         })
@@ -137,6 +149,14 @@ def render_markdown(queue: dict) -> str:
             f"- Evidence URL: {_text(item.get('verified_observation_source_url'))}",
             f"- Proposed value: {_text(item.get('value_first_action'))}",
         ])
+        if item.get("selected_findings"):
+            lines.extend(["", "### Belangrijkste bevindingen (hoog naar laag)", ""])
+            for point in item["selected_findings"]:
+                lines.append(
+                    f"- [{_text(point.get('priority'))}] "
+                    f"{finding_excerpt(point, max_words=20)} "
+                    f"({_text(point.get('source_url'))})"
+                )
         if item.get("review_mode") == "instantly_sequence":
             lines.extend([
                 "- Review mode: verified facts only (no separate email written)",
@@ -160,12 +180,17 @@ def render_csv(queue: dict) -> str:
     fields = [
         "approval_token", "lead_id", "company", "official_domain", "email",
         "signal_type", "verified_observation", "verified_observation_source_url",
-        "value_first_action", "review_mode", "subject", "body",
+        "value_first_action", "review_mode", "findings_count", "findings_overview", "subject", "body",
     ]
     writer = csv.DictWriter(output, fieldnames=fields, extrasaction="ignore")
     writer.writeheader()
     for item in queue.get("items") or []:
-        writer.writerow(item)
+        export = dict(item)
+        export["findings_overview"] = " | ".join(
+            finding_excerpt(point, max_words=16)
+            for point in item.get("selected_findings") or []
+        )
+        writer.writerow(export)
     return output.getvalue()
 
 
