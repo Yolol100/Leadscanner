@@ -240,6 +240,62 @@ class FirstPartyContactsTests(unittest.TestCase):
         self.assertEqual(result["contact_status"], "no_public_contact_found")
         self.assertIsNone(result["public_business_email"])
 
+    def test_named_owner_in_structured_person_with_verified_employer_beats_general_email(self):
+        result = select_site_contact([
+            page("/", """<script type="application/ld+json">
+            {"@graph":[
+              {"@id":"#company","@type":"Organization","name":"Acme Fietsen"},
+              {"@type":"Person","name":"Jan Jansen","jobTitle":"Eigenaar",
+               "worksFor":{"@id":"#company"},"email":"jan.jansen@outlook.com"}
+            ]}</script>
+            <a href="mailto:info@acmefietsen.nl">Algemeen contact</a>"""),
+        ], "acmefietsen.nl", company_name="Acme Fietsen")
+        self.assertEqual(result["contact_role"], "named_owner")
+        self.assertEqual(result["public_business_email"], "jan.jansen@outlook.com")
+        self.assertEqual(result["contact_person_name"], "Jan Jansen")
+        self.assertEqual(result["contact_name_source_url"], "https://acmefietsen.nl/")
+        self.assertEqual(result["contact_role_source_url"], "https://acmefietsen.nl/")
+        self.assertTrue(result["named_owner_found_on_site"])
+
+    def test_verified_structured_employee_on_external_mail_provider_is_named(self):
+        result = select_site_contact([
+            page("/team", """<script type="application/ld+json">
+            {"@type":"Person","name":"Lisa de Vries","jobTitle":"Winkelmanager",
+             "worksFor":{"name":"Acme Fietsen"},"email":"lisa@custom-mail.nl"}
+            </script>"""),
+        ], "acmefietsen.nl", company_name="Acme Fietsen")
+        self.assertEqual(result["contact_role"], "named_person")
+        self.assertEqual(result["contact_person_name"], "Lisa de Vries")
+        self.assertEqual(result["public_business_email"], "lisa@custom-mail.nl")
+
+    def test_structured_person_requires_explicit_verified_employer(self):
+        result = select_site_contact([
+            page("/", """<script type="application/ld+json">
+            {"@graph":[
+                {"@type":"Person","name":"Jan Jansen","email":"jan@provider.nl"},
+                {"@type":"Person","name":"Sam Bakker",
+                 "worksFor":{"name":"Other Supplier"},"email":"sam@provider.nl"},
+                {"@type":"Person","name":"Joost Janssen",
+                 "worksFor":{"name":"Acme Fietsen"},"email":"info@provider.nl"}
+            ]}</script>"""),
+        ], "acmefietsen.nl", company_name="Acme Fietsen")
+        self.assertIsNone(result["public_business_email"])
+        self.assertEqual(result["contact_status"], "no_public_contact_found")
+
+    def test_brand_prefix_belonging_to_vendor_does_not_authorize_mail(self):
+        result = select_site_contact([
+            page("/", """<script type="application/ld+json">
+            {"@graph":[
+              {"@type":"Organization","name":"Acme Fietsen Marketingbureau",
+               "email":"vendor@agency-provider.nl"},
+              {"@type":"Person","name":"Peter Bakker",
+               "worksFor":{"name":"Acme Fietsen Marketingbureau"},
+               "email":"peter@agency-provider.nl"}
+            ]}</script>"""),
+        ], "acmefietsen.nl", company_name="Acme Fietsen")
+        self.assertEqual(result["contact_status"], "no_public_contact_found")
+        self.assertIsNone(result["public_business_email"])
+
     def test_malformed_structured_data_never_produces_mailbox(self):
         result = select_site_contact([
             page("/", '<script type="application/ld+json">{"@type":"Organization","name":</script>'),

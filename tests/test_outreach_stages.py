@@ -387,6 +387,32 @@ class OutreachStagesTests(unittest.TestCase):
         self.assertFalse(item["automatic_send"])
         self.assertEqual(item["draft_status"], "not_created")
 
+    def test_draft_uses_three_strongest_observations_but_review_keeps_all(self):
+        from outreach_stages import finding_excerpt
+        texts = [
+            ("Klanten kunnen online een afspraak maken voor onderhoud aan hun fietsen.", "afspraak"),
+            ("Vraag online een offerte aan voor maatwerk aan uw elektrische fiets.", "offerte"),
+            ("Bestel online onderdelen en kies uw afleveradres bij de bestelling.", "bestel"),
+            ("Onze klanten vinden actuele antwoorden in de kennisbank met veelgestelde vragen.", "faq"),
+            ("Wij bezorgen en leveren fietsonderdelen op afspraak bij zakelijke klanten.", "bezorg"),
+        ]
+        candidate = candidate_with_evidence([
+            {"text": text, "source_type": "official_site",
+             "source_url": "https://acmefietsen.nl/" + route, "page_type": "process"}
+            for text, route in texts
+        ])
+        result = generate_mails(choose_value_actions(select_reasons({"candidates": [candidate]})))
+        row = result["candidates"][0]
+        self.assertEqual(row["mail_status"], "ready_for_human_review")
+        self.assertGreaterEqual(len(row["selected_findings"]), 4)
+        for item in row["selected_findings"][:3]:
+            self.assertIn(finding_excerpt(item), row["body"])
+        for item in row["selected_findings"][3:]:
+            self.assertNotIn(finding_excerpt(item), row["body"])
+        self.assertEqual(row["body"].count("?"), 1)
+        self.assertLessEqual(len(row["body"].split()), 90)
+        self.assertEqual(validate_mail(row, row["subject"], row["body"]), [])
+
     def test_validator_blocks_fake_created_artifact_meeting_and_roi(self):
         candidate = {
             "verified_observation": "Klanten kunnen online een afspraak aanvragen voor onderhoud.",
