@@ -157,7 +157,7 @@ def _scan_site(row: dict) -> dict:
         if not confirmed_page:
             return {"status": "recipient_not_confirmed_on_website"}
 
-        # Relevant process pages are prioritized over broad homepage marketing.
+        # Read a bounded, diverse set of public pages before prioritizing observations.
         evidence = []
         for link in broad_research_links(parsed, url, home_domain, limit=15):
             linked_html, linked_url, _ = safe_fetch_html(session, link, home_domain)
@@ -308,7 +308,9 @@ def research_imported_sites_batch(
             raise RuntimeError("site_research_unknown_scanner_status")
         if status == "candidate":
             proposal = outcome.get("proposal") if isinstance(outcome, dict) else None
-            if not isinstance(proposal, dict) or not set(proposal).issubset(set(REVIEW_KEYS)) or set(proposal) != set(REVIEW_KEYS) - {"leadscanner_site_candidate_findings"} and set(proposal) != set(REVIEW_KEYS):
+            expected_keys = set(REVIEW_KEYS)
+            legacy_keys = expected_keys - {"leadscanner_site_candidate_findings"}
+            if not isinstance(proposal, dict) or set(proposal) not in (expected_keys, legacy_keys):
                 raise RuntimeError("site_research_candidate_contract_invalid")
             counts["candidates_found"] += 1
             if save_candidates:
