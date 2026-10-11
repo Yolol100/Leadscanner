@@ -201,7 +201,7 @@ class ColdStagesTests(unittest.TestCase):
     def test_robots_disallow_prevents_cold_html_request(self, _url_safe, _robot_url_safe):
         robots = FakeResponse(
             "https://acmefietsen.nl/robots.txt",
-            "User-agent: *\\nDisallow: /\\n",
+            "User-agent: *\nDisallow: /\n",
             headers={"content-type": "text/plain"},
         )
         raw = FakeSession([robots])
@@ -255,7 +255,7 @@ class ColdStagesTests(unittest.TestCase):
 
     @patch("cold_stages.is_public_http_url", return_value=True)
     def test_page_balancing_preserves_service_evidence_after_long_homepage(self, _safe):
-        home = "\\n".join(
+        home = "\n".join(
             f"Onze medewerkers verzorgen persoonlijk het onderhoud van speciale fietsen voor iedere klantgroep {i}."
             for i in range(55)
         )
