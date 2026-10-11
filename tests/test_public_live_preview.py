@@ -114,6 +114,33 @@ class PublicLivePreviewTests(unittest.TestCase):
         for secret in ("Example Fictitious Shop", "info@example.invalid", "https://example.invalid", "growth-"):
             self.assertNotIn(secret, text)
 
+    def test_contact_page_without_email_or_eligible_observation_keeps_research(self):
+        # A visited official page is research, not fabricated outreach quality.
+        # A contact page alone is not an email or verified working form.
+        row = {
+            "official_domain": "example.invalid",
+            "official_url": "https://example.invalid/",
+            "research_status": "ready",
+            "researched_urls": ["https://example.invalid/"],
+            "research_pages_attempted": 1,
+            "research_evidence_status": "no_eligible_sentence",
+            "contact_status": "contact_page_only",
+            "contact_page_source_url": "https://example.invalid/contact",
+            "public_business_email": None,
+            "evidence_candidates": [],
+        }
+        researched = {"research_ready_count": 1, "candidates": [row]}
+        reasons = select_reasons(researched)
+        self.assertEqual(reasons["ready_count"], 0)
+        mail = generate_mails(choose_value_actions(reasons))
+        self.assertEqual(mail["ready_for_human_review_count"], 0)
+        audit = audit_live_findings(researched=researched, reasons=reasons, mail=mail)
+        self.assertEqual(audit["website_pages_read"], 1)
+        self.assertEqual(audit["ranked_findings"], 0)
+        self.assertEqual(audit["first_party_observations"], 0)
+        self.assertIsNone(mail["candidates"][0]["subject"])
+        self.assertFalse(mail["candidates"][0]["automatic_send"])
+
     def test_bad_registry_fails_before_discovery(self):
         with patch("public_live_preview.discover", side_effect=AssertionError("must_not_discover")):
             with self.assertRaisesRegex(PreviewFailed, "public_live_preview_failed") as cm:
