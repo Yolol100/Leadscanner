@@ -386,16 +386,33 @@ def finding_excerpt(finding: dict, *, max_words: int = 11) -> str:
     return " ".join(words[:max_words]) + ("…" if len(words) > max_words else "")
 
 
+def safe_recipient_first_name(value: object) -> str:
+    # Only a directly associated, publicly stated person's first name; never
+    # address a generic mailbox as an unconfirmed owner.
+    name = _text(value)
+    if (
+        not 3 <= len(name) <= 72
+        or not re.fullmatch(r"[A-Za-zÀ-ÖØ-öø-ÿ' -]+", name)
+        or len(name.split()) < 2
+    ):
+        return ""
+    first = name.split()[0]
+    return first if len(first) >= 2 else ""
+
+
 def body_for(candidate: dict) -> str:
     language = _text(candidate.get("language"))
     observation = _text(candidate.get("verified_observation"))
     action = _text(candidate.get("value_first_action"))
     findings = candidate.get("selected_findings") or []
+    first = safe_recipient_first_name(candidate.get("contact_person_name"))
+    greeting_nl = f"Hoi {first}," if first else "Hoi,"
+    greeting_en = f"Hi {first}," if first else "Hi,"
     if len(findings) > 1:
         lines = "\n".join("- " + finding_excerpt(item) for item in findings[:6])
         if language == "nl":
             return (
-                "Hoi,\n\n"
+                f"{greeting_nl}\n\n"
                 "Op jullie website vielen me deze concrete punten op:\n"
                 f"{lines}\n\n"
                 f"Ik kan {action} schetsen. Zal ik een kort voorbeeld opsturen?\n\n"
@@ -403,7 +420,7 @@ def body_for(candidate: dict) -> str:
                 "Groet,\nAndrew Baeten"
             ).replace("Geen interesse?", "Geen interesse:")
         return (
-            "Hi,\n\n"
+            f"{greeting_en}\n\n"
             "I noticed these details on your website:\n"
             f"{lines}\n\n"
             f"I could sketch {action}. May I share a short example?\n\n"
@@ -412,7 +429,7 @@ def body_for(candidate: dict) -> str:
         ).replace("Not relevant?", "Not relevant:")
     if language == "nl":
         return (
-            "Hoi,\n\n"
+            f"{greeting_nl}\n\n"
             f"Op jullie website viel me dit detail op: {observation}\n\n"
             f"Als je wilt, kan ik {action} maken. Dat is vrijblijvend.\n\n"
             "Zal ik dat voorbeeld per mail sturen?\n\n"
@@ -420,7 +437,7 @@ def body_for(candidate: dict) -> str:
             "Groet,\nAndrew Baeten"
         )
     return (
-        "Hi,\n\n"
+        f"{greeting_en}\n\n"
         f"I noticed one detail on your website: {observation}\n\n"
         f"If useful, I can prepare {action} with no obligation.\n\n"
         "Would you like me to email it to you?\n\n"
@@ -469,6 +486,7 @@ def review_findings(findings: object, domain: object) -> list[dict]:
 def draft_for_review(
     observation: str, action: str, signal: str, language: str,
     findings: list[dict] | None = None,
+    contact_person_name: str | None = None,
 ) -> tuple[str, str]:
     """One shared, review-only email renderer for new and historical leads.
 
@@ -490,6 +508,7 @@ def draft_for_review(
         "signal_type": signal,
         "language": language,
         "selected_findings": selected,
+        "contact_person_name": contact_person_name,
     }
     subject, body = subject_for(candidate), body_for(candidate)
     # Website quotes may themselves contain questions; only our own CTA counts.
@@ -570,6 +589,14 @@ def generate_one_mail(candidate: dict) -> dict:
     if candidate.get("value_action_status") != "proposed":
         result["copy_validation_reasons"] = ["value_action_not_ready"]
         return result
+    # Website opportunity research is independent of having an email.
+    # A reviewable recipient-specific concept still needs a sourced address.
+    if not _text(candidate.get("public_business_email")):
+        result["copy_validation_reasons"] = ["no_published_business_contact"]
+        return result
+    if candidate.get("contact_status") not in {None, "", "verified_official_site"}:
+        result["copy_validation_reasons"] = ["unverified_business_contact"]
+        return result
 
     subject, body = draft_for_review(
         _text(candidate.get("verified_observation")),
@@ -577,6 +604,7 @@ def generate_one_mail(candidate: dict) -> dict:
         _text(candidate.get("signal_type")),
         _text(candidate.get("language")),
         candidate.get("selected_findings"),
+        _text(candidate.get("contact_person_name")),
     )
     reasons = validate_mail(candidate, subject, body) if subject and body else ["draft_quality_hold"]
     result.update({
@@ -604,6 +632,12 @@ def prepare_one_sequence_fact(candidate: dict) -> dict:
     })
     if candidate.get("outreach_status") != "ready" or candidate.get("value_action_status") != "proposed":
         result["copy_validation_reasons"] = ["value_action_not_ready"]
+        return result
+    if not _text(candidate.get("public_business_email")):
+        result["copy_validation_reasons"] = ["no_published_business_contact"]
+        return result
+    if candidate.get("contact_status") not in {None, "", "verified_official_site"}:
+        result["copy_validation_reasons"] = ["unverified_business_contact"]
         return result
     if (
         _text(candidate.get("verified_observation_source_type")) != "official_site"
