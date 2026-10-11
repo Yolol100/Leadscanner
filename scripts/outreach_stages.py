@@ -518,7 +518,10 @@ def validate_mail(candidate: dict, subject: str, body: str) -> list[str]:
         reasons.append("subject_trick_or_exclamation_not_allowed")
     if len(body_words) > MAX_BODY_WORDS:
         reasons.append("body_too_long")
-    if body.count("?") != 1:
+    # A literal website observation may include its own question mark; only
+    # our call-to-action counts toward the single-question rule.
+    quote_questions = 0 if len(candidate.get("selected_findings") or []) > 1 else _text(candidate.get("verified_observation")).count("?")
+    if body.count("?") - quote_questions != 1:
         reasons.append("exactly_one_question_cta_required")
     if "Andrew Baeten" not in body or "Webactueel" in body:
         reasons.append("andrew_baeten_sender_identity_required")
@@ -570,9 +573,14 @@ def generate_one_mail(candidate: dict) -> dict:
         result["copy_validation_reasons"] = ["value_action_not_ready"]
         return result
 
-    subject = subject_for(candidate)
-    body = body_for(candidate)
-    reasons = validate_mail(candidate, subject, body)
+    subject, body = draft_for_review(
+        _text(candidate.get("verified_observation")),
+        _text(candidate.get("value_first_action")),
+        _text(candidate.get("signal_type")),
+        _text(candidate.get("language")),
+        candidate.get("selected_findings"),
+    )
+    reasons = validate_mail(candidate, subject, body) if subject and body else ["draft_quality_hold"]
     result.update({
         "subject": subject,
         "body": body,
