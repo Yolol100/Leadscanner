@@ -59,6 +59,22 @@ class SimpleReviewFlowTests(unittest.TestCase):
         self.assertEqual(body.count("?"), 1)
         self.assertIn("Andrew Baeten", body)
 
+    def test_quoted_website_question_does_not_count_as_extra_email_question(self):
+        data = _selected()
+        observation = "Kunnen klanten online een afspraak aanvragen voor onderhoud?"
+        source_url = data["selected_findings"][0]["source_url"]
+        data["selected_findings"] = [{
+            "category": "appointment", "priority": "high", "score": 110,
+            "observation": observation, "source_url": source_url,
+            "source_type": "official_site", "page_type": "process",
+        }]
+        data["verified_observation"] = observation
+        data["verified_observation_source_url"] = source_url
+        review = generate_one_mail(data)
+        self.assertEqual(review["mail_status"], "ready_for_human_review")
+        self.assertEqual(review["body"].count("?"), 2)
+        self.assertFalse(review["copy_validation_reasons"])
+
     def test_all_findings_reach_queue_with_exact_token_binding(self):
         mail = generate_one_mail(_selected())
         batch = prepare_review_batch({"candidates": [mail]})
