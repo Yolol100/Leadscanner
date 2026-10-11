@@ -63,6 +63,9 @@ def _reused_groups(values: Counter) -> dict[str, int]:
 
 def mail_quality_audit(client) -> dict:
     source_id, rows = read_imported_leads(client)
+    # Match the stable UUID order used by historical-site research batches.
+    rows = sorted(rows, key=lambda item: str(item.get("id") or ""))
+    batch_stats = [Counter() for _ in range((len(rows) + 99) // 100)]
     counts=Counter()
     word_lengths=[]
     subject_fingerprints=Counter()
@@ -73,7 +76,9 @@ def mail_quality_audit(client) -> dict:
     candidate_pairs=Counter()
     candidate_observations=Counter()
 
-    for row in rows:
+    for index, row in enumerate(rows):
+        batch = batch_stats[index // 100]
+        batch["checked"] += 1
         payload=row.get("payload")
         if not isinstance(payload,dict):
             payload=row.get("custom_variables")
@@ -90,13 +95,16 @@ def mail_quality_audit(client) -> dict:
         has_candidate=bool(marker) or any(payload.get(key) for key in fields)
         if has_candidate:
             candidate_counts["present"]+=1
+            batch["candidate_present"] += 1
             complete=marker=="candidate_review_required" and all(
                 isinstance(payload.get(k),str) and payload[k].strip() for k in fields
             ) and payload.get("leadscanner_site_candidate_source_type")=="official_site"
             if not complete:
                 candidate_counts["incomplete_or_invalid"]+=1
+                batch["candidate_invalid"] += 1
             else:
                 candidate_counts["complete_review_candidate"]+=1
+                batch["candidate_rewrite"] += 1
                 cs=payload["leadscanner_site_candidate_subject"]
                 cb=payload["leadscanner_site_candidate_body"]
                 obs=payload["leadscanner_site_candidate_observation"]
@@ -141,9 +149,12 @@ def mail_quality_audit(client) -> dict:
         body=payload.get("leadscanner_body")
         if not isinstance(subj,str) or not isinstance(body,str) or not subj.strip() or not body.strip():
             counts["missing_subject_or_body"]+=1
+            batch["source_missing_copy"] += 1
             continue
         lang=classify_language(subj,body)
         counts["language_"+lang]+=1
+        if lang == "unknown":
+            batch["source_language_unclear"] += 1
         subject_hash = _private_copy_digest(subj)
         body_hash = _private_copy_digest(body)
         subject_fingerprints[subject_hash] += 1
@@ -157,6 +168,8 @@ def mail_quality_audit(client) -> dict:
         if len(subj)>65:counts["subject_over_65_chars"]+=1
         if UNRESOLVED.search(subj+"\n"+body):counts["unresolved_template_markers"]+=1
         question_count = body.count("?")
+        if question_count != 1:
+            batch["source_question_review"] += 1
         if question_count == 0:
             counts["questions_zero"] += 1
             counts["not_exactly_one_question"] += 1
@@ -187,6 +200,7 @@ def mail_quality_audit(client) -> dict:
         if not any(v in lower for v in (OPT_OUT_NL if lang=="nl" else OPT_OUT_EN)):
             counts["no_obvious_optout_phrase"] += 1
             language_quality[lang]["no_obvious_optout_phrase"] += 1
+            batch["source_optout_unclear"] += 1
         if payload.get("leadscanner_observation") and payload.get("leadscanner_value_action"):
             counts["both_verified_fact_placeholders_present"]+=1
         basis = payload.get("leadscanner_contact_basis")
@@ -194,11 +208,28 @@ def mail_quality_audit(client) -> dict:
             counts["documented_contact_basis"] += 1
         if basis == "review_required":
             counts["contact_basis_unverified"] += 1
+            batch["contact_basis_unverified"] += 1
         if not any(isinstance(payload.get(k), str) and payload[k].strip()
                    for k in ("leadscanner_evidence_url", "leadscanner_observation")):
             language_quality[lang]["no_separate_first_party_evidence"] += 1
     return {
         "schema_version":"leadscanner-import-mail-quality/1.0",
+        "batch_copy_review": [
+            {
+                "offset": index * 100,
+                "contact_count": stats["checked"],
+                "candidate_rewrite_count": stats["candidate_rewrite"],
+                "candidate_invalid_count": stats["candidate_invalid"],
+                "pending_specific_evidence_count": stats["checked"] - stats["candidate_rewrite"],
+                "source_missing_copy": stats["source_missing_copy"],
+                "source_question_review": stats["source_question_review"],
+                "source_optout_unclear": stats["source_optout_unclear"],
+                "source_language_unclear": stats["source_language_unclear"],
+                "contact_basis_unverified": stats["contact_basis_unverified"],
+                "individual_human_review_pending": True,
+            }
+            for index, stats in enumerate(batch_stats)
+        ],
         "source_list_id":source_id,
         "source_count":len(rows),
         "complete_copy_count":len(word_lengths),
