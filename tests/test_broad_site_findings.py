@@ -62,6 +62,17 @@ class BroadFindingsTests(unittest.TestCase):
         self.assertTrue(subject)
         self.assertEqual(draft.count("?"), 1)
 
+    def test_portfolio_is_not_promoted_by_irrelevant_process_context(self):
+        from outreach_stages import classify_evidence
+        result = classify_evidence({
+            "text": "Bekijk onze projecten met praktijkvoorbeelden van gerealiseerde installaties.",
+            "source_type": "official_site",
+            "source_url": "https://sample.nl/werkwijze",
+            "page_type": "process",
+        })
+        self.assertEqual(result["signal_type"], "portfolio")
+        self.assertEqual(result["signal_score"], 63)
+
     def test_weak_other_does_not_fill_email_to_six_points(self):
         row = {
             "research_status": "ready", "official_domain": "sample.nl",

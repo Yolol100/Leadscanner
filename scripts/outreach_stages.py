@@ -194,7 +194,10 @@ def classify_evidence(item: dict) -> dict | None:
         hits = [pattern for pattern in patterns if re.search(pattern, observed, flags=re.I)]
         if not hits:
             continue
-        score = base_score + (15 if page_type == "process" else 0)
+        # Only transactional journeys benefit from being on a process page;
+        # a generic portfolio or navigation mention must not be inflated.
+        process_journey = signal_type in {"appointment", "quote_request", "reservation", "ordering", "services"}
+        score = base_score + (15 if page_type == "process" and process_journey else 0)
         candidate = {
             "signal_type": signal_type,
             "signal_score": score,
