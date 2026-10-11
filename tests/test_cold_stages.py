@@ -187,7 +187,11 @@ class ColdStagesTests(unittest.TestCase):
             "https://acmefietsen.nl/afspraak",
             "<html><body><p>Klanten kunnen online een werkplaatsafspraak aanvragen voor onderhoud of reparatie.</p></body></html>",
         )
-        session = FakeSession([detail1, detail2])
+        detail3 = FakeResponse(
+            "https://acmefietsen.nl/producten",
+            "<html><body><p>Klanten vergelijken productvarianten en bekijken de maattabel voor verschillende fietsen.</p></body></html>",
+        )
+        session = FakeSession([detail1, detail2, detail3])
         candidate = {
             "name_hint": "Acme Fietsen",
             "official_url": "https://acmefietsen.nl/",
@@ -203,8 +207,8 @@ class ColdStagesTests(unittest.TestCase):
         }
         result = research_candidate(candidate, session_factory=lambda: session)
         self.assertEqual(result["research_status"], "ready")
-        self.assertEqual(len(session.calls), 2)
-        self.assertLessEqual(len(result["researched_urls"]), 3)
+        self.assertEqual(len(session.calls), 3)
+        self.assertLessEqual(len(result["researched_urls"]), 13)
         self.assertTrue(any(item["page_type"] == "process" for item in result["evidence_candidates"]))
 
     def test_research_skips_not_ready_candidates_without_network(self):
