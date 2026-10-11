@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from instantly_historical_site_research import (
     BATCH_SIZE, _email_and_domain, _fetch_home, _save_candidate, _scan_site,
+    draft_for_review,
     research_imported_sites_batch,
 )
 
@@ -81,10 +82,32 @@ class Tests(unittest.TestCase):
         self.assertIn(OBSERVATION, proposal["leadscanner_site_candidate_observation"])
         self.assertIn("afspraakroute", proposal["leadscanner_site_candidate_value_action"])
         self.assertEqual(proposal["leadscanner_site_research_status"], "candidate_review_required")
+        self.assertIn(OBSERVATION, proposal["leadscanner_site_candidate_body"])
+        self.assertNotEqual(VALUES["leadscanner_body"], proposal["leadscanner_site_candidate_body"])
         self.assertNotIn("leadscanner_contact_basis", proposal)
         self.assertNotIn("leadscanner_observation", proposal)
         self.assertNotIn("leadscanner_body", proposal)
 
+    def test_draft_for_review_in_two_languages_is_specific(self):
+        cases = (
+            ('nl', 'afspraakroute', 'een korte voorbeeldvariant voor de afspraakroute'),
+            ('en', 'booking flow', 'a short example for the booking flow'),
+        )
+        for language, label, action in cases:
+            with self.subTest(language=language):
+                subject, body = draft_for_review(OBSERVATION, action, 'appointment', language)
+                self.assertTrue(subject)
+                self.assertIn(OBSERVATION, body)
+                self.assertIn(action, body)
+                self.assertEqual(body.count('?'), 1)
+                self.assertIn('Andrew Baeten', body)
+                self.assertNotIn('{{', body)
+                self.assertLessEqual(len(body.split()), 125)
+                self.assertNotIn('have already', body.lower())
+
+    def test_draft_rejects_missing_or_untrusted_inputs(self):
+        self.assertEqual(draft_for_review(OBSERVATION, 'example', 'appointment', 'unknown'), ('', ''))
+        self.assertEqual(draft_for_review(OBSERVATION, '{{hack}}', 'appointment', 'nl'), ('', ''))
     def test_language_mismatch_is_held(self):
         class Session:
             def __enter__(self): return self
@@ -149,6 +172,8 @@ class Tests(unittest.TestCase):
         proposal = {
             "leadscanner_site_candidate_observation": OBSERVATION,
             "leadscanner_site_candidate_value_action": "een voorbeeld voor de afspraakroute",
+            "leadscanner_site_candidate_subject": "idee voor jullie afspraakroute",
+            "leadscanner_site_candidate_body": "Hoi, test.",
             "leadscanner_site_candidate_evidence_url": "https://studio-example.org/afspraak",
             "leadscanner_site_candidate_source_type": "official_site",
             "leadscanner_site_candidate_signal_type": "appointment",
