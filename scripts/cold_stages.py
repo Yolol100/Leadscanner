@@ -34,8 +34,8 @@ DEFAULT_TIMEOUT = 10
 HOMEPAGE_CACHE_CHARS = 12_000
 MAX_CONTACT_PAGES = 2
 MAX_RESEARCH_LINKS = 4
-MAX_RESEARCH_PAGES = 2
-MAX_EVIDENCE_PER_CANDIDATE = 8
+MAX_RESEARCH_PAGES = 12
+MAX_EVIDENCE_PER_CANDIDATE = 48
 
 EMAIL_RE = re.compile(r"(?<![A-Z0-9._%+-])([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,63})(?![A-Z0-9._%+-])", re.I)
 
@@ -66,13 +66,17 @@ CONTACT_HINTS = (
     "business", "sales", "zakelijk",
 )
 RESEARCH_HINTS = (
+    "home", "over-ons", "about", "faq", "help", "contact", "veelgestelde",
+    "levering", "bezorg", "shipping", "delivery", "retour", "returns",
+    "portfolio", "referenties", "cases", "klantenservice", "support",
+    "categorie", "category", "zoeken", "search", "filter", "collectie", "collection",
     "diensten", "services", "producten", "products", "assortiment", "aanbod", "solutions",
     "oplossingen", "werkwijze", "how-we-work", "afspraak", "reserver", "booking", "offerte",
     "menu", "behandelingen", "treatments", "cases", "projecten",
 )
 RESEARCH_EXCLUDES = (
     "privacy", "cookie", "voorwaarden", "terms", "vacature", "jobs", "career", "login",
-    "account", "cart", "checkout", "nieuws", "news", "blog", "contact",
+    "account", "cart", "checkout", "nieuws", "news", "blog",
 )
 LEGAL_TOKENS = {
     "bv", "b", "v", "nv", "vof", "vof", "stichting", "foundation", "company", "co",
@@ -449,7 +453,7 @@ def verify_candidate(candidate: dict, *, session_factory=requests.Session) -> di
     result["verification_pages"].append(final_url)
     result["homepage_text_excerpt"] = visible[:HOMEPAGE_CACHE_CHARS]
     result["research_links"] = internal_links(
-        parsed, final_url, domain, RESEARCH_HINTS, exclude=RESEARCH_EXCLUDES, limit=MAX_RESEARCH_LINKS
+        parsed, final_url, domain, RESEARCH_HINTS, exclude=RESEARCH_EXCLUDES, limit=MAX_RESEARCH_PAGES
     )
 
     if not identity_ok:
@@ -604,8 +608,8 @@ def research_candidate(candidate: dict, *, session_factory=requests.Session) -> 
         parsed = parse_html(html)
         researched_urls.append(final_url)
         evidence.extend(evidence_sentences(parsed.get("text") or "", final_url, page_type_for_url(final_url)))
-        if len(evidence) >= MAX_EVIDENCE_PER_CANDIDATE:
-            break
+        # Continue across the bounded page set: early homepage boilerplate
+        # must not crowd out stronger evidence from later product pages.
 
     deduped: list[dict] = []
     seen: set[str] = set()
