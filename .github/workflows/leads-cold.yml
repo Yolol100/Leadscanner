@@ -377,12 +377,13 @@ jobs:
           import json, os
           from pathlib import Path
           data = json.loads((Path(os.environ["RUNNER_TEMP"]) / "artifact-cleanup-summary.json").read_text())
-          if data["status"] != "green" or data["remaining_suspected_sensitive"]:
+          if data["status"] != "green" or data["remaining_suspected_sensitive"] or data["unclassified_artifacts_remaining"]:
               raise SystemExit("sensitive_artifact_cleanup_incomplete")
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as out:
               out.write("### Privacy cleanup (aggregate only)\n")
               out.write(f"- Older artifacts deleted: {data['deleted']}\n")
               out.write(f"- Suspected sensitive artifacts remaining: {data['remaining_suspected_sensitive']}\n")
+              out.write(f"- Unclassified artifacts remaining: {data['unclassified_artifacts_remaining']}\n")
               out.write("- No e-mails sent, no campaigns changed\n")
           PY
 
