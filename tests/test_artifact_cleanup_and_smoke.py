@@ -2,7 +2,7 @@
 import unittest
 from unittest.mock import patch
 
-from cleanup_sensitive_artifacts import REPOSITORY, cleanup, list_all, should_delete
+from cleanup_sensitive_artifacts import REPOSITORY, cleanup, is_explicit_aggregate, list_all, should_delete
 from synthetic_preview_smoke import run_smoke
 
 
@@ -38,8 +38,18 @@ class ArtifactCleanupTests(unittest.TestCase):
         self.assertEqual(result["deleted"], 2)
         self.assertEqual(result["remaining_suspected_sensitive"], 0)
         self.assertEqual(result["aggregate_only_artifacts_preserved"], 2)
+        self.assertEqual(result["unclassified_artifacts_remaining"], 0)
         self.assertEqual(readback.call_count, 2)
         self.assertEqual([call.args[0] for call in api.call_args_list], ["DELETE", "DELETE"])
+
+    def test_unclassified_retained_artifacts_are_not_implicitly_safe(self):
+        unknown = artifact(25, "neutral-build-output")
+        with patch("cleanup_sensitive_artifacts.list_all", side_effect=[[unknown], [unknown]]):
+            result = cleanup("dummy", repository=REPOSITORY)
+        self.assertEqual(result["remaining_suspected_sensitive"], 0)
+        self.assertEqual(result["aggregate_only_artifacts_preserved"], 0)
+        self.assertEqual(result["unclassified_artifacts_remaining"], 1)
+        self.assertFalse(is_explicit_aggregate(unknown["name"]))
 
     def test_dry_run_has_no_mutation(self):
         planned = [artifact(7, "leads-cold-preview-5678")]
