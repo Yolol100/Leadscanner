@@ -21,6 +21,7 @@ from urllib.parse import unquote, urljoin, urlparse
 import requests
 
 from dedupe_preflight import domains_match, normalize_domain
+from first_party_contacts import preferred_contact_links, select_site_contact
 from url_safety import is_public_http_url
 
 MAX_DISCOVERY = 5000
@@ -31,9 +32,9 @@ MAX_RESEARCH_WORKERS = 6
 MAX_BYTES = 750_000
 MAX_REDIRECTS = 4
 DEFAULT_TIMEOUT = 10
-HOMEPAGE_CACHE_CHARS = 12_000
-MAX_CONTACT_PAGES = 2
-MAX_RESEARCH_LINKS = 4
+HOMEPAGE_CACHE_CHARS = 24_000
+MAX_CONTACT_PAGES = 6
+MAX_RESEARCH_LINKS = 12
 MAX_RESEARCH_PAGES = 12
 MAX_EVIDENCE_PER_CANDIDATE = 48
 
@@ -66,7 +67,7 @@ CONTACT_HINTS = (
     "business", "sales", "zakelijk",
 )
 RESEARCH_HINTS = (
-    "home", "over-ons", "about", "faq", "help", "contact", "veelgestelde",
+    "home", "over-ons", "about", "about-us", "team", "medewerkers", "directie", "eigenaar", "founder", "wie-zijn", "faq", "help", "contact", "veelgestelde",
     "levering", "bezorg", "shipping", "delivery", "retour", "returns",
     "portfolio", "referenties", "cases", "klantenservice", "support",
     "categorie", "category", "zoeken", "search", "filter", "collectie", "collection",
@@ -178,6 +179,7 @@ class PageParser(HTMLParser):
         super().__init__()
         self.links: list[tuple[str, str]] = []
         self.mailtos: list[str] = []
+        self.mailto_contexts: list[dict] = []
         self.text_parts: list[str] = []
         self.title_parts: list[str] = []
         self._active_href: str | None = None
@@ -208,7 +210,12 @@ class PageParser(HTMLParser):
             href = self._active_href
             self.links.append((href, text))
             if href.casefold().startswith("mailto:"):
-                self.mailtos.append(unquote(href.split(":", 1)[1].split("?", 1)[0]).strip())
+                email = unquote(href.split(":", 1)[1].split("?", 1)[0]).strip()
+                self.mailtos.append(email)
+                self.mailto_contexts.append({
+                    "email": email,
+                    "context": " ".join(self.text_parts[-7:]),
+                })
             self._active_href = None
             self._active_text = []
 
@@ -236,6 +243,7 @@ def parse_html(html: str) -> dict:
         "title": " ".join(parser.title_parts).strip(),
         "links": parser.links,
         "mailtos": parser.mailtos,
+        "mailto_contexts": parser.mailto_contexts,
     }
 
 
@@ -422,6 +430,10 @@ def broad_research_links(parsed: dict, base_url: str, domain: str, *, limit: int
 
 
 def verify_candidate(candidate: dict, *, session_factory=requests.Session) -> dict:
+    """Verify the OFFICIAL WEBSITE only; contact research comes afterwards.
+
+    A missing email never prevents bounded first-party website research.
+    """
     result = dict(candidate)
     result.update({
         "official_domain": None,
@@ -430,15 +442,19 @@ def verify_candidate(candidate: dict, *, session_factory=requests.Session) -> di
         "identity_evidence": [],
         "public_business_email": None,
         "email_source_url": None,
+        "contact_person_name": None,
+        "contact_role": None,
         "contact_status": "not_checked",
         "excluded_competitor": False,
         "exclusion_reason": None,
         "ready_for_research": False,
         "verification_pages": [],
         "research_links": [],
+        "contact_links": [],
         "homepage_text_excerpt": None,
+        "homepage_mailtos": [],
+        "homepage_mailto_contexts": [],
     })
-
     reason = cheap_competitor_reason(candidate)
     if reason:
         result["excluded_competitor"] = True
@@ -451,7 +467,6 @@ def verify_candidate(candidate: dict, *, session_factory=requests.Session) -> di
     if not website or not domain:
         result["contact_status"] = "hold_missing_domain"
         return result
-
     session = session_factory()
     html, final_url, status = safe_fetch_html(session, website, domain)
     result["website_http_status"] = status
@@ -469,8 +484,10 @@ def verify_candidate(candidate: dict, *, session_factory=requests.Session) -> di
     result["identity_evidence"] = identity_evidence
     result["verification_pages"].append(final_url)
     result["homepage_text_excerpt"] = visible[:HOMEPAGE_CACHE_CHARS]
+    result["homepage_mailtos"] = parsed["mailtos"]
+    result["homepage_mailto_contexts"] = parsed["mailto_contexts"]
+    result["contact_links"] = preferred_contact_links(parsed, final_url, domain, limit=MAX_CONTACT_PAGES)
     result["research_links"] = broad_research_links(parsed, final_url, domain)
-
     if not identity_ok:
         result["contact_status"] = "hold_identity_not_proven"
         return result
@@ -483,39 +500,11 @@ def verify_candidate(candidate: dict, *, session_factory=requests.Session) -> di
         result["contact_status"] = "skipped_competitor"
         return result
 
-    email_sources: dict[str, str] = {}
-    for email in extract_emails(parsed):
-        if email_fits_official_context(email, domain):
-            email_sources.setdefault(email, final_url)
-
-    if not email_sources:
-        contact_links = internal_links(
-            parsed, final_url, domain, CONTACT_HINTS, limit=MAX_CONTACT_PAGES
-        )
-        for link in contact_links:
-            linked_html, linked_url, _ = safe_fetch_html(session, link, domain)
-            if not linked_html or not linked_url:
-                continue
-            result["verification_pages"].append(linked_url)
-            linked = parse_html(linked_html)
-            for email in extract_emails(linked):
-                if email_fits_official_context(email, domain):
-                    email_sources.setdefault(email, linked_url)
-            if email_sources:
-                break
-
-    if not email_sources:
-        result["contact_status"] = "hold_no_public_business_email"
-        return result
-
-    ranked = sorted(email_sources, key=lambda email: email_priority(email, domain))
-    email = ranked[0]
-    result["public_business_email"] = email
-    result["email_source_url"] = email_sources[email]
-    result["contact_status"] = "verified_official_site"
+    # Research coverage is based on verified site identity, NOT email format,
+    # mailbox type, name, or provider. Email selection happens after research.
+    result["contact_status"] = "pending_post_research"
     result["ready_for_research"] = True
     return result
-
 
 def verify_candidates(payload: dict, *, limit: int, max_workers: int = MAX_VERIFY_WORKERS, session_factory=requests.Session) -> dict:
     candidates = payload.get("kept")
@@ -545,7 +534,8 @@ def verify_candidates(payload: dict, *, limit: int, max_workers: int = MAX_VERIF
         "candidates": results,
         "handoff": {
             "next": "bounded_research",
-            "required": ["identity_status=verified", "contact_status=verified_official_site", "ready_for_research=true"],
+            "required": ["identity_status=verified", "ready_for_research=true"],
+            "contact_step": "post_research_owner_first_or_general_fallback",
         },
     }
 
@@ -599,7 +589,9 @@ def page_type_for_url(url: str) -> str:
 
 
 def research_candidate(candidate: dict, *, session_factory=requests.Session) -> dict:
-    result = {k: v for k, v in candidate.items() if k != "homepage_text_excerpt"}
+    """Research the website FIRST, then choose a published business contact."""
+    drop = {"homepage_text_excerpt", "homepage_mailtos", "homepage_mailto_contexts"}
+    result = {key: value for key, value in candidate.items() if key not in drop}
     result["research_status"] = "hold_not_ready"
     result["researched_urls"] = []
     result["evidence_candidates"] = []
@@ -613,18 +605,47 @@ def research_candidate(candidate: dict, *, session_factory=requests.Session) -> 
         result["research_status"] = "hold_missing_verification_handoff"
         return result
 
+    homepage = {
+        "source_url": official_url,
+        "parsed": {
+            "text": homepage_text,
+            "mailtos": candidate.get("homepage_mailtos") or [],
+            "mailto_contexts": candidate.get("homepage_mailto_contexts") or [],
+        },
+    }
+    pages = [homepage]
     evidence = evidence_sentences(homepage_text, official_url, "home")
     researched_urls = [official_url]
     session = session_factory()
-    for link in list(candidate.get("research_links") or [])[:MAX_RESEARCH_PAGES]:
+
+    # Prioritize Team/About/Owner/Contact to locate a named decision-maker,
+    # then spend the rest of the bounded budget on broader site topics.
+    # Additional team/person pages discovered within About pages are allowed.
+    pending = []
+    for link in (candidate.get("contact_links") or []) + (candidate.get("research_links") or []):
+        if link not in pending and link != official_url:
+            pending.append(link)
+    attempted = {official_url}
+    while pending and len(attempted) - 1 < MAX_RESEARCH_PAGES:
+        link = pending.pop(0)
+        if link in attempted:
+            continue
+        attempted.add(link)
         html, final_url, _ = safe_fetch_html(session, link, domain)
         if not html or not final_url:
             continue
         parsed = parse_html(html)
         researched_urls.append(final_url)
-        evidence.extend(evidence_sentences(parsed.get("text") or "", final_url, page_type_for_url(final_url)))
-        # Continue across the bounded page set: early homepage boilerplate
-        # must not crowd out stronger evidence from later product pages.
+        pages.append({"source_url": final_url, "parsed": parsed})
+        evidence.extend(evidence_sentences(
+            parsed.get("text") or "", final_url, page_type_for_url(final_url)
+        ))
+        # Deep first-party person pages get the next available research slot.
+        child_links = preferred_contact_links(parsed, final_url, domain, limit=3)
+        new_links = [url for url in child_links if url not in attempted and url not in pending]
+        pending = new_links + pending
+        if len(pending) > 2 * MAX_RESEARCH_PAGES:
+            pending = pending[:2 * MAX_RESEARCH_PAGES]
 
     deduped: list[dict] = []
     seen: set[str] = set()
@@ -640,8 +661,10 @@ def research_candidate(candidate: dict, *, session_factory=requests.Session) -> 
     result["researched_urls"] = researched_urls[: 1 + MAX_RESEARCH_PAGES]
     result["evidence_candidates"] = deduped
     result["research_status"] = "ready" if deduped else "hold_no_first_party_evidence"
+    # No contact requirement above this line. All valid first-party pages
+    # contribute evidence even when the business uses only a contact form.
+    result.update(select_site_contact(pages, domain))
     return result
-
 
 def research_candidates(payload: dict, *, limit: int, max_workers: int = MAX_RESEARCH_WORKERS, session_factory=requests.Session) -> dict:
     candidates = payload.get("candidates") or []
@@ -666,9 +689,11 @@ def research_candidates(payload: dict, *, limit: int, max_workers: int = MAX_RES
         "schema_version": "leadscanner-cold-research/1.0",
         "candidate_count": len(results),
         "research_ready_count": sum(1 for item in results if item.get("research_status") == "ready"),
+        "contacts_found_count": sum(1 for item in results if item.get("contact_status") == "verified_official_site"),
+        "named_contacts_found_count": sum(1 for item in results if item.get("contact_role") in {"named_owner", "named_person"}),
         "candidates": results,
         "handoff": {
-            "next": "outreach_opportunity_selection_not_yet_implemented",
+            "next": "rank_site_findings_then_contact_ready_mail",
             "fields": ["official_domain", "public_business_email", "evidence_candidates", "researched_urls"],
             "no_inference_added": True,
         },
