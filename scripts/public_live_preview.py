@@ -22,7 +22,7 @@ import tempfile
 
 import requests
 
-from cold_stages import filter_discovery, verify_candidates, research_candidates
+from cold_stages import filter_discovery, verify_candidates, research_candidates, suppress_previously_used_contact_emails
 from cold_run_manifest import build_manifest
 from dedupe_preflight import load_registry, match_candidate
 from funnel_metrics import build_funnel
@@ -216,7 +216,9 @@ def run_live_preview(
         stage = "verification"
         verified = verify_candidates(dedupe, limit=verify_limit, max_workers=MAX_WORKERS)
         stage = "research"
-        researched = research_candidates(verified, limit=verify_limit, max_workers=4)
+        researched = research_candidates(verified, limit=verify_limit, max_workers=6)
+        stage = "contact_dedupe"
+        researched = suppress_previously_used_contact_emails(researched, registry)
         stage = "prioritization"
         reasons = select_reasons(researched)
         stage = "proposal"
