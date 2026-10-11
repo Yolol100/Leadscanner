@@ -199,13 +199,11 @@ def _emails(parsed: dict) -> list[str]:
 
 def select_site_contact(parsed_pages: list[dict], domain: str) -> dict:
     """Choose a sourced business contact. A missing email never vetoes research."""
-    owners = owner_names(parsed_pages)
-    owner_sources = {
-        name: str(page.get("source_url") or "")
-        for page in parsed_pages
-        for name in owners
-        if name.casefold() in str((page.get("parsed") or {}).get("text") or "").casefold()
-    }
+    owner_sources = {}
+    for page in parsed_pages:
+        for name in owner_names([page]):
+            owner_sources.setdefault(name, str(page.get("source_url") or ""))
+    owners = list(owner_sources)
     candidates = []
     for page_index, page in enumerate(parsed_pages):
         url = str(page.get("source_url") or "")

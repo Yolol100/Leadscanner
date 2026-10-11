@@ -649,6 +649,8 @@ def research_candidate(candidate: dict, *, session_factory=requests.Session) -> 
         if link in attempted:
             continue
         attempted.add(link)
+        if hasattr(session, "policy_hold"):
+            session.policy_hold = False
         html, final_url, status = safe_fetch_html(session, link, domain)
         if not html or not final_url:
             if getattr(session, "policy_hold", False) and status is None:

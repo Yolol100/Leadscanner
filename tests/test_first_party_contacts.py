@@ -57,6 +57,8 @@ class FirstPartyContactsTests(unittest.TestCase):
         self.assertEqual(contact["contact_person_name"], "Jan Jansen")
         self.assertEqual(contact["contact_role"], "named_owner")
         self.assertEqual(contact["email_source_url"], "https://acmefietsen.nl/over-ons")
+        self.assertEqual(contact["contact_name_source_url"], "https://acmefietsen.nl/over-ons")
+        self.assertEqual(contact["contact_role_source_url"], "https://acmefietsen.nl/over-ons")
 
     def test_owner_role_directly_before_full_name_is_not_mistaken_for_name(self):
         contact = select_site_contact([
