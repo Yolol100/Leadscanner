@@ -35,7 +35,7 @@ from outreach_stages import SUBJECTS, select_one_reason, value_action_for
 
 EXPECTED_SOURCE_COUNT = 1128
 BATCH_SIZE = 100
-MAX_WORKERS = 48
+MAX_WORKERS = 100
 UUID = re.compile(r"^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$")
 REVIEW_KEYS = (
     "leadscanner_site_candidate_observation",
@@ -175,7 +175,7 @@ def _scan_site(row: dict) -> dict:
         contact_parsed = []
         home_domain = normalize_domain(url)
         if not confirmed_page:
-            for link in internal_links(parsed, url, home_domain, CONTACT_HINTS, limit=6):
+            for link in internal_links(parsed, url, home_domain, CONTACT_HINTS, limit=10):
                 linked_html, linked_url, _ = safe_fetch_html(session, link, home_domain)
                 if not linked_html or not linked_url:
                     continue
@@ -191,7 +191,7 @@ def _scan_site(row: dict) -> dict:
         evidence = []
         for link in internal_links(
             parsed, url, home_domain, RESEARCH_HINTS,
-            exclude=RESEARCH_EXCLUDES, limit=8,
+            exclude=RESEARCH_EXCLUDES, limit=15,
         ):
             linked_html, linked_url, _ = safe_fetch_html(session, link, home_domain)
             if linked_html and linked_url:
