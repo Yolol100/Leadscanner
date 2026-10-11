@@ -200,10 +200,14 @@ class PageParser(HTMLParser):
         self.contact_form_present = False
         self.phone_link_present = False
         self._active_form: dict[str, bool] | None = None
+        self.structured_data: list[str] = []
+        self._json_ld_parts: list[str] | None = None
 
     def handle_starttag(self, tag: str, attrs):
         tag = tag.casefold()
         fields = dict(attrs)
+        if tag == "script" and str(fields.get("type") or "").split(";", 1)[0].strip().casefold() == "application/ld+json":
+            self._json_ld_parts = []
         if tag in {"script", "style", "noscript", "svg"}:
             self._ignore += 1
         if tag == "title":
@@ -231,6 +235,11 @@ class PageParser(HTMLParser):
 
     def handle_endtag(self, tag: str):
         tag = tag.casefold()
+        if tag == "script" and self._json_ld_parts is not None:
+            raw = "".join(self._json_ld_parts)
+            if raw and len(raw) <= 64_000 and len(self.structured_data) < 8:
+                self.structured_data.append(raw)
+            self._json_ld_parts = None
         if tag == "form" and self._active_form is not None:
             self.contact_form_present |= all(self._active_form.values())
             self._active_form = None
@@ -253,6 +262,8 @@ class PageParser(HTMLParser):
             self._active_text = []
 
     def handle_data(self, data: str):
+        if self._json_ld_parts is not None and sum(len(x) for x in self._json_ld_parts) + len(data) <= 64_000:
+            self._json_ld_parts.append(data)
         if self._ignore:
             return
         text = unescape(data).strip()
@@ -279,6 +290,7 @@ def parse_html(html: str) -> dict:
         "mailto_contexts": parser.mailto_contexts,
         "contact_form_present": parser.contact_form_present,
         "phone_link_present": parser.phone_link_present,
+        "structured_data": parser.structured_data,
     }
 
 
@@ -464,6 +476,31 @@ def broad_research_links(parsed: dict, base_url: str, domain: str, *, limit: int
     return [url for _, _, url in ranked[:limit]]
 
 
+def _safe_home_recovery_urls(website: str, status: int | None) -> list[str]:
+    """Limited same-business recovery for a dead link; never a block bypass.
+
+    Only transport/unavailable or missing-page failures qualify. Every
+    alternative still uses safe_fetch_html and its robots-aware session.
+    """
+    if status not in {None, 404, 410}:
+        return []
+    original = urlparse(website)
+    if original.scheme not in {"http", "https"} or not original.hostname:
+        return []
+    candidates = []
+    if original.scheme == "http":
+        candidates.append(original._replace(scheme="https", fragment="").geturl())
+    if status in {404, 410} and original.path not in {"", "/"}:
+        candidates.append(original._replace(path="/", query="", fragment="").geturl())
+    if status is None:
+        hostname = original.hostname
+        replacement = hostname[4:] if hostname.startswith("www.") else "www." + hostname
+        # Preserve the port (when present) while changing only www identity.
+        netloc = replacement + (f":{original.port}" if original.port is not None else "")
+        candidates.append(original._replace(netloc=netloc, fragment="").geturl())
+    return list(dict.fromkeys(url for url in candidates if url != website))[:2]
+
+
 def verify_candidate(candidate: dict, *, session_factory=requests.Session) -> dict:
     """Verify the OFFICIAL WEBSITE only; contact research comes afterwards.
 
@@ -491,6 +528,7 @@ def verify_candidate(candidate: dict, *, session_factory=requests.Session) -> di
         "homepage_mailto_contexts": [],
         "homepage_contact_form_present": False,
         "homepage_phone_link_present": False,
+        "homepage_structured_data": [],
     })
     reason = cheap_competitor_reason(candidate)
     if reason:
@@ -506,6 +544,18 @@ def verify_candidate(candidate: dict, *, session_factory=requests.Session) -> di
         return result
     session = _site_session(session_factory, domain)
     html, final_url, status = safe_fetch_html(session, website, domain)
+    # Do not retry policy denials, 401/403/429 access restrictions, or
+    # cross-domain redirects. Try only two prevalidated same-business URLs.
+    if not html and not getattr(session, "policy_hold", False):
+        for fallback in _safe_home_recovery_urls(website, status):
+            if not is_public_http_url(fallback) or normalize_domain(fallback) != domain:
+                continue
+            retry_html, retry_url, retry_status = safe_fetch_html(session, fallback, domain)
+            if retry_html:
+                html, final_url, status = retry_html, retry_url, retry_status
+                break
+            if getattr(session, "policy_hold", False) or retry_status not in {None, 404, 410}:
+                break
     result["website_http_status"] = status
     if not html or not final_url:
         result["contact_status"] = (
@@ -528,6 +578,7 @@ def verify_candidate(candidate: dict, *, session_factory=requests.Session) -> di
     result["homepage_mailto_contexts"] = parsed["mailto_contexts"]
     result["homepage_contact_form_present"] = parsed["contact_form_present"]
     result["homepage_phone_link_present"] = parsed["phone_link_present"]
+    result["homepage_structured_data"] = parsed["structured_data"]
     result["contact_links"] = preferred_contact_links(parsed, final_url, domain, limit=MAX_CONTACT_PAGES)
     result["research_links"] = broad_research_links(parsed, final_url, domain)
     if not identity_ok:
@@ -635,6 +686,7 @@ def research_candidate(candidate: dict, *, session_factory=requests.Session) -> 
     drop = {
         "homepage_text_excerpt", "homepage_mailtos", "homepage_mailto_contexts",
         "homepage_contact_form_present", "homepage_phone_link_present",
+        "homepage_structured_data",
     }
     result = {key: value for key, value in candidate.items() if key not in drop}
     result["research_status"] = "hold_not_ready"
@@ -661,6 +713,7 @@ def research_candidate(candidate: dict, *, session_factory=requests.Session) -> 
             "mailto_contexts": candidate.get("homepage_mailto_contexts") or [],
             "contact_form_present": bool(candidate.get("homepage_contact_form_present")),
             "phone_link_present": bool(candidate.get("homepage_phone_link_present")),
+            "structured_data": candidate.get("homepage_structured_data") or [],
         },
     }
     pages = [homepage]
