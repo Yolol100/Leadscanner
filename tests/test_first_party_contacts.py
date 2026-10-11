@@ -282,6 +282,20 @@ class FirstPartyContactsTests(unittest.TestCase):
         self.assertIsNone(result["public_business_email"])
         self.assertEqual(result["contact_status"], "no_public_contact_found")
 
+    def test_brand_prefix_belonging_to_vendor_does_not_authorize_mail(self):
+        result = select_site_contact([
+            page("/", """<script type="application/ld+json">
+            {"@graph":[
+              {"@type":"Organization","name":"Acme Fietsen Marketingbureau",
+               "email":"vendor@agency-provider.nl"},
+              {"@type":"Person","name":"Peter Bakker",
+               "worksFor":{"name":"Acme Fietsen Marketingbureau"},
+               "email":"peter@agency-provider.nl"}
+            ]}</script>"""),
+        ], "acmefietsen.nl", company_name="Acme Fietsen")
+        self.assertEqual(result["contact_status"], "no_public_contact_found")
+        self.assertIsNone(result["public_business_email"])
+
     def test_malformed_structured_data_never_produces_mailbox(self):
         result = select_site_contact([
             page("/", '<script type="application/ld+json">{"@type":"Organization","name":</script>'),
