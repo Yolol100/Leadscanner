@@ -18,6 +18,7 @@ from cold_stages import normalize_domain
 MAX_CANDIDATES = 100
 MAX_BODY_WORDS = 155
 MAX_SUBJECT_WORDS = 8
+MAX_DRAFT_HIGHLIGHTS = 3  # Full 1-6 findings remain bound to human review.
 
 NL_MARKERS = (" jullie ", " onze ", " voor ", " een ", " het ", " met ", " kunnen ", " afspraak ", " offerte ")
 EN_MARKERS = (" your ", " our ", " for ", " the ", " with ", " can ", " booking ", " quote ", " services ")
@@ -477,13 +478,13 @@ def body_for(candidate: dict) -> str:
     greeting_nl = f"Hoi {first}," if first else "Hoi,"
     greeting_en = f"Hi {first}," if first else "Hi,"
     if len(findings) > 1:
-        lines = "\n".join("- " + finding_excerpt(item) for item in findings[:6])
+        lines = "\n".join("- " + finding_excerpt(item) for item in findings[:MAX_DRAFT_HIGHLIGHTS])
         if language == "nl":
             return (
                 f"{greeting_nl}\n\n"
                 "Op jullie website vielen me deze concrete punten op:\n"
                 f"{lines}\n\n"
-                f"Ik kan {action} schetsen. Zal ik een kort voorbeeld opsturen?\n\n"
+                f"Ik kan {action} uitwerken. Zal ik een kort voorbeeld opsturen?\n\n"
                 "Geen interesse? Laat het gerust weten; dan stop ik.\n\n"
                 "Groet,\nAndrew Baeten"
             ).replace("Geen interesse?", "Geen interesse:")
@@ -491,7 +492,7 @@ def body_for(candidate: dict) -> str:
             f"{greeting_en}\n\n"
             "I noticed these details on your website:\n"
             f"{lines}\n\n"
-            f"I could sketch {action}. May I share a short example?\n\n"
+            f"I can prepare {action}. May I share a short example?\n\n"
             "Not relevant? Just reply no and I'll stop.\n\n"
             "Best,\nAndrew Baeten"
         ).replace("Not relevant?", "Not relevant:")
@@ -616,7 +617,9 @@ def validate_mail(candidate: dict, subject: str, body: str) -> list[str]:
         findings = []
         reasons.append("review_findings_missing_or_unverified")
     if len(findings) > 1:
-        if any(finding_excerpt(item) not in body for item in findings):
+        # The review queue and exact approval token retain every finding.
+        # The outgoing draft only needs to quote the top three distinct points.
+        if any(finding_excerpt(item) not in body for item in findings[:MAX_DRAFT_HIGHLIGHTS]):
             reasons.append("review_findings_missing_or_unverified")
     elif _text(candidate.get("verified_observation")) not in body:
         reasons.append("verified_observation_missing_from_body")
