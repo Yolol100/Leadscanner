@@ -22,12 +22,8 @@ SAFE_AGGREGATE = (
     re.compile(r"^site-research-\d+-\d+$", re.I),
     re.compile(r"^instantly-sync-\d+$", re.I),
 )
-# Unknown old artifacts with an outreach-related name are conservatively removed.
-SENSITIVE_HINTS = (
-    "lead", "prospect", "mail", "draft", "preview", "review", "contact",
-    "outreach", "smtp", "campaign", "growth", "command", "instantly-control",
-)
-
+# The repository is public and old output formats are not all documented.
+# Only explicitly audited aggregate formats can safely be retained.
 
 
 def is_explicit_aggregate(name: str) -> bool:
@@ -41,10 +37,8 @@ def should_delete(name: str) -> bool:
     if not isinstance(name, str) or not name.strip():
         # Unidentifiable archives are not assumed safe on a public repository.
         return True
-    text = name.casefold()
-    if is_explicit_aggregate(text):
-        return False
-    return any(fragment in text for fragment in SENSITIVE_HINTS)
+    # Never assume that an unknown public archive lacks recipients or copy.
+    return not is_explicit_aggregate(name)
 
 
 def _api(method: str, url: str, token: str):
