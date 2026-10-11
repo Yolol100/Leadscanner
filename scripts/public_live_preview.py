@@ -146,7 +146,7 @@ def audit_live_findings(*, researched: dict, reasons: dict, mail: dict) -> dict:
         "first_party_observations": sum(len(x.get("evidence_candidates") or []) for x in (researched.get("candidates") or [])),
         "ranked_findings": len(findings),
         "sites_with_ranked_findings": len(sites),
-        "findings_per_site": safe_counts([str(n) for n in sites]),
+        "findings_per_site": {str(n): sites.count(n) for n in range(1, 7) if sites.count(n)},
         "finding_priorities": safe_counts([x.get("priority") for x in findings]),
         "finding_categories": safe_counts([x.get("category") for x in findings]),
         "mail_languages": safe_counts([x.get("language") for x in ready_mails]),
@@ -270,9 +270,19 @@ def run_live_preview(
         # This object is the ONLY exported product. Do not insert original
         # candidate data, body copy, source URLs, review tokens or hashes.
         counts = metrics["counts"]
+        low_share = (
+            research_quality["finding_priorities"].get("low", 0) /
+            max(1, research_quality["ranked_findings"])
+        )
+        quality_status = (
+            "insufficient_evidence" if queue["review_candidate_count"] == 0
+            else "requires_editorial_review" if low_share > 0.5
+            else "good_for_human_review"
+        )
         report = {
             "schema": "leadscanner-public-preview-audit/1.0",
-            "status": "green" if queue["review_candidate_count"] else "yellow",
+            "status": "green" if quality_status == "good_for_human_review" else "yellow",
+            "quality_status": quality_status,
             "live_source": "Overture and first-party public websites",
             "execution": "live_read_only_public",
             "registry_dedupe_active": True,
