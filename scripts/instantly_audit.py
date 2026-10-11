@@ -39,7 +39,7 @@ def evaluate(root: str | Path = ".") -> dict:
                 < workflow.find("Install preview runtime")
                 and 0 <= workflow.find("Block Instantly command artifacts in public repository")
                 < workflow.find("Execute only newly-added immutable Instantly commands")
-                and 'if [ "$REPOSITORY_IS_PRIVATE" != 'true\u0027 ]; then' in workflow
+                and "if [ \"$REPOSITORY_IS_PRIVATE\" != 'true' ]; then" in workflow
                 and "results/review-queue.md" in workflow
             ),
         },
