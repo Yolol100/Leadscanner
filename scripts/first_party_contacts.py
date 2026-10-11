@@ -198,26 +198,24 @@ def _emails(parsed: dict) -> list[str]:
     return values
 
 
-def _verified_structured_emails(parsed: dict, domain: str, company_name: str) -> list[str]:
-    """Use only on-page schema.org business mailboxes matching this business.
-
-    Ignore Person, SiteNavigationElement, vendor and nested third-party nodes.
-    Parsing is bounded; JSON-LD never authorizes network requests.
-    """
-    identities = {
-        re.sub(r"[^a-z0-9]", "", _normalize(domain.split(".", 1)[0])),
-    }
+def _business_name_matches(value: object, domain: str, company_name: str) -> bool:
+    if not isinstance(value, str) or not value.strip():
+        return False
+    if "://" in value:
+        return normalize_domain(value) == domain
+    identities = {re.sub(r"[^a-z0-9]", "", _normalize(domain.split(".", 1)[0]))}
     if company_name:
         words = [
-            part for part in re.findall(r"[a-z0-9]+", _normalize(company_name))
-            if part not in {"bv", "b", "v", "nv", "vof", "inc", "ltd", "llc", "the", "de", "het"}
+            token for token in re.findall(r"[a-z0-9]+", _normalize(company_name))
+            if token not in {"bv", "b", "v", "nv", "vof", "inc", "ltd", "llc", "the", "de", "het"}
         ]
         identities.add("".join(words))
-    identities = {value for value in identities if len(value) >= 5}
-    if not identities:
-        return []
+    name = re.sub(r"[^a-z0-9]", "", _normalize(value))
+    return bool(name) and any(identity == name or identity in name for identity in identities if len(identity) >= 5)
 
-    emails: list[str] = []
+
+def _structured_nodes(parsed: dict):
+    """Bounded JSON-LD parsing. Follow no remote references or nested objects."""
     for raw in (parsed.get("structured_data") or [])[:8]:
         if not isinstance(raw, str) or len(raw) > 64_000:
             continue
@@ -236,12 +234,20 @@ def _verified_structured_emails(parsed: dict, domain: str, company_name: str) ->
             if isinstance(graph, list):
                 flattened.extend(item for item in graph[:24] if isinstance(item, dict))
         for node in flattened[:48]:
-            kinds = node.get("@type")
-            kinds = [kinds] if isinstance(kinds, str) else kinds if isinstance(kinds, list) else []
-            kind_names = {
-                str(kind).rsplit("/", 1)[-1].casefold()
-                for kind in kinds if isinstance(kind, str)
-            }
+            yield node
+
+
+def _structured_types(node: dict) -> set[str]:
+    kinds = node.get("@type")
+    kinds = [kinds] if isinstance(kinds, str) else kinds if isinstance(kinds, list) else []
+    return {str(kind).rsplit("/", 1)[-1].casefold() for kind in kinds if isinstance(kind, str)}
+
+
+def _verified_structured_emails(parsed: dict, domain: str, company_name: str) -> list[str]:
+    """Business entity emails explicitly published on a matching first-party site."""
+    emails: list[str] = []
+    for node in _structured_nodes(parsed):
+            kind_names = _structured_types(node)
             if not any(
                 kind in {"organization", "corporation", "localbusiness", "store", "florist",
                          "restaurant", "bakery", "hairsalon", "professionalservice",
@@ -250,8 +256,7 @@ def _verified_structured_emails(parsed: dict, domain: str, company_name: str) ->
                 for kind in kind_names
             ):
                 continue
-            name = re.sub(r"[^a-z0-9]", "", _normalize(node.get("name")))
-            if not name or not any(identity == name or identity in name for identity in identities):
+            if not _business_name_matches(node.get("name"), domain, company_name):
                 continue
             contact_points = node.get("contactPoint")
             points = contact_points if isinstance(contact_points, list) else [contact_points]
@@ -268,6 +273,57 @@ def _verified_structured_emails(parsed: dict, domain: str, company_name: str) ->
     return emails[:16]
 
 
+def _verified_structured_people(parsed: dict, domain: str, company_name: str) -> dict[str, dict]:
+    """Explicitly published Person email bound to the verified business.
+
+    A name alone or an unverified Person/author node never authorizes a mail
+    address. worksFor must identify the verified company in this same JSON-LD.
+    """
+    nodes = list(_structured_nodes(parsed))
+    by_id = {
+        node["@id"]: node for node in nodes
+        if isinstance(node.get("@id"), str) and len(node["@id"]) <= 500
+    }
+    contacts: dict[str, dict] = {}
+    for node in nodes:
+        if "person" not in _structured_types(node):
+            continue
+        person_name = node.get("name")
+        if not isinstance(person_name, str):
+            continue
+        names = [name for name in _names(person_name) if _normalize(name) == _normalize(person_name)]
+        if len(names) != 1:
+            continue
+        works_for = node.get("worksFor")
+        employers = works_for if isinstance(works_for, list) else [works_for]
+        association = False
+        for employer in employers[:6]:
+            if isinstance(employer, dict):
+                ref = employer.get("@id")
+                if isinstance(ref, str) and ref in by_id:
+                    employer = by_id[ref]
+                value = employer.get("name") or employer.get("url")
+            else:
+                value = employer
+            if _business_name_matches(value, domain, company_name):
+                association = True
+                break
+        if not association:
+            continue
+        title = node.get("jobTitle")
+        role = "named_owner" if isinstance(title, str) and OWNER_ROLE_RE.search(title) else "named_person"
+        raw_emails = node.get("email")
+        addresses = raw_emails[:6] if isinstance(raw_emails, list) else [raw_emails]
+        for address in addresses:
+            if not isinstance(address, str):
+                continue
+            email = _email(address.removeprefix("mailto:"))
+            if not email or email.split("@", 1)[0] in GENERIC_LOCAL_PARTS:
+                continue
+            contacts.setdefault(email, {"name": names[0], "role": role})
+    return contacts
+
+
 def select_site_contact(parsed_pages: list[dict], domain: str, *, company_name: str = "") -> dict:
     """Choose a sourced business contact. A missing email never vetoes research."""
     owner_sources = {}
@@ -275,6 +331,7 @@ def select_site_contact(parsed_pages: list[dict], domain: str, *, company_name: 
         for name in owner_names([page]):
             owner_sources.setdefault(name, str(page.get("source_url") or ""))
     owners = list(owner_sources)
+    structured_owner_seen = False
     candidates = []
     contact_form_source_url = None
     phone_contact_source_url = None
@@ -301,7 +358,9 @@ def select_site_contact(parsed_pages: list[dict], domain: str, *, company_name: 
         if parsed.get("phone_link_present") and phone_contact_source_url is None:
             phone_contact_source_url = url
         structured_emails = _verified_structured_emails(parsed, domain, company_name)
-        for email in dict.fromkeys(_emails(parsed) + structured_emails):
+        structured_people = _verified_structured_people(parsed, domain, company_name)
+        structured_owner_seen |= any(p["role"] == "named_owner" for p in structured_people.values())
+        for email in dict.fromkeys(_emails(parsed) + structured_emails + list(structured_people)):
             local, mail_domain = email.split("@", 1)
             same_domain = mail_domain == domain or mail_domain.endswith("." + domain)
             provider = mail_domain in PUBLIC_MAIL_DOMAINS
@@ -315,8 +374,15 @@ def select_site_contact(parsed_pages: list[dict], domain: str, *, company_name: 
                         break
                 if named:
                     break
+            structured_person = structured_people.get(email)
+            if structured_person:
+                if structured_person["role"] == "named_owner":
+                    owner = structured_person["name"]
+                    named = None
+                elif not owner:
+                    named = structured_person["name"]
             context = _normalize(" ".join(contexts))
-            if any(marker in context for marker in SUPPLIER_MARKERS) and not owner:
+            if any(marker in context for marker in SUPPLIER_MARKERS) and not owner and not structured_person:
                 continue
             # A clearly published employee/owner mailbox on the official site
             # may use another business domain. Do not grab an unrelated agency
@@ -332,7 +398,7 @@ def select_site_contact(parsed_pages: list[dict], domain: str, *, company_name: 
             # ISP, custom-mail or external mailbox provider. Its domain is not
             # grounds to reject a visibly published business contact.
             if not (
-                same_domain or provider or owner or named or email in structured_emails
+                same_domain or provider or owner or named or email in structured_emails or structured_person
                 or (business_contact_page and explicit_contact)
             ):
                 continue
@@ -346,8 +412,8 @@ def select_site_contact(parsed_pages: list[dict], domain: str, *, company_name: 
                     "public_business_email": email,
                     "email_source_url": url,
                     "contact_person_name": owner or named,
-                    "contact_name_source_url": owner_sources.get(owner) if owner else url if named else None,
-                    "contact_role_source_url": owner_sources.get(owner) if owner else None,
+                    "contact_name_source_url": url if structured_person else owner_sources.get(owner) if owner else url if named else None,
+                    "contact_role_source_url": url if structured_person else owner_sources.get(owner) if owner else None,
                     "contact_role": (
                         "named_owner" if owner else "named_person" if named
                         else "personal_mailbox" if not generic else "general_inbox"
@@ -372,7 +438,7 @@ def select_site_contact(parsed_pages: list[dict], domain: str, *, company_name: 
             "phone_contact_source_url": phone_contact_source_url,
             "contact_page_source_url": contact_page_source_url,
             "contact_search_pages_checked": len(parsed_pages),
-            "named_owner_found_on_site": bool(owners),
+            "named_owner_found_on_site": bool(owners) or structured_owner_seen,
         }
     best = min(candidates, key=lambda item: item[:5])[-1]
     return {
@@ -382,5 +448,5 @@ def select_site_contact(parsed_pages: list[dict], domain: str, *, company_name: 
         "phone_contact_source_url": phone_contact_source_url,
         "contact_page_source_url": contact_page_source_url,
         "contact_search_pages_checked": len(parsed_pages),
-        "named_owner_found_on_site": bool(owners),
+        "named_owner_found_on_site": bool(owners) or structured_owner_seen,
     }
