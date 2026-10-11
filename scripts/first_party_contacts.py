@@ -211,7 +211,13 @@ def _business_name_matches(value: object, domain: str, company_name: str) -> boo
         ]
         identities.add("".join(words))
     name = re.sub(r"[^a-z0-9]", "", _normalize(value))
-    return bool(name) and any(identity == name or identity in name for identity in identities if len(identity) >= 5)
+    # A matching brand prefix is not sufficient: "Acme Bikes Agency" must
+    # not inherit Acme Bikes' contact identity. Legal suffixes are acceptable.
+    legal_suffixes = {"", "bv", "nv", "vof", "ltd", "llc", "inc", "gmbh"}
+    return bool(name) and any(
+        name.startswith(identity) and name[len(identity):] in legal_suffixes
+        for identity in identities if len(identity) >= 5
+    )
 
 
 def _structured_nodes(parsed: dict):
