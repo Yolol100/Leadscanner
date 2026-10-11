@@ -30,11 +30,22 @@ def example():
 
 class PublicLivePreviewTests(unittest.TestCase):
     def test_safe_counts_never_echo_arbitrary_third_party_values(self):
-        out = safe_counts(["hold_no_contact", "info@secret.example", "https://secret.example/", "found"])
+        out = safe_counts(
+            ["hold_no_contact", "info@secret.example", "https://secret.example/", "found"],
+            frozenset({"hold_no_contact", "found"}),
+        )
         self.assertEqual(out["other"], 2)
         self.assertEqual(out["hold_no_contact"], 1)
         self.assertNotIn("@", repr(out))
         self.assertNotIn("secret", repr(out))
+
+    def test_public_metric_labels_require_exact_allowlisted_values(self):
+        from public_live_preview import SAFE_CATEGORIES, SAFE_VERIFICATION_HOLDS
+        categories = safe_counts(["appointment", "company_name", "personal_email", "other"], SAFE_CATEGORIES)
+        self.assertEqual(categories, {"appointment": 1, "other": 3})
+        holds = safe_counts(["hold_robots_policy", "private_business", "info@secret.nl"], SAFE_VERIFICATION_HOLDS)
+        self.assertEqual(holds, {"hold_robots_policy": 1, "other": 2})
+        self.assertNotIn("private_business", repr(holds))
 
     def test_exact_review_integrity_and_stale_rejection(self):
         reasons = select_reasons({"candidates": [example()]})
