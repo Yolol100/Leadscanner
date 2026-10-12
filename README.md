@@ -47,7 +47,7 @@ Gebruik [GitHub Actions — Leads Cold Pipeline](../../actions/workflows/leads-c
 - **`instantly_stage`:** zet **expliciet goedgekeurde** contacten klaar in een toegestane Draft/Paused Instantly-campagne. Vereist het oorspronkelijke `preview_run_id`, exacte `approved_review_tokens`, een campagne-ID en bevestiging. De campagne wordt **niet geactiveerd**.
 - **`draft`:** optionele fallback voor concepten in mijn.host. Ook dit vereist een exacte eerdere preview, goedkeuring en bevestiging. Fact-only records kunnen niet als mailboxconcept worden opgeslagen.
 
-De **eerste output** die je als gebruiker nodig hebt, is `overzicht.md` in het run-artifact en in de GitHub job summary. Dit bevat alleen totalen en uitleg, geen adressen of prospecttekst. Voor afzonderlijke kandidaten open je `review-queue.md` (met de gerangschikte bevindingen en bronnen) of de CSV. Geavanceerde JSON-bestanden zijn voor controle en herstel bedoeld, niet voor dagelijks gebruik.
+**Openbare `public_audit`:** bekijk alleen de geanonimiseerde tellingen in de GitHub job summary; deze modus uploadt geen review-artifact. **Privé `preview`:** open eerst `overzicht.md` en beoordeel daarna afzonderlijke kandidaten in `review-queue.md` of de CSV. Technische JSON-bestanden zijn bedoeld voor diagnose en herstel, niet voor dagelijks gebruik.
 
 ## Waarom gaat iets op hold?
 
