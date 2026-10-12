@@ -4,8 +4,8 @@ from copy import deepcopy
 from unittest.mock import patch
 
 from instantly_historical_site_research import (
-    BATCH_SIZE, _email_and_domain, _fetch_home, _save_candidate, _scan_site,
-    draft_for_review,
+    BATCH_SIZE, REVIEW_KEYS, REFRESH_KEYS, _email_and_domain, _fetch_home,
+    _save_candidate, _scan_site, draft_for_review,
     research_imported_sites_batch,
 )
 
@@ -205,6 +205,120 @@ class Tests(unittest.TestCase):
         self.assertEqual(report["contact_basis_changes"], 0)
         self.assertEqual(report["live_merge_field_changes"], 0)
         self.assertEqual(len(client.calls), 1)
+
+    def test_refresh_scans_previous_review_and_keeps_original_copy(self):
+        class Session:
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+        row = deepcopy(ROW)
+        row["payload"]["leadscanner_site_research_status"] = "candidate_review_required"
+        row["payload"]["leadscanner_site_candidate_body"] = "The earlier proposal must remain."
+        with patch("instantly_historical_site_research.requests.Session", return_value=Session()), \
+             patch("instantly_historical_site_research._fetch_home", return_value=(HTML, "https://studio-example.org/")), \
+             patch("instantly_historical_site_research.safe_fetch_html", return_value=(DETAIL, "https://studio-example.org/afspraak", 200)), \
+             patch("instantly_historical_site_research.inspect_lead_language", return_value="nl"):
+            result = _scan_site(row, refresh=True)
+        self.assertEqual(result["status"], "candidate")
+        self.assertEqual(len(result["proposal"]), len(REVIEW_KEYS))
+        self.assertEqual(row["payload"]["leadscanner_site_candidate_body"], "The earlier proposal must remain.")
+        self.assertEqual(_scan_site(row)["status"], "existing_research_hold")
+
+    def test_refresh_personal_provider_uses_explicit_site_and_exact_contact_proof(self):
+        class Session:
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+        row = deepcopy(ROW)
+        row["email"] = "owner@gmail.com"
+        row["website"] = "https://studio-example.org/"
+        self.assertEqual(_scan_site(row)["status"], "personal_email_domain")
+        html = "<title>Studio Example</title><a href='mailto:owner@gmail.com'>Mail eigenaar</a><a href='/afspraak'>Afspraak maken</a>"
+        with patch("instantly_historical_site_research.requests.Session", return_value=Session()), \
+             patch("instantly_historical_site_research._fetch_home", return_value=(html, "https://studio-example.org/")) as fetch, \
+             patch("instantly_historical_site_research.safe_fetch_html", return_value=(DETAIL, "https://studio-example.org/afspraak", 200)), \
+             patch("instantly_historical_site_research.inspect_lead_language", return_value="nl"):
+            result = _scan_site(row, refresh=True)
+        self.assertEqual(result["status"], "candidate")
+        self.assertEqual(result["proposal"]["leadscanner_site_candidate_contact_url"], "https://studio-example.org/")
+        self.assertEqual(fetch.call_args[0][1], "studio-example.org")
+
+    def test_refresh_explores_website_without_confirmed_email_but_creates_no_draft(self):
+        class Session:
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+        html = "<title>Studio Example</title><a href='/afspraak'>Afspraak maken</a>"
+        with patch("instantly_historical_site_research.requests.Session", return_value=Session()), \
+             patch("instantly_historical_site_research._fetch_home", return_value=(html, "https://studio-example.org/")), \
+             patch("instantly_historical_site_research.safe_fetch_html", return_value=(DETAIL, "https://studio-example.org/afspraak", 200)) as get:
+            result = _scan_site(deepcopy(ROW), refresh=True)
+        self.assertEqual(result, {"status": "recipient_not_confirmed_on_website"})
+        self.assertGreaterEqual(get.call_count, 1)
+        self.assertNotIn("proposal", result)
+
+    def test_refresh_stores_new_version_separately_and_preserves_originals(self):
+        old = deepcopy(ROW)
+        old["payload"]["leadscanner_site_candidate_body"] = "Do not overwrite old site proposal."
+        old["payload"]["leadscanner_site_research_status"] = "candidate_review_required"
+        client = FakeClient()
+        client.row = deepcopy(old)
+        proposal = {
+            "leadscanner_site_candidate_findings": "[]",
+            "leadscanner_site_candidate_observation": OBSERVATION,
+            "leadscanner_site_candidate_value_action": "een korte verbeterroute",
+            "leadscanner_site_candidate_subject": "vernieuwde aanpak",
+            "leadscanner_site_candidate_body": "Dit is een nieuw, los reviewconcept.",
+            "leadscanner_site_candidate_evidence_url": "https://studio-example.org/afspraak",
+            "leadscanner_site_candidate_source_type": "official_site",
+            "leadscanner_site_candidate_signal_type": "appointment",
+            "leadscanner_site_candidate_contact_url": "https://studio-example.org/",
+            "leadscanner_site_candidate_official_domain": "studio-example.org",
+            "leadscanner_site_candidate_checked_date": "2026-10-12",
+            "leadscanner_site_research_status": "candidate_review_required",
+        }
+        with patch("instantly_historical_site_research._campaigns_still_quiet"), \
+             patch("instantly_historical_site_research._source_rows", return_value=[old]):
+            report = research_imported_sites_batch(
+                client, offset=0, save_candidates=True, refresh=True,
+                workers=1, scanner=lambda row: {"status": "candidate", "proposal": proposal},
+            )
+        self.assertTrue(report["refresh_mode"])
+        self.assertEqual(report["saved_candidate_count"], 1)
+        self.assertEqual(report["previous_review_candidates_present"], 1)
+        self.assertTrue(report["source_list_identity_verified"])
+        self.assertNotIn("source_list_id", report)
+        self.assertEqual(set(client.next_variables), set(old["payload"]) | set(REFRESH_KEYS))
+        self.assertEqual(client.next_variables["leadscanner_site_candidate_body"], "Do not overwrite old site proposal.")
+        self.assertEqual(client.next_variables["leadscanner_body"], VALUES["leadscanner_body"])
+        self.assertEqual(client.next_variables["leadscanner_site_refresh_body"], "Dit is een nieuw, los reviewconcept.")
+        self.assertEqual(client.next_variables["leadscanner_site_refresh_status"], "candidate_review_required")
+        self.assertEqual(len(client.calls), 1)
+        updated = deepcopy(old)
+        updated["payload"] = deepcopy(client.next_variables)
+        self.assertEqual(_scan_site(updated, refresh=True)["status"], "existing_refresh_hold")
+
+    def test_refresh_dry_run_writes_nothing_even_for_existing_review(self):
+        row = deepcopy(ROW)
+        row["payload"]["leadscanner_site_candidate_body"] = "Earlier review"
+        with patch("instantly_historical_site_research._campaigns_still_quiet"), \
+             patch("instantly_historical_site_research._source_rows", return_value=[row]), \
+             patch("instantly_historical_site_research._save_candidate", side_effect=AssertionError("no write")):
+            report = research_imported_sites_batch(
+                object(), offset=0, workers=1, refresh=True, save_candidates=False,
+                scanner=lambda lead: {"status": "existing_refresh_hold"},
+            )
+        self.assertEqual(report["saved_candidate_count"], 0)
+        self.assertEqual(report["holds"]["existing_refresh_hold"], 1)
+        self.assertEqual(report["network_checked_count"], 0)
+        self.assertEqual(report["previous_review_candidates_present"], 1)
+        self.assertFalse(report["automatic_send"])
+
+    def test_refresh_wrong_fields_cannot_change_original_proposal(self):
+        client = FakeClient()
+        with self.assertRaisesRegex(ValueError, "proposal_fields_invalid"):
+            _save_candidate(
+                client, client.row, {"leadscanner_site_candidate_body": "wrong target"},
+                refresh=True,
+            )
+        self.assertEqual(client.calls, [])
 
     def test_bad_offset_or_source_count_fails_before_provider(self):
         for kwargs in ({"offset": 1}, {"offset": -100}, {"offset": 0, "expected_count": 1127},
