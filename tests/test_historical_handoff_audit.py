@@ -2,7 +2,7 @@
 import unittest
 from copy import deepcopy
 
-from historical_handoff_audit import audit_counts, _reviewed_refresh
+from historical_handoff_audit import audit_counts, _reviewed_refresh, audit_destination_copies
 
 BODY = (
     "Hoi, ik zag op jullie website dat klanten een afspraak kunnen maken. "
@@ -75,6 +75,49 @@ class HistoricalHandoffAuditTests(unittest.TestCase):
         )
         self.assertEqual(blocked["counts"]["provider_suppression_hold"], 1)
         self.assertEqual(blocked["counts"]["stage_eligible_review_only"], 0)
+
+    def test_private_destination_reconciliation_distinguishes_partial_and_exact(self):
+        from historical_handoff_stage import build_destination_variables
+        from instantly_campaign_copy import TARGET_CAMPAIGNS
+        source = row()
+        source["payload"]["leadscanner_import_origin"] = "myhost_drafts"
+        target = deepcopy(source)
+        target["id"] = "copied-id-01"
+        target["campaign"] = TARGET_CAMPAIGNS["nl"][0]
+        target["list_id"] = None
+        class Client:
+            def __init__(self):
+                self.current = target
+            def get_lead(self, id):
+                self.assert_id = id
+                return deepcopy(self.current)
+        client = Client()
+        destinations = {"nl": {source["email"]: target}, "en": {}}
+        status = audit_destination_copies([source], destinations, client)
+        self.assertEqual(status["copied_pending_personalization"], 1)
+        self.assertEqual(status["exact_personalization_verified"], 0)
+        self.assertNotIn(source["email"], str(status))
+        client.current["payload"] = build_destination_variables(source, target)
+        exact = audit_destination_copies([source], destinations, client)
+        self.assertEqual(exact["exact_personalization_verified"], 1)
+        self.assertEqual(exact["copied_pending_personalization"], 0)
+        client.current["payload"]["leadscanner_body"] = "changed"
+        mismatched = audit_destination_copies([source], destinations, client)
+        self.assertEqual(mismatched["changed_or_unexpected_personalization"], 1)
+
+    def test_wrong_destination_or_unknown_person_never_counts_as_completed(self):
+        from instantly_campaign_copy import TARGET_CAMPAIGNS
+        s = row()
+        s["payload"]["leadscanner_import_origin"] = "myhost_drafts"
+        dest = deepcopy(s)
+        dest["id"] = "copy-other"
+        dest["campaign"] = TARGET_CAMPAIGNS["en"][0]
+        class Client:
+            def get_lead(self, id):
+                return deepcopy(dest)
+        result = audit_destination_copies([s], {"nl": {}, "en": {s["email"]: dest}}, Client())
+        self.assertEqual(result["unexpected_source_or_language"], 1)
+        self.assertEqual(result["exact_personalization_verified"], 0)
 
     def test_handoff_not_eligible_for_active_or_unready_campaign(self):
         rows = [row()] + [row(i, status="") for i in range(1, 1128)]

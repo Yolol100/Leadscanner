@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from historical_handoff_stage import (
     EXPECTED_REVIEWED, TARGET_CAMPAIGNS, build_destination_variables,
-    stage_batch, _update_destination,
+    stage_batch, _update_destination, safe_failure_code,
 )
 from historical_handoff_audit import _reviewed_refresh
 from tests.test_historical_handoff_audit import row
@@ -170,6 +170,20 @@ class PausedHandoffStageTests(unittest.TestCase):
              patch("historical_handoff_stage.check_registry_access"):
             with self.assertRaisesRegex(ValueError, "campaign active"):
                 stage_batch(FakeClient(rows), offset=0)
+
+    def test_public_error_diagnostic_does_not_leak_provider_details(self):
+        self.assertEqual(
+            safe_failure_code(RuntimeError("historical_handoff_copied_lead_missing")),
+            "historical_handoff_copied_lead_missing",
+        )
+        self.assertEqual(
+            safe_failure_code(RuntimeError("person@example.org confidential content")),
+            "runtime_unknown",
+        )
+        self.assertEqual(
+            safe_failure_code(ValueError("private?token=secret")),
+            "value_contract",
+        )
 
     def test_invalid_offset_or_cohort_aborts_without_provider_read(self):
         fake = FakeClient([])
