@@ -72,7 +72,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_*.py' -v
 
   public_audit:
-    if: (github.event_name == 'workflow_dispatch' && inputs.execution_mode == 'public_audit') || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[public-audit]'))
+    if: github.event_name == 'workflow_dispatch' && inputs.execution_mode == 'public_audit' && github.ref == 'refs/heads/main'
     needs: test
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -171,7 +171,7 @@ jobs:
   smoke:
     # A synthetic self-addressed Draft only; never a prospective recipient.
     # Main branch and trusted manual dispatch or explicitly marked main push.
-    if: (github.event_name == 'workflow_dispatch' && inputs.execution_mode == 'smoke' && github.ref == 'refs/heads/main') || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[myhost-smoke]'))
+    if: github.event_name == 'workflow_dispatch' && inputs.execution_mode == 'smoke' && github.ref == 'refs/heads/main'
     needs: test
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -219,27 +219,3 @@ jobs:
               sys.exit(1)
           print("MYHOST_SMOKE=green synthetic=1 exact_readback=1 cleaned=1 emails_sent=0")
           PY
-
-
-  historical_coverage_once:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[historical-coverage]')
-    needs: test
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.12'
-      - run: python3 -m pip install --disable-pip-version-check -r requirements-cold.txt 'google-auth>=2,<3'
-      - name: One-time read-only historical suppression coverage comparison
-        env:
-          PYTHONPATH: scripts
-          INSTANTLY_API_KEY: ${{ secrets.INSTANTLY_API_KEY }}
-          LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON || secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-        run: |
-          set -euo pipefail
-          python3 scripts/_one_time_historical_coverage.py
