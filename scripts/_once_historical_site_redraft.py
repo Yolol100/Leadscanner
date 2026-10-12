@@ -38,6 +38,13 @@ from url_safety import is_public_http_url
 BATCH_SIZE = 100
 MIN_FINDINGS = 4
 MAX_FINDINGS = 6
+# Exact per-100-contact approval ceilings from the read-only twelve-batch
+# audit (11 baseline jobs + the separately proven repaired batch 11).
+# New findings after re-crawling never expand the user-approved 53 drafts.
+AUDITED_REVIEW_CEILINGS = {
+    0: 0, 100: 1, 200: 1, 300: 3, 400: 9, 500: 7,
+    600: 3, 700: 4, 800: 10, 900: 4, 1000: 8, 1100: 3,
+}
 STATUSES = (
     "excluded_history", "hold_source_status", "hold_missing_website",
     "hold_missing_business_identity", "hold_duplicate_website", "hold_website_verification",
@@ -515,6 +522,11 @@ def run(offset: int, mode: str) -> dict:
     report["mode"] = mode
     report["drafts_created"] = 0
     report["drafts_exact_existing"] = 0
+    if mode == "drafts":
+        cap = AUDITED_REVIEW_CEILINGS.get(offset)
+        if (cap is None or len(review_batch["rows"]) > cap
+                or report["counts"]["ready_for_review"] > cap):
+            raise RuntimeError("historical_approved_count_exceeded")
     if mode == "drafts" and review_batch["rows"]:
         if (os.getenv("LEADSCANNER_TRUSTED_HISTORICAL_WRITE") != "true"
                 or not os.getenv("OUTREACH_MAIL_PASSWORD")):
@@ -595,6 +607,7 @@ def main() -> int:
             "fresh_historical_registry_changed", "fresh_draft_status_invalid",
             "fresh_original_email_missing", "fresh_other_historical_recipient",
             "fresh_registry_existing_exclusion", "fresh_other_existing_concept",
+            "historical_approved_count_exceeded",
         }
         code = str(error) if str(error) in fixed else "private_failure_hold"
         print("HISTORICAL_SITE_REBUILD=red stage=" + code + " " + safe_failure_marker(error) + " details_suppressed")
