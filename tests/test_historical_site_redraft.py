@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch
 from historical_v2 import row_for_match, token
 from _once_historical_site_redraft import (
     BATCH_SIZE, EXPECTED, build_batch, excluded_history, historical_site,
-    historical_registry_hold, historical_brand_hint, run,
+    historical_registry_hold, historical_brand_hint, require_fresh_registry_before_imap, run,
 )
 
 
@@ -270,6 +270,48 @@ class HistoricalSiteRebuildTests(unittest.TestCase):
         wrong = suppression(rows[1:])
         with self.assertRaisesRegex(RuntimeError, "historical_suppression_incomplete"):
             build_batch(offset=0, rows=rows, history=wrong)
+
+    def test_last_second_opt_out_stops_imap_before_any_write(self):
+        from dedupe_preflight import candidate_identity
+        source_rows = source()
+        hist = suppression(source_rows)
+        source_hash = token(hist["v2_key"], "email", source_rows[0]["email"])
+        row = {
+            "status": "review_draft", "automatic_send": False,
+            "_historical_source_email_token": source_hash,
+            "email": source_rows[0]["email"],
+            "website": "https://sample.nl/", "official_domain": "sample.nl",
+            "company": "Sample",
+        }
+        ordinary = {
+            "identity": candidate_identity({"email": row["email"]}),
+            "status": "opt_out", "row_number": 2,
+        }
+        with self.assertRaisesRegex(RuntimeError, "fresh_registry_existing_exclusion"):
+            require_fresh_registry_before_imap({"rows": [row]}, hist, [hist, ordinary])
+        ordinary["status"] = "concept"
+        require_fresh_registry_before_imap({"rows": [row]}, hist, [hist, ordinary])
+        ordinary["status"] = "sent"
+        with self.assertRaisesRegex(RuntimeError, "fresh_registry_existing_exclusion"):
+            require_fresh_registry_before_imap({"rows": [row]}, hist, [hist, ordinary])
+
+    def test_changed_key_or_another_historical_mailbox_is_rejected(self):
+        rows = source()
+        hist = suppression(rows)
+        source_hash = token(hist["v2_key"], "email", rows[0]["email"])
+        next_hash = token(hist["v2_key"], "email", rows[1]["email"])
+        batch = {"rows": [{
+            "status": "review_draft", "automatic_send": False,
+            "_historical_source_email_token": source_hash,
+            "email": rows[1]["email"], "official_domain": "sample.nl",
+            "company": "Sample", "website": "https://sample.nl/",
+        }]}
+        self.assertIn(next_hash, hist["v2_emails"])
+        with self.assertRaisesRegex(RuntimeError, "fresh_other_historical_recipient"):
+            require_fresh_registry_before_imap(batch, hist, [hist])
+        other = dict(hist, v2_key=b"different-key")
+        with self.assertRaisesRegex(RuntimeError, "fresh_historical_registry_changed"):
+            require_fresh_registry_before_imap(batch, hist, [other])
 
     def test_audit_mode_never_calls_mailbox_or_sends(self):
         rows = source()
