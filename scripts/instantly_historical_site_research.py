@@ -269,7 +269,7 @@ def _save_candidate(
         "leadscanner_site_refresh_findings" if refresh
         else "leadscanner_site_candidate_findings"
     }
-    if set(proposal) not in (expected, legacy):
+    if refresh and set(proposal) not in (expected, legacy):
         raise ValueError("site_research_proposal_fields_invalid")
     new_variables = dict(actual)
     new_variables.update(proposal)
