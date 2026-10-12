@@ -13,6 +13,8 @@ import argparse
 from collections import Counter
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
+from ipaddress import ip_address
+from urllib.parse import urlparse
 import json
 import os
 import sys
@@ -38,7 +40,7 @@ MIN_FINDINGS = 4
 MAX_FINDINGS = 6
 STATUSES = (
     "excluded_history", "hold_source_status", "hold_missing_website",
-    "hold_duplicate_website", "hold_website_verification",
+    "hold_missing_business_identity", "hold_duplicate_website", "hold_website_verification",
     "hold_website_research", "hold_insufficient_findings",
     "hold_unverified_contact", "hold_mail_validation",
     "hold_duplicate_recipient", "ready_for_review",
@@ -57,11 +59,43 @@ def _source_payload(row: dict) -> dict:
 
 
 def _public_site(value: object) -> str:
+    """Pure site-hint filter. DNS/robots checks happen at the actual request.
+
+    Enumerating all 1,128 source rows twelve times must not perform tens of
+    thousands of preflight DNS queries. The normal website crawler still calls
+    is_public_http_url on every requested/redirected URL and enforces robots.
+    """
     raw = _string(value)
     if not raw or len(raw) > 1500:
         return ""
     url = raw if "://" in raw else "https://" + raw
-    return url if is_public_http_url(url) and normalize_domain(url) else ""
+    try:
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").strip().casefold().rstrip(".")
+        port = parsed.port
+        if (parsed.scheme.casefold() not in {"http", "https"}
+                or parsed.username is not None or parsed.password is not None
+                or not host or "%" in host
+                or port not in {None, 80, 443}
+                or host == "localhost"
+                or host.endswith((".localhost", ".local", ".internal", ".lan",
+                                  ".home", ".home.arpa"))
+                or not normalize_domain(url)):
+            return ""
+        try:
+            address = ip_address(host)
+        except ValueError:
+            address = None
+        if address is not None:
+            return url if address.is_global else ""
+        if "." not in host or any(not x for x in host.split(".")):
+            return ""
+        host.encode("idna")
+    except (ValueError, UnicodeError, TypeError):
+        return ""
+    # NO network request at this point. verify_candidate.safe_fetch_html()
+    # independently validates public DNS answers before opening any URL.
+    return url
 
 
 def historical_site(row: dict) -> str:
@@ -95,7 +129,7 @@ def historical_name(row: dict) -> str:
             or _string(payload.get("company_name")))[:180]
 
 
-def historical_brand_hint(row: dict, site: str) -> str:
+def historical_brand_hint(row: dict, site: str, history: dict | None = None) -> str:
     """Bounded website-research hint when a provider company label is absent.
 
     The historical source must independently link this exact domain to its
@@ -119,7 +153,15 @@ def historical_brand_hint(row: dict, site: str) -> str:
     mail_domain = original_email.rsplit("@", 1)[-1] if original_email else ""
     company_domain = normalize_domain(row.get("company_domain"))
     same_corporate_domain = mail_domain == company_domain == domain
-    if not old_official and not same_corporate_domain:
+    # The public HMAC-v2 registry already classifies exactly 146 historical
+    # business domains independently. All other provider domains (including
+    # previously unseen shared mailbox services) must remain held.
+    known_corporate = bool(
+        history and isinstance(history.get("v2_key"), bytes)
+        and token(history["v2_key"], "corporate", domain)
+        in (history.get("v2_corporate") or set())
+    )
+    if not old_official and not (same_corporate_domain and known_corporate):
         return ""
     label = domain.split(".", 1)[0].replace("-", " ").strip()
     if label.casefold() in {"www", "shop", "store", "online", "portal", "contact", "website"}:
@@ -134,6 +176,7 @@ def excluded_history(row: dict) -> bool:
         return True
     for field in (
         "timestamp_last_contact", "timestamp_last_reply",
+        "timestamp_last_open", "timestamp_last_click",
         "last_step_timestamp_executed", "timestamp_last_touch",
     ):
         if _string(row.get(field)):
@@ -143,13 +186,22 @@ def excluded_history(row: dict) -> bool:
         last = summary.get("lastStep")
         if isinstance(last, dict) and _string(last.get("timestamp_executed")):
             return True
-    try:
-        if int(row.get("email_reply_count") or 0) > 0:
-            return True
-    except (ValueError, TypeError):
+    subseq = row.get("status_summary_subseq")
+    if isinstance(subseq, dict) and _string(subseq.get("timestampExecuted")):
         return True
+    # Opens/clicks and non-zero interest states imply that mail or a reply
+    # happened, even when the provider omits the last-contact timestamp.
+    for field in ("email_open_count", "email_reply_count", "email_click_count"):
+        try:
+            if int(row.get(field) or 0) > 0:
+                return True
+        except (ValueError, TypeError):
+            return True
+    for field in ("email_opened_step", "email_replied_step", "email_clicked_step"):
+        if row.get(field) is not None:
+            return True
     try:
-        if int(row.get("lt_interest_status") or 0) < 0:
+        if int(row.get("lt_interest_status") or 0) != 0:
             return True
     except (ValueError, TypeError):
         return True
@@ -235,10 +287,13 @@ def build_batch(
         company = historical_name(row)
         derived_brand = False
         if site and not company:
-            company = historical_brand_hint(row, site)
+            company = historical_brand_hint(row, site, history)
             derived_brand = bool(company)
-        if not site or not company:
+        if not site:
             states[pos] = "hold_missing_website"
+            continue
+        if not company:
+            states[pos] = "hold_missing_business_identity"
             continue
         if home_owner.get(normalize_domain(site)) != pos:
             states[pos] = "hold_duplicate_website"

@@ -54,13 +54,35 @@ class HistoricalSiteRebuildTests(unittest.TestCase):
             },
         }), "https://sample.nl")
 
+    def test_source_hints_do_not_perform_dns_and_reject_local_or_credentialed_urls(self):
+        site_row = {"company_name": None, "website": "https://made-up-site.nl/"}
+        with patch("socket.getaddrinfo", side_effect=AssertionError("source loop must not do DNS")):
+            self.assertEqual(historical_site(site_row), "https://made-up-site.nl/")
+        for unsafe in (
+            "http://127.0.0.1/", "https://10.10.1.1/", "http://localhost/",
+            "https://admin:secret@business.nl", "http://server.local/path",
+            "https://business.nl:8080/",
+        ):
+            self.assertEqual(
+                historical_site({"website": unsafe}), "",
+                msg="unsafe source URL must fail before live website crawl",
+            )
+
     def test_missing_company_name_can_use_only_correlated_domain_for_research(self):
         row = {
             "company_name": None, "website": "https://sample.nl/",
             "email": "info@sample.nl", "company_domain": "sample.nl",
             "payload": {},
         }
-        self.assertEqual(historical_brand_hint(row, "https://sample.nl/"), "sample")
+        self.assertFalse(historical_brand_hint(row, "https://sample.nl/"))
+        key = b"test-only-key"
+        corporate_history = {
+            "v2_key": key,
+            "v2_corporate": {token(key, "corporate", "sample.nl")},
+        }
+        self.assertEqual(
+            historical_brand_hint(row, "https://sample.nl/", corporate_history), "sample"
+        )
         row["email"] = "info@gmail.com"
         row["company_domain"] = "gmail.com"
         self.assertFalse(historical_brand_hint(row, "https://sample.nl/"))
@@ -70,6 +92,11 @@ class HistoricalSiteRebuildTests(unittest.TestCase):
             "leadscanner_site_refresh_evidence_url": "https://sample.nl/contact",
         }
         self.assertEqual(historical_brand_hint(row, "https://sample.nl/"), "sample")
+        # A shared provider must not acquire authority from its own domain.
+        row["payload"] = {}
+        row["email"] = "info@bigmailprovider.xyz"
+        row["company_domain"] = "bigmailprovider.xyz"
+        self.assertFalse(historical_brand_hint(row, "https://bigmailprovider.xyz"))
 
     def test_derived_domain_brand_without_live_text_proof_is_held(self):
         rows = source()
@@ -104,7 +131,35 @@ class HistoricalSiteRebuildTests(unittest.TestCase):
         self.assertTrue(excluded_history({"status": 3}))
         self.assertTrue(excluded_history({"status": 1, "email_reply_count": 1}))
         self.assertTrue(excluded_history({"status": 1, "timestamp_last_contact": "2026-01-01"}))
-        self.assertFalse(excluded_history({"status": 1, "email_reply_count": 0}))
+        self.assertTrue(excluded_history({"status": 1, "email_open_count": 1}))
+        self.assertTrue(excluded_history({"status": 1, "email_click_count": 1}))
+        self.assertTrue(excluded_history({"status": 1, "timestamp_last_open": "2026-01-01"}))
+        self.assertTrue(excluded_history({"status": 1, "timestamp_last_click": "2026-01-01"}))
+        self.assertTrue(excluded_history({"status": 1, "email_replied_step": 0}))
+        self.assertTrue(excluded_history({"status": 1, "lt_interest_status": 1}))
+        self.assertTrue(excluded_history({"status": 1, "lt_interest_status": -3}))
+        self.assertTrue(excluded_history({"status": 1, "status_summary_subseq": {
+            "timestampExecuted": "2026-01-01"
+        }}))
+        self.assertFalse(excluded_history({
+            "status": 1, "email_reply_count": 0,
+            "email_opened_step": None, "lt_interest_status": 0,
+        }))
+
+    def test_website_without_independent_company_provenance_is_separate_hold(self):
+        rows = source()
+        rows[0]["website"] = "https://unrelated-site.nl/"
+        rows[0]["company_name"] = None
+        rows[0]["company_domain"] = "company0.nl"
+        no_fetch = Mock(side_effect=AssertionError("no live fetch for weak source link"))
+        report, batch = build_batch(
+            offset=0, rows=rows, history=suppression(rows),
+            verifier=no_fetch, researcher=no_fetch,
+        )
+        self.assertEqual(report["counts"]["hold_missing_business_identity"], 1)
+        self.assertEqual(report["counts"]["hold_missing_website"], 99)
+        no_fetch.assert_not_called()
+        self.assertEqual(batch["rows"], [])
 
     def test_original_registry_blocks_optouts_sends_but_allows_historical_concept_review(self):
         from dedupe_preflight import candidate_identity
