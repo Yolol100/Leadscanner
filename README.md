@@ -11,19 +11,20 @@ Open [GitHub Actions — Leadscanner](../../actions/workflows/leads-cold.yml), k
 | Modus | Wat gebeurt er? | Toegang |
 | --- | --- | --- |
 | **public_audit** | Onderzoek en mailkwaliteit testen, uitsluitend anonieme aantallen | Openbare repository mogelijk |
-| **drafts** | Onderzoek plus gecontroleerde concepten in mijn.host | **Privé-repository vereist** |
+| **drafts** | Onderzoek, veilige concepten in mijn.host en dedupe-readback | **Uitsluitend handmatig op `main`**, geheimen blijven in Actions Secrets |
+| **smoke** | Tijdelijk concept aan de eigen mailbox; exact teruglezen en verwijderen | Handmatig op `main`, zonder prospects of verzending |
 
-**Belangrijk:** de repository is momenteel openbaar. Zet deze eerst privé via GitHub Settings → General → Change repository visibility voor echte concepten. Dit wordt niet automatisch gewijzigd.
+**Keuze:** de GitHub-repository blijft openbaar. De `drafts`-actie mag daarom uitsluitend handmatig op `main` draaien, nooit vanuit pull requests of automatische pushes. De run toont alleen aantallen, bevat geen prospect-artifacts en verstuurt geen e-mails. Openbare Actions-logs vragen wel extra voorzichtigheid bij eigen wijzigingen.
 
 ### Beveiligd dedupe-register (vereist voor alle echte runs)
 - Alle oude contactgegevens worden uitsluitend via de **Google Sheets API met OAuth read-only scope** opgehaald. De openbare CSV-exportlink is niet meer in de actieve workflow aanwezig.
 - GitHub Secret: `LEAD_REGISTRY_SERVICE_ACCOUNT_JSON` (of `GOOGLE_SERVICE_ACCOUNT_JSON`), met toegang tot het bestaande Google Sheet. Openbare audit-runs gebruiken alleen een token met leesrechten.
-- **Open privacyactie:** in Google Drive bij **Lead Dedupe Registry → Delen → Algemene toegang** moet *Iedereen met de link* naar *Beperkt* worden gewijzigd. Dit is nog niet uitgevoerd. De repo alleen privé maken trekt de oude link niet in.
+- **Bestaande keuze:** het Google Sheet blijft *Iedereen met de link — Lezer*. Die toestemming geeft linkhouders toegang tot bestaande contact-/uitsluitgegevens. De code gebruikt desondanks alleen geauthenticeerde API-uitlezing en publiceert geen prospectinformatie in GitHub.
 - De historische lijst mag niet worden gewist of vervangen; eerdere contacten, reacties, bounces en opt-outs blijven uitgesloten.
 
-### Benodigde GitHub Secrets voor mijn.host-drafts
+### Benodigde GitHub Secrets voor mijn.host-drafts en smoke
 - `OUTREACH_MAIL_PASSWORD` — wachtwoord van de mijn.host-mailbox.
-- De bovengenoemde Google service-accountsecret is ook nodig om na exacte IMAP-teruglezing een concept in de registry vast te leggen.
+- De bovengenoemde Google service-accountsecret is nodig om na exacte IMAP-teruglezing een concept in de registry vast te leggen. De aparte `smoke`-test gebruikt alleen IMAP en wijzigt het register niet.
 
 Optionele GitHub Variables: OUTREACH_IMAP_HOST, OUTREACH_IMAP_PORT, OUTREACH_MAIL_USER, OUTREACH_SENDER_NAME, OUTREACH_SENDER_EMAIL en OUTREACH_DRAFT_FOLDER.
 
@@ -44,7 +45,7 @@ Zonder bron, geldig contact, goede mail of nieuwe identiteit ontstaat geen draft
 
 ## Privacy, toestemming en historisch werk
 
-Openbare runs tonen alleen cijfers. Privé-runs verwerken adressen en concepten in afgeschermd runnergeheugen en mijn.host. Geen SMTP, geen verzendschema's.
+Openbare runs tonen alleen cijfers. Handmatig vertrouwde Actions-runs verwerken adressen en concepten in afgeschermd runnergeheugen en mijn.host. Geen SMTP, geen verzendschema's.
 
 Een gepubliceerd zakelijk e-mailadres of een opgeslagen concept is **geen toestemming om reclame te mailen**. De gebruiker beslist afzonderlijk en moet de toepasselijke regels en opt-outs controleren.
 

@@ -7,9 +7,10 @@ Geen campagnedienst, geen sequencebeheer, geen automatische verzending en geen S
 
 ## Twee uitvoermodi
 - **public_audit:** ook in een openbare repository. Live onderzoek met uitsluitend geanonimiseerde aantallen. Geen ontvangers, concepten, bron-URL's, hashes of artifacts publiceren.
-- **drafts:** één complete run van onderzoek tot gecontroleerde mijn.host-concepten. **Alleen privé**, met IMAP- en registry-credentials in GitHub Secrets. De gebruiker beoordeelt de Drafts zelf; er wordt niet verzonden.
+- **drafts:** uitsluitend expliciet handmatig via GitHub Actions op de `main`-branch, met secrets; geen data in openbare logs of artifacts. De gebruiker beoordeelt mijn.host Drafts zelf; er wordt niet verzonden.
+- **smoke:** uitsluitend de eigen mailbox via IMAP, één synthetisch Draft, exacte verificatie en UID-specifieke verwijdering. Geen prospects, registry-mutaties of verzending.
 
-Verander de repositoryzichtbaarheid nooit zonder toestemming.
+De gebruiker heeft expliciet gekozen dat de repo openbaar blijft en dat het Google Sheet via de bestaande deellink leesbaar blijft. Respecteer dit; behandel zichtbaarheid als een bewust geaccepteerd risico en log nooit contactdata.
 
 ## Kernregels
 - Het bestaande Google Sheet Lead Dedupe Registry is de historische uitsluitingsbron. Lees het **uitsluitend via de geauthenticeerde Sheets API met read-only OAuth scope**, nooit via openbaar CSV-export of een lokale kopie. Controleer bedrijfsnaam, domein, adres en lead-ID vóór onderzoek en direct vóór mailboxwijziging. Eerdere verzendingen, reacties, bounces, opt-outs en concepten blijven uitgesloten.
@@ -28,8 +29,7 @@ Verander de repositoryzichtbaarheid nooit zonder toestemming.
 - CI zonder echte IMAP is geen live bewijs; claim daadwerkelijke conceptopslag alleen na afgeschermde IMAP-readback.
 - Historische gegevens in andere diensten worden niet door repositorywijzigingen verwijderd of automatisch gemigreerd.
 
-## Releaseblokkers
-
-- Revoke de Google Drive-machtiging **Iedereen met de link** voor het canonieke register. Hiervoor bestaat nu geen aangesloten permission-delete-actie; dit vereist een expliciete handeling in de Google Drive UI.
-- Een live mijn.host-IMAP test vereist een privé-GitHub-repository en geldige secrets. Synthetische tests of openbare website-audits mogen nooit als live IMAP-bewijs worden gepresenteerd.
-- Nog geen complete externe reconciliation van alle historische Instantly-contacten met de retained registry; introduceer geen tweede pipeline.
+## Live verificatie
+- Een geslaagde synthetische IMAP-self-test bewijst mailboxopslag, niet dat een specifieke prospectmail goedgekeurd is.
+- Test nieuwe prospectconcepten uitsluitend na historische dedupe, bron-, contact- en mailkwaliteitchecks, met volledig veilige readback en handmatige beoordeling.
+- Vergelijk voor volledigheid de historische contacten met de retained registry. Breng geen verwijderde campagnestroom terug als permanent onderdeel van Leadscanner.

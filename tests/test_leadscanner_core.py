@@ -110,11 +110,20 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(report["status"], "green")
         self.assertFalse(report["smtp_available"])
 
-    def test_public_repo_cannot_store_real_drafts(self):
-        with self.assertRaisesRegex(SafeRunError, "privacy"):
+    def test_untrusted_run_cannot_store_real_drafts(self):
+        with self.assertRaisesRegex(SafeRunError, "trusted_manual_run_required"):
             run(mode="drafts",
                 region="Amsterdam", keywords=["fiets"], radius_km=5,
                 discovery_limit=10, verify_limit=10, repository_private=False)
+
+    def test_public_repo_manual_main_secret_runner_can_prepare_drafts(self):
+        with patch.dict("leadscanner_core.os.environ", {
+            "LEADSCANNER_TRUSTED_MAIN_DRAFTS": "true",
+        }):
+            report, mocks = self._run("drafts", repository_private=False)
+        self.assertEqual(report["counts"]["registry_confirmed"], 1)
+        mocks["imap"].assert_called_once()
+        self.assertEqual(report["automatic_send"], False)
 
     def test_request_validation_bounded(self):
         self.assertFalse(_params_valid("send", "Amsterdam", ["fiets"], 5, 10, 10))
@@ -204,7 +213,9 @@ class CoreTests(unittest.TestCase):
         text = Path(".github/workflows/leads-cold.yml").read_text(encoding="utf-8")
         self.assertIn("public_audit:", text)
         self.assertIn("drafts:", text)
-        self.assertIn("REPOSITORY_IS_PRIVATE", text)
+        self.assertIn("LEADSCANNER_TRUSTED_MAIN_DRAFTS", text)
+        self.assertIn("refs/heads/main", text)
+        self.assertIn("workflow_dispatch", text)
         self.assertNotIn("actions/upload-artifact", text)
         self.assertNotIn("schedule:", text)
         self.assertNotIn("instantly", text.casefold())

@@ -5,6 +5,7 @@ import imaplib
 import json
 import os
 import re
+import secrets
 import ssl
 import time
 from email.message import EmailMessage
@@ -523,6 +524,81 @@ def create_drafts(batch: dict, *, rewrite_existing_only: bool = False, reject_ch
             client.logout()
         except Exception:
             pass
+
+
+def live_self_draft_smoke() -> dict[str, object]:
+    """One synthetic, self-addressed Draft; verify and expunge only that UID.
+
+    Designed for a manually trusted GitHub Actions run. No prospect, no send,
+    no registry write, no raw provider information in the public result.
+    """
+    mailbox = os.getenv("OUTREACH_MAIL_USER", "").strip()
+    if mailbox.count("@") != 1 or any(c in mailbox for c in "\r\n<>"):
+        raise RuntimeError("smoke_mailbox_address_unconfigured")
+    lead_id = "growth-" + secrets.token_hex(10)
+    row = {
+        "lead_id": lead_id,
+        "email": mailbox,
+        "subject": "Leadscanner conceptcontrole (niet versturen)",
+        "body": "Dit is een tijdelijke IMAP-concepttest. Er is geen e-mail verstuurd.",
+        "status": "review_draft",
+        "contact_basis_status": "review_required",
+    }
+    _, expected = build_message(row)
+    client = connect_imap()
+    folder = None
+    verified = False
+    deleted = False
+    try:
+        folder = find_drafts_folder(client)
+        require_uidplus(client, "isolated synthetic draft smoke")
+        existing = find_message_ids(client, folder, lead_id)
+        if existing:
+            raise RuntimeError("smoke_identity_collision")
+        result = append_and_verify(
+            client, folder, lead_id, expected, reject_changed_existing=True
+        )
+        if result != "created":
+            raise RuntimeError("smoke_not_newly_created")
+        candidates = find_message_ids(client, folder, lead_id)
+        if len(candidates) != 1:
+            raise RuntimeError("smoke_not_exactly_one")
+        actual = fetch_message(client, candidates[0])
+        if not exact_message_matches(actual, expected):
+            raise RuntimeError("smoke_content_mismatch")
+        uid = uid_for_message_id(client, candidates[0])
+        require_draft_flag(client, uid)
+        verified = True
+    finally:
+        # Even after a failed post-APPEND verification, clean up ONLY the
+        # uniquely tagged synthetic message after exact, local readback.
+        try:
+            if folder is not None:
+                ids = find_message_ids(client, folder, lead_id)
+                if len(ids) == 1:
+                    candidate = fetch_message(client, ids[0])
+                    if exact_message_matches(candidate, expected):
+                        uid = uid_for_message_id(client, ids[0])
+                        uid_expunge_only(
+                            client, folder, uid,
+                            operation="target-only synthetic smoke cleanup",
+                        )
+                        deleted = not find_message_ids(client, folder, lead_id)
+        finally:
+            try:
+                client.logout()
+            except Exception:
+                pass
+    if not verified or not deleted:
+        raise RuntimeError("smoke_verification_or_cleanup_failed")
+    return {
+        "status": "green",
+        "synthetic_draft_created": 1,
+        "exact_imap_readback": 1,
+        "synthetic_draft_cleaned": 1,
+        "emails_sent": 0,
+        "prospect_records_touched": 0,
+    }
 
 
 def main() -> int:
