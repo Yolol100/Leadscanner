@@ -134,7 +134,7 @@ class CoreTests(unittest.TestCase):
             exclusions = fetch_registry()
         self.assertEqual(len(exclusions), 1)
         self.assertIn("example.org", exclusions[0]["identity"]["domains"])
-        auth.assert_called_once()
+        auth.assert_called_once_with(read_only=True)
         read.assert_called_once()
         self.assertNotIn("email", str(exclusions[0]["status"]))
 
@@ -191,7 +191,7 @@ class CoreTests(unittest.TestCase):
         core = Path("scripts/leadscanner_core.py").read_text(encoding="utf-8")
         self.assertNotIn("DEDUPE_REGISTRY_CSV_URL", workflow + core)
         self.assertNotIn("export?format=csv", workflow + core)
-        self.assertIn("_authorized_session()", core)
+        self.assertIn("_authorized_session(read_only=True)", core)
         self.assertIn("LEAD_REGISTRY_SERVICE_ACCOUNT_JSON", workflow)
 
     def test_missing_credentials_do_not_access_external_registry(self):
