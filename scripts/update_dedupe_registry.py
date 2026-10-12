@@ -141,7 +141,7 @@ def exact_rows_present(expected_rows: list[list[str]], current_values: list[list
     return True
 
 
-def _authorized_session():
+def _authorized_session(*, read_only: bool = False):
     raw = (
         os.getenv("LEAD_REGISTRY_SERVICE_ACCOUNT_JSON", "").strip()
         or os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
@@ -160,9 +160,10 @@ def _authorized_session():
     except ImportError as exc:
         raise RuntimeError("google-auth is required for canonical registry writes") from exc
 
+    scope = ("https://www.googleapis.com/auth/spreadsheets.readonly"
+             if read_only else "https://www.googleapis.com/auth/spreadsheets")
     credentials = service_account.Credentials.from_service_account_info(
-        info,
-        scopes=["https://www.googleapis.com/auth/spreadsheets"],
+        info, scopes=[scope],
     )
     return AuthorizedSession(credentials), _text(info.get("client_email"))
 
