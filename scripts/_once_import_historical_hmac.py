@@ -135,7 +135,8 @@ def run() -> dict:
         # This POST may have an uncertain result on transport failure.
         # Never retry blindly: exit, re-read on the next full run, append
         # ONLY identities not found with exact contents.
-        append_values(sheets, DEFAULT_SPREADSHEET_ID, TAB_NAME, missing)
+        if missing:
+            append_values(sheets, DEFAULT_SPREADSHEET_ID, TAB_NAME, missing)
         after = validate_rows(
             read_live_values(sheets, DEFAULT_SPREADSHEET_ID, TAB_NAME),
             secret, complete=False,
