@@ -185,6 +185,20 @@ class CoreTests(unittest.TestCase):
         self.assertIn('"failed_stage": "bootstrap"', buffer.getvalue())
         self.assertNotIn("private-recipient", buffer.getvalue())
 
+    def test_no_live_pipeline_reads_public_registry_csv(self):
+        from pathlib import Path
+        workflow = Path(".github/workflows/leads-cold.yml").read_text(encoding="utf-8")
+        core = Path("scripts/leadscanner_core.py").read_text(encoding="utf-8")
+        self.assertNotIn("DEDUPE_REGISTRY_CSV_URL", workflow + core)
+        self.assertNotIn("export?format=csv", workflow + core)
+        self.assertIn("_authorized_session()", core)
+        self.assertIn("LEAD_REGISTRY_SERVICE_ACCOUNT_JSON", workflow)
+
+    def test_missing_credentials_do_not_access_external_registry(self):
+        with patch("leadscanner_core._authorized_session",
+                   side_effect=RuntimeError("no account")):
+            with self.assertRaises(RuntimeError):
+                fetch_registry()
     def test_workflow_excludes_sending_and_public_artifacts(self):
         from pathlib import Path
         text = Path(".github/workflows/leads-cold.yml").read_text(encoding="utf-8")
