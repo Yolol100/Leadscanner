@@ -26,6 +26,10 @@ OUTPUT_KEYS = (
     "duplicate_source_id", "missing_normalized_email", "duplicate_email",
     "new_lead_email_ineligible", "copy_subject_and_body", "copy_partial",
     "copy_absent", "blocked_status_flag",
+    "raw_company_name", "raw_website", "raw_company_domain",
+    "payload_company_name", "payload_website", "payload_official_domain",
+    "name_hint_resolved", "site_hint_resolved", "site_and_name_resolved",
+    "site_without_name", "name_without_site", "neither_name_nor_site",
 )
 FATAL_KEYS = (
     "invalid_rows", "wrong_list", "invalid_source_id", "duplicate_source_id",
@@ -77,6 +81,19 @@ def classify(records: list[object]) -> Counter:
                 has_copy = True
             elif has_subject or has_body:
                 partial_copy = True
+        if str(row.get("company_name") or "").strip():
+            result["raw_company_name"] += 1
+        if str(row.get("website") or "").strip():
+            result["raw_website"] += 1
+        if str(row.get("company_domain") or "").strip():
+            result["raw_company_domain"] += 1
+        if str(vals.get("companyName") or vals.get("company_name") or "").strip():
+            result["payload_company_name"] += 1
+        if str(vals.get("website") or "").strip():
+            result["payload_website"] += 1
+        if any(str(vals.get(prefix + "official_domain") or "").strip()
+               for prefix in ("leadscanner_site_refresh_", "leadscanner_site_candidate_")):
+            result["payload_official_domain"] += 1
         if has_copy:
             result["copy_subject_and_body"] += 1
         elif partial_copy:
@@ -130,6 +147,16 @@ def main() -> int:
         with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
             rows, pages = read_source()
             result = classify(rows)
+            from _once_historical_site_redraft import historical_site, historical_name
+            for row in rows:
+                site = bool(historical_site(row))
+                name = bool(historical_name(row))
+                result["site_hint_resolved"] += int(site)
+                result["name_hint_resolved"] += int(name)
+                result["site_and_name_resolved"] += int(site and name)
+                result["site_without_name"] += int(site and not name)
+                result["name_without_site"] += int(name and not site)
+                result["neither_name_nor_site"] += int(not site and not name)
             result["pages"] = pages
     except Exception as error:
         allowed = {
