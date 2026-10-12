@@ -23,7 +23,7 @@ import requests
 
 from dedupe_preflight import domains_match, normalize_domain, match_candidate, load_registry
 from first_party_contacts import preferred_contact_links, select_site_contact
-from instantly_site_crawl import PoliteSiteSession
+from site_crawl import PoliteSiteSession
 from url_safety import is_public_http_url
 
 MAX_DISCOVERY = 5000

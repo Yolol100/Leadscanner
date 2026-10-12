@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch
 
 import requests
-from instantly_site_crawl import PoliteSiteSession
+from site_crawl import PoliteSiteSession
 from cold_stages import _site_session
 
 from cold_stages import (
@@ -248,7 +248,7 @@ class ColdStagesTests(unittest.TestCase):
             session = _site_session(lambda: raw, "acmefietsen.nl")
             self.assertIsInstance(session, PoliteSiteSession)
 
-    @patch("instantly_site_crawl.is_public_http_url", return_value=True)
+    @patch("site_crawl.is_public_http_url", return_value=True)
     @patch("cold_stages.is_public_http_url", return_value=True)
     def test_robots_disallow_prevents_cold_html_request(self, _url_safe, _robot_url_safe):
         robots = FakeResponse(

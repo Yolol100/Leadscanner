@@ -1,106 +1,47 @@
 # Leadscanner
 
-Leadscanner onderzoekt bedrijfswebsites en webshops, selecteert controleerbare bevindingen en maakt **concepten ter beoordeling**. De gebruiker hoeft niet met de tientallen technische tussenstappen te werken.
+**Bedrijven zoeken → websites onderzoeken → e-mailadres controleren → persoonlijke mail schrijven → concept in mijn.host bewaren.**
 
-**Kort gezegd: zoeken → onderzoeken → kiezen → beoordelen.** Niets wordt automatisch verzonden.
+Geen campagnesoftware en geen automatische verzending. Je bekijkt de concepten in mijn.host en beslist zelf of verzenden passend en toegestaan is.
 
-**Privacybeperking (11 oktober 2026):** deze repository is momenteel **openbaar**. De
-**persoonlijke preview met contactgegevens en conceptmails**, het opslaan van
-mailboxconcepten en **reguliere Instantly-staging** blijven geblokkeerd totdat de
-repository **privé** is. De afzonderlijke `public_audit` mag wel publieke websites lezen
-en alleen geanonimiseerde tellingen rapporteren. De reviewbestanden
-bevatten zakelijke contactadressen en persoonlijke conceptteksten; deze horen
-niet in publiek downloadbare GitHub Actions-artifacts.
+## Starten
 
-**Eenmalige historische overdracht (12 oktober 2026):** de al geïsoleerd in
-Instantly opgeslagen 1.128 historische contacten hebben 776 door de gebruiker
-bevestigde, brongebonden reviewvoorstellen. Een afzonderlijke, geautoriseerde
-GitHub-run kopieert deze alleen naar de **bestaande, niet-verzendende NL/EN
-Draft/Paused-campagnes zonder afzenders** en bewaart bronrecords en oude mails.
-De geheime Instantly- en Sheet-gegevens blijven uitsluitend in het runnergeheugen;
-openbare logs bevatten alleen aantallen en er zijn geen prospectartifacts.
-Er ontstaat géén toestemming om te mailen of een campagne te activeren.
-De eerste echte Instantly-proefkopie is met succes afgerond en via exact destination- en registry-readback bevestigd. De totale overdracht verloopt in gecontroleerde, hervatbare batches; bij een onbekende provideruitkomst volgt eerst een read-only reconciliatie, nooit een blinde herhaling.
-Reguliere persoonlijke previews blijven privé-only.
+Open [GitHub Actions — Leadscanner](../../actions/workflows/leads-cold.yml), kies Run workflow en vul regio en branches in.
 
-**Herstelstatus 12 oktober 2026 — live geverifieerd:** de afgeschermde read-only Instantly-audit ([Actions #38289469021](../../actions/runs/38289469021)) bevestigt **1.128 originele contacten**, **776 brongebonden reviewvoorstellen**, **247 volledig en exact opgeslagen doelkopieën**, **529 nog te stagen**, **135 research-only** en **217 zonder geschikt voorstel**. Er zijn 0 dubbele kopieën, 0 onjuist gepersonaliseerde kopieën, 0 actieve/onzorgvuldige doelcampagnes. De onafhankelijke Instantly-billing-API rapporteert een beschikbare capaciteit van slechts **1–9 contacten**, onvoldoende voor de resterende 529; mogelijke kopieerjob-fouten zijn daardoor geen reden voor blinde POST-retries. De bestaande staging bevat nu een **fail-closed capaciteitscontrole vóór elke nieuwe copy-batch**, terwijl al bestaande exacte doelkopieën veilig worden gereconcilieerd. **580 tests geslaagd.** Er is niets verzonden of geactiveerd. De volledige overdracht kan pas veilig worden hervat zodra de eigenaar voldoende campagnecontactruimte beschikbaar maakt (minstens 529 vrije plaatsen) en de read-only controle opnieuw groen en voldoende is. Er is geen abonnement gewijzigd en er zijn geen oudere contacten/campagnes verwijderd.
-
-**Oude artifact-opslag gecontroleerd (11 oktober 2026):** tijdens drie eenmalige
-Actions-opschonings-/verificatieruns zijn 105 artifacts verwijderd (waaronder
-tijdelijke controlerapporten uit die runs). Bij de laatste API-readback bleven
-40 artifacts over; allemaal met een expliciet toegelaten naam voor
-geanonimiseerde site-research- of Instantly-sync-tellingen. Volgens die
-inventaris bleven 0 verdachte of niet-geclassificeerde artifacts over.
-Zie [het technische auditbewijs](docs/operations/artifact-cleanup-and-smoke-20261011.md).
-
-Deze opschoning verwijdert **geen oude Actions-logs** of externe kopieën die
-mogelijk al zijn gedownload; die moeten zo nodig afzonderlijk worden
-beoordeeld. Maak de repository privé via GitHub Settings > General >
-Danger Zone > Change repository visibility voordat een persoonlijke preview met bewaarde contactgegevens,
-Instantly-staging of mijn.host-conceptopslag wordt uitgevoerd.
-
-
-## De vier stappen
-
-| Stap | Wat gebeurt er? | Wat zie je? |
+| Modus | Wat gebeurt er? | Toegang |
 | --- | --- | --- |
-| 1. Zoeken | Vind bedrijven met een publieke website, controleer bestaande uitsluitingen en bevestig de site. **Een e-mailadres is hier niet vereist.** | Aantal vindbare websites |
-| 2. Onderzoeken | Bekijk de homepage en maximaal twaalf extra bereikbare publieke pagina's. Wissel diensten/producten en Over ons/Team/Contact af, zodat één type pagina de onderzoeksruimte niet opslokt. Zoek pas daarna het best onderbouwde contactadres. | Websiteobservaties, persoon + e-mailbron indien gevonden |
-| 3. Kiezen | Deel opvallende feiten in categorieën in, rangschik ze en neem de **maximaal zes belangrijkste onderbouwde punten** voor de review (hoogstens drie als korte, letterlijk onderbouwde highlights in de conceptmail) mee. Herhaal hetzelfde onderwerp niet meer dan twee keer en vul een sterke selectie niet met zwakke opmerkingen. Minder als er minder bewijs is. | Prioriteit, categorie, observatie, bron |
-| 4. Beoordelen | Kies eerst een aantoonbaar persoonlijk adres van eigenaar/team, anders een gepubliceerd algemeen adres (ook via externe mailprovider). Zonder adres blijft het websiteonderzoek geldig, maar ontstaat geen geadresseerde conceptmail. | Openbare `public_audit`: alleen tellingen; privé `preview`: review-queue en tokens |
+| **public_audit** | Onderzoek en mailkwaliteit testen, uitsluitend anonieme aantallen | Openbare repository mogelijk |
+| **drafts** | Onderzoek plus gecontroleerde concepten in mijn.host | **Privé-repository vereist** |
 
-Een observatie is niet automatisch een bewezen probleem. Leadscanner mag geen gebreken, resultaten of omzetverbeteringen verzinnen. Algemene reclamezinnen zijn onvoldoende onderbouwing. De scanner volgt ook relevante interne vervolgpagina's binnen het vaste paginabudget. Een korte zin met onduidelijke taal kan alleen via extra, officiële site-inhoud worden geduid. Publieke tellingen tonen uitsluitend bekende statuscategorieën, nooit vrije website- of prospectteksten.
+**Belangrijk:** de repository is momenteel openbaar. Zet deze eerst privé via GitHub Settings → General → Change repository visibility voor echte concepten. Dit wordt niet automatisch gewijzigd.
 
-## Aan de slag
+### Benodigde GitHub Secrets voor drafts
+- OUTREACH_MAIL_PASSWORD — wachtwoord van de mijn.host-mailbox.
+- LEAD_REGISTRY_SERVICE_ACCOUNT_JSON (of GOOGLE_SERVICE_ACCOUNT_JSON) — toegang voor dedupe-registratie.
 
-Gebruik [GitHub Actions — Leads Cold Pipeline](../../actions/workflows/leads-cold.yml) en kies **Run workflow** op `main`.
+Optionele GitHub Variables: OUTREACH_IMAP_HOST, OUTREACH_IMAP_PORT, OUTREACH_MAIL_USER, OUTREACH_SENDER_NAME, OUTREACH_SENDER_EMAIL en OUTREACH_DRAFT_FOLDER.
 
-- **`public_audit` (standaard, werkt in openbare repository):** live websiteonderzoek met maximaal 60 bedrijven, de bestaande dedupecontrole, eigenaar-/team-/contactpagina's, prioritering en conceptvalidatie. De inhoud blijft tijdelijk in werkgeheugen; alleen geanonimiseerde tellingen worden gepubliceerd. Niemand wordt gemaild, goedgekeurd of gestaged.
-- **`preview` (alleen in een privé-repository):** onderzoek en maak een review-overzicht; geen wijzigingen in mailbox, Instantly of de deduplicatieregistratie. `preview_copy_mode=reviewed_mail` is de **default** en maakt een korte Nederlandstalige of Engelstalige conceptmail. Met `preview_copy_mode=instantly_sequence` exporteer je alleen gecontroleerde feiten, zonder conceptmail.
-- **`instantly_stage`:** zet **expliciet goedgekeurde** contacten klaar in een toegestane Draft/Paused Instantly-campagne. Vereist het oorspronkelijke `preview_run_id`, exacte `approved_review_tokens`, een campagne-ID en bevestiging. De campagne wordt **niet geactiveerd**.
-- **`draft`:** optionele fallback voor concepten in mijn.host. Ook dit vereist een exacte eerdere preview, goedkeuring en bevestiging. Fact-only records kunnen niet als mailboxconcept worden opgeslagen.
+IMAP gebruikt beveiligde verbinding en poort 993. Er is **geen SMTP-verzendfunctie** en er worden geen persoonsgegevens als GitHub-artifact geüpload.
 
-**Openbare `public_audit`:** bekijk alleen de geanonimiseerde tellingen in de GitHub job summary; deze modus uploadt geen review-artifact. **Privé `preview`:** open eerst `overzicht.md` en beoordeel daarna afzonderlijke kandidaten in `review-queue.md` of de CSV. Technische JSON-bestanden zijn bedoeld voor diagnose en herstel, niet voor dagelijks gebruik.
+## Eén eenvoudige route
 
-## Waarom gaat iets op hold?
+1. Bedrijven met website vinden via PDOK/Overture.
+2. Oude contacten/bedrijven/domeinen uitsluiten met het dedupe-register.
+3. Officiële websites en maximaal twaalf relevante interne pagina's onderzoeken, ook zonder e-mailadres.
+4. Een daadwerkelijk gepubliceerd contact van eigenaar/medewerker controleren, anders zakelijk algemeen adres.
+5. Maximaal zes echt onderbouwde observaties selecteren; een opvallend onderdeel is niet automatisch een probleem.
+6. Eén korte Nederlandstalige of Engelstalige e-mail schrijven met een concreet sitefeit, één voorstel en één vraag. Inhoud automatisch valideren.
+7. Dedupe opnieuw controleren, een mijn.host Draft aanmaken en exact teruglezen.
+8. Pas na succesvolle opslag het contact in de dedupe-registratie vastleggen. Concepten blijven ter menselijke beoordeling.
 
-Een bedrijf wordt niet automatisch geschikt omdat het een website heeft. Mogelijke oorzaken:
+Zonder bron, geldig contact, goede mail of nieuwe identiteit ontstaat geen draft. Bestaande gewijzigde drafts worden niet overschreven.
 
-- Bedrijf al bekend, onderdrukt of eerder onderzocht; nooit blind opnieuw benaderen.
-- Geen gepubliceerd e-mailadres: **websiteonderzoek gaat gewoon door**. Publiek gepubliceerde zakelijke e-mails in bij het bedrijf passende schema.org JSON-LD tellen ook mee wanneer de koppeling met het bedrijf bevestigd is. Een expliciet vermelde persoon uit dezelfde bedrijfsgegevens krijgt alleen voorrang als diens werkgever en eigen e-mailadres controleerbaar aan het bedrijf zijn gekoppeld. Een aantoonbaar contactformulier, telefoonlink of bezochte Contact-pagina wordt apart geregistreerd. Een Contact-pagina bewijst niet dat het formulier werkt; geen van deze routes is een e-mailadres en niets wordt automatisch gebruikt. Een geadresseerde conceptmail blijft achterwege.
-- Een geverifieerde website telt als onderzocht na bezoek, ook zonder voldoende concrete observaties. **Onderzochte websites** zijn dus niet hetzelfde als **websites met bruikbare bevindingen**. De kwaliteitsmeting telt bruikbaar bewijs **apart**; geen geforceerde bevindingen om een hoog cijfer te halen.
-- De openbare onderzoeksrun toont aparte **anonieme** aantallen voor bezochte sites, bruikbaar bewijs, gevonden e-mailadressen, contactformulieren, telefoonlinks en contactpagina's. Een gevonden contactroute is niet hetzelfde als een geverifieerd e-mailadres of een goedgekeurd concept.
-- Website onbereikbaar of robots-/domeinveiligheid laat lezen niet toe. Bij een verouderde URL probeert de scanner maximaal twee veilige alternatieven op hetzelfde domein; robots- of toegangswigeringen worden nooit omzeild.
-- Geen concrete, controleerbare observatie of geen betrouwbare taalherkenning.
-- Concept of broncontrole voldoet niet aan het contract.
+## Privacy, toestemming en historisch werk
 
-De privacyveilige `funnel-metrics.json` bevat aantallen per reden. De gebruiksvriendelijke `overzicht.md` toont de belangrijkste groepen. Houd- of afwijsregels worden **niet** versoepeld door het uiterlijk eenvoudiger te maken.
+Openbare runs tonen alleen cijfers. Privé-runs verwerken adressen en concepten in afgeschermd runnergeheugen en mijn.host. Geen SMTP, geen verzendschema's.
 
-## Veiligheid, goedkeuring en verzending
+Een gepubliceerd zakelijk e-mailadres of een opgeslagen concept is **geen toestemming om reclame te mailen**. De gebruiker beslist afzonderlijk en moet de toepasselijke regels en opt-outs controleren.
 
-**Preview ≠ goedkeuring ≠ staging ≠ verzending.** Alle vier zijn gescheiden.
+De eerdere contacten in een externe campagnedienst worden niet verwijderd of gemigreerd door deze codewijziging. Het bestaande uitsluitregister blijft behouden. Voor oude, nog niet in mijn.host opgeslagen concepten is een afzonderlijk afgeschermd export/import-traject nodig.
 
-1. Dedupe-controle gebeurt vóór websiteonderzoek en opnieuw direct vóór staging. De Google Sheet Lead Dedupe Registry is alleen voor uitsluiting, niet als onderzoeksbron.
-2. Verifieer eerst de officiële website, ongeacht e-mail. Onderzoek die site breed. Zoek daarna een gepubliceerd adres met voorrang voor een aantoonbaar genoemde eigenaar of teamlid. Algemene adressen zijn fallback; een persoonlijk adres wordt nooit geraden. Bron-URL's, contactidentiteit en observaties blijven aan review en goedkeuring gekoppeld.
-3. Review-tokens en preview-snapshots worden aan de inhoud gebonden. Aangepaste of verouderde bronnen/tekst vereisen een nieuwe goedkeuring.
-4. Instantly-staging vereist exacte autorisatie, campagnecontrole, geldige mergevelden en succesvolle readback. Fact-only templates vereisen bovendien een afzonderlijk goedgekeurde **Draft-campagne met precies drie e-mailstappen**.
-5. **Verzenden/activeren is een aparte handeling** en vereist een aantoonbare contact-/toestemmingsgrondslag per lead, ontvanger- en campagnecontroles en nieuwe expliciete bevestiging. Een publiek zakelijk e-mailadres is **geen toestemming**.
-6. Achtergrondreconciliatie leest Instantly en werkt alleen bekende registratieregels bij; maakt geen leads of verzendingen.
-
-Bij een mislukte veiligheidscontrole stopt de betreffende mutatie. Er worden geen contactgegevens of e-mailinhoud geplaatst in publieke status- of controlebestanden.
-
-## Technische indeling
-
-| Onderdeel | Bestand(en) | Verantwoordelijkheid |
-| --- | --- | --- |
-| Discovery/dedupe | `overture_discovery.py`, `dedupe_preflight.py` | Nieuwe kandidaten, bestaande uitsluitingen |
-| Website + contact | `cold_stages.py`, `first_party_contacts.py`, `instantly_site_crawl.py` | Eerst officiële site onderzoeken, daarna benoemde eigenaar of algemeen contact vinden |
-| Prioriteiten + copy | `outreach_stages.py` | Eén gedeelde selectie- en conceptlogica, ook voor historisch onderzoek |
-| Review | `review_draft_stages.py`, `review_selection.py`, `preview_snapshot.py` | Kandidaten, bronlijst, onwijzigbare goedkeuringen |
-| Kort overzicht | `simple_overview.py` | Eén leesbaar, geanonimiseerd run-overzicht |
-| Instantly | `instantly_client.py`, `instantly_service.py`, `instantly_control.py` | Alleen uitdrukkelijk toegestane API-acties, exacte controles |
-| Status/kwaliteit | `funnel_metrics.py`, `coverage_audit.py`, `cold_run_manifest.py`, `instantly_audit.py` | Cijfers, audit en uitvoerbewijs |
-
-De instap is eenvoudig gehouden; de harde veiligheidscontroles blijven bewust expliciet in de code. Voor ontwikkelregels en exacte campagnevoorwaarden: [AGENTS.md](AGENTS.md). Voor historische technische audits en migratieachtergrond: [docs/](docs/).
-
-Het losse historisch Instantly-websiteonderzoek gebruikt `.github/workflows/historical-site-research.yml` en bewaart alleen reviewvoorstellen; codewijzigingen starten niet automatisch een volledige nieuwe historische scan. Bestaande beoordeelde of verzonden contacten blijven beschermd.
+Lees [mailkwaliteit](docs/mailkwaliteit.md) en [technische regels](AGENTS.md).

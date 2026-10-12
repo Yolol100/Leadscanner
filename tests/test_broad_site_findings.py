@@ -3,8 +3,7 @@ import unittest
 from unittest.mock import patch
 
 from cold_stages import broad_research_links, parse_html
-from outreach_stages import select_one_reason, value_action_for, body_for, validate_mail
-from instantly_historical_site_research import draft_for_review
+from outreach_stages import select_one_reason, value_action_for, body_for, validate_mail, draft_for_review
 
 
 def item(text, path):

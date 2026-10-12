@@ -1,280 +1,62 @@
-name: Leads Cold Pipeline
+name: Leadscanner — websiteonderzoek en mijn.host-concepten
 
 on:
-  schedule:
-    - cron: '*/15 * * * *'
   workflow_dispatch:
     inputs:
       execution_mode:
-        description: 'public_audit = veilige openbare live test; preview = private review; instantly_stage/draft = alleen na goedkeuring'
+        description: 'Openbare controle of echte concepten in mijn.host (alleen privé-repository)'
         required: true
         default: public_audit
         type: choice
         options:
           - public_audit
-          - preview
-          - instantly_stage
-          - draft
-      preview_copy_mode:
-        description: 'reviewed_mail = gecontroleerde NL/EN Leadscanner-mail; instantly_sequence = alleen feiten voor aparte template'
-        required: true
-        default: reviewed_mail
-        type: choice
-        options:
-          - instantly_sequence
-          - reviewed_mail
-      confirm_instantly_stage:
-        description: 'Alleen aanvinken bij execution_mode=instantly_stage'
-        required: true
-        default: false
-        type: boolean
-      confirm_review_drafts:
-        description: 'Alleen aanvinken bij execution_mode=draft'
-        required: true
-        default: false
-        type: boolean
-      approved_review_tokens:
-        description: 'Instantly-stage/draft: approval tokens uit de gekozen preview'
-        required: false
-        default: ''
-        type: string
-      preview_run_id:
-        description: 'Instantly-stage/draft: GitHub Actions run ID van de goedgekeurde preview'
-        required: false
-        default: ''
-        type: string
-      instantly_campaign_id:
-        description: 'Instantly-stage: auto_language routeert gecontroleerde NL/EN tekst; anders exact campagne-ID'
-        required: false
-        default: auto_language
-        type: string
-      instantly_sequence_approval:
-        description: 'Fact-only staging: APPROVE_INSTANTLY_SEQUENCE <campaign_id> <audited_sha256>; uitsluitend voor Draft met 3 e-mails'
-        required: false
-        default: ''
-        type: string
+          - drafts
       region:
-        description: 'Preview mode: plaats/regio voor cold discovery'
-        required: false
-        default: ''
+        description: 'Plaats of regio'
+        default: Amsterdam
         type: string
       keywords:
-        description: 'Preview mode: komma- of newlinegescheiden branches/zoektermen'
-        required: false
-        default: ''
+        description: 'Branches/zoekwoorden, komma-gescheiden'
+        default: fietsenwinkel,bloemist,kapsalon
         type: string
       target_candidates:
-        description: 'Preview mode: max discovery candidates met website (1-5000)'
-        required: true
+        description: 'Aantal kandidaten met website (1–5000)'
         default: '100'
         type: string
       verify_limit:
-        description: 'Preview mode: max kandidaten voor verification/research (1-100)'
-        required: true
+        description: 'Maximaal te onderzoeken bedrijven (1–100)'
         default: '100'
         type: string
       radius_km:
-        description: 'Preview mode: Overture zoekstraal in km (0.5-50)'
-        required: true
+        description: 'Zoekstraal in kilometers (0.5–50)'
         default: '8'
         type: string
   push:
     branches: [main]
     paths:
       - '.github/workflows/leads-cold.yml'
+      - 'scripts/**'
+      - 'tests/**'
       - 'requirements-cold.txt'
-      - 'config/instantly-control.json'
-      - 'instantly-commands/README.md'
-      - 'instantly-commands/inbox/*.json'
-      - 'scripts/dedupe_preflight.py'
-      - 'scripts/cold_stages.py'
-      - 'scripts/first_party_contacts.py'
-      - 'scripts/instantly_site_crawl.py'
-      - 'scripts/overture_discovery.py'
-      - 'scripts/outreach_stages.py'
-      - 'scripts/funnel_metrics.py'
-      - 'scripts/coverage_audit.py'
-      - 'scripts/cold_run_manifest.py'
-      - 'scripts/simple_overview.py'
-      - 'scripts/review_draft_stages.py'
-      - 'scripts/review_selection.py'
-      - 'scripts/preview_snapshot.py'
-      - 'scripts/approval_revalidation.py'
-      - 'scripts/myhost_draft.py'
-      - 'scripts/myhost_instantly_import.py'
-      - 'scripts/instantly_language_campaigns.py'
-      - 'scripts/instantly_campaign_copy.py'
-      - 'scripts/instantly_mail_quality.py'
-      - 'scripts/instantly_preview_audit.py'
-      - 'scripts/instantly_signature_repair.py'
-      - 'scripts/instantly_language_route.py'
-      - 'scripts/instantly_historical_site_research.py'
-      - 'scripts/historical_handoff_audit.py'
-      - 'scripts/historical_handoff_stage.py'
-      - 'scripts/instantly_launch_audit.py'
-      - 'scripts/instantly_old_campaign_retire.py'
-      - 'scripts/update_dedupe_registry.py'
-      - 'scripts/url_safety.py'
-      - 'scripts/instantly_client.py'
-      - 'scripts/instantly_webhook.py'
-      - 'scripts/instantly_service.py'
-      - 'scripts/instantly_control.py'
-      - 'scripts/instantly_sync.py'
-      - 'scripts/instantly_audit.py'
-      - 'scripts/cleanup_sensitive_artifacts.py'
-      - 'scripts/synthetic_preview_smoke.py'
-      - 'scripts/public_live_preview.py'
-      - 'tests/test_dedupe_preflight.py'
-      - 'tests/test_broad_site_findings.py'
-      - 'tests/test_cold_stages.py'
-      - 'tests/test_first_party_contacts.py'
-      - 'tests/test_outreach_stages.py'
-      - 'tests/test_simple_review_flow.py'
-      - 'tests/test_simple_overview.py'
-      - 'tests/test_simple_control_dispatch.py'
-      - 'tests/test_funnel_metrics.py'
-      - 'tests/test_coverage_audit.py'
-      - 'tests/test_overture_discovery.py'
-      - 'tests/test_cold_run_manifest.py'
-      - 'tests/test_review_draft_stages.py'
-      - 'tests/test_review_selection.py'
-      - 'tests/test_simple_review_flow.py'
-      - 'tests/test_preview_snapshot.py'
-      - 'tests/test_approval_revalidation.py'
-      - 'tests/test_myhost_draft.py'
-      - 'tests/test_myhost_instantly_import.py'
-      - 'tests/test_instantly_language_campaigns.py'
-      - 'tests/test_instantly_campaign_copy.py'
-      - 'tests/test_instantly_template_rendering.py'
-      - 'tests/test_instantly_mail_quality.py'
-      - 'tests/test_instantly_preview_audit.py'
-      - 'tests/test_instantly_signature_repair.py'
-      - 'tests/test_instantly_language_route.py'
-      - 'tests/test_instantly_historical_site_research.py'
-      - 'tests/test_historical_handoff_audit.py'
-      - 'tests/test_historical_handoff_stage.py'
-      - 'tests/test_instantly_launch_audit.py'
-      - 'tests/test_instantly_old_campaign_retire.py'
-      - 'tests/test_update_dedupe_registry.py'
-      - 'tests/test_url_safety.py'
-      - 'tests/test_instantly_client.py'
-      - 'tests/test_instantly_webhook.py'
-      - 'tests/test_instantly_service.py'
-      - 'tests/test_instantly_control.py'
-      - 'tests/test_instantly_sync.py'
-      - 'tests/test_instantly_audit.py'
-      - 'tests/test_privacy_and_rank.py'
-      - 'tests/test_artifact_cleanup_and_smoke.py'
-      - 'tests/test_public_live_preview.py'
-      - 'tests/test_pipeline_contract_scenarios.py'
-      - 'AGENTS.md'
       - 'README.md'
-      - 'docs/INSTANTLY_AUDIT_PROMPT.md'
+      - 'AGENTS.md'
   pull_request:
     paths:
       - '.github/workflows/leads-cold.yml'
+      - 'scripts/**'
+      - 'tests/**'
       - 'requirements-cold.txt'
-      - 'config/instantly-control.json'
-      - 'instantly-commands/README.md'
-      - 'instantly-commands/inbox/*.json'
-      - 'scripts/dedupe_preflight.py'
-      - 'scripts/cold_stages.py'
-      - 'scripts/overture_discovery.py'
-      - 'scripts/outreach_stages.py'
-      - 'scripts/funnel_metrics.py'
-      - 'scripts/coverage_audit.py'
-      - 'scripts/cold_run_manifest.py'
-      - 'scripts/simple_overview.py'
-      - 'scripts/review_draft_stages.py'
-      - 'scripts/review_selection.py'
-      - 'scripts/preview_snapshot.py'
-      - 'scripts/approval_revalidation.py'
-      - 'scripts/myhost_draft.py'
-      - 'scripts/myhost_instantly_import.py'
-      - 'scripts/instantly_language_campaigns.py'
-      - 'scripts/instantly_campaign_copy.py'
-      - 'scripts/instantly_mail_quality.py'
-      - 'scripts/instantly_preview_audit.py'
-      - 'scripts/instantly_signature_repair.py'
-      - 'scripts/instantly_language_route.py'
-      - 'scripts/instantly_historical_site_research.py'
-      - 'scripts/historical_handoff_audit.py'
-      - 'scripts/historical_handoff_stage.py'
-      - 'scripts/instantly_launch_audit.py'
-      - 'scripts/instantly_old_campaign_retire.py'
-      - 'scripts/update_dedupe_registry.py'
-      - 'scripts/url_safety.py'
-      - 'scripts/instantly_client.py'
-      - 'scripts/instantly_webhook.py'
-      - 'scripts/instantly_service.py'
-      - 'scripts/instantly_control.py'
-      - 'scripts/instantly_sync.py'
-      - 'scripts/instantly_audit.py'
-      - 'scripts/cleanup_sensitive_artifacts.py'
-      - 'scripts/synthetic_preview_smoke.py'
-      - 'scripts/public_live_preview.py'
-      - 'tests/test_dedupe_preflight.py'
-      - 'tests/test_cold_stages.py'
-      - 'tests/test_first_party_contacts.py'
-      - 'tests/test_outreach_stages.py'
-      - 'tests/test_simple_review_flow.py'
-      - 'tests/test_simple_overview.py'
-      - 'tests/test_simple_control_dispatch.py'
-      - 'tests/test_funnel_metrics.py'
-      - 'tests/test_coverage_audit.py'
-      - 'tests/test_overture_discovery.py'
-      - 'tests/test_cold_run_manifest.py'
-      - 'tests/test_review_draft_stages.py'
-      - 'tests/test_review_selection.py'
-      - 'tests/test_simple_review_flow.py'
-      - 'tests/test_preview_snapshot.py'
-      - 'tests/test_approval_revalidation.py'
-      - 'tests/test_myhost_draft.py'
-      - 'tests/test_myhost_instantly_import.py'
-      - 'tests/test_instantly_language_campaigns.py'
-      - 'tests/test_instantly_campaign_copy.py'
-      - 'tests/test_instantly_template_rendering.py'
-      - 'tests/test_instantly_mail_quality.py'
-      - 'tests/test_instantly_preview_audit.py'
-      - 'tests/test_instantly_signature_repair.py'
-      - 'tests/test_instantly_language_route.py'
-      - 'tests/test_instantly_historical_site_research.py'
-      - 'tests/test_historical_handoff_audit.py'
-      - 'tests/test_historical_handoff_stage.py'
-      - 'tests/test_instantly_launch_audit.py'
-      - 'tests/test_instantly_old_campaign_retire.py'
-      - 'tests/test_update_dedupe_registry.py'
-      - 'tests/test_url_safety.py'
-      - 'tests/test_instantly_client.py'
-      - 'tests/test_instantly_webhook.py'
-      - 'tests/test_instantly_service.py'
-      - 'tests/test_instantly_control.py'
-      - 'tests/test_instantly_sync.py'
-      - 'tests/test_instantly_audit.py'
-      - 'tests/test_privacy_and_rank.py'
-      - 'tests/test_artifact_cleanup_and_smoke.py'
-      - 'tests/test_public_live_preview.py'
-      - 'tests/test_pipeline_contract_scenarios.py'
-      - 'AGENTS.md'
-      - 'README.md'
-      - 'docs/INSTANTLY_AUDIT_PROMPT.md'
 
 permissions:
   contents: read
-  actions: read
-
-concurrency:
-  group: leads-cold-${{ github.event_name }}-${{ github.event_name == 'workflow_dispatch' && inputs.execution_mode || github.sha }}
-  cancel-in-progress: false
 
 env:
   DEDUPE_REGISTRY_CSV_URL: https://docs.google.com/spreadsheets/d/1p4vZnCdcex9zpTAV-ssebXqZcBS2TU6KfXwS-4d2iSI/export?format=csv&gid=1354777664
 
 jobs:
   test:
-    if: github.event_name != 'schedule'
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -282,108 +64,20 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
-          cache: pip
-          cache-dependency-path: requirements-cold.txt
-      - run: python3 -m pip install --disable-pip-version-check 'requests>=2,<3' 'google-auth>=2,<3'
-      - name: Run focused active-path tests
+      - run: python3 -m pip install --disable-pip-version-check -r requirements-cold.txt
+      - name: Test only the active core, website, dedupe and draft path
         env:
           PYTHONPATH: scripts
         run: |
           set -euo pipefail
-          python3 -m compileall -q \
-            scripts/dedupe_preflight.py \
-            scripts/cold_stages.py \
-            scripts/first_party_contacts.py \
-            scripts/instantly_site_crawl.py \
-            scripts/outreach_stages.py \
-            scripts/funnel_metrics.py \
-            scripts/coverage_audit.py \
-            scripts/cold_run_manifest.py \
-            scripts/simple_overview.py \
-            scripts/review_draft_stages.py \
-            scripts/review_selection.py \
-            scripts/preview_snapshot.py \
-            scripts/approval_revalidation.py \
-            scripts/myhost_draft.py \
-            scripts/myhost_instantly_import.py \
-            scripts/instantly_language_campaigns.py \
-            scripts/instantly_campaign_copy.py \
-            scripts/instantly_mail_quality.py \
-            scripts/instantly_preview_audit.py \
-            scripts/instantly_signature_repair.py \
-            scripts/instantly_language_route.py \
-            scripts/instantly_historical_site_research.py \
-            scripts/historical_handoff_audit.py \
-            scripts/historical_handoff_stage.py \
-            scripts/instantly_launch_audit.py \
-            scripts/instantly_old_campaign_retire.py \
-            scripts/update_dedupe_registry.py \
-            scripts/overture_discovery.py \
-            scripts/url_safety.py \
-            scripts/instantly_client.py \
-            scripts/instantly_webhook.py \
-            scripts/instantly_service.py \
-            scripts/instantly_control.py \
-            scripts/instantly_sync.py \
-            scripts/instantly_audit.py \
-            scripts/cleanup_sensitive_artifacts.py \
-            scripts/synthetic_preview_smoke.py \
-            scripts/public_live_preview.py
-          python3 -m unittest \
-            tests.test_dedupe_preflight \
-            tests.test_cold_stages \
-            tests.test_first_party_contacts \
-            tests.test_broad_site_findings \
-            tests.test_outreach_stages \
-            tests.test_simple_review_flow \
-            tests.test_simple_overview \
-            tests.test_simple_control_dispatch \
-            tests.test_funnel_metrics \
-            tests.test_coverage_audit \
-            tests.test_overture_discovery \
-            tests.test_cold_run_manifest \
-            tests.test_review_draft_stages \
-            tests.test_review_selection \
-            tests.test_preview_snapshot \
-            tests.test_approval_revalidation \
-            tests.test_myhost_draft \
-            tests.test_myhost_instantly_import \
-            tests.test_instantly_language_campaigns \
-            tests.test_instantly_campaign_copy \
-            tests.test_instantly_template_rendering \
-            tests.test_instantly_mail_quality \
-            tests.test_instantly_preview_audit \
-            tests.test_instantly_signature_repair \
-            tests.test_instantly_language_route \
-            tests.test_instantly_historical_site_research \
-            tests.test_historical_handoff_audit \
-            tests.test_historical_handoff_stage \
-            tests.test_instantly_launch_audit \
-            tests.test_instantly_old_campaign_retire \
-            tests.test_update_dedupe_registry \
-            tests.test_url_safety \
-            tests.test_instantly_client \
-            tests.test_instantly_webhook \
-            tests.test_instantly_service \
-            tests.test_instantly_control \
-            tests.test_instantly_sync \
-            tests.test_privacy_and_rank \
-            tests.test_artifact_cleanup_and_smoke \
-            tests.test_public_live_preview \
-            tests.test_instantly_audit \
-            tests.test_pipeline_contract_scenarios -v
-          python3 scripts/instantly_audit.py
+          python3 -m compileall -q scripts
+          python3 -m unittest discover -s tests -p 'test_*.py' -v
 
-  # Dedicated bounded, read-only public-repository LIVE smoke test.
-  # Only aggregate anonymized quality metrics leave runner memory.
-  # No individual review tokens or candidate details are exported.
-  public_live_preview_once:
-    if: (github.event_name == 'workflow_dispatch' && inputs.execution_mode == 'public_audit') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[research-coverage-audit-20261011]'))
+  public_audit:
+    if: (github.event_name == 'workflow_dispatch' && inputs.execution_mode == 'public_audit') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[public-audit]'))
     needs: test
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    permissions:
-      contents: read
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -391,60 +85,49 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
-      - name: Install website research runtime
-        run: python3 -m pip install --disable-pip-version-check -r requirements-cold.txt
-      - name: Execute live bounded preview; print aggregate diagnostics only
+      - run: python3 -m pip install --disable-pip-version-check -r requirements-cold.txt
+      - name: Verify websites and email quality in runner memory only
         env:
           PYTHONPATH: scripts
-          DEDUPE_REGISTRY_CSV_URL: ${{ env.DEDUPE_REGISTRY_CSV_URL }}
-          PUBLIC_REGION: ${{ inputs.region }}
-          PUBLIC_KEYWORDS: ${{ inputs.keywords }}
+          REGION: ${{ inputs.region }}
+          KEYWORDS: ${{ inputs.keywords }}
+          TARGET: ${{ inputs.target_candidates }}
+          VERIFY: ${{ inputs.verify_limit }}
+          RADIUS: ${{ inputs.radius_km }}
         run: |
           set -euo pipefail
-          python3 scripts/public_live_preview.py \
-            --region "${PUBLIC_REGION:-Amsterdam}" \
-            --keywords "${PUBLIC_KEYWORDS:-fietsenwinkel,bloemist,kapsalon}" \
-            --radius-km 5 \
-            --discovery-limit 60 \
-            --verify-limit 60 | tee "$RUNNER_TEMP/public-live-preview-audit.json"
+          python3 scripts/leadscanner_core.py --mode public_audit \
+            --region "${REGION:-Amsterdam}" --keywords "${KEYWORDS:-fietsenwinkel,bloemist,kapsalon}" \
+            --discovery-limit "${TARGET:-60}" --verify-limit "${VERIFY:-60}" \
+            --radius-km "${RADIUS:-5}" > "$RUNNER_TEMP/leadscanner-report.json"
           python3 - <<'PY'
           import json, os
           from pathlib import Path
-          path = Path(os.environ["RUNNER_TEMP"]) / "public-live-preview-audit.json"
-          payload = json.loads(path.read_text(encoding="utf-8"))
-          if payload.get("status") not in {"green", "yellow"} or payload.get("emails_sent") != 0:
-              raise SystemExit("live_preview_failed_closed")
-          if payload.get("contains_real_recipient_data") is not False or payload.get("public_artifacts_uploaded") is not False:
-              raise SystemExit("live_preview_privacy_gate_failed")
-          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as out:
-              out.write("### Public-safe live website preview (aggregate-only)\n")
-              out.write("**Live website research: completed. Emails sent: 0.**\n\n")
-              for label, value in payload["counts"].items():
-                  out.write(f"- {label}: {int(value)}\n")
-              out.write(f"- Ranked evidence points: {int(payload['quality']['ranked_findings'])}\n")
-              out.write(f"- Exact review tokens checked: {int(payload['review_integrity']['tokens_content_bound'])}\n")
-              out.write("- Review copy, email addresses and approval tokens were not saved or uploaded.\n")
+          report = json.loads((Path(os.environ["RUNNER_TEMP"]) / "leadscanner-report.json").read_text())
+          assert report["status"] in ("green", "yellow")
+          assert report["automatic_send"] is False and report["recipient_data_exposed"] is False
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as file:
+              file.write("### Leadscanner openbare kwaliteitscontrole\n\n")
+              for key, value in report["counts"].items():
+                  file.write(f"- {key}: {int(value)}\n")
+              file.write("\n**Geen persoonsgegevens opgeslagen of mails verzonden.**\n")
           PY
 
-  execute:
-    if: github.event_name == 'workflow_dispatch' && inputs.execution_mode != 'public_audit'
+  drafts:
+    if: github.event_name == 'workflow_dispatch' && inputs.execution_mode == 'drafts'
     needs: test
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 75
     concurrency:
-      group: ${{ (inputs.execution_mode == 'draft' || inputs.execution_mode == 'instantly_stage') && 'leadscanner-instantly-registry' || format('leadscanner-preview-{0}', github.run_id) }}
+      group: leadscanner-mijnhost-drafts
       cancel-in-progress: false
     steps:
-      # This repository is currently public. Review artifacts contain real
-      # recipient addresses, researched website text and unsent draft copy.
-      # A public GitHub Actions artifact must never be their storage layer.
-      - name: Require private repository for prospect artifacts
+      - name: Keep all recipient details out of public GitHub Actions
         env:
           REPOSITORY_IS_PRIVATE: ${{ github.event.repository.private }}
         run: |
-          set -euo pipefail
           if [ "$REPOSITORY_IS_PRIVATE" != 'true' ]; then
-            echo "::error::Privacy hold: set this repository to Private before running preview, draft, or Instantly staging. Existing public review artifacts also need cleanup." >&2
+            echo 'PRIVACY_HOLD: zet de repository eerst op privé voor echte concepten' >&2
             exit 1
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -453,536 +136,16 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
-          cache: pip
-          cache-dependency-path: requirements-cold.txt
-      - name: Install preview runtime
-        if: inputs.execution_mode == 'preview'
-        run: python3 -m pip install --disable-pip-version-check -r requirements-cold.txt
-      - name: Install mutation runtime
-        if: inputs.execution_mode == 'draft' || inputs.execution_mode == 'instantly_stage'
-        run: python3 -m pip install --disable-pip-version-check 'requests>=2,<3' 'google-auth>=2,<3'
-
-      - name: Validate request
-        env:
-          INPUT_EXECUTION_MODE: ${{ inputs.execution_mode }}
-          INPUT_PREVIEW_COPY_MODE: ${{ inputs.preview_copy_mode }}
-          INPUT_CONFIRM_INSTANTLY_STAGE: ${{ inputs.confirm_instantly_stage }}
-          INPUT_CONFIRM_REVIEW_DRAFTS: ${{ inputs.confirm_review_drafts }}
-          INPUT_APPROVED_REVIEW_TOKENS: ${{ inputs.approved_review_tokens }}
-          INPUT_PREVIEW_RUN_ID: ${{ inputs.preview_run_id }}
-          INPUT_INSTANTLY_CAMPAIGN_ID: ${{ inputs.instantly_campaign_id }}
-          INPUT_REGION: ${{ inputs.region }}
-          INPUT_KEYWORDS: ${{ inputs.keywords }}
-          INPUT_TARGET: ${{ inputs.target_candidates }}
-          INPUT_VERIFY_LIMIT: ${{ inputs.verify_limit }}
-          INPUT_RADIUS_KM: ${{ inputs.radius_km }}
-        run: |
-          set -euo pipefail
-          mkdir -p results
-          python3 - <<'PY'
-          import json, os, re
-          from pathlib import Path
-
-          mode = os.environ['INPUT_EXECUTION_MODE'].strip()
-          preview_copy_mode = os.environ['INPUT_PREVIEW_COPY_MODE'].strip()
-          confirm_stage = os.environ['INPUT_CONFIRM_INSTANTLY_STAGE'].strip().casefold() == 'true'
-          confirm_draft = os.environ['INPUT_CONFIRM_REVIEW_DRAFTS'].strip().casefold() == 'true'
-          approved_tokens = os.environ['INPUT_APPROVED_REVIEW_TOKENS'].strip()
-          preview_run_id = os.environ['INPUT_PREVIEW_RUN_ID'].strip()
-          campaign_id = os.environ['INPUT_INSTANTLY_CAMPAIGN_ID'].strip()
-          region = os.environ['INPUT_REGION'].strip()
-          raw_keywords = os.environ['INPUT_KEYWORDS'].strip()
-
-          if mode not in {'preview', 'instantly_stage', 'draft'}:
-              raise SystemExit('execution_mode must be preview, instantly_stage or draft')
-
-          request = {'execution_mode': mode}
-          if mode == 'preview':
-              if preview_copy_mode not in {'instantly_sequence', 'reviewed_mail'}:
-                  raise SystemExit('preview_copy_mode must be instantly_sequence or reviewed_mail')
-              if confirm_stage or confirm_draft:
-                  raise SystemExit('mutation confirmations must remain false in preview mode')
-              if approved_tokens:
-                  raise SystemExit('approved_review_tokens must remain empty in preview mode')
-              if preview_run_id:
-                  raise SystemExit('preview_run_id must remain empty in preview mode')
-              if not region or len(region) > 120:
-                  raise SystemExit('preview region must be 1-120 characters')
-              keywords = [x.strip() for x in re.split(r'[,\n]+', raw_keywords) if x.strip()]
-              keywords = list(dict.fromkeys(keywords))
-              if not 1 <= len(keywords) <= 20 or any(len(x) > 120 for x in keywords):
-                  raise SystemExit('preview keywords must contain 1-20 unique values of <=120 characters')
-              target = int(os.environ['INPUT_TARGET'])
-              verify_limit = int(os.environ['INPUT_VERIFY_LIMIT'])
-              radius = float(os.environ['INPUT_RADIUS_KM'])
-              if not 1 <= target <= 5000:
-                  raise SystemExit('target_candidates must be 1-5000')
-              if not 1 <= verify_limit <= 100:
-                  raise SystemExit('verify_limit must be 1-100')
-              if not 0.5 <= radius <= 50:
-                  raise SystemExit('radius_km must be 0.5-50')
-              request.update({
-                  'region': region,
-                  'keywords': keywords,
-                  'target_candidates': target,
-                  'verify_limit': verify_limit,
-                  'radius_km': radius,
-                  'preview_copy_mode': preview_copy_mode,
-              })
-          elif mode == 'instantly_stage':
-              if not confirm_stage:
-                  raise SystemExit('instantly_stage requires confirm_instantly_stage=true')
-              if confirm_draft:
-                  raise SystemExit('confirm_review_drafts must remain false in instantly_stage mode')
-              if not approved_tokens:
-                  raise SystemExit('instantly_stage requires one or more approved_review_tokens')
-              if not re.fullmatch(r'[1-9][0-9]*', preview_run_id):
-                  raise SystemExit('instantly_stage requires numeric preview_run_id')
-              if not campaign_id or len(campaign_id) > 200:
-                  raise SystemExit('instantly_stage requires a campaign_id of <=200 characters')
-              request['source_preview_run_id'] = int(preview_run_id)
-              request['instantly_campaign_id'] = campaign_id
-          else:
-              if not confirm_draft:
-                  raise SystemExit('draft mode requires confirm_review_drafts=true')
-              if confirm_stage:
-                  raise SystemExit('confirm_instantly_stage must remain false in draft mode')
-              if not approved_tokens:
-                  raise SystemExit('draft mode requires one or more approved_review_tokens')
-              if not re.fullmatch(r'[1-9][0-9]*', preview_run_id):
-                  raise SystemExit('draft mode requires numeric preview_run_id')
-              request['source_preview_run_id'] = int(preview_run_id)
-
-          Path('results/request.json').write_text(
-              json.dumps(request, ensure_ascii=False) + '\n',
-              encoding='utf-8',
-          )
-          print(f"COLD_REQUEST=green mode={mode}")
-          PY
-
-      - name: Fetch and validate live dedupe registry first
+      - run: python3 -m pip install --disable-pip-version-check -r requirements-cold.txt 'google-auth>=2,<3'
+      - name: Research, quality-check, create and verify mijn.host Drafts
         env:
           PYTHONPATH: scripts
-        run: |
-          set -euo pipefail
-          curl --fail --location --silent --show-error \
-            --retry 2 --retry-all-errors \
-            --connect-timeout 10 --max-time 30 \
-            "$DEDUPE_REGISTRY_CSV_URL" \
-            --output results/dedupe-registry.csv
-          test -s results/dedupe-registry.csv
-          printf '[]\n' > results/empty-candidates.json
-          python3 scripts/dedupe_preflight.py \
-            --registry-csv results/dedupe-registry.csv \
-            --candidates-json results/empty-candidates.json \
-            --output results/registry-check.json
-          echo 'DEDUPE_REGISTRY_FETCH=green'
-
-      - name: Phase 4 - Overture discovery with website gate
-        if: inputs.execution_mode == 'preview'
-        env:
-          PYTHONPATH: scripts
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          from overture_discovery import discover
-
-          request = json.loads(Path('results/request.json').read_text(encoding='utf-8'))
-          result = discover(
-              region=request['region'],
-              bbox=None,
-              radius_km=request['radius_km'],
-              keywords=request['keywords'],
-              max_results=request['target_candidates'],
-              require_website=True,
-              probe_websites=False,
-          )
-          Path('results/discovery-raw.json').write_text(
-              json.dumps(result, indent=2, ensure_ascii=False) + '\n',
-              encoding='utf-8',
-          )
-          print(f"DISCOVERY_RAW=green candidates={result['candidate_count']}")
-          PY
-
-      - name: Phase 4 - Cheap filters before any website research
-        if: inputs.execution_mode == 'preview'
-        env:
-          PYTHONPATH: scripts
-        run: |
-          set -euo pipefail
-          python3 scripts/cold_stages.py filter \
-            --input results/discovery-raw.json \
-            --output results/discovery-filtered.json
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          payload = json.loads(Path('results/discovery-filtered.json').read_text(encoding='utf-8'))
-          Path('results/candidates.json').write_text(
-              json.dumps(payload['candidates'], ensure_ascii=False) + '\n',
-              encoding='utf-8',
-          )
-          PY
-
-      - name: Phase 4 - Hard historical dedupe
-        if: inputs.execution_mode == 'preview'
-        env:
-          PYTHONPATH: scripts
-        run: |
-          set -euo pipefail
-          python3 scripts/dedupe_preflight.py \
-            --registry-csv results/dedupe-registry.csv \
-            --candidates-json results/candidates.json \
-            --output results/dedupe-preflight.json
-
-      - name: Phase 5 - Verify official site identity (email not required)
-        if: inputs.execution_mode == 'preview'
-        env:
-          PYTHONPATH: scripts
-        run: |
-          set -euo pipefail
-          VERIFY_LIMIT=$(python3 -c "import json; print(json.load(open('results/request.json'))['verify_limit'])")
-          python3 scripts/cold_stages.py verify \
-            --input results/dedupe-preflight.json \
-            --limit "$VERIFY_LIMIT" \
-            --max-workers 10 \
-            --output results/verification.json
-
-      - name: Phase 6 - Bounded first-party prospect research
-        if: inputs.execution_mode == 'preview'
-        env:
-          PYTHONPATH: scripts
-        run: |
-          set -euo pipefail
-          VERIFY_LIMIT=$(python3 -c "import json; print(json.load(open('results/request.json'))['verify_limit'])")
-          python3 scripts/cold_stages.py research \
-            --input results/verification.json \
-            --limit "$VERIFY_LIMIT" \
-            --max-workers 6 \
-            --output results/research-pending-dedupe.json
-
-      - name: Phase 6b - Recheck newly found contact email against live exclusions
-        if: inputs.execution_mode == 'preview'
-        env:
-          PYTHONPATH: scripts
-        run: |
-          set -euo pipefail
-          python3 scripts/cold_stages.py contact-dedupe \
-            --input results/research-pending-dedupe.json \
-            --registry-csv results/dedupe-registry.csv \
-            --output results/research.json
-
-      - name: Phase 7 - Select up to six ranked first-party observations
-        if: inputs.execution_mode == 'preview'
-        env:
-          PYTHONPATH: scripts
-        run: |
-          set -euo pipefail
-          python3 scripts/outreach_stages.py select \
-            --input results/research.json \
-            --output results/outreach-reasons.json
-
-      - name: Phase 8 - Choose one proposed value-first action
-        if: inputs.execution_mode == 'preview'
-        env:
-          PYTHONPATH: scripts
-        run: |
-          set -euo pipefail
-          python3 scripts/outreach_stages.py value \
-            --input results/outreach-reasons.json \
-            --output results/value-actions.json
-
-      - name: Phase 9 - Generate and validate short cold mail for optional legacy review
-        if: inputs.execution_mode == 'preview' && inputs.preview_copy_mode == 'reviewed_mail'
-        env:
-          PYTHONPATH: scripts
-        run: |
-          set -euo pipefail
-          python3 scripts/outreach_stages.py mail \
-            --input results/value-actions.json \
-            --output results/mail-review.json
-
-      - name: Phase 9 - Review verified facts without generating separate emails
-        if: inputs.execution_mode == 'preview' && inputs.preview_copy_mode == 'instantly_sequence'
-        env:
-          PYTHONPATH: scripts
-        run: |
-          set -euo pipefail
-          python3 scripts/outreach_stages.py facts \
-            --input results/value-actions.json \
-            --output results/mail-review.json
-
-      - name: Phase 25 - Measure funnel drop reasons
-        if: inputs.execution_mode == 'preview'
-        env:
-          PYTHONPATH: scripts
-        run: |
-          set -euo pipefail
-          python3 scripts/funnel_metrics.py \
-            --raw results/discovery-raw.json \
-            --filtered results/discovery-filtered.json \
-            --dedupe results/dedupe-preflight.json \
-            --verified results/verification.json \
-            --research results/research.json \
-            --reasons results/outreach-reasons.json \
-            --values results/value-actions.json \
-            --mail results/mail-review.json \
-            --output results/funnel-metrics.json
-
-      - name: Phase 26 - Audit Overture operational coverage
-        if: inputs.execution_mode == 'preview'
-        env:
-          PYTHONPATH: scripts
-        run: |
-          set -euo pipefail
-          python3 scripts/coverage_audit.py \
-            --request results/request.json \
-            --raw results/discovery-raw.json \
-            --filtered results/discovery-filtered.json \
-            --dedupe results/dedupe-preflight.json \
-            --output results/coverage-audit.json
-
-      - name: Phase 10 - Prepare strict review-draft batch
-        if: inputs.execution_mode == 'preview'
-        env:
-          PYTHONPATH: scripts
-        run: |
-          set -euo pipefail
-          python3 scripts/review_draft_stages.py prepare \
-            --input results/mail-review.json \
-            --output results/review-draft-batch.json
-
-      - name: Phase 16 - Build human-review queue
-        if: inputs.execution_mode == 'preview'
-        env:
-          PYTHONPATH: scripts
-        run: |
-          set -euo pipefail
-          python3 scripts/review_selection.py queue \
-            --batch results/review-draft-batch.json \
-            --json-output results/review-queue.json \
-            --markdown-output results/review-queue.md \
-            --csv-output results/review-queue.csv
-
-      - name: Build preview manifest
-        if: inputs.execution_mode == 'preview'
-        env:
-          PYTHONPATH: scripts
-        run: |
-          set -euo pipefail
-          python3 scripts/cold_run_manifest.py \
-            --mode preview \
-            --request results/request.json \
-            --filtered results/discovery-filtered.json \
-            --dedupe results/dedupe-preflight.json \
-            --verified results/verification.json \
-            --research results/research.json \
-            --reasons results/outreach-reasons.json \
-            --values results/value-actions.json \
-            --mail results/mail-review.json \
-            --draft-batch results/review-draft-batch.json \
-            --review-queue results/review-queue.json \
-            --funnel results/funnel-metrics.json \
-            --coverage results/coverage-audit.json \
-            --output results/run-manifest.json
-
-      - name: Phase 19 - Seal immutable preview snapshot
-        if: inputs.execution_mode == 'preview'
-        env:
-          PYTHONPATH: scripts
-        run: |
-          set -euo pipefail
-          python3 scripts/preview_snapshot.py build \
-            --request results/request.json \
-            --batch results/review-draft-batch.json \
-            --queue results/review-queue.json \
-            --manifest results/run-manifest.json \
-            --output results/preview-snapshot.json
-
-      - name: Phase 20 - Resume exact successful preview artifact
-        if: inputs.execution_mode == 'draft' || inputs.execution_mode == 'instantly_stage'
-        env:
-          PYTHONPATH: scripts
-          GITHUB_TOKEN: ${{ github.token }}
-          INPUT_PREVIEW_RUN_ID: ${{ inputs.preview_run_id }}
-        run: |
-          set -euo pipefail
-          python3 scripts/preview_snapshot.py resume \
-            --run-id "$INPUT_PREVIEW_RUN_ID" \
-            --output-dir results
-
-      - name: Phase 20 - Select exact approved review tokens from snapshot
-        if: inputs.execution_mode == 'draft' || inputs.execution_mode == 'instantly_stage'
-        env:
-          PYTHONPATH: scripts
-          INPUT_APPROVED_REVIEW_TOKENS: ${{ inputs.approved_review_tokens }}
-        run: |
-          set -euo pipefail
-          python3 scripts/review_selection.py select \
-            --batch results/review-draft-batch.json \
-            --approved-tokens-env INPUT_APPROVED_REVIEW_TOKENS \
-            --output results/approved-review-draft-batch.json
-
-      - name: Reject fact-only reviews from mailbox draft fallback
-        if: inputs.execution_mode == 'draft'
-        run: |
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          selected = json.loads(Path('results/approved-review-draft-batch.json').read_text(encoding='utf-8'))
-          if any(row.get('review_mode') == 'instantly_sequence' for row in selected.get('rows', [])):
-              raise SystemExit('instantly_sequence_cannot_be_stored_as_mailbox_drafts')
-          PY
-
-      - name: Phase 21 - Stage exact approved leads into Instantly
-        if: inputs.execution_mode == 'instantly_stage'
-        env:
-          PYTHONPATH: scripts
-          INSTANTLY_API_KEY: ${{ secrets.INSTANTLY_API_KEY }}
-          LEADSCANNER_INSTANTLY_WRITES_ENABLED: 'true'
-          INPUT_INSTANTLY_CAMPAIGN_ID: ${{ inputs.instantly_campaign_id }}
-          INPUT_INSTANTLY_SEQUENCE_APPROVAL: ${{ inputs.instantly_sequence_approval }}
-          LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON || secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import json, os
-          from pathlib import Path
-          from instantly_service import stage_approved_batch
-
-          batch = json.loads(Path('results/approved-review-draft-batch.json').read_text(encoding='utf-8'))
-          result = stage_approved_batch(
-              approved_batch=batch,
-              campaign_id=os.environ['INPUT_INSTANTLY_CAMPAIGN_ID'],
-              instantly_api_key=os.environ['INSTANTLY_API_KEY'],
-              registry_url=os.environ['DEDUPE_REGISTRY_CSV_URL'],
-              sequence_approval=os.environ.get('INPUT_INSTANTLY_SEQUENCE_APPROVAL', ''),
-          )
-          if result['staged_count'] + result['suppressed_count'] != result['requested_count']:
-              raise SystemExit('instantly_stage_count_mismatch')
-          Path('results/instantly-stage.json').write_text(
-              json.dumps(result, indent=2, ensure_ascii=False) + '\n',
-              encoding='utf-8',
-          )
-          print(
-              'INSTANTLY_STAGE=green '
-              f"requested={result['requested_count']} "
-              f"staged={result['staged_count']} "
-              f"suppressed={result['suppressed_count']} "
-              'automatic_send=false activation_required=true'
-          )
-          PY
-
-      - name: Build Instantly stage closure manifest
-        if: inputs.execution_mode == 'instantly_stage'
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-
-          request = json.loads(Path('results/request.json').read_text(encoding='utf-8'))
-          snapshot = json.loads(Path('results/preview-snapshot.json').read_text(encoding='utf-8'))
-          selected = json.loads(Path('results/approved-review-draft-batch.json').read_text(encoding='utf-8'))
-          queue = json.loads(Path('results/review-queue.json').read_text(encoding='utf-8'))
-          stage = json.loads(Path('results/instantly-stage.json').read_text(encoding='utf-8'))
-          manifest = {
-              'schema_version': 'leadscanner-cold-run-manifest/1.0',
-              'execution_mode': 'instantly_stage',
-              'request': {
-                  'source_preview_run_id': request.get('source_preview_run_id'),
-                  'instantly_campaign_id': request.get('instantly_campaign_id'),
-              },
-              'counts': {
-                  'review_queue_candidates': int(queue.get('review_candidate_count') or 0),
-                  'approved_for_instantly': int((selected.get('approval') or {}).get('approved_count') or 0),
-                  'instantly_staged': int(stage.get('staged_count') or 0),
-                  'suppressed_after_preview': int(stage.get('suppressed_count') or 0),
-              },
-              'provenance': {
-                  'source_preview_id': snapshot.get('preview_id'),
-                  'source_preview_run_id': (snapshot.get('source') or {}).get('run_id'),
-                  'source_preview_head_sha': (snapshot.get('source') or {}).get('head_sha'),
-                  'approved_sequence_fingerprint': stage.get('approved_sequence_fingerprint'),
-              },
-              'safety': {
-                  'human_review_required': True,
-                  'automatic_send': False,
-                  'campaign_activation_required': True,
-                  'historical_registry_role': 'suppression_only',
-              },
-              'closure': {
-                  'status': 'instantly_staged',
-                  'instantly_mutation': bool(stage.get('staged_count')),
-                  'registry_mutation': bool(stage.get('staged_count')),
-                  'automatic_send': False,
-                  'campaign_activation_required': True,
-              },
-          }
-          Path('results/run-manifest.json').write_text(
-              json.dumps(manifest, indent=2, ensure_ascii=False) + '\n',
-              encoding='utf-8',
-          )
-          print(
-              'COLD_RUN_MANIFEST=green mode=instantly_stage '
-              f"staged={manifest['counts']['instantly_staged']} "
-              'automatic_send=false activation_required=true'
-          )
-          PY
-
-      - name: Phase 21 - Preflight canonical registry write access
-        if: inputs.execution_mode == 'draft'
-        env:
-          PYTHONPATH: scripts
-          LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON || secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-        run: |
-          set -euo pipefail
-          COUNT=$(python3 -c "import json; print(len(json.load(open('results/approved-review-draft-batch.json'))['rows']))")
-          if [ "$COUNT" -eq 0 ]; then
-            echo "DEDUPE_REGISTRY_ACCESS=not_needed count=0"
-          else
-            python3 scripts/update_dedupe_registry.py \
-              --check-only \
-              --output results/registry-access.json
-          fi
-
-      - name: Phase 21 - Refresh live dedupe registry immediately before draft storage
-        if: inputs.execution_mode == 'draft'
-        env:
-          PYTHONPATH: scripts
-        run: |
-          set -euo pipefail
-          curl --fail --location --silent --show-error \
-            --retry 2 --retry-all-errors \
-            --connect-timeout 10 --max-time 30 \
-            "$DEDUPE_REGISTRY_CSV_URL" \
-            --output results/dedupe-registry-current.csv
-          test -s results/dedupe-registry-current.csv
-          printf '[]\n' > results/empty-current-candidates.json
-          python3 scripts/dedupe_preflight.py \
-            --registry-csv results/dedupe-registry-current.csv \
-            --candidates-json results/empty-current-candidates.json \
-            --output results/registry-current-check.json
-          echo 'DEDUPE_REGISTRY_REFRESH=green'
-
-      - name: Phase 21 - Revalidate approved leads against live registry
-        if: inputs.execution_mode == 'draft'
-        env:
-          PYTHONPATH: scripts
-        run: |
-          set -euo pipefail
-          python3 scripts/approval_revalidation.py \
-            --batch results/approved-review-draft-batch.json \
-            --registry-csv results/dedupe-registry-current.csv \
-            --output results/approved-current-batch.json
-
-      - name: Phase 21 - Store only still-current approved review drafts
-        if: inputs.execution_mode == 'draft'
-        env:
-          PYTHONPATH: scripts
+          REPOSITORY_IS_PRIVATE: ${{ github.event.repository.private }}
+          REGION: ${{ inputs.region }}
+          KEYWORDS: ${{ inputs.keywords }}
+          TARGET: ${{ inputs.target_candidates }}
+          VERIFY: ${{ inputs.verify_limit }}
+          RADIUS: ${{ inputs.radius_km }}
           OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
           OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
           OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
@@ -990,371 +153,23 @@ jobs:
           OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME || 'Andrew Baeten' }}
           OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
           OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
-        run: |
-          set -euo pipefail
-          python3 scripts/myhost_draft.py \
-            --batch results/approved-current-batch.json \
-            --report results/myhost-drafts.json \
-            --reject-changed-existing | tee results/myhost-drafts.txt
-          grep -q '^MYHOST_DRAFT_SYNC=green ' results/myhost-drafts.txt
-          grep -q 'reject_changed_existing=true' results/myhost-drafts.txt
-          grep -q 'smtp_send=not_available' results/myhost-drafts.txt
-
-      - name: Phase 21 - Exact mailbox readback gate
-        if: inputs.execution_mode == 'draft'
-        env:
-          PYTHONPATH: scripts
-        run: |
-          set -euo pipefail
-          python3 scripts/review_draft_stages.py readback \
-            --batch results/approved-current-batch.json \
-            --report results/myhost-drafts.json \
-            --output results/review-draft-readback.json
-
-      - name: Phase 21 - Append canonical dedupe registry and read back
-        if: inputs.execution_mode == 'draft'
-        env:
-          PYTHONPATH: scripts
           LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON || secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: |
           set -euo pipefail
-          python3 scripts/update_dedupe_registry.py \
-            --readback results/review-draft-readback.json \
-            --output results/registry-update.json
-
-      - name: Build resumed draft closure manifest
-        if: inputs.execution_mode == 'draft'
-        env:
-          PYTHONPATH: scripts
-        run: |
-          set -euo pipefail
-          python3 scripts/cold_run_manifest.py \
-            --mode draft \
-            --source-preview-manifest results/source-preview-manifest.json \
-            --source-preview-snapshot results/preview-snapshot.json \
-            --draft-batch results/approved-current-batch.json \
-            --review-queue results/review-queue.json \
-            --approved-batch results/approved-review-draft-batch.json \
-            --revalidation results/approved-current-batch.json \
-            --draft-readback results/review-draft-readback.json \
-            --registry-update results/registry-update.json \
-            --output results/run-manifest.json
-
-      - name: Eenvoudig overzicht voor de gebruiker
-        if: success()
-        env:
-          PYTHONPATH: scripts
-        run: |
-          set -euo pipefail
-          python3 scripts/simple_overview.py \
-            --input results/run-manifest.json \
-            --output results/overzicht.md
-          cat results/overzicht.md >> "$GITHUB_STEP_SUMMARY"
-
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: leads-cold-${{ inputs.execution_mode }}-${{ github.run_id }}
-          path: |
-            results/request.json
-            results/discovery-raw.json
-            results/discovery-filtered.json
-            results/dedupe-preflight.json
-            results/verification.json
-            results/research.json
-            results/outreach-reasons.json
-            results/value-actions.json
-            results/mail-review.json
-            results/funnel-metrics.json
-            results/coverage-audit.json
-            results/review-draft-batch.json
-            results/review-queue.json
-            results/review-queue.md
-            results/review-queue.csv
-            results/preview-snapshot.json
-            results/source-preview-manifest.json
-            results/source-preview-request.json
-            results/approved-review-draft-batch.json
-            results/approved-current-batch.json
-            results/instantly-stage.json
-            results/run-manifest.json
-            results/overzicht.md
-            results/myhost-drafts.json
-            results/myhost-drafts.txt
-            results/review-draft-readback.json
-            results/registry-update.json
-          if-no-files-found: error
-          retention-days: 7
-
-
-  instantly_control:
-    if: github.event_name == 'push'
-    needs: test
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    concurrency:
-      group: leadscanner-instantly-registry
-      cancel-in-progress: false
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.12'
-      - name: Install Instantly control runtime
-        run: python3 -m pip install --disable-pip-version-check 'requests>=2,<3' 'google-auth>=2,<3'
-      - name: Reject edits or deletes of immutable Instantly commands
-        env:
-          BEFORE_SHA: ${{ github.event.before }}
-          AFTER_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          if [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
-            exit 0
-          fi
-          CHANGED="$(git diff --diff-filter=MD --name-only "$BEFORE_SHA" "$AFTER_SHA" -- 'instantly-commands/inbox/*.json')"
-          if [ -n "$CHANGED" ]; then
-            printf 'immutable_instantly_command_modified_or_deleted\n%s\n' "$CHANGED" >&2
-            exit 1
-          fi
-      - name: Detect newly-added immutable Instantly commands
-        id: new_commands
-        env:
-          BEFORE_SHA: ${{ github.event.before }}
-          AFTER_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          mkdir -p results
-          if [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
-            git diff-tree --root --no-commit-id --name-only -r --diff-filter=A "$AFTER_SHA" -- 'instantly-commands/inbox/*.json' > results/new-instantly-command-paths.txt
-          else
-            git diff --diff-filter=A --name-only "$BEFORE_SHA" "$AFTER_SHA" -- 'instantly-commands/inbox/*.json' > results/new-instantly-command-paths.txt
-          fi
-          sort -u -o results/new-instantly-command-paths.txt results/new-instantly-command-paths.txt
-          cat results/new-instantly-command-paths.txt
-          if [ -s results/new-instantly-command-paths.txt ]; then
-            echo 'has_commands=true' >> "$GITHUB_OUTPUT"
-          else
-            echo 'has_commands=false' >> "$GITHUB_OUTPUT"
-          fi
-      - name: Reject mixed Instantly command and control-plane changes
-        env:
-          BEFORE_SHA: ${{ github.event.before }}
-          AFTER_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          if [ ! -s results/new-instantly-command-paths.txt ]; then
-            exit 0
-          fi
-          if [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
-            git diff-tree --root --no-commit-id --name-only -r "$AFTER_SHA" > results/push-changed-paths.txt
-          else
-            git diff --name-only "$BEFORE_SHA" "$AFTER_SHA" > results/push-changed-paths.txt
-          fi
-          OTHER="$(grep -Ev '^instantly-commands/inbox/[^/]+[.]json$' results/push-changed-paths.txt || true)"
-          if [ -n "$OTHER" ]; then
-            printf 'mixed_instantly_command_and_control_change_forbidden\n%s\n' "$OTHER" >&2
-            exit 1
-          fi
-      - name: Block Instantly command artifacts in public repository
-        env:
-          REPOSITORY_IS_PRIVATE: ${{ github.event.repository.private }}
-        run: |
-          set -euo pipefail
-          if [ -s results/new-instantly-command-paths.txt ] && [ "$REPOSITORY_IS_PRIVATE" != 'true' ]; then
-            echo "::error::Privacy hold: Instantly command results may contain account, campaign or correspondence data. Use a Private repository before processing commands." >&2
-            exit 1
-          fi
-      - name: Execute only newly-added immutable Instantly commands
-        env:
-          PYTHONPATH: scripts
-          INSTANTLY_API_KEY: ${{ secrets.INSTANTLY_API_KEY }}
-          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
-          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
-          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
-          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
-          OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
-          LEADSCANNER_GITHUB_TOKEN: ${{ github.token }}
-          LEADSCANNER_INSTANTLY_WRITES_ENABLED: 'true'
-          LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON || secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
-        run: |
-          set -euo pipefail
-          python3 scripts/instantly_control.py run-paths \
-            --paths-file results/new-instantly-command-paths.txt \
-            --config config/instantly-control.json \
-            --output-dir results/instantly-control
-      - name: Upload Instantly command results
-        # In the public repository no command results are publishable; do
-        # not create empty artifacts for ordinary code pushes either.
-        if: always() && steps.new_commands.outputs.has_commands == 'true' && github.event.repository.private == true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: instantly-control-${{ github.run_id }}
-          path: results/instantly-control/
-          if-no-files-found: warn
-          retention-days: 1
-
-  instantly_sync:
-    if: github.event_name == 'schedule'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    concurrency:
-      group: leadscanner-instantly-registry
-      cancel-in-progress: false
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.12'
-      - name: Install Instantly sync runtime
-        run: python3 -m pip install --disable-pip-version-check 'requests>=2,<3' 'google-auth>=2,<3'
-      - name: Reconcile Instantly states into existing registry rows
-        env:
-          PYTHONPATH: scripts
-          INSTANTLY_API_KEY: ${{ secrets.INSTANTLY_API_KEY }}
-          LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON || secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-        run: |
-          set -euo pipefail
-          python3 scripts/instantly_sync.py \
-            --output results/instantly-sync.json \
-            --max-leads 10000
-      - name: Upload Instantly sync result
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: instantly-sync-${{ github.run_id }}
-          path: results/instantly-sync.json
-          if-no-files-found: warn
-          retention-days: 1
-
-  # Explicit one-time private-in-runner read-only handoff inventory. Public
-  # logs contain aggregate counters only, never email addresses or message copy.
-  historical_handoff_audit:
-    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[historical-handoff-audit]')
-    needs: test
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.12'
-      - name: Install read-only handoff audit runtime
-        run: python3 -m pip install --disable-pip-version-check 'requests>=2,<3' 'google-auth>=2,<3'
-      - name: Verify 1128-source and non-sending Instantly destinations
-        env:
-          PYTHONPATH: scripts
-          INSTANTLY_API_KEY: ${{ secrets.INSTANTLY_API_KEY }}
-        run: |
-          set -euo pipefail
-          python3 scripts/historical_handoff_audit.py
-
-  # One-off user-authorized migration of exactly 776 reviewed historical drafts.
-  # Only copies into unsendable existing NL/EN campaigns. Per-lead updates
-  # change copied destination variables, never the original 1128 source rows.
-  # Provider reads, canonical suppression and exact destination readbacks are
-  # done inside the secret-backed runner; stdout contains only aggregate data.
-  historical_handoff_stage:
-    if: github.event_name == 'push' && (contains(github.event.head_commit.message, '[historical-handoff-stage]') || contains(github.event.head_commit.message, '[historical-handoff-smoke]'))
-    needs: [test, instantly_control]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 180
-    concurrency:
-      group: leadscanner-instantly-registry
-      cancel-in-progress: false
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.12'
-      - name: Install no-send handoff runtime
-        run: python3 -m pip install --disable-pip-version-check 'requests>=2,<3' 'google-auth>=2,<3'
-      - name: Copy only reviewed leads to non-sending Instantly destinations
-        env:
-          PYTHONPATH: scripts
-          INSTANTLY_API_KEY: ${{ secrets.INSTANTLY_API_KEY }}
-          LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON || secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-        run: |
-          set -euo pipefail
-          if [ "${{ contains(github.event.head_commit.message, '[historical-handoff-smoke]') }}" = 'true' ]; then
-            python3 scripts/historical_handoff_stage.py --offset 0 --max-targets 1 --approved-cohort 776
-          else
-            deferred=0
-            for offset in 0 100 200 300 400 500 600 700 800 900 1000 1100; do
-              if python3 scripts/historical_handoff_stage.py --offset "$offset" --approved-cohort 776; then
-                :
-              else
-                status=$?
-                if [ "$status" -eq 2 ]; then
-                  # A confirmed provider PATCH with delayed readback is held
-                  # without retry. Process other independent contacts safely.
-                  deferred=1
-                else
-                  exit "$status"
-                fi
-              fi
-            done
-            if [ "$deferred" -ne 0 ]; then
-              echo "HISTORICAL_PAUSED_STAGE=partial_reconciliation_required"
-              exit 1
-            fi
-          fi
-
-  # Historical first-party research is strictly separate from outreach.
-  # Only an explicit [historical-site-scan] main commit runs these twelve
-  # one-time batches. No sender, campaign or contact permission is changed.
-  historical_site_scan:
-    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[historical-site-scan]')
-    needs: test
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      max-parallel: 1
-      matrix:
-        offset: [0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100]
-    concurrency:
-      group: leadscanner-historical-site-${{ github.sha }}-${{ matrix.offset }}
-      cancel-in-progress: false
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.12'
-      - name: Install site research dependencies
-        run: python3 -m pip install --disable-pip-version-check 'requests>=2,<3' 'google-auth>=2,<3'
-      - name: Recheck up to 100 historical contacts without replacing original drafts
-        env:
-          PYTHONPATH: scripts
-          INSTANTLY_API_KEY: ${{ secrets.INSTANTLY_API_KEY }}
-        run: |
-          set -euo pipefail
-          python3 scripts/instantly_historical_site_research.py \
-            --offset "${{ matrix.offset }}" \
-            --expected-count 1128 \
-            --workers 12 \
-            --refresh-reviewed \
-            --save-candidates \
-            --output "results/site-batch-${{ matrix.offset }}.json"
-      - name: Upload aggregate-only batch evidence
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: site-research-${{ matrix.offset }}-${{ github.run_id }}
-          path: results/site-batch-${{ matrix.offset }}.json
-          if-no-files-found: warn
-          retention-days: 7
+          python3 scripts/leadscanner_core.py --mode drafts \
+            --region "$REGION" --keywords "$KEYWORDS" \
+            --discovery-limit "$TARGET" --verify-limit "$VERIFY" \
+            --radius-km "$RADIUS" > "$RUNNER_TEMP/leadscanner-report.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          report = json.loads((Path(os.environ["RUNNER_TEMP"]) / "leadscanner-report.json").read_text())
+          assert report["status"] == "green"
+          assert report["automatic_send"] is False and report["recipient_data_exposed"] is False
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as file:
+              file.write("### Leadscanner → mijn.host concepten\n\n")
+              for key, value in report["counts"].items():
+                  file.write(f"- {key}: {int(value)}\n")
+              file.write("\n**Concepten exact teruggelezen. Geen SMTP-verzending.**\n")
+          PY

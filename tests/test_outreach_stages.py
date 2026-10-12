@@ -3,7 +3,6 @@ import unittest
 from outreach_stages import (
     choose_value_actions,
     generate_mails,
-    generate_sequence_facts,
     select_reasons,
     validate_mail,
     body_for,
@@ -108,26 +107,6 @@ class OutreachStagesTests(unittest.TestCase):
             self.assertTrue(body.endswith("Andrew Baeten"))
             self.assertEqual(body.count("?"), 1)
 
-    def test_sequence_facts_skip_per_lead_mail_generation(self):
-        source = {
-            "public_business_email": "info@example.nl",
-            "outreach_status": "ready",
-            "value_action_status": "proposed",
-            "verified_observation_source_type": "official_site",
-            "verified_observation": "Klanten kunnen een afspraak aanvragen.",
-            "verified_observation_source_url": "https://example.nl/afspraak",
-            "value_first_action": "een korte voorbeeldvariant",
-            "signal_type": "appointment",
-        }
-        report = generate_sequence_facts({"candidates": [source]})
-        self.assertEqual(report["ready_for_human_review_count"], 1)
-        self.assertEqual(report["review_mode"], "instantly_sequence")
-        row = report["candidates"][0]
-        self.assertEqual(row["mail_status"], "ready_for_sequence_review")
-        self.assertIsNone(row["subject"])
-        self.assertIsNone(row["body"])
-        self.assertFalse(row["automatic_send"])
-
     def test_missing_email_does_not_hide_site_opportunity_but_holds_mail(self):
         candidate = candidate_with_evidence([{
             "text": "Klanten kunnen online een afspraak aanvragen via onze website.",
@@ -146,8 +125,6 @@ class OutreachStagesTests(unittest.TestCase):
             mails["candidates"][0]["copy_validation_reasons"], ["no_published_business_contact"]
         )
         self.assertIsNone(mails["candidates"][0]["body"])
-        facts = generate_sequence_facts(valued)
-        self.assertEqual(facts["ready_for_human_review_count"], 0)
 
     def test_named_owner_receives_personalized_greeting_not_generic_mailbox(self):
         candidate = candidate_with_evidence([{
@@ -165,21 +142,6 @@ class OutreachStagesTests(unittest.TestCase):
         self.assertEqual(row["mail_status"], "ready_for_human_review")
         self.assertTrue(row["body"].startswith("Hoi Jan,\n\n"))
         self.assertFalse(row["automatic_send"])
-
-    def test_sequence_facts_hold_without_official_evidence(self):
-        source = {
-            "outreach_status": "ready",
-            "value_action_status": "proposed",
-            "verified_observation_source_type": "directory",
-            "verified_observation": "Example",
-            "verified_observation_source_url": "https://example.nl",
-            "value_first_action": "een voorbeeld",
-            "signal_type": "appointment",
-        }
-        report = generate_sequence_facts({"candidates": [source]})
-        self.assertEqual(report["ready_for_human_review_count"], 0)
-        self.assertEqual(report["candidates"][0]["mail_status"], "hold")
-
 
     def test_generic_company_description_is_hold(self):
         payload = {
