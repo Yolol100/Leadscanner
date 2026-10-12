@@ -41,7 +41,7 @@ def fetch_registry() -> list[dict]:
 
     Never use a public CSV export link or place raw registry contents on disk.
     """
-    session, _account = _authorized_session()
+    session, _account = _authorized_session(read_only=True)
     values = read_live_values(session, DEFAULT_SPREADSHEET_ID, DEFAULT_SHEET_NAME)
     return load_registry_values(values)
 
