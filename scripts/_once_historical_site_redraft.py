@@ -124,8 +124,31 @@ def excluded_history(row: dict) -> bool:
     return False
 
 
+def historical_registry_hold(identity: dict, ordinary: list[dict], *, original_email: str = "") -> bool:
+    """Keep all non-draft historical registry states excluded.
+
+    Only prior *concept* entries can be reviewed for replacement proposals.
+    This does not turn them into new leads or permit prior sent/opt-out contacts.
+    """
+    if not ordinary:
+        return False
+    for row in ordinary:
+        matched = match_candidate(identity, [row])
+        if not matched:
+            continue
+        status = _string(matched.get("registry_status")).casefold()
+        if ("email" in (matched.get("matched_by") or [])
+                and original_email
+                and normalize_email(identity.get("email")) != original_email):
+            return True
+        if status not in {"concept", "review_draft", "draft"}:
+            return True
+    return False
+
+
 def build_batch(
     *, offset: int, rows: list[dict], history: dict,
+    ordinary: list[dict] | None = None,
     verifier=verify_candidates, researcher=research_candidates,
 ) -> tuple[dict, dict]:
     """Return safe counters and in-memory review rows; do not write anything."""
@@ -148,6 +171,7 @@ def build_batch(
         if domain and domain not in home_owner:
             home_owner[domain] = index
 
+    ordinary = ordinary or []
     window = indexed[offset:offset + BATCH_SIZE]
     expected_size = min(BATCH_SIZE, EXPECTED - offset)
     if len(window) != expected_size:
@@ -163,7 +187,13 @@ def build_batch(
         if not matched or "historical_v2_email" not in matched["matched_by"]:
             raise RuntimeError("historical_suppression_missing")
         counts["historical_email_excluded"] += 1
-        if excluded_history(row):
+        if (excluded_history(row)
+                or historical_registry_hold(
+                    {"email": email, "website": historical_site(row),
+                     "company": historical_name(row)}, ordinary,
+                    original_email=email,
+                )):
+
             states[pos] = "excluded_history"
             continue
         if row.get("status") != 1:
@@ -235,6 +265,20 @@ def build_batch(
             continue
         domain = normalize_domain(candidate.get("official_domain"))
         contact = normalize_email(candidate.get("public_business_email"))
+        original_email = normalize_email(indexed[pos].get("email"))
+        another_historical_identity = (
+            contact != original_email
+            and token(history["v2_key"], "email", contact)
+            in history["v2_emails"]
+        )
+        if (another_historical_identity
+                or historical_registry_hold(
+                    {"email": contact, "website": candidate.get("official_url"),
+                     "company": candidate.get("name_hint")}, ordinary,
+                    original_email=original_email,
+                )):
+            states[pos] = "excluded_history"
+            continue
         if (domain in selected_domains or contact in selected_emails):
             states[pos] = "hold_duplicate_recipient"
             continue
@@ -306,7 +350,10 @@ def run(offset: int, mode: str) -> dict:
                     if r.get("status") == "historical_v2_suppression"]
     if len(history_rows) != 1:
         raise RuntimeError("historical_suppression_incomplete")
-    report, review_batch = build_batch(offset=offset, rows=rows, history=history_rows[0])
+    report, review_batch = build_batch(
+        offset=offset, rows=rows, history=history_rows[0],
+        ordinary=[r for r in registry if r.get("status") != "historical_v2_suppression"],
+    )
     report["mode"] = mode
     report["drafts_created"] = 0
     report["drafts_exact_existing"] = 0

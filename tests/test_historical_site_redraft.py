@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch
 from historical_v2 import row_for_match, token
 from _once_historical_site_redraft import (
     BATCH_SIZE, EXPECTED, build_batch, excluded_history, historical_site,
-    run,
+    historical_registry_hold, run,
 )
 
 
@@ -61,6 +61,41 @@ class HistoricalSiteRebuildTests(unittest.TestCase):
         self.assertTrue(excluded_history({"status": 1, "email_reply_count": 1}))
         self.assertTrue(excluded_history({"status": 1, "timestamp_last_contact": "2026-01-01"}))
         self.assertFalse(excluded_history({"status": 1, "email_reply_count": 0}))
+
+    def test_original_registry_blocks_optouts_sends_but_allows_historical_concept_review(self):
+        from dedupe_preflight import candidate_identity
+        address = "person0@company0.nl"
+        item = {"identity": candidate_identity({"email": address}),
+                "status": "opt_out", "row_number": 2}
+        self.assertTrue(historical_registry_hold({"email": address}, [item], original_email=address))
+        item["status"] = "sent"
+        self.assertTrue(historical_registry_hold({"email": address}, [item], original_email=address))
+        item["status"] = "concept"
+        self.assertFalse(historical_registry_hold({"email": address}, [item], original_email=address))
+        second = {"identity": candidate_identity({"email": address}),
+                  "status": "unsubscribed", "row_number": 3}
+        self.assertTrue(historical_registry_hold(
+            {"email": address}, [item, second], original_email=address
+        ))
+        self.assertTrue(historical_registry_hold({"email": "new@company0.nl"},
+                                                 [item], original_email="old@company0.nl")
+                        is False)  # nonmatching email cannot be inferred
+
+    def test_registry_optout_is_excluded_before_any_site_visit(self):
+        from dedupe_preflight import candidate_identity
+        rows = source()
+        rows[0]["website"] = "https://sample.nl/"
+        registry = [{"identity": candidate_identity({"email": rows[0]["email"]}),
+                     "status": "opt_out", "row_number": 2}]
+        site_call = Mock(side_effect=AssertionError("must never visit blocked website"))
+        result, batch = build_batch(
+            offset=0, rows=rows, history=suppression(rows),
+            ordinary=registry, verifier=site_call, researcher=site_call,
+        )
+        self.assertEqual(result["counts"]["excluded_history"], 1)
+        self.assertEqual(result["counts"]["hold_missing_website"], 99)
+        site_call.assert_not_called()
+        self.assertEqual(batch["rows"], [])
 
     def test_final_batch_exactly_28_all_holds_missing_current_website(self):
         rows = source()

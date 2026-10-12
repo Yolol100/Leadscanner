@@ -64,6 +64,33 @@ class BroadFindingsTests(unittest.TestCase):
         self.assertTrue(subject)
         self.assertEqual(draft.count("?"), 1)
 
+    def test_six_independent_official_site_findings_all_appear_in_draft(self):
+        from outreach_stages import finding_excerpt
+        texts = [
+            ("Klanten kunnen online een afspraak aanvragen voor de jaarlijkse onderhoudsbeurt.", "afspraak"),
+            ("Vraag online een offerte aan via ons formulier voor maatwerk.", "offerte"),
+            ("U kunt direct een tafel reserveren voor een bezoek aan ons restaurant.", "reserveren"),
+            ("Bestel online uw onderdelen en kies het gewenste afleveradres.", "bestellen"),
+            ("Klanten kunnen hun bestelling retourneren via ons retourformulier.", "retouren"),
+            ("U vindt de antwoorden op veelgestelde vragen in ons helpcentrum.", "help"),
+        ]
+        selected = select_one_reason({
+            "research_status": "ready", "official_domain": "sample.nl",
+            "evidence_candidates": [item(txt, path) for txt, path in texts],
+        })
+        self.assertEqual(selected["outreach_status"], "ready")
+        self.assertEqual(len(selected["selected_findings"]), 6)
+        valued = value_action_for(selected)
+        mail = body_for(valued)
+        self.assertEqual(mail.count("?"), 1)
+        self.assertLessEqual(len(mail.split()), 155)
+        self.assertTrue(all(
+            finding_excerpt(f) in mail for f in selected["selected_findings"]
+        ))
+        self.assertEqual(
+            validate_mail(valued, "ideeën op basis van jullie website", mail), []
+        )
+
     def test_portfolio_is_not_promoted_by_irrelevant_process_context(self):
         from outreach_stages import classify_evidence
         result = classify_evidence({
