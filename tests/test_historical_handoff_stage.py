@@ -72,8 +72,8 @@ class PausedHandoffStageTests(unittest.TestCase):
             Path(__file__).resolve().parent.parent
             / ".github" / "workflows" / "leads-cold.yml"
         ).read_text(encoding="utf-8")
-        stage = workflow.split("\\n  historical_handoff_stage:", 1)[1].split(
-            "\\n  historical_site_scan:", 1
+        stage = workflow.split("  historical_handoff_stage:", 1)[1].split(
+            "  historical_site_scan:", 1
         )[0]
         self.assertIn("needs: [test, instantly_control]", stage)
         self.assertIn("group: leadscanner-instantly-registry", stage)
