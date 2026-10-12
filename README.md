@@ -20,6 +20,7 @@ Draft/Paused-campagnes zonder afzenders** en bewaart bronrecords en oude mails.
 De geheime Instantly- en Sheet-gegevens blijven uitsluitend in het runnergeheugen;
 openbare logs bevatten alleen aantallen en er zijn geen prospectartifacts.
 Er ontstaat géén toestemming om te mailen of een campagne te activeren.
+De eerste echte Instantly-proefkopie is met succes afgerond en via exact destination- en registry-readback bevestigd; de overige 775 worden uitsluitend via dezelfde niet-verzendende route gekopieerd.
 Reguliere persoonlijke previews blijven privé-only.
 
 **Oude artifact-opslag gecontroleerd (11 oktober 2026):** tijdens drie eenmalige
