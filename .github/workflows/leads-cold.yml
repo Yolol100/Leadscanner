@@ -4,13 +4,14 @@ on:
   workflow_dispatch:
     inputs:
       execution_mode:
-        description: 'Openbare controle of echte concepten in mijn.host (alleen privé-repository)'
+        description: 'Onderzoek, zelftest mailbox, of handmatig concepten maken (zonder verzending)'
         required: true
         default: public_audit
         type: choice
         options:
           - public_audit
           - drafts
+          - smoke
       region:
         description: 'Plaats of regio'
         default: Amsterdam
@@ -113,7 +114,7 @@ jobs:
           PY
 
   drafts:
-    if: github.event_name == 'workflow_dispatch' && inputs.execution_mode == 'drafts'
+    if: github.event_name == 'workflow_dispatch' && inputs.execution_mode == 'drafts' && github.ref == 'refs/heads/main'
     needs: test
     runs-on: ubuntu-24.04
     timeout-minutes: 75
@@ -121,14 +122,6 @@ jobs:
       group: leadscanner-mijnhost-drafts
       cancel-in-progress: false
     steps:
-      - name: Keep all recipient details out of public GitHub Actions
-        env:
-          REPOSITORY_IS_PRIVATE: ${{ github.event.repository.private }}
-        run: |
-          if [ "$REPOSITORY_IS_PRIVATE" != 'true' ]; then
-            echo 'PRIVACY_HOLD: zet de repository eerst op privé voor echte concepten' >&2
-            exit 1
-          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -140,6 +133,7 @@ jobs:
         env:
           PYTHONPATH: scripts
           REPOSITORY_IS_PRIVATE: ${{ github.event.repository.private }}
+          LEADSCANNER_TRUSTED_MAIN_DRAFTS: 'true'
           REGION: ${{ inputs.region }}
           KEYWORDS: ${{ inputs.keywords }}
           TARGET: ${{ inputs.target_candidates }}
@@ -171,4 +165,57 @@ jobs:
               for key, value in report["counts"].items():
                   file.write(f"- {key}: {int(value)}\n")
               file.write("\n**Concepten exact teruggelezen. Geen SMTP-verzending.**\n")
+          PY
+
+
+  smoke:
+    # A synthetic self-addressed Draft only; never a prospective recipient.
+    # Main branch and trusted manual dispatch or explicitly marked main push.
+    if: (github.event_name == 'workflow_dispatch' && inputs.execution_mode == 'smoke' && github.ref == 'refs/heads/main') || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[myhost-smoke]'))
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    concurrency:
+      group: leadscanner-mijnhost-drafts
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Verify one synthetic Draft via IMAP and delete only its exact UID
+        env:
+          PYTHONPATH: scripts
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME || 'Andrew Baeten' }}
+          OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
+          OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import sys
+          from contextlib import redirect_stdout, redirect_stderr
+          from io import StringIO
+          from myhost_draft import live_self_draft_smoke
+          try:
+              with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+                  result = live_self_draft_smoke()
+              if result != {
+                  "status": "green",
+                  "synthetic_draft_created": 1,
+                  "exact_imap_readback": 1,
+                  "synthetic_draft_cleaned": 1,
+                  "emails_sent": 0,
+                  "prospect_records_touched": 0,
+              }:
+                  raise RuntimeError("smoke_report_incomplete")
+          except Exception:
+              print("MYHOST_SMOKE=red safe_failure_no_emails_sent")
+              sys.exit(1)
+          print("MYHOST_SMOKE=green synthetic=1 exact_readback=1 cleaned=1 emails_sent=0")
           PY
