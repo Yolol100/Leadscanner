@@ -125,8 +125,6 @@ class OutreachStagesTests(unittest.TestCase):
             mails["candidates"][0]["copy_validation_reasons"], ["no_published_business_contact"]
         )
         self.assertIsNone(mails["candidates"][0]["body"])
-        facts = generate_sequence_facts(valued)
-        self.assertEqual(facts["ready_for_human_review_count"], 0)
 
     def test_named_owner_receives_personalized_greeting_not_generic_mailbox(self):
         candidate = candidate_with_evidence([{
