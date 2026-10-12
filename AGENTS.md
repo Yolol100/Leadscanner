@@ -29,14 +29,15 @@ De gebruiker heeft expliciet gekozen dat de repo openbaar blijft en dat het Goog
 - CI zonder echte IMAP is geen live bewijs; claim daadwerkelijke conceptopslag alleen na afgeschermde IMAP-readback.
 - Historische gegevens in andere diensten worden niet door repositorywijzigingen verwijderd of automatisch gemigreerd.
 
-## Historische uitsluiting
+## Historische uitsluitingen en sleutelbeheer
 
-Een eenmalige read-only providervergelijking toonde eerst 251/1.128 treffers. Daarna zijn **alle 1.128** broncontacten in batches van maximaal 100 met geheim-sleutel-HMAC in hetzelfde, openbaar gedeelde Google Sheet vastgelegd (tab `HistoricalHmac`). De exacte afgedekte e-mailidentiteiten zijn gecontroleerd op volledige 1.128/1.128 dekking. Daarnaast zijn 914 geverifieerde bedrijfsdomeinen gehasht. Er is geen plaintext broncontactinformatie aan het register toegevoegd.
-
-- Voer **voor elk onderzoek** de bestaande openbare `DedupeRegistry` en de volledige `HistoricalHmac`-readback uit. De HMAC-tab en sleutelcontrole zijn verplicht: ontbrekend, onvolledig, gewijzigd of fout geheim → fail closed, geen nieuwe bedrijven verwerken.
-- Gebruik alleen de service-accountprivatekey uit de bestaande Actions Secret voor de domein-gescheiden HMAC-afleiding. **Sleutelrotatie** maakt de oude tokens onbruikbaar: eerst een apart gecontroleerd her-sleutelproces, nooit stilzwijgend negeren of de beveiliging uitschakelen.
-- De oorspronkelijke 635 uitsluitingen blijven behouden. Een e-mailadres dat vroeger is gebruikt wordt exact herkend; een ander adres bij hetzelfde bedrijf kan alleen worden geblokkeerd als het oude officiële domein geverifieerd was (914 gevallen), of als het al in het oorspronkelijke register voorkomt.
-- De bronimportcode is na de live migratie verwijderd. Geen campagnedienst aan de permanente code toevoegen.
+- Normale workflow leest het oorspronkelijke `DedupeRegistry` én `HistoricalHmacV2` uit de publieke Google Sheet. Het sleutelgeheim zit **alleen** in de apart, privé gedeelde Google Sheets-kluis `Leadscanner HMAC Key Vault - PRIVATE` (tab `Keys`). Niet kopiëren naar repository, openbare logs of publieke Sheets.
+- HMAC v2 dekt alle **1.128** bron-e-mailidentiteiten, **914 geverifieerde officiële bedrijfsdomeinen** en **146 conservatief afgeleide, niet-gedeelde zakelijke e-maildomeinen**. Voor **68** historische adressen bij gedeelde providers is alleen de exacte e-mailidentiteit bewezen; noem die niet bedrijf-breed afgedekt.
+- Verifieer bij iedere start exact de vaultkey, alle 1.128 geldige unieke records en de verdeling 914/146/68. Bij ontbrekende kluis, verkeerde sleutel of incompleet tabblad: **stop vóór bedrijfsresearch of mailboxwijziging**.
+- Bij rotatie van het Google-serviceaccount: geef het **nieuwe account** eerst leesrechten op de aparte privékluis en het openbare register, verifieer live de volledige v2-dedupe, en trek daarna pas de toegang van de oude account in. Door de onafhankelijke sleutel blijft de hashdekking behouden; nooit eerst de oude toegang verbreken.
+- Rotatie van de **HMAC-kluissleutel zelf** vereist een apart gecontroleerd twee-fasenplan met volledige bronreconciliatie voordat de vorige versie wordt uitgefaseerd. Draai niet blind een nieuwe random sleutel terwijl oude hashes actief zijn.
+- De gebruiker heeft bewust gekozen voor een openbare repo en het bestaande openbaar gedeelde register; respecteer dit. Alleen keyed identiteiten zijn aan het openbare sheet toegevoegd. De oorspronkelijke 635 registraties zijn behouden.
+- Alle historische provider-migratiecode is na eenmalig bewijs verwijderd; geen campagnedienst terugbrengen.
 
 ## Live verificatie
 - Een geslaagde synthetische IMAP-self-test bewijst mailboxopslag, niet dat een specifieke prospectmail goedgekeurd is.

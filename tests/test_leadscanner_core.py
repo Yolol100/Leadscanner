@@ -131,39 +131,31 @@ class CoreTests(unittest.TestCase):
         self.assertFalse(_params_valid("drafts", "Amsterdam", [], 5, 10, 10))
         self.assertTrue(_params_valid("drafts", "Amsterdam", ["fiets"], 5, 10, 10))
 
-    def test_registry_uses_authenticated_sheets_not_public_csv(self):
+    def test_registry_uses_private_vault_based_historical_v2(self):
         live_rows = [
             ["company", "website", "domain", "emails", "status", "history",
              "lead_ids", "last_event_at", "sources", "exclude_from_new_leads"],
-            ["Example Company", "https://example.org", "example.org",
+            ["Example", "https://example.org", "example.org",
              "info@example.org", "concept", "draft", "", "", "historic", "TRUE"],
         ]
-        historical_values = [
-            ["version", "key_check", "source_id_token", "email_token", "official_domain_token"]
-        ]
+        from historical_v2 import row_for_match
+        synthetic = row_for_match({
+            "emails": set(), "official": set(), "corporate": set(),
+            "count": 1128, "official_count": 914, "corporate_count": 146,
+        }, b"separate-private-key")
         with patch("leadscanner_core._authorized_session", return_value=(object(), "service-account")) as auth, \
-             patch("leadscanner_core.read_live_values", side_effect=[live_rows, historical_values]) as read, \
-             patch("leadscanner_core.hmac_key", return_value=b"synthetic-opaque-key"), \
-             patch("leadscanner_core.validate_historical_rows", return_value={
-                 "emails": {"secret-token"}, "domains": set(), "count": 1128,
-             }) as validator:
+             patch("leadscanner_core.read_live_values", return_value=live_rows) as read, \
+             patch("leadscanner_core.read_production_state", return_value=synthetic) as historical:
             exclusions = fetch_registry()
         self.assertEqual(len(exclusions), 2)
         self.assertIn("example.org", exclusions[0]["identity"]["domains"])
-        self.assertEqual(exclusions[1]["status"], "historical_suppression")
+        self.assertEqual(exclusions[1]["status"], "historical_v2_suppression")
         auth.assert_called_once_with(read_only=True)
-        self.assertEqual(read.call_count, 2)
-        self.assertTrue(validator.call_args.kwargs["complete"])
+        read.assert_called_once()
+        historical.assert_called_once()
         self.assertNotIn("email", str(exclusions[0]["status"]))
 
-    def test_incomplete_or_wrong_key_history_blocks_before_discovery(self):
-        from historical_suppression import HEADERS, VERSION, key_check, token
-        key = b"synthetic-known-secret"
-        one_hash_row = [
-            VERSION, key_check(key),
-            token(key, "source", "synthetic-source-01"),
-            token(key, "email", "old-contact@example.nl"), "",
-        ]
+    def test_missing_or_invalid_private_vault_holds_all_new_discovery(self):
         ordinary = [
             ["company", "website", "domain", "emails", "status", "history",
              "lead_ids", "last_event_at", "sources", "exclude_from_new_leads"],
@@ -171,10 +163,13 @@ class CoreTests(unittest.TestCase):
              "info@example.nl", "sent", "", "", "", "archive", "TRUE"],
         ]
         with patch("leadscanner_core._authorized_session", return_value=(object(), "service-account")), \
-             patch("leadscanner_core.read_live_values", side_effect=[ordinary, [HEADERS, one_hash_row]]), \
-             patch("leadscanner_core.hmac_key", return_value=key):
-            with self.assertRaisesRegex(RuntimeError, "historical_suppression_incomplete"):
+             patch("leadscanner_core.read_live_values", return_value=ordinary), \
+             patch("leadscanner_core.read_production_state",
+                   side_effect=RuntimeError("historical_v2_vault_unavailable_or_modified")), \
+             patch("leadscanner_core.discover") as discover:
+            with self.assertRaisesRegex(RuntimeError, "historical_v2_vault_unavailable"):
                 fetch_registry()
+        discover.assert_not_called()
 
     def test_authenticated_registry_missing_permission_fails_closed(self):
         with patch("leadscanner_core._authorized_session",
@@ -247,7 +242,7 @@ class CoreTests(unittest.TestCase):
         self.assertIn("workflow_dispatch", text)
         self.assertNotIn("actions/upload-artifact", text)
         self.assertNotIn("schedule:", text)
-        self.assertNotIn("instantly", text.split("  historical_domain_profile_once:")[0].casefold())
+        self.assertNotIn("instantly", text.casefold())
         self.assertNotIn("smtp.send", text.casefold())
 
     def test_no_smtp_send_surface_in_mailbox_core(self):

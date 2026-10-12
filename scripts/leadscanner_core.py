@@ -19,7 +19,7 @@ from cold_stages import (
     suppress_previously_used_contact_emails,
 )
 from dedupe_preflight import load_registry_values, match_candidate, candidate_identity, domains_match
-from historical_suppression import TAB_NAME as HISTORICAL_TAB, hmac_key, validate_rows as validate_historical_rows, suppression_row
+from historical_v2 import read_production_state
 from outreach_stages import select_reasons, choose_value_actions, generate_mails
 from overture_discovery import discover
 from review_draft_stages import prepare_review_batch, audit_exact_readback
@@ -38,7 +38,7 @@ class SafeRunError(RuntimeError):
 
 
 def fetch_registry() -> list[dict]:
-    """Read historical suppressions only via the authenticated Sheets API.
+    """Read canonical and independently keyed historic suppressions via Sheets API.
 
     Never use a public CSV export link or place raw registry contents on disk.
     """
@@ -47,10 +47,10 @@ def fetch_registry() -> list[dict]:
     ordinary = load_registry_values(values)
     # A partially migrated sheet is NOT evidence of complete exclusion.
     # Check every live run before finding any new prospect.
-    historical_values = read_live_values(session, DEFAULT_SPREADSHEET_ID, HISTORICAL_TAB)
-    secret = hmac_key()
-    historical = validate_historical_rows(historical_values, secret, complete=True)
-    return ordinary + [suppression_row(historical, secret)]
+    # The independent key is kept in a separate private Google workbook.
+    # Service-account private-key rotation no longer changes identity tokens.
+    history = read_production_state(session, read_live_values, DEFAULT_SPREADSHEET_ID)
+    return ordinary + [history]
 
 
 def revalidate_drafts(batch: dict, registry: list[dict]) -> tuple[dict, int]:
