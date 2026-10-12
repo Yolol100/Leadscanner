@@ -18,7 +18,7 @@ from cold_stages import normalize_domain
 MAX_CANDIDATES = 100
 MAX_BODY_WORDS = 155
 MAX_SUBJECT_WORDS = 8
-MAX_DRAFT_HIGHLIGHTS = 3  # Full 1-6 findings remain bound to human review.
+MAX_DRAFT_HIGHLIGHTS = 6  # Include every verified finding, never pad weak evidence.
 
 NL_MARKERS = (" jullie ", " onze ", " voor ", " een ", " het ", " met ", " kunnen ", " afspraak ", " offerte ")
 EN_MARKERS = (" your ", " our ", " for ", " the ", " with ", " can ", " booking ", " quote ", " services ")
@@ -618,7 +618,7 @@ def validate_mail(candidate: dict, subject: str, body: str) -> list[str]:
         reasons.append("review_findings_missing_or_unverified")
     if len(findings) > 1:
         # The review queue and exact approval token retain every finding.
-        # The outgoing draft only needs to quote the top three distinct points.
+        # A multi-point draft must quote every selected independently verified point.
         if any(finding_excerpt(item) not in body for item in findings[:MAX_DRAFT_HIGHLIGHTS]):
             reasons.append("review_findings_missing_or_unverified")
     elif _text(candidate.get("verified_observation")) not in body:
