@@ -160,7 +160,13 @@ def evaluate(root: str | Path = ".") -> dict:
                 "cancel-in-progress: false" in workflow
                 and "immutable_instantly_command_modified_or_deleted" in workflow
                 and "mixed_instantly_command_and_control_change_forbidden" in workflow
-                and workflow.count("group: leadscanner-instantly-registry") == 2
+                and workflow.count("group: leadscanner-instantly-registry") == 3
+                and "historical_handoff_stage:" in workflow
+                and "[historical-handoff-stage]" in workflow
+                and "scripts/historical_handoff_stage.py" in workflow
+                and "--approved-cohort 776" in workflow
+                and "copy_leads\": True" in _read(root, "scripts/historical_handoff_stage.py")
+                and '"email_sent": 0' in _read(root, "scripts/historical_handoff_stage.py")
                 and '"automatic_send": False' in sync
                 and '"instantly_mutation": False' in sync
                 and '"creates_registry_identity": False' in sync
