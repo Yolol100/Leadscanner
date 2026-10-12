@@ -52,7 +52,7 @@ class HistoricalSiteRebuildTests(unittest.TestCase):
                 "leadscanner_site_refresh_evidence_url": "https://sample.nl/afspraak",
                 "leadscanner_site_refresh_official_domain": "sample.nl",
             },
-        }), "https://sample.nl/")
+        }), "https://sample.nl")
 
     def test_prior_replies_sends_bounce_and_unsubscribes_excluded(self):
         self.assertTrue(excluded_history({"status": -2}))
