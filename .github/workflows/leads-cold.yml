@@ -1265,7 +1265,7 @@ jobs:
   # done inside the secret-backed runner; stdout contains only aggregate data.
   historical_handoff_stage:
     if: github.event_name == 'push' && (contains(github.event.head_commit.message, '[historical-handoff-stage]') || contains(github.event.head_commit.message, '[historical-handoff-smoke]'))
-    needs: test
+    needs: [test, instantly_control]
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     concurrency:
