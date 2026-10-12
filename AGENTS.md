@@ -29,6 +29,10 @@ De gebruiker heeft expliciet gekozen dat de repo openbaar blijft en dat het Goog
 - CI zonder echte IMAP is geen live bewijs; claim daadwerkelijke conceptopslag alleen na afgeschermde IMAP-readback.
 - Historische gegevens in andere diensten worden niet door repositorywijzigingen verwijderd of automatisch gemigreerd.
 
+## Historische beperking
+
+De eenmalige read-only vergelijking van 12 oktober 2026 vond 251 matches onder 1.128 historische contacten. De overige 877 zijn **niet aantoonbaar** gedekt. Claim nooit volledige historische dedupe of 10/10 zolang de dekking niet is opgelost. Voeg geen nieuwe persoonlijke adressen ongecontroleerd toe aan het bewust openbaar gehouden register. De auditcode is na gebruik verwijderd.
+
 ## Live verificatie
 - Een geslaagde synthetische IMAP-self-test bewijst mailboxopslag, niet dat een specifieke prospectmail goedgekeurd is.
 - Test nieuwe prospectconcepten uitsluitend na historische dedupe, bron-, contact- en mailkwaliteitchecks, met volledig veilige readback en handmatige beoordeling.
