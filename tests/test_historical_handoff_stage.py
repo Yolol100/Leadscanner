@@ -1,5 +1,6 @@
 """Never-sending historical Instantly campaign staging regression tests."""
 import unittest
+from pathlib import Path
 from copy import deepcopy
 from unittest.mock import patch
 
@@ -66,6 +67,18 @@ class FakeClient:
 
 
 class PausedHandoffStageTests(unittest.TestCase):
+    def test_historical_stage_waits_for_instantly_control_on_same_concurrency_lane(self):
+        workflow = (
+            Path(__file__).resolve().parent.parent
+            / ".github" / "workflows" / "leads-cold.yml"
+        ).read_text(encoding="utf-8")
+        stage = workflow.split("  historical_handoff_stage:", 1)[1].split(
+            "  historical_site_scan:", 1
+        )[0]
+        self.assertIn("needs: [test, instantly_control]", stage)
+        self.assertIn("group: leadscanner-instantly-registry", stage)
+        self.assertIn("cancel-in-progress: false", stage)
+
     def test_destination_handoff_copy_only_changes_destination_and_preserves_consent_status(self):
         src = source_rows()[0]
         dest = deepcopy(src)
