@@ -23,7 +23,7 @@ Er ontstaat géén toestemming om te mailen of een campagne te activeren.
 De eerste echte Instantly-proefkopie is met succes afgerond en via exact destination- en registry-readback bevestigd. De totale overdracht verloopt in gecontroleerde, hervatbare batches; bij een onbekende provideruitkomst volgt eerst een read-only reconciliatie, nooit een blinde herhaling.
 Reguliere persoonlijke previews blijven privé-only.
 
-**Oude artifact-opslag gecontroleerd (11 oktober 2026):** tijdens drie eenmalige
+**Herstelstatus 12 oktober 2026:** de laatste private-runner read-only audit bevestigde 67 gedeeltelijke Instantly-kopieën en 1 volledig gecontroleerde staging. De bestaande herstelroute verwerkt eerst die gedeeltelijke kopieën, daarna nieuwe kopieën in batches van maximaal 10, met readback per groep. Een geslaagde code- of smoke-test is nog geen bewijs dat alle 776 contacten veilig gestaged zijn.\n\n**Oude artifact-opslag gecontroleerd (11 oktober 2026):** tijdens drie eenmalige
 Actions-opschonings-/verificatieruns zijn 105 artifacts verwijderd (waaronder
 tijdelijke controlerapporten uit die runs). Bij de laatste API-readback bleven
 40 artifacts over; allemaal met een expliciet toegelaten naam voor
