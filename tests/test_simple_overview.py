@@ -1,7 +1,7 @@
 """The one-page operator view never exposes recipient details or hides send status."""
 import unittest
 
-from simple_overview import render_overview
+from simple_overview import COUNT_KEYS, render_overview
 
 
 def manifest(mode="preview", counts=None):
@@ -81,6 +81,13 @@ class SimpleOverviewTests(unittest.TestCase):
         self.assertIn("Campagneactivering staat los", out)
         draft = manifest("draft", {"approved_for_draft": 3, "draft_created": 2, "draft_existing_exact": 1})
         self.assertIn("Concepten opgeslagen: **2**", render_overview(draft))
+
+    def test_all_existing_count_fields_keep_exact_nonnegative_integer_validation(self):
+        for key in COUNT_KEYS:
+            with self.subTest(key=key):
+                item = manifest(counts={key: -1})
+                with self.assertRaisesRegex(ValueError, "overview_counts_must_be_nonnegative_integers"):
+                    render_overview(item)
 
     def test_false_send_assurance_or_malformed_counts_fail_closed(self):
         item = manifest()
