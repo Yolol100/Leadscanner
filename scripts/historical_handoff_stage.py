@@ -159,11 +159,16 @@ def _registry_row(row: dict, language: str) -> list[str]:
     ]
 
 
-def stage_batch(client, *, offset: int, expected_reviewed: int = EXPECTED_REVIEWED) -> dict:
+def stage_batch(
+    client, *, offset: int, expected_reviewed: int = EXPECTED_REVIEWED,
+    max_targets: int = BATCH_SIZE,
+) -> dict:
     if type(offset) is not int or offset < 0 or offset % BATCH_SIZE:
         raise ValueError("historical_handoff_invalid_batch_offset")
     if expected_reviewed != EXPECTED_REVIEWED:
         raise ValueError("historical_handoff_expected_review_count_drift")
+    if type(max_targets) is not int or not 1 <= max_targets <= BATCH_SIZE:
+        raise ValueError("historical_handoff_max_targets_invalid")
     source = _source_rows(client, EXPECTED_SOURCE_COUNT)
     if offset >= len(source):
         raise ValueError("historical_handoff_offset_outside_source")
@@ -214,6 +219,9 @@ def stage_batch(client, *, offset: int, expected_reviewed: int = EXPECTED_REVIEW
             continue
         if any(email in targets[other] for other in ("nl", "en") if other != language):
             count["other_campaign_hold"] += 1
+            continue
+        if sum(map(len, selected.values())) >= max_targets:
+            count["deferred_after_limit"] += 1
             continue
         # Reconcile a prior partial copy instead of issuing a duplicate POST.
         if email in targets[language]:
@@ -333,10 +341,14 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--offset", required=True, type=int)
     parser.add_argument("--approved-cohort", type=int, default=EXPECTED_REVIEWED)
+    parser.add_argument("--max-targets", type=int, default=BATCH_SIZE)
     args = parser.parse_args()
     try:
         client = InstantlyClient(os.environ["INSTANTLY_API_KEY"])
-        result = stage_batch(client, offset=args.offset, expected_reviewed=args.approved_cohort)
+        result = stage_batch(
+            client, offset=args.offset, expected_reviewed=args.approved_cohort,
+            max_targets=args.max_targets,
+        )
     except Exception:
         raise SystemExit("HISTORICAL_PAUSED_STAGE=failed_reconcile_before_retry") from None
     print("HISTORICAL_PAUSED_STAGE=green " + json.dumps(result, sort_keys=True, separators=(",", ":")))
