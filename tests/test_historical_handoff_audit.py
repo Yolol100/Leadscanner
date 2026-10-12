@@ -96,14 +96,21 @@ class HistoricalHandoffAuditTests(unittest.TestCase):
         status = audit_destination_copies([source], destinations, client)
         self.assertEqual(status["copied_pending_personalization"], 1)
         self.assertEqual(status["exact_personalization_verified"], 0)
+        self.assertEqual(status["mismatch_handoff_status"], 1)
+        self.assertEqual(status["mismatch_reviewed_body"], 1)
         self.assertNotIn(source["email"], str(status))
+        self.assertNotIn(BODY, str(status))
         client.current["payload"] = build_destination_variables(source, target)
         exact = audit_destination_copies([source], destinations, client)
         self.assertEqual(exact["exact_personalization_verified"], 1)
         self.assertEqual(exact["copied_pending_personalization"], 0)
+        self.assertEqual(exact["mismatch_reviewed_body"], 0)
         client.current["payload"]["leadscanner_body"] = "changed"
         mismatched = audit_destination_copies([source], destinations, client)
         self.assertEqual(mismatched["changed_or_unexpected_personalization"], 1)
+        self.assertEqual(mismatched["mismatch_reviewed_body"], 1)
+        self.assertEqual(mismatched["mismatch_handoff_status"], 0)
+        self.assertEqual(mismatched["mismatch_other_existing_variable"], 0)
 
     def test_wrong_destination_or_unknown_person_never_counts_as_completed(self):
         from instantly_campaign_copy import TARGET_CAMPAIGNS
