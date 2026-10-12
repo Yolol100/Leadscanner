@@ -72,6 +72,11 @@ class HistoricalSiteRebuildTests(unittest.TestCase):
         self.assertTrue(historical_registry_hold({"email": address}, [item], original_email=address))
         item["status"] = "concept"
         self.assertFalse(historical_registry_hold({"email": address}, [item], original_email=address))
+        second = {"identity": candidate_identity({"email": address}),
+                  "status": "unsubscribed", "row_number": 3}
+        self.assertTrue(historical_registry_hold(
+            {"email": address}, [item, second], original_email=address
+        ))
         self.assertTrue(historical_registry_hold({"email": "new@company0.nl"},
                                                  [item], original_email="old@company0.nl")
                         is False)  # nonmatching email cannot be inferred
