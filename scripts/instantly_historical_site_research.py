@@ -392,21 +392,26 @@ def research_imported_sites_batch(
     def scan_one(row: dict) -> dict:
         def perform():
             return scanner(row, refresh=True) if refresh and scanner is _scan_site else scanner(row)
+
+        def safe_error_kind(error: Exception) -> str:
+            if isinstance(error, requests.Timeout):
+                return "network_timeout"
+            if isinstance(error, requests.ConnectionError):
+                return "network_connection"
+            if isinstance(error, (ValueError, TypeError, KeyError, UnicodeError)):
+                return "data_format"
+            return "unexpected"
+
         try:
             return perform()
-        except (requests.Timeout, requests.ConnectionError) as exc:
+        except (requests.Timeout, requests.ConnectionError) as first_error:
+            kind = safe_error_kind(first_error)
             try:
                 return perform()  # one safe read-only retry, never a write
-            except Exception as retry_exc:
-                exc = retry_exc
-        except Exception as exc:
-            pass
-        kind = (
-            "network_timeout" if isinstance(exc, requests.Timeout)
-            else "network_connection" if isinstance(exc, requests.ConnectionError)
-            else "data_format" if isinstance(exc, (ValueError, TypeError, KeyError, UnicodeError))
-            else "unexpected"
-        )
+            except Exception as retry_error:
+                kind = safe_error_kind(retry_error)
+        except Exception as error:
+            kind = safe_error_kind(error)
         return {"status": "site_scan_exception", "error_kind": kind}
     with ThreadPoolExecutor(max_workers=workers) as pool:
         outcomes = list(pool.map(scan_one, batch))
