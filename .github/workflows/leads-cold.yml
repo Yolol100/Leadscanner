@@ -1256,7 +1256,7 @@ jobs:
   # Provider reads, canonical suppression and exact destination readbacks are
   # done inside the secret-backed runner; stdout contains only aggregate data.
   historical_handoff_stage:
-    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[historical-handoff-stage]')
+    if: github.event_name == 'push' && (contains(github.event.head_commit.message, '[historical-handoff-stage]') || contains(github.event.head_commit.message, '[historical-handoff-smoke]'))
     needs: test
     runs-on: ubuntu-24.04
     timeout-minutes: 180
@@ -1280,9 +1280,13 @@ jobs:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: |
           set -euo pipefail
-          for offset in 0 100 200 300 400 500 600 700 800 900 1000 1100; do
-            python3 scripts/historical_handoff_stage.py --offset "$offset" --approved-cohort 776
-          done
+          if [ "${{ contains(github.event.head_commit.message, '[historical-handoff-smoke]') }}" = 'true' ]; then
+            python3 scripts/historical_handoff_stage.py --offset 0 --max-targets 1 --approved-cohort 776
+          else
+            for offset in 0 100 200 300 400 500 600 700 800 900 1000 1100; do
+              python3 scripts/historical_handoff_stage.py --offset "$offset" --approved-cohort 776
+            done
+          fi
 
   # Historical first-party research is strictly separate from outreach.
   # Only an explicit [historical-site-scan] main commit runs these twelve
