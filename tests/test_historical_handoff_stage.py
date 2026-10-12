@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from historical_handoff_stage import (
     EXPECTED_REVIEWED, TARGET_CAMPAIGNS, build_destination_variables,
-    stage_batch,
+    stage_batch, _update_destination,
 )
 from historical_handoff_audit import _reviewed_refresh
 from tests.test_historical_handoff_audit import row
@@ -114,6 +114,42 @@ class PausedHandoffStageTests(unittest.TestCase):
             self.assertEqual(len(client.posts), 1)
             self.assertEqual(len(client.patches), 100)
             self.assertEqual(retry["counts"]["destination_personalization_confirmed"], 100)
+
+    def test_one_lead_smoke_then_full_cohort_is_idempotent_and_non_sending(self):
+        rows = source_rows()
+        client = FakeClient(rows)
+        with patch("historical_handoff_stage._source_rows", return_value=rows), \
+             patch("historical_handoff_stage.fetch_live_registry", return_value=[]), \
+             patch("historical_handoff_stage.blocked_values", return_value=set()), \
+             patch("historical_handoff_stage.preflight_campaign"), \
+             patch("historical_handoff_stage.check_registry_access"), \
+             patch("historical_handoff_stage._wait_job"), \
+             patch("historical_handoff_stage.update_registry", return_value={"exact_readback": True}):
+            smoke = stage_batch(client, offset=0, max_targets=1)
+            self.assertEqual(smoke["counts"]["destination_personalization_confirmed"], 1)
+            self.assertEqual(len(client.posts), 1)
+            self.assertEqual(len(client.patches), 1)
+            self.assertFalse(smoke["campaign_activation"])
+            full = stage_batch(client, offset=0)
+            self.assertEqual(full["counts"]["destination_personalization_confirmed"], 100)
+            self.assertEqual(full["counts"]["destination_updated"], 99)
+            self.assertEqual(len(client.posts), 2)
+            self.assertEqual(len(client.destinations), 100)
+            self.assertEqual(len(client.sources), 1128)
+
+    def test_existing_approved_destination_copy_cannot_be_silently_changed(self):
+        src = source_rows()[0]
+        dest = deepcopy(src)
+        dest["id"] = "dest-row-0"
+        dest["list_id"] = None
+        dest["campaign"] = TARGET_CAMPAIGNS["nl"][0]
+        dest["payload"] = build_destination_variables(src, dest)
+        dest["payload"]["leadscanner_body"] += " unapproved changed content"
+        client = FakeClient([src])
+        client.destinations[dest["id"]] = dest
+        with self.assertRaisesRegex(RuntimeError, "already_staged_copy_changed"):
+            _update_destination(client, src, dest, TARGET_CAMPAIGNS["nl"][0])
+        self.assertEqual(client.patches, [])
 
     def test_source_changed_or_active_campaign_prevents_provider_move(self):
         rows = source_rows()
