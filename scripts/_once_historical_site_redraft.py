@@ -536,6 +536,48 @@ def run(offset: int, mode: str) -> dict:
     return report
 
 
+def safe_failure_marker(error: BaseException) -> str:
+    """Return ONLY source-code identifiers, never exception text or traceback.
+
+    Exception messages and locals may contain recipient names, URLs or email
+    copy. This allows debugging a failed historical batch on a public runner
+    without publishing any such data.
+    """
+    safe_modules = {
+        "_once_historical_site_redraft.py": "history",
+        "_once_historical_source_diagnose.py": "source",
+        "leadscanner_core.py": "registry",
+        "historical_v2.py": "dedupe",
+        "dedupe_preflight.py": "matching",
+        "cold_stages.py": "website",
+        "first_party_contacts.py": "contact",
+        "site_crawl.py": "robots",
+        "url_safety.py": "url_policy",
+        "outreach_stages.py": "copy",
+        "review_draft_stages.py": "draft_validation",
+    }
+    safe_types = {
+        "ValueError": "value_error", "KeyError": "missing_key",
+        "TypeError": "type_error", "AttributeError": "attribute_error",
+        "IndexError": "index_error", "RuntimeError": "runtime_error",
+        "AssertionError": "assertion_error", "OverflowError": "overflow_error",
+        "UnicodeError": "unicode_error",
+    }
+    origin = "unclassified"
+    trace = error.__traceback__
+    while trace is not None:
+        filename = str(trace.tb_frame.f_code.co_filename).replace("\\\\", "/").rsplit("/", 1)[-1]
+        if filename in safe_modules:
+            lineno = trace.tb_lineno
+            origin = (safe_modules[filename] + "_line_" + str(lineno)
+                      if isinstance(lineno, int) and 0 < lineno < 5000
+                      else safe_modules[filename])
+        trace = trace.tb_next
+    return "origin=" + origin + " type=" + safe_types.get(
+        type(error).__name__, "other_failure"
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--offset", type=int, required=True)
@@ -555,7 +597,7 @@ def main() -> int:
             "fresh_registry_existing_exclusion", "fresh_other_existing_concept",
         }
         code = str(error) if str(error) in fixed else "private_failure_hold"
-        print("HISTORICAL_SITE_REBUILD=red stage=" + code + " details_suppressed")
+        print("HISTORICAL_SITE_REBUILD=red stage=" + code + " " + safe_failure_marker(error) + " details_suppressed")
         return 1
     print("HISTORICAL_SITE_REBUILD=green "
           + json.dumps(report, sort_keys=True))
