@@ -20,7 +20,7 @@ from instantly_campaign_copy import TARGET_CAMPAIGNS
 from instantly_historical_site_research import (
     EXPECTED_SOURCE_COUNT, BATCH_SIZE, _custom, _source_rows, _text,
 )
-from historical_handoff_audit import _reviewed_refresh, audit_counts
+from historical_handoff_audit import _reviewed_refresh, audit_counts, audit_workspace_capacity
 from instantly_language_route import _items, _wait_job, preflight_campaign
 from instantly_service import DEFAULT_REGISTRY_URL, fetch_live_registry
 from myhost_instantly_import import TARGET_LIST_ID, blocked_values, registry_allows_draft
@@ -341,8 +341,18 @@ def stage_batch(
             row for row in rows
             if _text(row.get("email")).casefold() not in fresh
         ]
-        # Never block 67 already-copied recipients behind a new bulk move.
+        # Never block previously copied recipients behind capacity changes.
         personalize_and_verify(language, existing, fresh)
+
+        if missing:
+            # A confirmed Instantly upload-capacity shortage can make move
+            # jobs fail after copying only some recipients. Fail BEFORE POST;
+            # no repeated uncertain jobs, wasted slots or duplicate attempts.
+            capacity = audit_workspace_capacity(
+                client, audit["counts"]["stage_eligible_review_only"]
+            )
+            if capacity["status"] in {"at_limit", "insufficient"}:
+                raise RuntimeError("historical_handoff_provider_capacity_insufficient")
 
         # Small, bounded background jobs minimize partial-copy uncertainty.
         # A failed/unknown job halts this run; a later explicitly audited
