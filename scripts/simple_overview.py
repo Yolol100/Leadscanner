@@ -11,22 +11,24 @@ import json
 from pathlib import Path
 
 
-COUNT_LABELS = {
-    "discovery_after_cheap_filters": "Websites na eerste selectie",
-    "dedupe_kept": "Nog niet eerder benaderd",
-    "verified_for_research": "Officiële websites geverifieerd",
-    "research_ready": "Websites onderzocht",
-    "contacts_found": "Zakelijke e-mailadressen gevonden",
-    "named_contacts": "Persoonlijke contacten met naam",
-    "outreach_reason_ready": "Bruikbare observaties gevonden",
-    "review_queue_candidates": "Klaar voor beoordeling",
-    "approved_for_instantly": "Goedgekeurd",
-    "instantly_staged": "Klaargezet in Instantly",
-    "approved_for_draft": "Goedgekeurd",
-    "draft_created": "Concepten opgeslagen",
-    "draft_existing_exact": "Bestaande concepten bevestigd",
-    "suppressed_after_preview": "Terecht overgeslagen na nieuwe controle",
-}
+# These are validation keys only: their displayed labels are defined once
+# in render_overview. Keeping a second label dictionary duplicated copy.
+COUNT_KEYS = (
+    "discovery_after_cheap_filters",
+    "dedupe_kept",
+    "verified_for_research",
+    "research_ready",
+    "contacts_found",
+    "named_contacts",
+    "outreach_reason_ready",
+    "review_queue_candidates",
+    "approved_for_instantly",
+    "instantly_staged",
+    "approved_for_draft",
+    "draft_created",
+    "draft_existing_exact",
+    "suppressed_after_preview",
+)
 DROP_LABELS = {
     "cheap_filter": "Eerste selectie",
     "dedupe": "Al bekend of uitgesloten",
@@ -55,7 +57,7 @@ def render_overview(manifest: dict) -> str:
     counts = manifest.get("counts") or {}
     if not isinstance(counts, dict):
         raise ValueError("overview_counts_must_be_object")
-    for key in COUNT_LABELS:
+    for key in COUNT_KEYS:
         number = counts.get(key, 0)
         if type(number) is not int or number < 0:
             raise ValueError("overview_counts_must_be_nonnegative_integers")
