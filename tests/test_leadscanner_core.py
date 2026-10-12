@@ -23,7 +23,7 @@ def fixture_row(lead_id="growth-0123456789abcdef0123", email="info@example.org")
 
 
 class CoreTests(unittest.TestCase):
-    def _run(self, mode, **overrides):
+    def _run(self, mode, *, proof_error=False, registry_error=False, **overrides):
         row = fixture_row()
         ready_batch = {"rows": [row], "draft_candidate_count": 1}
         mocks = {
@@ -54,19 +54,23 @@ class CoreTests(unittest.TestCase):
                 "review_required_count": 1,
             }))
             patched["proof"] = stack.enter_context(
-                patch("leadscanner_core.audit_exact_readback", return_value={
-                    "status": "green", "registry_rows": [], "draft_count": 1,
-                    "automatic_send": False,
-                })
+                patch("leadscanner_core.audit_exact_readback",
+                      side_effect=RuntimeError("private readback contains sensitive details") if proof_error else None,
+                      return_value={
+                          "status": "green", "registry_rows": [], "draft_count": 1,
+                          "automatic_send": False,
+                      })
             )
             patched["access"] = stack.enter_context(
                 patch("leadscanner_core.check_registry_access")
             )
             patched["registry_write"] = stack.enter_context(
-                patch("leadscanner_core.update_registry", return_value={
-                    "status": "green", "exact_readback": True,
-                    "appended_count": 1, "already_present_count": 0,
-                })
+                patch("leadscanner_core.update_registry",
+                      side_effect=RuntimeError("private registry failure body") if registry_error else None,
+                      return_value={
+                          "status": "green", "exact_readback": True,
+                          "appended_count": 1, "already_present_count": 0,
+                      })
             )
             stack.enter_context(patch.dict("leadscanner_core.os.environ", {
                 "OUTREACH_MAIL_PASSWORD": "synthetic-not-a-real-secret",
@@ -78,6 +82,7 @@ class CoreTests(unittest.TestCase):
                 "verify_limit": 10, "repository_private": mode == "drafts",
             }
             params.update(overrides)
+            self.last_mocks = patched
             output = run(**params)
             return output, patched
 
@@ -137,12 +142,25 @@ class CoreTests(unittest.TestCase):
             revalidate_drafts({"rows": [altered]}, [])
 
     def test_mailbox_readback_failure_stops_registry(self):
-        # A failed proof must never be treated as a completed draft.
-        with patch("leadscanner_core.audit_exact_readback", side_effect=ValueError("private body")), \
-             patch("leadscanner_core.update_registry") as registry_write:
-            # The main integration test exercises success; a private proof error
-            # is intentionally suppressed by the public-safe entrypoint.
-            registry_write.assert_not_called()
+        with self.assertRaisesRegex(SafeRunError, "myhost_readback"):
+            self._run("drafts", proof_error=True)
+        self.last_mocks["registry_write"].assert_not_called()
+
+    def test_registry_failure_is_not_reported_as_success(self):
+        with self.assertRaisesRegex(SafeRunError, "registry_closure"):
+            self._run("drafts", registry_error=True)
+        self.last_mocks["proof"].assert_called_once()
+
+    def test_private_provider_errors_never_appear_in_public_cli_output(self):
+        from sys import argv
+        buffer = io.StringIO()
+        with patch("sys.argv", ["leadscanner_core.py", "--mode", "public_audit"]), \
+             patch("leadscanner_core.run", side_effect=RuntimeError("private-recipient@example.org")), \
+             redirect_stdout(buffer):
+            result = main()
+        self.assertEqual(result, 1)
+        self.assertIn('"failed_stage": "bootstrap"', buffer.getvalue())
+        self.assertNotIn("private-recipient", buffer.getvalue())
 
     def test_workflow_excludes_sending_and_public_artifacts(self):
         from pathlib import Path
