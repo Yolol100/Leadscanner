@@ -49,6 +49,6 @@ Openbare runs tonen alleen cijfers. Handmatig vertrouwde Actions-runs verwerken 
 
 Een gepubliceerd zakelijk e-mailadres of een opgeslagen concept is **geen toestemming om reclame te mailen**. De gebruiker beslist afzonderlijk en moet de toepasselijke regels en opt-outs controleren.
 
-De eerdere contacten in een externe campagnedienst worden niet verwijderd of gemigreerd door deze codewijziging. Het uitsluitregister blijft behouden, maar volledige dekking van alle historische contact-ID's is nog niet extern bevestigd. Voor oude, nog niet in mijn.host opgeslagen concepten is een afzonderlijk afgeschermd export/import-traject nodig.
+**Historische dedupe-audit (12 oktober 2026):** van 1.128 eerdere providercontacten zijn er 251 aantoonbaar gedekt door het bestaande register. Voor 877 is geen overeenkomst bevestigd. Dit bewijst geen dubbele berichten, maar betekent wel dat de historische uitsluiting nog **niet volledig** is. Er zijn geen adresgegevens aan het openbare register toegevoegd. Volledige zekerheid tegen herselectie van deze contacten vereist eerst een afzonderlijke, privacybewuste aanvulling van het register. Het oude providersysteem is niet teruggebracht in de actieve pipeline.
 
 Lees [mailkwaliteit](docs/mailkwaliteit.md) en [technische regels](AGENTS.md).
