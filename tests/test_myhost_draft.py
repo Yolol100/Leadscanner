@@ -92,6 +92,26 @@ class DraftTests(unittest.TestCase):
             "contact_basis_status": basis,
         }
 
+    def test_draft_readback_rejects_wrong_from_sender(self):
+        _, expected = build_message(self.row())
+        actual = BytesParser(policy=default).parsebytes(expected.as_bytes())
+        del actual["From"]
+        actual["From"] = "Impersonator <impersonator@elsewhere.example>"
+        self.assertFalse(exact_message_matches(actual, expected))
+
+    def test_existing_draft_sender_changed_cannot_be_counted_exact(self):
+        client = FakeIMAP()
+        with patch("myhost_draft.connect_imap", return_value=client):
+            create_drafts({"rows": [self.row()]}, reject_changed_existing=True)
+        altered = BytesParser(policy=default).parsebytes(client.messages[0])
+        del altered["From"]
+        altered["From"] = "Other <other@sender.example>"
+        client.messages[0] = altered.as_bytes(policy=default)
+        with patch("myhost_draft.connect_imap", return_value=client):
+            with self.assertRaisesRegex(RuntimeError, "automatic replacement is disabled"):
+                create_drafts({"rows": [self.row()]}, reject_changed_existing=True)
+        self.assertEqual(len(client.messages), 1)
+
     def test_post_login_capability_refresh_detects_uidplus(self):
         client = FakeIMAP(uidplus=False)
         client.live_capabilities = (b"IMAP4REV1", b"UIDPLUS")
