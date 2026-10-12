@@ -306,6 +306,7 @@ jobs:
             scripts/instantly_language_route.py \
             scripts/instantly_historical_site_research.py \
             scripts/historical_handoff_audit.py \
+            scripts/historical_handoff_stage.py \
             scripts/instantly_launch_audit.py \
             scripts/instantly_old_campaign_retire.py \
             scripts/update_dedupe_registry.py \
@@ -348,6 +349,7 @@ jobs:
             tests.test_instantly_language_route \
             tests.test_instantly_historical_site_research \
             tests.test_historical_handoff_audit \
+            tests.test_historical_handoff_stage \
             tests.test_instantly_launch_audit \
             tests.test_instantly_old_campaign_retire \
             tests.test_update_dedupe_registry \
@@ -1247,6 +1249,43 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/historical_handoff_audit.py
+
+  # One-off user-authorized migration of exactly 776 reviewed historical drafts.
+  # Only copies into unsendable existing NL/EN campaigns. Per-lead updates
+  # change copied destination variables, never the original 1128 source rows.
+  # Provider reads, canonical suppression and exact destination readbacks are
+  # done inside the secret-backed runner; stdout contains only aggregate data.
+  historical_handoff_stage:
+    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[historical-handoff-stage]')
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    concurrency:
+      group: leadscanner-instantly-registry
+      cancel-in-progress: false
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        offset: [0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Install no-send handoff runtime
+        run: python3 -m pip install --disable-pip-version-check 'requests>=2,<3' 'google-auth>=2,<3'
+      - name: Copy only reviewed leads to non-sending Instantly destinations
+        env:
+          PYTHONPATH: scripts
+          INSTANTLY_API_KEY: ${{ secrets.INSTANTLY_API_KEY }}
+          LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON || secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -euo pipefail
+          python3 scripts/historical_handoff_stage.py --offset "${{ matrix.offset }}" --approved-cohort 776
 
   # Historical first-party research is strictly separate from outreach.
   # Only an explicit [historical-site-scan] main commit runs these twelve
