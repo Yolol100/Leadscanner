@@ -18,6 +18,7 @@ def source_rows():
     ] + [row(i, status="research_only_contact_unverified") for i in range(776, 1128)]
     for item in result:
         item["list_id"] = TARGET_LIST_ID
+        item["payload"]["leadscanner_import_origin"] = "myhost_drafts"
     return result
 
 
