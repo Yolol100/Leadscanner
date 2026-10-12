@@ -156,6 +156,26 @@ class CoreTests(unittest.TestCase):
         self.assertTrue(validator.call_args.kwargs["complete"])
         self.assertNotIn("email", str(exclusions[0]["status"]))
 
+    def test_incomplete_or_wrong_key_history_blocks_before_discovery(self):
+        from historical_suppression import HEADERS, VERSION, key_check, token
+        key = b"synthetic-known-secret"
+        one_hash_row = [
+            VERSION, key_check(key),
+            token(key, "source", "synthetic-source-01"),
+            token(key, "email", "old-contact@example.nl"), "",
+        ]
+        ordinary = [
+            ["company", "website", "domain", "emails", "status", "history",
+             "lead_ids", "last_event_at", "sources", "exclude_from_new_leads"],
+            ["Old", "https://example.nl", "example.nl",
+             "info@example.nl", "sent", "", "", "", "archive", "TRUE"],
+        ]
+        with patch("leadscanner_core._authorized_session", return_value=(object(), "service-account")), \
+             patch("leadscanner_core.read_live_values", side_effect=[ordinary, [HEADERS, one_hash_row]]), \
+             patch("leadscanner_core.hmac_key", return_value=key):
+            with self.assertRaisesRegex(RuntimeError, "historical_suppression_incomplete"):
+                fetch_registry()
+
     def test_authenticated_registry_missing_permission_fails_closed(self):
         with patch("leadscanner_core._authorized_session",
                    side_effect=RuntimeError("missing authorized service account")):
@@ -227,7 +247,7 @@ class CoreTests(unittest.TestCase):
         self.assertIn("workflow_dispatch", text)
         self.assertNotIn("actions/upload-artifact", text)
         self.assertNotIn("schedule:", text)
-        self.assertNotIn("instantly", text.split("  historical_hmac_once:")[0].casefold())
+        self.assertNotIn("instantly", text.casefold())
         self.assertNotIn("smtp.send", text.casefold())
 
     def test_no_smtp_send_surface_in_mailbox_core(self):

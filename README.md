@@ -20,7 +20,7 @@ Open [GitHub Actions — Leadscanner](../../actions/workflows/leads-cold.yml), k
 - Alle oude contactgegevens worden uitsluitend via de **Google Sheets API met OAuth read-only scope** opgehaald. De openbare CSV-exportlink is niet meer in de actieve workflow aanwezig.
 - GitHub Secret: `LEAD_REGISTRY_SERVICE_ACCOUNT_JSON` (of `GOOGLE_SERVICE_ACCOUNT_JSON`), met toegang tot het bestaande Google Sheet. Openbare audit-runs gebruiken alleen een token met leesrechten.
 - **Bestaande keuze:** het Google Sheet blijft *Iedereen met de link — Lezer*. Die toestemming geeft linkhouders toegang tot bestaande contact-/uitsluitgegevens. De code gebruikt desondanks alleen geauthenticeerde API-uitlezing en publiceert geen prospectinformatie in GitHub.
-- De historische lijst mag niet worden gewist of vervangen; eerdere contacten, reacties, bounces en opt-outs blijven uitgesloten.
+- De oorspronkelijke lijst mag niet worden gewist of vervangen. Het extra tabblad `HistoricalHmac` bevat alleen cryptografisch afgeschermde contactidentiteiten; de gewone uitsluitingen en hun opt-outs blijven actief.
 
 ### Benodigde GitHub Secrets voor mijn.host-drafts en smoke
 - `OUTREACH_MAIL_PASSWORD` — wachtwoord van de mijn.host-mailbox.
@@ -49,6 +49,8 @@ Openbare runs tonen alleen cijfers. Handmatig vertrouwde Actions-runs verwerken 
 
 Een gepubliceerd zakelijk e-mailadres of een opgeslagen concept is **geen toestemming om reclame te mailen**. De gebruiker beslist afzonderlijk en moet de toepasselijke regels en opt-outs controleren.
 
-**Historische dedupe-audit (12 oktober 2026):** van 1.128 eerdere providercontacten zijn er 251 aantoonbaar gedekt door het bestaande register. Voor 877 is geen overeenkomst bevestigd. Dit bewijst geen dubbele berichten, maar betekent wel dat de historische uitsluiting nog **niet volledig** is. Er zijn geen adresgegevens aan het openbare register toegevoegd. Volledige zekerheid tegen herselectie van deze contacten vereist eerst een afzonderlijke, privacybewuste aanvulling van het register. Het oude providersysteem is niet teruggebracht in de actieve pipeline.
+**Historische uitsluitingen — live geverifieerd 12 oktober 2026:** alle **1.128 eerdere e-mailidentiteiten** zijn nu aanvullend afgedekt met exact 1.128 unieke *HMAC-SHA256* e-mailtokens in tabblad `HistoricalHmac` van **hetzelfde Google Sheet**; voor 914 contacten is ook het geverifieerde officiële domein beschermd. De oorspronkelijke 635 uitsluitingen blijven onaangeroerd. Backfill gebeurde in 12 batches van maximaal 100, met exacte teruglezing en zonder providerwijzigingen of verzending. Geen historische adressen, namen of domeinen zijn als leesbare tekst toegevoegd. De eenmalige oude-providerimport is verwijderd uit de repo.
+
+**Belangrijke grens:** nieuwe e-mailadressen van een historisch bedrijf zonder bewezen officieel domein zijn niet noodzakelijk herkenbaar. Omdat tokens met een afgeleide sleutel uit het bestaande geheime Google-serviceaccount worden berekend, mag je die private sleutel **niet zomaar vervangen**: bij rotatie houdt Leadscanner nieuwe prospectverwerking tegen totdat de historische tokens veilig zijn opnieuw opgebouwd. Het bewust openbaar gedeelde sheet blijft als bestaand privacyrisico bestaan.
 
 Lees [mailkwaliteit](docs/mailkwaliteit.md) en [technische regels](AGENTS.md).

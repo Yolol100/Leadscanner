@@ -29,9 +29,14 @@ De gebruiker heeft expliciet gekozen dat de repo openbaar blijft en dat het Goog
 - CI zonder echte IMAP is geen live bewijs; claim daadwerkelijke conceptopslag alleen na afgeschermde IMAP-readback.
 - Historische gegevens in andere diensten worden niet door repositorywijzigingen verwijderd of automatisch gemigreerd.
 
-## Historische beperking
+## Historische uitsluiting
 
-De eenmalige read-only vergelijking van 12 oktober 2026 vond 251 matches onder 1.128 historische contacten. De overige 877 zijn **niet aantoonbaar** gedekt. Claim nooit volledige historische dedupe of 10/10 zolang de dekking niet is opgelost. Voeg geen nieuwe persoonlijke adressen ongecontroleerd toe aan het bewust openbaar gehouden register. De auditcode is na gebruik verwijderd.
+Een eenmalige read-only providervergelijking toonde eerst 251/1.128 treffers. Daarna zijn **alle 1.128** broncontacten in batches van maximaal 100 met geheim-sleutel-HMAC in hetzelfde, openbaar gedeelde Google Sheet vastgelegd (tab `HistoricalHmac`). De exacte afgedekte e-mailidentiteiten zijn gecontroleerd op volledige 1.128/1.128 dekking. Daarnaast zijn 914 geverifieerde bedrijfsdomeinen gehasht. Er is geen plaintext broncontactinformatie aan het register toegevoegd.
+
+- Voer **voor elk onderzoek** de bestaande openbare `DedupeRegistry` en de volledige `HistoricalHmac`-readback uit. De HMAC-tab en sleutelcontrole zijn verplicht: ontbrekend, onvolledig, gewijzigd of fout geheim → fail closed, geen nieuwe bedrijven verwerken.
+- Gebruik alleen de service-accountprivatekey uit de bestaande Actions Secret voor de domein-gescheiden HMAC-afleiding. **Sleutelrotatie** maakt de oude tokens onbruikbaar: eerst een apart gecontroleerd her-sleutelproces, nooit stilzwijgend negeren of de beveiliging uitschakelen.
+- De oorspronkelijke 635 uitsluitingen blijven behouden. Een e-mailadres dat vroeger is gebruikt wordt exact herkend; een ander adres bij hetzelfde bedrijf kan alleen worden geblokkeerd als het oude officiële domein geverifieerd was (914 gevallen), of als het al in het oorspronkelijke register voorkomt.
+- De bronimportcode is na de live migratie verwijderd. Geen campagnedienst aan de permanente code toevoegen.
 
 ## Live verificatie
 - Een geslaagde synthetische IMAP-self-test bewijst mailboxopslag, niet dat een specifieke prospectmail goedgekeurd is.
