@@ -11,7 +11,6 @@ from historical_v2 import (
     derive_key, key_from_vault, key_check, parse_rows, row_for_match, token,
 )
 from dedupe_preflight import match_candidate
-import _once_historical_v2_migration as migration
 
 
 class V2Tests(unittest.TestCase):
@@ -87,29 +86,23 @@ class V2Tests(unittest.TestCase):
             sum(not r[4] and not r[5] for r in rows[1:]), 68,
         )
 
-    def test_key_creation_is_one_time_and_no_repeat_after_readback(self):
-        state = [VAULT_HEADERS]
+    def test_production_read_requires_key_vault_and_complete_hashes(self):
+        from historical_v2 import read_production_state, VAULT_SHEET_ID, VAULT_TAB, TAB_NAME
+        rows = [HEADERS] + [
+            self.row(i, official=i < 914, corp=914 <= i < 1060)
+            for i in range(SOURCE_TOTAL)
+        ]
         calls = []
-        def read(*_):
-            return [list(r) for r in state]
-        def append(_session, _spreadsheet_id, _tab, rows):
-            calls.append(rows)
-            state.extend(rows)
-        with patch.object(migration, "read_live_values", side_effect=read), \
-             patch.object(migration, "append_values", side_effect=append):
-            first = migration.get_or_create_key(object())
-            second = migration.get_or_create_key(object())
-        self.assertEqual(first, second)
-        self.assertEqual(len(calls), 1)
-        self.assertEqual(len(state), 2)
-        self.assertNotIn("BEGIN PRIVATE KEY", str(state))
+        def read(_session, spreadsheet_id, tab):
+            calls.append((spreadsheet_id, tab))
+            return self.vault() if tab == VAULT_TAB else rows
+        result = read_production_state(object(), read, "original-public-sheet")
+        self.assertEqual(result["status"], "historical_v2_suppression")
+        self.assertEqual(calls, [
+            (VAULT_SHEET_ID, VAULT_TAB),
+            ("original-public-sheet", TAB_NAME),
+        ])
 
-    def test_weak_email_domain_cannot_be_promoted(self):
-        from _once_profile_historical_unverified_domains import candidate_domain
-        for email in ("support@gmail.com", "foo@outlook.com", "contact@ziggo.nl",
-                      "sales@myshopify.com", "a@mail.com", "info@wordpress.com"):
-            self.assertEqual(candidate_domain(email), "")
-        self.assertEqual(candidate_domain("team@smallbusiness.nl"), "smallbusiness.nl")
 
 
 if __name__ == "__main__":
