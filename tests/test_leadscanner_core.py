@@ -110,8 +110,8 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(report["status"], "green")
         self.assertFalse(report["smtp_available"])
 
-    def test_public_repo_cannot_store_real_drafts(self):
-        with self.assertRaisesRegex(SafeRunError, "privacy"):
+    def test_untrusted_run_cannot_store_real_drafts(self):
+        with self.assertRaisesRegex(SafeRunError, "trusted_manual_run_required"):
             run(mode="drafts",
                 region="Amsterdam", keywords=["fiets"], radius_km=5,
                 discovery_limit=10, verify_limit=10, repository_private=False)
