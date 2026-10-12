@@ -1247,7 +1247,7 @@ jobs:
           python-version: '3.12'
       - name: Install site research dependencies
         run: python3 -m pip install --disable-pip-version-check 'requests>=2,<3' 'google-auth>=2,<3'
-      - name: Verify up to 100 isolated contacts and save review-only evidence
+      - name: Recheck up to 100 historical contacts without replacing original drafts
         env:
           PYTHONPATH: scripts
           INSTANTLY_API_KEY: ${{ secrets.INSTANTLY_API_KEY }}
@@ -1256,7 +1256,8 @@ jobs:
           python3 scripts/instantly_historical_site_research.py \
             --offset "${{ matrix.offset }}" \
             --expected-count 1128 \
-            --workers 100 \
+            --workers 12 \
+            --refresh-reviewed \
             --save-candidates \
             --output "results/site-batch-${{ matrix.offset }}.json"
       - name: Upload aggregate-only batch evidence
