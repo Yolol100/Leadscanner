@@ -76,7 +76,7 @@ class CoreTests(unittest.TestCase):
                 "OUTREACH_MAIL_PASSWORD": "synthetic-not-a-real-secret",
             }))
             params = {
-                "mode": mode, "registry_url": "https://docs.google.com/spreadsheets/d/example",
+                "mode": mode,
                 "region": "Amsterdam", "keywords": ["fietsenwinkel"],
                 "radius_km": 5, "discovery_limit": 20,
                 "verify_limit": 10, "repository_private": mode == "drafts",
@@ -112,7 +112,7 @@ class CoreTests(unittest.TestCase):
 
     def test_public_repo_cannot_store_real_drafts(self):
         with self.assertRaisesRegex(SafeRunError, "privacy"):
-            run(mode="drafts", registry_url="https://docs.google.com/spreadsheets/d/example",
+            run(mode="drafts",
                 region="Amsterdam", keywords=["fiets"], radius_km=5,
                 discovery_limit=10, verify_limit=10, repository_private=False)
 
@@ -122,12 +122,35 @@ class CoreTests(unittest.TestCase):
         self.assertFalse(_params_valid("drafts", "Amsterdam", [], 5, 10, 10))
         self.assertTrue(_params_valid("drafts", "Amsterdam", ["fiets"], 5, 10, 10))
 
-    def test_registry_rejects_uncanonical_sources_without_network(self):
-        class FakeSession:
-            def get(self, *_a, **_kw):
-                raise AssertionError("network called")
-        with self.assertRaisesRegex(ValueError, "registry_url_not_canonical"):
-            fetch_registry("http://other.example/registry", session=FakeSession())
+    def test_registry_uses_authenticated_sheets_not_public_csv(self):
+        live_rows = [
+            ["company", "website", "domain", "emails", "status", "history",
+             "lead_ids", "last_event_at", "sources", "exclude_from_new_leads"],
+            ["Example Company", "https://example.org", "example.org",
+             "info@example.org", "concept", "draft", "", "", "historic", "TRUE"],
+        ]
+        with patch("leadscanner_core._authorized_session", return_value=(object(), "service-account")) as auth, \
+             patch("leadscanner_core.read_live_values", return_value=live_rows) as read:
+            exclusions = fetch_registry()
+        self.assertEqual(len(exclusions), 1)
+        self.assertIn("example.org", exclusions[0]["identity"]["domains"])
+        auth.assert_called_once()
+        read.assert_called_once()
+        self.assertNotIn("email", str(exclusions[0]["status"]))
+
+    def test_authenticated_registry_missing_permission_fails_closed(self):
+        with patch("leadscanner_core._authorized_session",
+                   side_effect=RuntimeError("missing authorized service account")):
+            with self.assertRaisesRegex(RuntimeError, "missing authorized"):
+                fetch_registry()
+
+    def test_within_batch_shared_email_or_domain_is_skipped(self):
+        a = fixture_row()
+        b = fixture_row("growth-abcdef0123456789abcd", "info@example.org")
+        with patch("leadscanner_core.match_candidate", return_value=None):
+            ready, skipped = revalidate_drafts({"rows": [a, b]}, [])
+        self.assertEqual(skipped, 1)
+        self.assertEqual([row["lead_id"] for row in ready["rows"]], [a["lead_id"]])
 
     def test_revalidate_rejects_changed_candidate_and_suppresses_previous(self):
         one = fixture_row()
