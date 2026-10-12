@@ -117,7 +117,20 @@ class HistoricalSiteRebuildTests(unittest.TestCase):
         self.assertTrue(excluded_history({"status": 3}))
         self.assertTrue(excluded_history({"status": 1, "email_reply_count": 1}))
         self.assertTrue(excluded_history({"status": 1, "timestamp_last_contact": "2026-01-01"}))
-        self.assertFalse(excluded_history({"status": 1, "email_reply_count": 0}))
+        self.assertTrue(excluded_history({"status": 1, "email_open_count": 1}))
+        self.assertTrue(excluded_history({"status": 1, "email_click_count": 1}))
+        self.assertTrue(excluded_history({"status": 1, "timestamp_last_open": "2026-01-01"}))
+        self.assertTrue(excluded_history({"status": 1, "timestamp_last_click": "2026-01-01"}))
+        self.assertTrue(excluded_history({"status": 1, "email_replied_step": 0}))
+        self.assertTrue(excluded_history({"status": 1, "lt_interest_status": 1}))
+        self.assertTrue(excluded_history({"status": 1, "lt_interest_status": -3}))
+        self.assertTrue(excluded_history({"status": 1, "status_summary_subseq": {
+            "timestampExecuted": "2026-01-01"
+        }}))
+        self.assertFalse(excluded_history({
+            "status": 1, "email_reply_count": 0,
+            "email_opened_step": None, "lt_interest_status": 0,
+        }))
 
     def test_original_registry_blocks_optouts_sends_but_allows_historical_concept_review(self):
         from dedupe_preflight import candidate_identity
