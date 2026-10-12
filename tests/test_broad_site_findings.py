@@ -52,9 +52,8 @@ class BroadFindingsTests(unittest.TestCase):
         mail = body_for(valued)
         self.assertEqual(mail.count("?"), 1)
         from outreach_stages import finding_excerpt, MAX_DRAFT_HIGHLIGHTS
-        self.assertEqual(MAX_DRAFT_HIGHLIGHTS, 3)
-        self.assertTrue(all(finding_excerpt(f) in mail for f in findings[:3]))
-        self.assertFalse(any(finding_excerpt(f) in mail for f in findings[3:]))
+        self.assertEqual(MAX_DRAFT_HIGHLIGHTS, 6)
+        self.assertTrue(all(finding_excerpt(f) in mail for f in findings))
         self.assertEqual(len(findings), 5)
         self.assertNotIn("review_findings_missing_or_unverified", validate_mail(valued, "ideeën op basis van jullie website", mail))
         self.assertLessEqual(len(mail.split()), 155)
