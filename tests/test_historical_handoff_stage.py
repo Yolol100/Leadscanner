@@ -182,7 +182,7 @@ class PausedHandoffStageTests(unittest.TestCase):
              patch("historical_handoff_stage._wait_job", side_effect=RuntimeError("routing_background_job_unknown_status")), \
              patch("historical_handoff_stage.update_registry", return_value={"exact_readback": True}):
             report = stage_batch(client, offset=0)
-        self.assertEqual(report["counts"]["job_status_reconciled_by_destination"], 10)
+        self.assertEqual(report["counts"]["job_status_requires_destination_proof"], 10)
         self.assertEqual(report["counts"]["destination_personalization_confirmed"], 100)
         self.assertEqual(report["counts"]["registry_verified"], 100)
         self.assertEqual(len(client.posts), 10)
