@@ -132,15 +132,18 @@ def historical_registry_hold(identity: dict, ordinary: list[dict], *, original_e
     """
     if not ordinary:
         return False
-    matched = match_candidate(identity, ordinary)
-    if not matched:
-        return False
-    status = _string(matched.get("registry_status")).casefold()
-    if ("email" in (matched.get("matched_by") or [])
-            and original_email
-            and normalize_email(identity.get("email")) != original_email):
-        return True
-    return status not in {"concept", "review_draft", "draft"}
+    for row in ordinary:
+        matched = match_candidate(identity, [row])
+        if not matched:
+            continue
+        status = _string(matched.get("registry_status")).casefold()
+        if ("email" in (matched.get("matched_by") or [])
+                and original_email
+                and normalize_email(identity.get("email")) != original_email):
+            return True
+        if status not in {"concept", "review_draft", "draft"}:
+            return True
+    return False
 
 
 def build_batch(
