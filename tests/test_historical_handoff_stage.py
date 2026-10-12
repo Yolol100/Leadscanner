@@ -99,9 +99,10 @@ class PausedHandoffStageTests(unittest.TestCase):
             self.assertEqual(result["counts"]["destination_personalization_confirmed"], 100)
             self.assertEqual(result["counts"]["destination_updated"], 100)
             self.assertEqual(result["counts"]["registry_verified"], 100)
-            self.assertEqual(len(client.posts), 1)
-            self.assertTrue(client.posts[0]["copy_leads"])
-            self.assertEqual(len(client.posts[0]["ids"]), 100)
+            self.assertEqual(len(client.posts), 10)
+            self.assertTrue(all(post["copy_leads"] for post in client.posts))
+            self.assertTrue(all(len(post["ids"]) <= 10 for post in client.posts))
+            self.assertEqual(sum(len(post["ids"]) for post in client.posts), 100)
             self.assertEqual(len(client.patches), 100)
             self.assertEqual(len(client.sources), 1128)
             self.assertEqual(rows, original)
@@ -111,7 +112,7 @@ class PausedHandoffStageTests(unittest.TestCase):
             self.assertFalse(result["campaign_activation"])
             # Retry must reconcile copies and not duplicate provider move.
             retry = stage_batch(client, offset=0)
-            self.assertEqual(len(client.posts), 1)
+            self.assertEqual(len(client.posts), 10)
             self.assertEqual(len(client.patches), 100)
             self.assertEqual(retry["counts"]["destination_personalization_confirmed"], 100)
 
@@ -133,9 +134,41 @@ class PausedHandoffStageTests(unittest.TestCase):
             full = stage_batch(client, offset=0)
             self.assertEqual(full["counts"]["destination_personalization_confirmed"], 100)
             self.assertEqual(full["counts"]["destination_updated"], 99)
-            self.assertEqual(len(client.posts), 2)
+            self.assertEqual(len(client.posts), 11)
             self.assertEqual(len(client.destinations), 100)
             self.assertEqual(len(client.sources), 1128)
+
+    def test_partial_copy_is_personalized_before_new_move_and_resume_is_idempotent(self):
+        rows = source_rows()
+        client = FakeClient(rows)
+        prior = deepcopy(rows[0])
+        prior["id"] = "dest-" + rows[0]["id"]
+        prior["campaign"] = TARGET_CAMPAIGNS["nl"][0]
+        prior["list_id"] = None
+        client.destinations[prior["id"]] = prior
+        sequence = []
+        original_request = client._request
+        def traced_request(method, path, *, json=None):
+            sequence.append((method, path))
+            return original_request(method, path, json=json)
+        client._request = traced_request
+        with patch("historical_handoff_stage._source_rows", return_value=rows), \
+             patch("historical_handoff_stage.fetch_live_registry", return_value=[]), \
+             patch("historical_handoff_stage.blocked_values", return_value=set()), \
+             patch("historical_handoff_stage.preflight_campaign"), \
+             patch("historical_handoff_stage.check_registry_access"), \
+             patch("historical_handoff_stage._wait_job"), \
+             patch("historical_handoff_stage.update_registry", return_value={"exact_readback": True}):
+            stage_batch(client, offset=0)
+            self.assertEqual(sequence[0][0], "PATCH")
+            self.assertTrue(all(len(p["ids"]) <= 10 for p in client.posts))
+            self.assertEqual(len(client.destinations), 100)
+            self.assertEqual(len(client.patches), 100)
+            self.assertEqual(sum(len(p["ids"]) for p in client.posts), 99)
+            again = stage_batch(client, offset=0)
+            self.assertEqual(again["counts"]["destination_updated"], 0)
+            self.assertEqual(len(client.patches), 100)
+            self.assertEqual(sum(len(p["ids"]) for p in client.posts), 99)
 
     def test_existing_approved_destination_copy_cannot_be_silently_changed(self):
         src = source_rows()[0]
