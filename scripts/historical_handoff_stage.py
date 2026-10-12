@@ -32,6 +32,7 @@ from update_dedupe_registry import (
 EXPECTED_REVIEWED = 776
 REVIEW_DATE = "2026-10-12"
 MAX_DESTINATION_PAGES = 60
+COPY_BATCH_SIZE = 10
 
 
 def destination_rows(client, campaign_id: str) -> dict[str, dict]:
@@ -232,82 +233,25 @@ def stage_batch(
             selected[language].append(row)
             count["new_copy_requested"] += 1
 
-    # Freeze the selected source rows immediately before provider writes.
-    for language, rows in selected.items():
-        if not rows:
-            continue
-        cid = TARGET_CAMPAIGNS[language][0]
-        preflight_campaign(client, language, cid)
-        for row in rows:
-            src = client.get_lead(_text(row["id"]))
-            if (
-                not isinstance(src, dict)
-                or src.get("id") != row["id"]
-                or src.get("list_id") != TARGET_LIST_ID
-                or src.get("campaign") is not None
-                or src.get("status") in {-1,-2,-3}
-                or _text(src.get("email")).casefold() != _text(row.get("email")).casefold()
-                or _custom(src) != _custom(row)
-            ):
-                raise RuntimeError("historical_handoff_source_changed_before_copy")
+    # Resolve and register existing copies before asking Instantly to copy more.
+    # A previous background job may have partially completed before failing.
+    def source_is_unchanged(row: dict, failure_code: str) -> None:
+        now = client.get_lead(_text(row["id"]))
+        if (
+            not isinstance(now, dict)
+            or _text(now.get("id")) != _text(row["id"])
+            or _text(now.get("email")).casefold() != _text(row.get("email")).casefold()
+            or now.get("list_id") != TARGET_LIST_ID
+            or now.get("campaign") is not None
+            or now.get("status") in {-1, -2, -3}
+            or _custom(now) != _custom(row)
+        ):
+            raise RuntimeError(failure_code)
 
-        fresh = destination_rows(client, cid)
-        copy_ids = [
-            row["id"] for row in rows
-            if _text(row.get("email")).casefold() not in fresh
-        ]
-        if copy_ids:
-            try:
-                job = client._request("POST", "/leads/move", json={
-                    "list_id": TARGET_LIST_ID,
-                    "to_campaign_id": cid,
-                    "ids": copy_ids,
-                    "copy_leads": True,
-                    "reset_interest_status": False,
-                })
-            except Exception:
-                raise RuntimeError("historical_handoff_copy_outcome_unknown_reconcile_first") from None
-            _wait_job(client, job)
-            fresh = destination_rows(client, cid)
-
-        for row in rows:
-            email = _text(row.get("email")).casefold()
-            target = fresh.get(email)
-            if not target:
-                raise RuntimeError("historical_handoff_copied_lead_missing")
-            source_now = client.get_lead(_text(row["id"]))
-            if (
-                not isinstance(source_now, dict)
-                or _custom(source_now) != _custom(row)
-                or source_now.get("campaign") is not None
-                or source_now.get("list_id") != TARGET_LIST_ID
-                or source_now.get("status") in {-1, -2, -3}
-            ):
-                raise RuntimeError("historical_handoff_source_changed_during_copy")
-            preflight_campaign(client, language, cid)
-            changed = _update_destination(client, row, target, cid)
-            count["destination_personalization_confirmed"] += 1
-            if changed:
-                count["destination_updated"] += 1
-            src = client.get_lead(_text(row["id"]))
-            if (
-                not isinstance(src, dict)
-                or src.get("campaign") is not None
-                or src.get("list_id") != TARGET_LIST_ID
-                or _custom(src) != _custom(row)
-            ):
-                raise RuntimeError("historical_handoff_source_was_modified")
-            copied_to[email] = language
-        preflight_campaign(client, language, cid)
-
-    # Registry readback is separate from Instantly readback. Existing
-    # historical records already marked for suppression are kept unchanged.
-    if copied_to:
-        records = [
-            _registry_row(row, copied_to[_text(row.get("email")).casefold()])
-            for row in source[offset:offset+BATCH_SIZE]
-            if _text(row.get("email")).casefold() in copied_to
-        ]
+    def commit_verified(language: str, verified_rows: list[dict]) -> None:
+        if not verified_rows:
+            return
+        records = [_registry_row(row, language) for row in verified_rows]
         result = update_registry(
             {
                 "status": "green", "automatic_send": False,
@@ -319,7 +263,82 @@ def stage_batch(
         )
         if result.get("exact_readback") is not True:
             raise RuntimeError("historical_handoff_registry_readback_missing")
-        count["registry_verified"] = len(records)
+        count["registry_verified"] += len(records)
+
+    def personalize_and_verify(
+        language: str, rows_to_verify: list[dict], destinations: dict[str, dict],
+    ) -> None:
+        cid = TARGET_CAMPAIGNS[language][0]
+        for row in rows_to_verify:
+            email = _text(row.get("email")).casefold()
+            target = destinations.get(email)
+            if not target:
+                raise RuntimeError("historical_handoff_copied_lead_missing")
+            source_is_unchanged(row, "historical_handoff_source_changed_during_copy")
+            preflight_campaign(client, language, cid)
+            changed = _update_destination(client, row, target, cid)
+            count["destination_personalization_confirmed"] += 1
+            if changed:
+                count["destination_updated"] += 1
+            source_is_unchanged(row, "historical_handoff_source_was_modified")
+        # Make completed portions durable in the canonical dedupe registry.
+        # If a later copy fails, prior exact readbacks remain independently closed.
+        commit_verified(language, rows_to_verify)
+
+    for language, rows in selected.items():
+        if not rows:
+            continue
+        cid = TARGET_CAMPAIGNS[language][0]
+        preflight_campaign(client, language, cid)
+        for row in rows:
+            source_is_unchanged(row, "historical_handoff_source_changed_before_copy")
+
+        fresh = destination_rows(client, cid)
+        existing = [
+            row for row in rows
+            if _text(row.get("email")).casefold() in fresh
+        ]
+        missing = [
+            row for row in rows
+            if _text(row.get("email")).casefold() not in fresh
+        ]
+        # Never block 67 already-copied recipients behind a new bulk move.
+        personalize_and_verify(language, existing, fresh)
+
+        # Small, bounded background jobs minimize partial-copy uncertainty.
+        # A failed/unknown job halts this run; a later explicitly audited
+        # run starts by reconciling existing copies rather than copying twice.
+        for start in range(0, len(missing), COPY_BATCH_SIZE):
+            chunk = missing[start:start + COPY_BATCH_SIZE]
+            preflight_campaign(client, language, cid)
+            latest = destination_rows(client, cid)
+            appeared = [
+                row for row in chunk
+                if _text(row.get("email")).casefold() in latest
+            ]
+            absent = [
+                row for row in chunk
+                if _text(row.get("email")).casefold() not in latest
+            ]
+            personalize_and_verify(language, appeared, latest)
+            if not absent:
+                continue
+            for row in absent:
+                source_is_unchanged(row, "historical_handoff_source_changed_before_copy")
+            try:
+                job = client._request("POST", "/leads/move", json={
+                    "list_id": TARGET_LIST_ID,
+                    "to_campaign_id": cid,
+                    "ids": [row["id"] for row in absent],
+                    "copy_leads": True,
+                    "reset_interest_status": False,
+                })
+            except Exception:
+                raise RuntimeError("historical_handoff_copy_outcome_unknown_reconcile_first") from None
+            _wait_job(client, job)
+            latest = destination_rows(client, cid)
+            personalize_and_verify(language, absent, latest)
+        preflight_campaign(client, language, cid)
 
     report = {
         "schema_version": "leadscanner-historical-paused-stage/1.0",
