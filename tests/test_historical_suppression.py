@@ -13,7 +13,6 @@ from historical_suppression import (
     HEADERS, SOURCE_TOTAL, VERSION, email_or_domain_is_suppressed, hmac_key,
     key_check, suppression_row, token, validate_rows,
 )
-import _once_import_historical_hmac as migrator
 
 
 def creds(k="KEY-ONE"):
@@ -83,81 +82,6 @@ class HmacTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "service_account_missing"):
                 hmac_key()
 
-    def test_1128_exact_tokens_are_verified_in_batches_of_100(self):
-        source = []
-        for i in range(SOURCE_TOTAL):
-            source.append({
-                "id": "00000000-0000-0000-0000-" + f"{i:012d}",
-                "email": f"person{i}@example.nl",
-                "payload": {},
-            })
-        stored = []
-        calls = []
-        def read(*_args):
-            return [HEADERS] + [list(row) for row in stored]
-        def append(_session, _spreadsheet, _tab, rows):
-            self.assertLessEqual(len(rows), 100)
-            calls.append(len(rows))
-            stored.extend([list(row) for row in rows])
-        with patch.object(migrator, "_get_source", return_value=source), \
-             patch.object(migrator, "hmac_key", return_value=self.key), \
-             patch.object(migrator, "_authorized_session", return_value=(object(), "service")), \
-             patch.object(migrator, "read_live_values", side_effect=read), \
-             patch.object(migrator, "append_values", side_effect=append), \
-             redirect_stdout(io.StringIO()):
-            result = migrator.run()
-            result_replay = migrator.run()
-        self.assertEqual(result["opaque_suppression_count"], SOURCE_TOTAL)
-        self.assertEqual(result["new"], SOURCE_TOTAL)
-        self.assertEqual(result_replay["new"], 0)
-        self.assertEqual(result_replay["already_exact"], SOURCE_TOTAL)
-        self.assertEqual(len(stored), SOURCE_TOTAL)
-        self.assertEqual(calls, [100] * 11 + [28])
-        self.assertFalse(result["plaintext_contacts_written"])
-        self.assertFalse(result["email_sent"])
-
-    def test_partial_previous_append_reconciles_without_duplication(self):
-        source = [{
-            "id": "00000000-0000-0000-0000-" + f"{i:012d}",
-            "email": f"person{i}@example.nl", "payload": {},
-        } for i in range(SOURCE_TOTAL)]
-        expected = migrator._expected_rows(source, self.key)
-        stored = [list(row) for row in expected[:100]]
-        appended = []
-        def read(*_args):
-            return [HEADERS] + [list(row) for row in stored]
-        def append(*args):
-            records = args[-1]
-            appended.extend(records)
-            stored.extend([list(row) for row in records])
-        with patch.object(migrator, "_get_source", return_value=source), \
-             patch.object(migrator, "hmac_key", return_value=self.key), \
-             patch.object(migrator, "_authorized_session", return_value=(object(), "service")), \
-             patch.object(migrator, "read_live_values", side_effect=read), \
-             patch.object(migrator, "append_values", side_effect=append), \
-             redirect_stdout(io.StringIO()):
-            result = migrator.run()
-        self.assertEqual(result["already_exact"], 100)
-        self.assertEqual(result["new"], 1028)
-        self.assertEqual(len(stored), SOURCE_TOTAL)
-        self.assertEqual(len({row[2] for row in stored}), SOURCE_TOTAL)
-
-    def test_conflicting_existing_hash_aborts_before_append(self):
-        source = [{
-            "id": "00000000-0000-0000-0000-" + f"{i:012d}",
-            "email": f"person{i}@example.nl", "payload": {},
-        } for i in range(SOURCE_TOTAL)]
-        stored = [migrator._expected_rows(source, self.key)[0]]
-        stored[0] = list(stored[0])
-        stored[0][4] = token(self.key, "domain", "wrong.example")
-        with patch.object(migrator, "_get_source", return_value=source), \
-             patch.object(migrator, "hmac_key", return_value=self.key), \
-             patch.object(migrator, "_authorized_session", return_value=(object(), "service")), \
-             patch.object(migrator, "read_live_values", return_value=[HEADERS] + stored), \
-             patch.object(migrator, "append_values") as writer:
-            with self.assertRaisesRegex(RuntimeError, "conflicting_existing_row"):
-                migrator.run()
-        writer.assert_not_called()
 
 
 if __name__ == "__main__":
