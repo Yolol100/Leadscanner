@@ -38,7 +38,7 @@ MIN_FINDINGS = 4
 MAX_FINDINGS = 6
 STATUSES = (
     "excluded_history", "hold_source_status", "hold_missing_website",
-    "hold_duplicate_website", "hold_website_verification",
+    "hold_missing_business_identity", "hold_duplicate_website", "hold_website_verification",
     "hold_website_research", "hold_insufficient_findings",
     "hold_unverified_contact", "hold_mail_validation",
     "hold_duplicate_recipient", "ready_for_review",
@@ -255,8 +255,11 @@ def build_batch(
         if site and not company:
             company = historical_brand_hint(row, site, history)
             derived_brand = bool(company)
-        if not site or not company:
+        if not site:
             states[pos] = "hold_missing_website"
+            continue
+        if not company:
+            states[pos] = "hold_missing_business_identity"
             continue
         if home_owner.get(normalize_domain(site)) != pos:
             states[pos] = "hold_duplicate_website"
