@@ -142,6 +142,7 @@ def excluded_history(row: dict) -> bool:
         return True
     for field in (
         "timestamp_last_contact", "timestamp_last_reply",
+        "timestamp_last_open", "timestamp_last_click",
         "last_step_timestamp_executed", "timestamp_last_touch",
     ):
         if _string(row.get(field)):
@@ -151,13 +152,22 @@ def excluded_history(row: dict) -> bool:
         last = summary.get("lastStep")
         if isinstance(last, dict) and _string(last.get("timestamp_executed")):
             return True
-    try:
-        if int(row.get("email_reply_count") or 0) > 0:
-            return True
-    except (ValueError, TypeError):
+    subseq = row.get("status_summary_subseq")
+    if isinstance(subseq, dict) and _string(subseq.get("timestampExecuted")):
         return True
+    # Opens/clicks and non-zero interest states imply that mail or a reply
+    # happened, even when the provider omits the last-contact timestamp.
+    for field in ("email_open_count", "email_reply_count", "email_click_count"):
+        try:
+            if int(row.get(field) or 0) > 0:
+                return True
+        except (ValueError, TypeError):
+            return True
+    for field in ("email_opened_step", "email_replied_step", "email_clicked_step"):
+        if row.get(field) is not None:
+            return True
     try:
-        if int(row.get("lt_interest_status") or 0) < 0:
+        if int(row.get("lt_interest_status") or 0) != 0:
             return True
     except (ValueError, TypeError):
         return True
