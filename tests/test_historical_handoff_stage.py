@@ -6,6 +6,7 @@ from unittest.mock import patch
 from historical_handoff_stage import (
     EXPECTED_REVIEWED, TARGET_CAMPAIGNS, build_destination_variables,
     stage_batch, _update_destination, safe_failure_code,
+    await_destination_copies, COPY_VISIBILITY_DELAYS,
 )
 from historical_handoff_audit import _reviewed_refresh
 from tests.test_historical_handoff_audit import row
@@ -169,6 +170,51 @@ class PausedHandoffStageTests(unittest.TestCase):
             self.assertEqual(again["counts"].get("destination_updated", 0), 0)
             self.assertEqual(len(client.patches), 100)
             self.assertEqual(sum(len(p["ids"]) for p in client.posts), 99)
+
+    def test_async_completed_copy_is_polled_until_destination_is_visible(self):
+        src = source_rows()[0]
+        client = FakeClient([src])
+        dest = deepcopy(src)
+        dest["id"] = "dest-" + src["id"]
+        dest["list_id"] = None
+        dest["campaign"] = TARGET_CAMPAIGNS["nl"][0]
+        client.destinations[dest["id"]] = dest
+        original_list = client.list_leads
+        attempts = []
+        def lagged_list(*, campaign, limit, starting_after=None):
+            attempts.append(1)
+            if len(attempts) <= 2:
+                return {"items": [], "next_starting_after": ""}
+            return original_list(campaign=campaign, limit=limit, starting_after=starting_after)
+        client.list_leads = lagged_list
+        sleeps = []
+        result = await_destination_copies(
+            client, TARGET_CAMPAIGNS["nl"][0],
+            {src["email"]}, sleep_fn=sleeps.append,
+        )
+        self.assertIn(src["email"], result)
+        self.assertEqual(len(attempts), 3)
+        self.assertEqual(sleeps, [1, 2])
+        self.assertEqual(client.posts, [])
+        self.assertEqual(client.patches, [])
+
+    def test_async_copy_not_visible_exits_without_blind_retry(self):
+        client = FakeClient([])
+        sleeps = []
+        with self.assertRaisesRegex(
+            RuntimeError, "historical_handoff_copied_lead_visibility_unconfirmed"
+        ):
+            await_destination_copies(
+                client, TARGET_CAMPAIGNS["nl"][0],
+                {"not-visible@example.org"}, sleep_fn=sleeps.append,
+            )
+        self.assertEqual(tuple(sleeps), COPY_VISIBILITY_DELAYS)
+        self.assertEqual(client.posts, [])
+        self.assertEqual(client.patches, [])
+
+    def test_copy_visibility_requires_exact_nonempty_recipient_set(self):
+        with self.assertRaisesRegex(ValueError, "expected_copy_set_empty"):
+            await_destination_copies(FakeClient([]), TARGET_CAMPAIGNS["nl"][0], set())
 
     def test_existing_approved_destination_copy_cannot_be_silently_changed(self):
         src = source_rows()[0]

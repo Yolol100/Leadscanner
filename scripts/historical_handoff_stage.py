@@ -55,6 +55,29 @@ def destination_rows(client, campaign_id: str) -> dict[str, dict]:
     raise RuntimeError("historical_handoff_destination_limit_exceeded")
 
 
+# A completed Instantly background job does not necessarily mean its newly
+# created lead copies are already visible to /leads/list. Poll READ-ONLY.
+# Never re-POST uncertain copies while provider indexing may still be pending.
+COPY_VISIBILITY_DELAYS = (1, 2, 3, 5, 8, 13, 21, 34)
+
+
+def await_destination_copies(
+    client, campaign_id: str, expected_emails: set[str], *,
+    sleep_fn=time.sleep,
+) -> dict[str, dict]:
+    if not expected_emails:
+        raise ValueError("historical_handoff_expected_copy_set_empty")
+    for attempt in range(len(COPY_VISIBILITY_DELAYS) + 1):
+        rows = destination_rows(client, campaign_id)
+        if expected_emails.issubset(rows):
+            return rows
+        if attempt < len(COPY_VISIBILITY_DELAYS):
+            sleep_fn(COPY_VISIBILITY_DELAYS[attempt])
+    # The provider may have written copies despite a temporary index miss.
+    # Hold and reconcile on a *new* read-only audit; do not blindly copy again.
+    raise RuntimeError("historical_handoff_copied_lead_visibility_unconfirmed")
+
+
 def build_destination_variables(source_row: dict, destination_row: dict) -> dict:
     values = _custom(source_row)
     target = _custom(destination_row)
@@ -336,7 +359,10 @@ def stage_batch(
             except Exception:
                 raise RuntimeError("historical_handoff_copy_outcome_unknown_reconcile_first") from None
             _wait_job(client, job)
-            latest = destination_rows(client, cid)
+            latest = await_destination_copies(
+                client, cid,
+                {_text(row.get("email")).casefold() for row in absent},
+            )
             personalize_and_verify(language, absent, latest)
         preflight_campaign(client, language, cid)
 
