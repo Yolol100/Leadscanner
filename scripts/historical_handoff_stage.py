@@ -358,7 +358,20 @@ def stage_batch(
                 })
             except Exception:
                 raise RuntimeError("historical_handoff_copy_outcome_unknown_reconcile_first") from None
-            _wait_job(client, job)
+            try:
+                _wait_job(client, job)
+            except RuntimeError as error:
+                if str(error) not in {
+                    "routing_background_job_unknown_status",
+                    "routing_background_job_pending_no_retry",
+                }:
+                    # A provider-reported failure cannot be turned into an
+                    # implicit successful mutation.
+                    raise
+                # Never accept an unfamiliar or still-pending job status as
+                # success on its own. Continue ONLY after every requested
+                # destination copy is independently visible and read back.
+                count["job_status_reconciled_by_destination"] += 1
             latest = await_destination_copies(
                 client, cid,
                 {_text(row.get("email")).casefold() for row in absent},

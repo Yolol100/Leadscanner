@@ -171,6 +171,38 @@ class PausedHandoffStageTests(unittest.TestCase):
             self.assertEqual(len(client.patches), 100)
             self.assertEqual(sum(len(p["ids"]) for p in client.posts), 99)
 
+    def test_unknown_background_job_status_requires_complete_destination_readback(self):
+        rows = source_rows()
+        client = FakeClient(rows)
+        with patch("historical_handoff_stage._source_rows", return_value=rows), \
+             patch("historical_handoff_stage.fetch_live_registry", return_value=[]), \
+             patch("historical_handoff_stage.blocked_values", return_value=set()), \
+             patch("historical_handoff_stage.preflight_campaign"), \
+             patch("historical_handoff_stage.check_registry_access"), \
+             patch("historical_handoff_stage._wait_job", side_effect=RuntimeError("routing_background_job_unknown_status")), \
+             patch("historical_handoff_stage.update_registry", return_value={"exact_readback": True}):
+            report = stage_batch(client, offset=0)
+        self.assertEqual(report["counts"]["job_status_reconciled_by_destination"], 10)
+        self.assertEqual(report["counts"]["destination_personalization_confirmed"], 100)
+        self.assertEqual(report["counts"]["registry_verified"], 100)
+        self.assertEqual(len(client.posts), 10)
+        self.assertEqual(len(client.patches), 100)
+        self.assertEqual(report["email_sent"], 0)
+
+    def test_reported_failed_background_job_never_implicitly_succeeds(self):
+        rows = source_rows()
+        client = FakeClient(rows)
+        with patch("historical_handoff_stage._source_rows", return_value=rows), \
+             patch("historical_handoff_stage.fetch_live_registry", return_value=[]), \
+             patch("historical_handoff_stage.blocked_values", return_value=set()), \
+             patch("historical_handoff_stage.preflight_campaign"), \
+             patch("historical_handoff_stage.check_registry_access"), \
+             patch("historical_handoff_stage._wait_job", side_effect=RuntimeError("routing_background_job_failed")):
+            with self.assertRaisesRegex(RuntimeError, "routing_background_job_failed"):
+                stage_batch(client, offset=0)
+        self.assertEqual(len(client.posts), 1)
+        self.assertEqual(client.patches, [])
+
     def test_async_completed_copy_is_polled_until_destination_is_visible(self):
         src = source_rows()[0]
         client = FakeClient([src])
