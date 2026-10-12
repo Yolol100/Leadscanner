@@ -7,22 +7,18 @@ Only the bounded public_audit is permitted in a public GitHub repository.
 from __future__ import annotations
 
 import argparse
-from collections import Counter
 from contextlib import redirect_stdout, redirect_stderr
 from io import StringIO
 import json
 import os
-from pathlib import Path
 import re
-import tempfile
 
-import requests
 
 from cold_stages import (
     filter_discovery, verify_candidates, research_candidates,
     suppress_previously_used_contact_emails,
 )
-from dedupe_preflight import load_registry, match_candidate
+from dedupe_preflight import load_registry_values, match_candidate, candidate_identity, domains_match
 from outreach_stages import select_reasons, choose_value_actions, generate_mails
 from overture_discovery import discover
 from review_draft_stages import prepare_review_batch, audit_exact_readback
@@ -30,31 +26,24 @@ from myhost_draft import create_drafts
 from update_dedupe_registry import (
     DEFAULT_SHEET_NAME, DEFAULT_SPREADSHEET_ID,
     check_registry_access, update_registry,
+    _authorized_session, read_live_values,
 )
 
 MAX_DISCOVERY = 5000
 MAX_RESEARCH = 100
-MAX_REGISTRY_BYTES = 8_000_000
-
-
 class SafeRunError(RuntimeError):
     """A fixed diagnostic stage, never a provider URL, response or recipient."""
     pass
 
 
-def fetch_registry(url: str, *, session=requests) -> list[dict]:
-    """Fail closed on absent or oversized canonical suppression history."""
-    if not url.startswith("https://docs.google.com/spreadsheets/"):
-        raise ValueError("registry_url_not_canonical")
-    response = session.get(url, timeout=(10, 35), headers={"User-Agent": "LeadscannerCore/1.0"})
-    response.raise_for_status()
-    raw = response.content
-    if not isinstance(raw, bytes) or not 0 < len(raw) <= MAX_REGISTRY_BYTES:
-        raise ValueError("registry_empty_or_too_large")
-    with tempfile.TemporaryDirectory(prefix="leadscanner-dedupe-") as directory:
-        path = Path(directory) / "registry.csv"
-        path.write_bytes(raw)
-        return load_registry(path)
+def fetch_registry() -> list[dict]:
+    """Read historical suppressions only via the authenticated Sheets API.
+
+    Never use a public CSV export link or place raw registry contents on disk.
+    """
+    session, _account = _authorized_session()
+    values = read_live_values(session, DEFAULT_SPREADSHEET_ID, DEFAULT_SHEET_NAME)
+    return load_registry_values(values)
 
 
 def revalidate_drafts(batch: dict, registry: list[dict]) -> tuple[dict, int]:
@@ -79,8 +68,27 @@ def revalidate_drafts(batch: dict, registry: list[dict]) -> tuple[dict, int]:
         seen.add(row["lead_id"])
         if match_candidate(identity, registry):
             suppressed += 1
-        else:
-            ready.append(row)
+            continue
+        # Two different leads can resolve to the same official domain or
+        # shared contact mailbox after crawling. Never prepare duplicate
+        # drafts even when their discovery identities were different.
+        normalized = candidate_identity(identity)
+        if any(
+            normalized["emails"] & previous["emails"]
+            or normalized["lead_ids"] & previous["lead_ids"]
+            or (
+                normalized["company"] and
+                normalized["company"] == previous["company"]
+            )
+            or any(
+                domains_match(left, right)
+                for left in normalized["domains"] for right in previous["domains"]
+            )
+            for previous in (candidate_identity(existing) for existing in ready)
+        ):
+            suppressed += 1
+            continue
+        ready.append(row)
     return {
         "rows": ready,
         "draft_candidate_count": len(ready),
@@ -103,7 +111,7 @@ def _params_valid(mode: str, region: str, keywords: list[str],
     )
 
 
-def run(*, mode: str, registry_url: str, region: str,
+def run(*, mode: str, region: str,
         keywords: list[str], radius_km: float,
         discovery_limit: int, verify_limit: int,
         repository_private: bool) -> dict:
@@ -116,7 +124,7 @@ def run(*, mode: str, registry_url: str, region: str,
 
     stage = "registry"
     try:
-        registry = fetch_registry(registry_url)
+        registry = fetch_registry()
         stage = "discovery"
         raw = discover(
             region=region, bbox=None, radius_km=radius_km, keywords=keywords,
@@ -175,7 +183,7 @@ def run(*, mode: str, registry_url: str, region: str,
         if mode == "drafts":
             # Freshness matters: other workflows may write to dedupe in flight.
             stage = "fresh_dedupe"
-            fresh_registry = fetch_registry(registry_url)
+            fresh_registry = fetch_registry()
             ready, suppressed = revalidate_drafts(batch, fresh_registry)
             report["counts"]["suppressed_at_storage"] = suppressed
             if ready["rows"]:
@@ -208,7 +216,7 @@ def run(*, mode: str, registry_url: str, region: str,
                     != report["counts"]["registry_confirmed"]
                 ):
                     raise RuntimeError("draft_registry_count_mismatch")
-            report["status"] = "green"
+            report["status"] = "green" if ready["rows"] else "yellow"
 
         if mode == "public_audit" and not batch["rows"]:
             report["status"] = "yellow"
@@ -238,7 +246,6 @@ def main() -> int:
         with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
             report = run(
                 mode=args.mode,
-                registry_url=os.environ.get("DEDUPE_REGISTRY_CSV_URL", ""),
                 region=args.region, keywords=keywords, radius_km=args.radius_km,
                 discovery_limit=args.discovery_limit, verify_limit=args.verify_limit,
                 repository_private=os.environ.get("REPOSITORY_IS_PRIVATE") == "true",
