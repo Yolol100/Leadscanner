@@ -142,7 +142,10 @@ def run(offset):
     if offset not in range(0, EXPECTED, BATCH_SIZE):
         raise ValueError("offset_out_of_bounds")
     source = source_rows()
-    registry = fetch_registry()
+    try:
+        registry = fetch_registry()
+    except Exception:
+        raise RuntimeError('registry_access_hold') from None
     history = [r for r in registry if r.get("status") == "historical_v2_suppression"]
     if len(history) != 1:
         raise RuntimeError("incomplete_historical_registry")
@@ -174,8 +177,18 @@ def main():
     try:
         with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
             report = run(args.offset)
-    except Exception:
-        print("HISTORICAL_MAIL_CHECK=red details_suppressed")
+    except Exception as exc:
+        # Only literal, audited error stages are printable; never arbitrary
+        # provider responses or contact values.
+        allowed = {
+            "missing_source_access", "source_read_failed", "source_page_invalid",
+            "source_identity_mismatch", "source_duplicates_or_invalid",
+            "source_cursor_invalid", "source_page_limit", "source_total_changed",
+            "registry_access_hold", "incomplete_historical_registry",
+            "missing_history_suppression", "batch_incomplete",
+        }
+        stage = str(exc) if str(exc) in allowed else "unknown_hold"
+        print("HISTORICAL_MAIL_CHECK=red stage=" + stage + " details_suppressed")
         return 1
     print("HISTORICAL_MAIL_CHECK=green " + json.dumps(report, sort_keys=True))
     return 0
