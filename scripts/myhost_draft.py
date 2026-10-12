@@ -276,6 +276,7 @@ def plain_body(msg: EmailMessage) -> str:
 def exact_message_matches(actual: EmailMessage, expected: EmailMessage) -> bool:
     return (
         normalize_text(actual.get("To", "")) == normalize_text(expected.get("To", ""))
+        and normalize_text(actual.get("From", "")) == normalize_text(expected.get("From", ""))
         and normalize_text(actual.get("Subject", "")) == normalize_text(expected.get("Subject", ""))
         and lead_id_from_message(actual) == lead_id_from_message(expected)
         and review_status_from_message(actual) == review_status_from_message(expected)
