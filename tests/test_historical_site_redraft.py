@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch
 from historical_v2 import row_for_match, token
 from _once_historical_site_redraft import (
     BATCH_SIZE, EXPECTED, build_batch, excluded_history, historical_site,
-    historical_registry_hold, run,
+    historical_registry_hold, historical_brand_hint, run,
 )
 
 
@@ -53,6 +53,50 @@ class HistoricalSiteRebuildTests(unittest.TestCase):
                 "leadscanner_site_refresh_official_domain": "sample.nl",
             },
         }), "https://sample.nl")
+
+    def test_missing_company_name_can_use_only_correlated_domain_for_research(self):
+        row = {
+            "company_name": None, "website": "https://sample.nl/",
+            "email": "info@sample.nl", "company_domain": "sample.nl",
+            "payload": {},
+        }
+        self.assertEqual(historical_brand_hint(row, "https://sample.nl/"), "sample")
+        row["email"] = "info@gmail.com"
+        row["company_domain"] = "gmail.com"
+        self.assertFalse(historical_brand_hint(row, "https://sample.nl/"))
+        row["payload"] = {
+            "leadscanner_site_refresh_source_type": "official_site",
+            "leadscanner_site_refresh_official_domain": "sample.nl",
+            "leadscanner_site_refresh_evidence_url": "https://sample.nl/contact",
+        }
+        self.assertEqual(historical_brand_hint(row, "https://sample.nl/"), "sample")
+
+    def test_derived_domain_brand_without_live_text_proof_is_held(self):
+        rows = source()
+        rows[0]["company_name"] = None
+        rows[0]["website"] = "https://sample.nl/"
+        rows[0]["company_domain"] = "sample.nl"
+        rows[0]["payload"] = {
+            "leadscanner_site_refresh_source_type": "official_site",
+            "leadscanner_site_refresh_official_domain": "sample.nl",
+            "leadscanner_site_refresh_evidence_url": "https://sample.nl/contact",
+        }
+        def verifier(data, **kwargs):
+            verified = dict(data["candidates"][0])
+            verified.update({
+                "ready_for_research": True, "official_domain": "sample.nl",
+                "identity_evidence": ["brand_token_in_domain:sample"],
+            })
+            return {"candidates": [verified]}
+        no_research = Mock(side_effect=AssertionError("domain-only identity not enough"))
+        report, batch = build_batch(
+            offset=0, rows=rows, history=suppression(rows),
+            verifier=verifier, researcher=no_research,
+        )
+        self.assertEqual(report["counts"]["hold_website_verification"], 1)
+        self.assertEqual(report["counts"]["hold_missing_website"], 99)
+        no_research.assert_not_called()
+        self.assertEqual(batch["rows"], [])
 
     def test_prior_replies_sends_bounce_and_unsubscribes_excluded(self):
         self.assertTrue(excluded_history({"status": -2}))
