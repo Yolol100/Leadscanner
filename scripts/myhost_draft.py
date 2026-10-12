@@ -62,6 +62,22 @@ def uid_for_message_id(client, message_id: bytes) -> bytes:
     raise RuntimeError("IMAP UID readback omitted target UID")
 
 
+def require_draft_flag(client, uid: bytes) -> None:
+    """Prove a stored message is still marked as a Draft by the IMAP server."""
+    status, data = client.uid("fetch", uid.decode("ascii"), "(FLAGS)")
+    if status != "OK":
+        raise RuntimeError("IMAP draft flag readback failed")
+    meta = []
+    for item in data or []:
+        item = item[0] if isinstance(item, tuple) and item else item
+        if isinstance(item, bytes):
+            meta.append(item)
+        elif isinstance(item, str):
+            meta.append(item.encode("ascii", errors="ignore"))
+    if not re.search(rb"(?:^|[\s(])\\Draft(?=[\s)])", b" ".join(meta), re.I):
+        raise RuntimeError("IMAP draft flag missing after readback")
+
+
 def fetch_message_uid(client, uid: bytes) -> EmailMessage:
     status, data = client.uid("fetch", uid.decode("ascii"), "(RFC822)")
     if status != "OK":
@@ -332,6 +348,7 @@ def append_and_verify(client, folder: str, lead_id: str, msg: EmailMessage, *, r
     if existing:
         actual = fetch_message(client, existing[0])
         if exact_message_matches(actual, msg):
+            require_draft_flag(client, uid_for_message_id(client, existing[0]))
             return "existing"
         if reject_changed_existing:
             raise RuntimeError(
@@ -363,6 +380,7 @@ def append_and_verify(client, folder: str, lead_id: str, msg: EmailMessage, *, r
         new_actual = fetch_message_uid(client, new_uid)
         if not exact_message_matches(new_actual, msg):
             raise RuntimeError(f"Draft UID readback mismatch for {lead_id}")
+        require_draft_flag(client, new_uid)
 
         if existing:
             current_old = fetch_message_uid(client, existing_uid)
@@ -459,6 +477,7 @@ def create_drafts(batch: dict, *, rewrite_existing_only: bool = False, reject_ch
                 actual = fetch_message(client, final_ids[0])
                 if not exact_message_matches(actual, msg):
                     raise RuntimeError(f"Final exact readback mismatch for {lead_id}")
+                require_draft_flag(client, uid_for_message_id(client, final_ids[0]))
                 items.append(
                     {
                         "lead_id": lead_id,
