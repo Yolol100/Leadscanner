@@ -223,7 +223,6 @@ def stage_batch(
         raise RuntimeError("historical_handoff_approved_cohort_changed")
     count = Counter()
     selected: dict[str, list[dict]] = {"nl": [], "en": []}
-    copied_to: dict[str, str] = {}
     for row in source[offset:offset+BATCH_SIZE]:
         language, hold = _reviewed_refresh(row)
         if hold:
@@ -295,6 +294,7 @@ def stage_batch(
         language: str, rows_to_verify: list[dict], destinations: dict[str, dict],
     ) -> None:
         cid = TARGET_CAMPAIGNS[language][0]
+        verified = []
         for row in rows_to_verify:
             email = _text(row.get("email")).casefold()
             target = destinations.get(email)
@@ -302,14 +302,26 @@ def stage_batch(
                 raise RuntimeError("historical_handoff_copied_lead_missing")
             source_is_unchanged(row, "historical_handoff_source_changed_during_copy")
             preflight_campaign(client, language, cid)
-            changed = _update_destination(client, row, target, cid)
+            try:
+                changed = _update_destination(client, row, target, cid)
+            except RuntimeError as error:
+                if str(error) != "historical_handoff_destination_variables_readback_mismatch":
+                    raise
+                # A single PATCH may take longer than bounded GET retries to
+                # become visible. Never send a second PATCH for this contact.
+                # Quarantine the unresolved destination, do not mark it staged
+                # in the registry, and continue with unrelated verified leads.
+                source_is_unchanged(row, "historical_handoff_source_was_modified")
+                count["destination_readback_deferred"] += 1
+                continue
+            source_is_unchanged(row, "historical_handoff_source_was_modified")
             count["destination_personalization_confirmed"] += 1
             if changed:
                 count["destination_updated"] += 1
-            source_is_unchanged(row, "historical_handoff_source_was_modified")
-        # Make completed portions durable in the canonical dedupe registry.
-        # If a later copy fails, prior exact readbacks remain independently closed.
-        commit_verified(language, rows_to_verify)
+            verified.append(row)
+        # Register only independently exact destination readbacks. Deferred
+        # copies will be revisited through the existing reconciliation path.
+        commit_verified(language, verified)
 
     for language, rows in selected.items():
         if not rows:
@@ -384,7 +396,7 @@ def stage_batch(
 
     report = {
         "schema_version": "leadscanner-historical-paused-stage/1.0",
-        "status": "green",
+        "status": "partial" if count["destination_readback_deferred"] else "green",
         "batch_offset": offset,
         "batch_size": len(source[offset:offset+BATCH_SIZE]),
         "source_count": len(source),
@@ -435,8 +447,11 @@ def main() -> int:
             "HISTORICAL_PAUSED_STAGE=failed_reconcile_before_retry cause="
             + safe_failure_code(error)
         ) from None
-    print("HISTORICAL_PAUSED_STAGE=green " + json.dumps(result, sort_keys=True, separators=(",", ":")))
-    return 0
+    print("HISTORICAL_PAUSED_STAGE=" + result["status"] + " " +
+          json.dumps(result, sort_keys=True, separators=(",", ":")))
+    # Exit 2 signals a safely deferred contact: callers may finish other
+    # independent batches, but must not report full handoff success.
+    return 2 if result["status"] == "partial" else 0
 
 
 if __name__ == "__main__":
