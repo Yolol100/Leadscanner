@@ -248,6 +248,79 @@ class PausedHandoffStageTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "expected_copy_set_empty"):
             await_destination_copies(FakeClient([]), TARGET_CAMPAIGNS["nl"][0], set())
 
+    def test_personalization_patch_can_be_delayed_without_second_patch(self):
+        src = source_rows()[0]
+        dest = deepcopy(src)
+        dest["id"] = "dest-" + src["id"]
+        dest["campaign"] = TARGET_CAMPAIGNS["nl"][0]
+        dest["list_id"] = None
+        client = FakeClient([src])
+        client.destinations[dest["id"]] = deepcopy(dest)
+        original_get = client.get_lead
+        stale_read_count = []
+        def delayed_get(lead_id):
+            item = original_get(lead_id)
+            if lead_id == dest["id"] and client.patches and len(stale_read_count) < 2:
+                stale_read_count.append(1)
+                item["payload"] = deepcopy(dest["payload"])
+            return item
+        client.get_lead = delayed_get
+        sleeps = []
+        self.assertTrue(
+            _update_destination(
+                client, src, dest, TARGET_CAMPAIGNS["nl"][0],
+                sleep_fn=sleeps.append,
+            )
+        )
+        self.assertEqual(sleeps, [1, 2])
+        self.assertEqual(len(client.patches), 1)
+        self.assertEqual(len(stale_read_count), 2)
+
+    def test_unconfirmed_patch_never_retries_unknown_write(self):
+        src = source_rows()[0]
+        dest = deepcopy(src)
+        dest["id"] = "dest-" + src["id"]
+        dest["campaign"] = TARGET_CAMPAIGNS["nl"][0]
+        dest["list_id"] = None
+        client = FakeClient([src])
+        client.destinations[dest["id"]] = deepcopy(dest)
+        def unconfirmed_patch(method, path, *, json=None):
+            if method != "PATCH":
+                raise AssertionError("unexpected provider mutation")
+            client.patches.append((path, deepcopy(json)))
+            return {}
+        client._request = unconfirmed_patch
+        sleeps = []
+        with self.assertRaisesRegex(RuntimeError, "destination_variables_readback_mismatch"):
+            _update_destination(
+                client, src, dest, TARGET_CAMPAIGNS["nl"][0],
+                sleep_fn=sleeps.append,
+            )
+        self.assertEqual(tuple(sleeps), COPY_VISIBILITY_DELAYS)
+        self.assertEqual(len(client.patches), 1)
+
+    def test_destination_state_drift_aborts_patch_readback(self):
+        src = source_rows()[0]
+        dest = deepcopy(src)
+        dest["id"] = "dest-" + src["id"]
+        dest["campaign"] = TARGET_CAMPAIGNS["nl"][0]
+        dest["list_id"] = None
+        client = FakeClient([src])
+        client.destinations[dest["id"]] = deepcopy(dest)
+        original_get = client.get_lead
+        def changed_get(lead_id):
+            item = original_get(lead_id)
+            if lead_id == dest["id"] and client.patches:
+                item["status"] = 2
+            return item
+        client.get_lead = changed_get
+        with self.assertRaisesRegex(RuntimeError, "destination_state_changed"):
+            _update_destination(
+                client, src, dest, TARGET_CAMPAIGNS["nl"][0],
+                sleep_fn=lambda seconds: None,
+            )
+        self.assertEqual(len(client.patches), 1)
+
     def test_existing_approved_destination_copy_cannot_be_silently_changed(self):
         src = source_rows()[0]
         dest = deepcopy(src)
