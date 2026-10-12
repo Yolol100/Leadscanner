@@ -2,7 +2,7 @@
 import unittest
 from copy import deepcopy
 
-from historical_handoff_audit import audit_counts, _reviewed_refresh, audit_destination_copies
+from historical_handoff_audit import audit_counts, _reviewed_refresh, audit_destination_copies, audit_workspace_capacity
 
 BODY = (
     "Hoi, ik zag op jullie website dat klanten een afspraak kunnen maken. "
@@ -125,6 +125,72 @@ class HistoricalHandoffAuditTests(unittest.TestCase):
         result = audit_destination_copies([s], {"nl": {}, "en": {s["email"]: dest}}, Client())
         self.assertEqual(result["unexpected_source_or_language"], 1)
         self.assertEqual(result["exact_personalization_verified"], 0)
+
+
+    def test_billing_capacity_is_safe_aggregate_only_and_cannot_invent_slots(self):
+        class Client:
+            def __init__(self, data=None, error=None):
+                self.data, self.error = data, error
+            def _request(self, method, path, *, retry_safe=False):
+                self.method, self.path = method, path
+                self.retry_safe = retry_safe
+                if self.error:
+                    raise RuntimeError("private provider body could contain contacts")
+                return self.data
+        full = Client({
+            "organization_name": "Confidential Workspace",
+            "organization_id": "secret-workspace-123",
+            "subscriptions": {"outreach": {
+                "plan_name": "Internal confidential plan",
+                "total_lead_limit": 250,
+                "current_lead_count": 250,
+            }}
+        })
+        result = audit_workspace_capacity(full, 529)
+        self.assertEqual(result, {
+            "status": "at_limit",
+            "sufficient_for_remaining": False,
+            "remaining_capacity_band": "0",
+        })
+        self.assertEqual(full.method, "GET")
+        self.assertEqual(full.path, "/workspace-billing/plan-details")
+        self.assertTrue(full.retry_safe)
+        self.assertNotIn("Confidential", str(result))
+        self.assertNotIn("secret-", str(result))
+        nearly = Client({"subscriptions": {"outreach": {
+            "total_lead_limit": 1000, "current_lead_count": 998,
+        }}})
+        self.assertEqual(audit_workspace_capacity(nearly, 529)["remaining_capacity_band"], "1-9")
+        enough = Client({"subscriptions": {"outreach": {
+            "total_lead_limit": 1000, "current_lead_count": 350,
+        }}})
+        self.assertEqual(audit_workspace_capacity(enough, 529)["status"], "sufficient")
+        self.assertTrue(audit_workspace_capacity(enough, 529)["sufficient_for_remaining"])
+
+    def test_billing_capacity_missing_permission_or_schema_fails_closed(self):
+        class Client:
+            def __init__(self, data=None, error=False):
+                self.data, self.error = data, error
+            def _request(self, *args, **kwargs):
+                if self.error:
+                    raise RuntimeError("Authorization token hidden")
+                return self.data
+        for data in (None, "", {}, {"subscriptions": []},
+                     {"subscriptions": {"outreach": {"total_lead_limit": True, "current_lead_count": 0}}},
+                     {"subscriptions": {"outreach": {"total_lead_limit": 100, "current_lead_count": 101}}}):
+            report = audit_workspace_capacity(Client(data), 529)
+            self.assertIsNone(report["sufficient_for_remaining"])
+            self.assertNotIn("529+", str(report))
+        self.assertEqual(
+            audit_workspace_capacity(Client(error=True), 529),
+            {"status": "unavailable", "sufficient_for_remaining": None},
+        )
+        self.assertEqual(
+            audit_workspace_capacity(Client({"subscriptions": {}}), 529)["status"],
+            "no_outreach_plan_reported",
+        )
+        with self.assertRaises(ValueError):
+            audit_workspace_capacity(Client(), -1)
 
     def test_handoff_not_eligible_for_active_or_unready_campaign(self):
         rows = [row()] + [row(i, status="") for i in range(1, 1128)]
