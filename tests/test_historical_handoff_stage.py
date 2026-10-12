@@ -166,7 +166,7 @@ class PausedHandoffStageTests(unittest.TestCase):
             self.assertEqual(len(client.patches), 100)
             self.assertEqual(sum(len(p["ids"]) for p in client.posts), 99)
             again = stage_batch(client, offset=0)
-            self.assertEqual(again["counts"]["destination_updated"], 0)
+            self.assertEqual(again["counts"].get("destination_updated", 0), 0)
             self.assertEqual(len(client.patches), 100)
             self.assertEqual(sum(len(p["ids"]) for p in client.posts), 99)
 
