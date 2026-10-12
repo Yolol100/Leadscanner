@@ -218,6 +218,56 @@ def audit_destination_copies(rows: list[dict], destination: dict[str, dict], cli
     return {key: int(counters[key]) for key in report_keys}
 
 
+
+def audit_workspace_capacity(client, required_new_copies: int) -> dict:
+    """Read the Instantly billing limit without publishing plan or account data.
+
+    This endpoint can be restricted to a different API scope. No available
+    quota can be inferred if the response is missing/invalid/inaccessible.
+    """
+    if type(required_new_copies) is not int or required_new_copies < 0:
+        raise ValueError("historical_handoff_invalid_required_capacity")
+    try:
+        raw = client._request(
+            "GET", "/workspace-billing/plan-details", retry_safe=True
+        )
+    except Exception:
+        return {"status": "unavailable", "sufficient_for_remaining": None}
+    if not isinstance(raw, dict):
+        return {"status": "unknown_schema", "sufficient_for_remaining": None}
+    subscriptions = raw.get("subscriptions")
+    if not isinstance(subscriptions, dict):
+        return {"status": "unknown_schema", "sufficient_for_remaining": None}
+    outreach = subscriptions.get("outreach")
+    if not isinstance(outreach, dict):
+        return {"status": "no_outreach_plan_reported", "sufficient_for_remaining": None}
+    limit = outreach.get("total_lead_limit")
+    used = outreach.get("current_lead_count")
+    if (
+        type(limit) is not int or type(used) is not int
+        or limit < 0 or used < 0 or used > limit
+    ):
+        return {"status": "unknown_schema", "sufficient_for_remaining": None}
+    available = limit - used
+    status = (
+        "at_limit" if available == 0
+        else "insufficient" if available < required_new_copies
+        else "sufficient"
+    )
+    band = (
+        "0" if available == 0
+        else "1-9" if available < 10
+        else "10-99" if available < 100
+        else "100-528" if available < 529
+        else "529+"
+    )
+    return {
+        "status": status,
+        "sufficient_for_remaining": available >= required_new_copies,
+        "remaining_capacity_band": band,
+    }
+
+
 def run() -> dict:
     client = InstantlyClient(os.environ["INSTANTLY_API_KEY"])
     rows = _source_rows(client, EXPECTED_SOURCE_COUNT)
@@ -238,6 +288,9 @@ def run() -> dict:
         destinations[language] = set(destination_records[language])
     report = audit_counts(rows, registry, blocked, destinations, ready)
     report["destination_readback"] = audit_destination_copies(rows, destination_records, client)
+    report["provider_capacity"] = audit_workspace_capacity(
+        client, report["counts"]["stage_eligible_review_only"]
+    )
     return report
 
 
