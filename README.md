@@ -6,11 +6,21 @@ Leadscanner onderzoekt bedrijfswebsites en webshops, selecteert controleerbare b
 
 **Privacybeperking (11 oktober 2026):** deze repository is momenteel **openbaar**. De
 **persoonlijke preview met contactgegevens en conceptmails**, het opslaan van
-mailboxconcepten en Instantly-staging blijven geblokkeerd totdat de repository
-**privé** is. De afzonderlijke `public_audit` mag wel publieke websites lezen
+mailboxconcepten en **reguliere Instantly-staging** blijven geblokkeerd totdat de
+repository **privé** is. De afzonderlijke `public_audit` mag wel publieke websites lezen
 en alleen geanonimiseerde tellingen rapporteren. De reviewbestanden
 bevatten zakelijke contactadressen en persoonlijke conceptteksten; deze horen
 niet in publiek downloadbare GitHub Actions-artifacts.
+
+**Eenmalige historische overdracht (12 oktober 2026):** de al geïsoleerd in
+Instantly opgeslagen 1.128 historische contacten hebben 776 door de gebruiker
+bevestigde, brongebonden reviewvoorstellen. Een afzonderlijke, geautoriseerde
+GitHub-run kopieert deze alleen naar de **bestaande, niet-verzendende NL/EN
+Draft/Paused-campagnes zonder afzenders** en bewaart bronrecords en oude mails.
+De geheime Instantly- en Sheet-gegevens blijven uitsluitend in het runnergeheugen;
+openbare logs bevatten alleen aantallen en er zijn geen prospectartifacts.
+Er ontstaat géén toestemming om te mailen of een campagne te activeren.
+Reguliere persoonlijke previews blijven privé-only.
 
 **Oude artifact-opslag gecontroleerd (11 oktober 2026):** tijdens drie eenmalige
 Actions-opschonings-/verificatieruns zijn 105 artifacts verwijderd (waaronder
