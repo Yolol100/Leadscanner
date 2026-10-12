@@ -13,6 +13,8 @@ import argparse
 from collections import Counter
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
+from ipaddress import ip_address
+from urllib.parse import urlparse
 import json
 import os
 import sys
@@ -57,11 +59,43 @@ def _source_payload(row: dict) -> dict:
 
 
 def _public_site(value: object) -> str:
+    """Pure site-hint filter. DNS/robots checks happen at the actual request.
+
+    Enumerating all 1,128 source rows twelve times must not perform tens of
+    thousands of preflight DNS queries. The normal website crawler still calls
+    is_public_http_url on every requested/redirected URL and enforces robots.
+    """
     raw = _string(value)
     if not raw or len(raw) > 1500:
         return ""
     url = raw if "://" in raw else "https://" + raw
-    return url if is_public_http_url(url) and normalize_domain(url) else ""
+    try:
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").strip().casefold().rstrip(".")
+        port = parsed.port
+        if (parsed.scheme.casefold() not in {"http", "https"}
+                or parsed.username is not None or parsed.password is not None
+                or not host or "%" in host
+                or port not in {None, 80, 443}
+                or host == "localhost"
+                or host.endswith((".localhost", ".local", ".internal", ".lan",
+                                  ".home", ".home.arpa"))
+                or not normalize_domain(url)):
+            return ""
+        try:
+            address = ip_address(host)
+        except ValueError:
+            address = None
+        if address is not None:
+            return url if address.is_global else ""
+        if "." not in host or any(not x for x in host.split(".")):
+            return ""
+        host.encode("idna")
+    except (ValueError, UnicodeError, TypeError):
+        return ""
+    # NO network request at this point. verify_candidate.safe_fetch_html()
+    # independently validates public DNS answers before opening any URL.
+    return url
 
 
 def historical_site(row: dict) -> str:
