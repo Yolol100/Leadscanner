@@ -71,7 +71,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_*.py' -v
 
   public_audit:
-    if: github.event_name == 'workflow_dispatch' && inputs.execution_mode == 'public_audit'
+    if: (github.event_name == 'workflow_dispatch' && inputs.execution_mode == 'public_audit') || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[public-audit]'))
     needs: test
     runs-on: ubuntu-24.04
     timeout-minutes: 60
