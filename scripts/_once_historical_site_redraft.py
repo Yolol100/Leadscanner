@@ -95,6 +95,38 @@ def historical_name(row: dict) -> str:
             or _string(payload.get("company_name")))[:180]
 
 
+def historical_brand_hint(row: dict, site: str) -> str:
+    """Bounded website-research hint when a provider company label is absent.
+
+    The historical source must independently link this exact domain to its
+    contact (verified first-party snapshot, or matching corporate mail domain).
+    The *current* page must still corroborate the brand in visible content.
+    This is not evidence of a new person, recipient or business to acquire.
+    """
+    domain = normalize_domain(site)
+    if not domain:
+        return ""
+    payload = _source_payload(row)
+    old_official = False
+    for prefix in ("leadscanner_site_refresh_", "leadscanner_site_candidate_"):
+        evidence = _public_site(payload.get(prefix + "evidence_url"))
+        if (_string(payload.get(prefix + "source_type")) == "official_site"
+                and normalize_domain(payload.get(prefix + "official_domain")) == domain
+                and evidence and normalize_domain(evidence) == domain):
+            old_official = True
+            break
+    original_email = normalize_email(row.get("email"))
+    mail_domain = original_email.rsplit("@", 1)[-1] if original_email else ""
+    company_domain = normalize_domain(row.get("company_domain"))
+    same_corporate_domain = mail_domain == company_domain == domain
+    if not old_official and not same_corporate_domain:
+        return ""
+    label = domain.split(".", 1)[0].replace("-", " ").strip()
+    if label.casefold() in {"www", "shop", "store", "online", "portal", "contact", "website"}:
+        return ""
+    return label if 5 <= len(label) <= 70 and any(c.isalpha() for c in label) else ""
+
+
 def excluded_history(row: dict) -> bool:
     """Previous contact, opt-out, bounce and replies stay excluded."""
     status = row.get("status")
@@ -201,6 +233,10 @@ def build_batch(
             continue
         site = historical_site(row)
         company = historical_name(row)
+        derived_brand = False
+        if site and not company:
+            company = historical_brand_hint(row, site)
+            derived_brand = bool(company)
         if not site or not company:
             states[pos] = "hold_missing_website"
             continue
@@ -212,6 +248,7 @@ def build_batch(
             "name_hint": company,
             "website_hint": site,
             "category_hint": "",
+            "historical_brand_derived": derived_brand,
         })
 
     verified_rows = []
@@ -230,6 +267,16 @@ def build_batch(
         if not candidate.get("ready_for_research"):
             states[pos] = "hold_website_verification"
             continue
+        if candidate.get("historical_brand_derived"):
+            # A brand inferred from the domain is not independently verified
+            # by that same domain. Require fresh, visible first-party text.
+            evidence = candidate.get("identity_evidence") or []
+            if not any(str(reason).startswith((
+                "full_company_name_on_site", "brand_tokens_on_site"
+            )) for reason in evidence):
+                states[pos] = "hold_website_verification"
+                continue
+            counts["derived_brand_confirmed_live"] += 1
         counts["websites_verified"] += 1
         to_research.append(candidate)
 
@@ -327,7 +374,7 @@ def build_batch(
                 "checked", "historical_email_excluded", "websites_checked",
                 "websites_verified", "websites_researched",
                 "webpages_fetched", "websites_with_four_to_six_findings",
-                "mail_quality_evaluated",
+                "mail_quality_evaluated", "derived_brand_confirmed_live",
             )},
         },
         "emails_sent": 0,
