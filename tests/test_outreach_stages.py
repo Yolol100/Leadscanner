@@ -349,7 +349,7 @@ class OutreachStagesTests(unittest.TestCase):
         self.assertFalse(item["automatic_send"])
         self.assertEqual(item["draft_status"], "not_created")
 
-    def test_draft_uses_three_strongest_observations_but_review_keeps_all(self):
+    def test_draft_includes_all_four_to_six_verified_observations(self):
         from outreach_stages import finding_excerpt
         texts = [
             ("Klanten kunnen online een afspraak maken voor onderhoud aan hun fietsen.", "afspraak"),
@@ -367,12 +367,10 @@ class OutreachStagesTests(unittest.TestCase):
         row = result["candidates"][0]
         self.assertEqual(row["mail_status"], "ready_for_human_review")
         self.assertGreaterEqual(len(row["selected_findings"]), 4)
-        for item in row["selected_findings"][:3]:
+        for item in row["selected_findings"]:
             self.assertIn(finding_excerpt(item), row["body"])
-        for item in row["selected_findings"][3:]:
-            self.assertNotIn(finding_excerpt(item), row["body"])
         self.assertEqual(row["body"].count("?"), 1)
-        self.assertLessEqual(len(row["body"].split()), 90)
+        self.assertLessEqual(len(row["body"].split()), 155)
         self.assertEqual(validate_mail(row, row["subject"], row["body"]), [])
 
     def test_validator_blocks_fake_created_artifact_meeting_and_roi(self):
