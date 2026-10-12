@@ -19,6 +19,7 @@ from cold_stages import (
     suppress_previously_used_contact_emails,
 )
 from dedupe_preflight import load_registry_values, match_candidate, candidate_identity, domains_match
+from historical_suppression import TAB_NAME as HISTORICAL_TAB, hmac_key, validate_rows as validate_historical_rows, suppression_row
 from outreach_stages import select_reasons, choose_value_actions, generate_mails
 from overture_discovery import discover
 from review_draft_stages import prepare_review_batch, audit_exact_readback
@@ -43,7 +44,13 @@ def fetch_registry() -> list[dict]:
     """
     session, _account = _authorized_session(read_only=True)
     values = read_live_values(session, DEFAULT_SPREADSHEET_ID, DEFAULT_SHEET_NAME)
-    return load_registry_values(values)
+    ordinary = load_registry_values(values)
+    # A partially migrated sheet is NOT evidence of complete exclusion.
+    # Check every live run before finding any new prospect.
+    historical_values = read_live_values(session, DEFAULT_SPREADSHEET_ID, HISTORICAL_TAB)
+    secret = hmac_key()
+    historical = validate_historical_rows(historical_values, secret, complete=True)
+    return ordinary + [suppression_row(historical, secret)]
 
 
 def revalidate_drafts(batch: dict, registry: list[dict]) -> tuple[dict, int]:

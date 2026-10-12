@@ -138,13 +138,22 @@ class CoreTests(unittest.TestCase):
             ["Example Company", "https://example.org", "example.org",
              "info@example.org", "concept", "draft", "", "", "historic", "TRUE"],
         ]
+        historical_values = [
+            ["version", "key_check", "source_id_token", "email_token", "official_domain_token"]
+        ]
         with patch("leadscanner_core._authorized_session", return_value=(object(), "service-account")) as auth, \
-             patch("leadscanner_core.read_live_values", return_value=live_rows) as read:
+             patch("leadscanner_core.read_live_values", side_effect=[live_rows, historical_values]) as read, \
+             patch("leadscanner_core.hmac_key", return_value=b"synthetic-opaque-key"), \
+             patch("leadscanner_core.validate_historical_rows", return_value={
+                 "emails": {"secret-token"}, "domains": set(), "count": 1128,
+             }) as validator:
             exclusions = fetch_registry()
-        self.assertEqual(len(exclusions), 1)
+        self.assertEqual(len(exclusions), 2)
         self.assertIn("example.org", exclusions[0]["identity"]["domains"])
+        self.assertEqual(exclusions[1]["status"], "historical_suppression")
         auth.assert_called_once_with(read_only=True)
-        read.assert_called_once()
+        self.assertEqual(read.call_count, 2)
+        self.assertTrue(validator.call_args.kwargs["complete"])
         self.assertNotIn("email", str(exclusions[0]["status"]))
 
     def test_authenticated_registry_missing_permission_fails_closed(self):
@@ -218,7 +227,7 @@ class CoreTests(unittest.TestCase):
         self.assertIn("workflow_dispatch", text)
         self.assertNotIn("actions/upload-artifact", text)
         self.assertNotIn("schedule:", text)
-        self.assertNotIn("instantly", text.casefold())
+        self.assertNotIn("instantly", text.split("  historical_hmac_once:")[0].casefold())
         self.assertNotIn("smtp.send", text.casefold())
 
     def test_no_smtp_send_surface_in_mailbox_core(self):
