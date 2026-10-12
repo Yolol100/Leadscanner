@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import time
 from collections import Counter
 from datetime import datetime, timezone
@@ -337,6 +338,25 @@ def stage_batch(
     return report
 
 
+def safe_failure_code(error: Exception) -> str:
+    """Never show provider/private exception content in public Actions logs."""
+    value = str(error)
+    # Internal fixed labels are safe. Never echo email, URL, tokens or bodies.
+    if re.fullmatch(
+        r"(?:historical_handoff|routing_background_job|routing_stage|registry|live_registry)"
+        r"_[a-z0-9_]{3,100}", value,
+    ):
+        return value
+    if re.fullmatch(r"instantly_api_error status=[45][0-9]{2}", value):
+        return "instantly_http_" + value.rsplit("=", 1)[-1]
+    return {
+        ValueError: "value_contract",
+        RuntimeError: "runtime_unknown",
+        KeyError: "missing_field",
+        TypeError: "type_contract",
+    }.get(type(error), "unexpected_exception")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--offset", required=True, type=int)
@@ -349,8 +369,11 @@ def main() -> int:
             client, offset=args.offset, expected_reviewed=args.approved_cohort,
             max_targets=args.max_targets,
         )
-    except Exception:
-        raise SystemExit("HISTORICAL_PAUSED_STAGE=failed_reconcile_before_retry") from None
+    except Exception as error:
+        raise SystemExit(
+            "HISTORICAL_PAUSED_STAGE=failed_reconcile_before_retry cause="
+            + safe_failure_code(error)
+        ) from None
     print("HISTORICAL_PAUSED_STAGE=green " + json.dumps(result, sort_keys=True, separators=(",", ":")))
     return 0
 
