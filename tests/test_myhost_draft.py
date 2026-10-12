@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
+import os
 from email.parser import BytesParser
 from email.policy import default
-from unittest.mock import patch
 
-from myhost_draft import build_message, create_drafts, exact_message_matches, imap_capability_tokens, require_uidplus
+from myhost_draft import build_message, create_drafts, exact_message_matches, imap_capability_tokens, require_uidplus, live_self_draft_smoke
 
 
 class FakeIMAP:
@@ -133,6 +134,34 @@ class DraftTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "automatic replacement is disabled"):
                 create_drafts({"rows": [self.row()]}, reject_changed_existing=True)
         self.assertEqual(len(client.messages), 1)
+
+    def test_live_synthetic_smoke_only_appends_and_deletes_its_own_draft(self):
+        client = FakeIMAP()
+        with patch("myhost_draft.connect_imap", return_value=client), \
+             patch("myhost_draft.secrets.token_hex", return_value="0123456789abcdefabcd"), \
+             patch.dict(os.environ, {"OUTREACH_MAIL_USER": "self@example.org"}):
+            result = live_self_draft_smoke()
+        self.assertEqual(result, {
+            "status": "green",
+            "synthetic_draft_created": 1,
+            "exact_imap_readback": 1,
+            "synthetic_draft_cleaned": 1,
+            "emails_sent": 0,
+            "prospect_records_touched": 0,
+        })
+        self.assertEqual(client.append_calls, 1)
+        self.assertEqual(client.messages, [])
+        self.assertNotIn("self@example.org", str(result))
+
+    def test_live_synthetic_smoke_unverified_draft_still_cleans_exact_test(self):
+        client = FakeIMAP()
+        client.missing_draft_flag = True
+        with patch("myhost_draft.connect_imap", return_value=client), \
+             patch("myhost_draft.secrets.token_hex", return_value="0123456789abcdefabcd"), \
+             patch.dict(os.environ, {"OUTREACH_MAIL_USER": "self@example.org"}):
+            with self.assertRaisesRegex(RuntimeError, "draft flag missing"):
+                live_self_draft_smoke()
+        self.assertEqual(client.messages, [])
 
     def test_post_login_capability_refresh_detects_uidplus(self):
         client = FakeIMAP(uidplus=False)
