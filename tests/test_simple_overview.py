@@ -14,7 +14,7 @@ def manifest(mode="preview", counts=None):
         "closure": {"automatic_send": False, "status": "preview_ready"},
         "diagnostics": {
             "drop_reasons": {
-                "verification": {"recipient_not_confirmed_on_website": 9},
+                "verification": {"hold_robots_policy": 9},
                 "outreach": {"no_specific_first_party_signal": 3},
             }
         },
@@ -34,9 +34,39 @@ class SimpleOverviewTests(unittest.TestCase):
         data["request"]["email"] = "private@somewhere.example"
         out = render_overview(data)
         self.assertIn("Contacten klaar voor beoordeling: **4**", out)
-        self.assertIn("Contact niet bevestigd: 9", out)
+        self.assertIn("Website niet geverifieerd: 9", out)
         self.assertIn("Verzonden:** 0", out)
         self.assertNotIn("private@somewhere", out)
+
+    def test_researched_sites_are_counted_without_claiming_usable_evidence(self):
+        # A verified site is researched even if the text is too thin for copy.
+        data = manifest(counts={
+            "discovery_after_cheap_filters": 9,
+            "dedupe_kept": 8,
+            "verified_for_research": 6,
+            "research_ready": 6,
+            "contacts_found": 2,
+            "named_contacts": 1,
+            "outreach_reason_ready": 3,
+            "review_queue_candidates": 2,
+        })
+        out = render_overview(data)
+        self.assertIn("Websites onderzocht: **6**", out)
+        self.assertIn("Gepubliceerde zakelijke e-mailadressen gevonden: **2**", out)
+        self.assertNotIn("Onderzochte websites met bruikbare bronnen", out)
+        self.assertNotIn("Contact niet bevestigd", out)
+
+    def test_unrecognized_diagnostic_stage_does_not_leak_private_text(self):
+        data = manifest()
+        data["diagnostics"]["drop_reasons"] = {
+            "private.person@company.example": {"any_unsafe_status": 33},
+            "verification": {"hold_unreachable_official_site": 2},
+        }
+        out = render_overview(data)
+        self.assertIn("Overige oorzaken: 33", out)
+        self.assertIn("Website niet geverifieerd: 2", out)
+        self.assertNotIn("private.person@company.example", out)
+        self.assertNotIn("any_unsafe_status", out)
 
     def test_fact_only_mode_is_not_presented_as_generated_mail(self):
         item = manifest()

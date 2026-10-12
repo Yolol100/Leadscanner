@@ -32,7 +32,7 @@ Instantly-staging of mijn.host-conceptopslag wordt uitgevoerd.
 | Stap | Wat gebeurt er? | Wat zie je? |
 | --- | --- | --- |
 | 1. Zoeken | Vind bedrijven met een publieke website, controleer bestaande uitsluitingen en bevestig de site. **Een e-mailadres is hier niet vereist.** | Aantal vindbare websites |
-| 2. Onderzoeken | Bekijk de homepage en maximaal twaalf extra bereikbare publieke pagina's; onderzoek eerst Over ons, Team, Eigenaar en Contact, daarna diensten, producten en andere kansen. Vind pas daarna het beste gepubliceerd e-mailadres. | Websiteobservaties, persoon + e-mailbron indien gevonden |
+| 2. Onderzoeken | Bekijk de homepage en maximaal twaalf extra bereikbare publieke pagina's. Wissel diensten/producten en Over ons/Team/Contact af, zodat één type pagina de onderzoeksruimte niet opslokt. Zoek pas daarna het best onderbouwde contactadres. | Websiteobservaties, persoon + e-mailbron indien gevonden |
 | 3. Kiezen | Deel opvallende feiten in categorieën in, rangschik ze en neem de **maximaal zes belangrijkste onderbouwde punten** voor de review (hoogstens drie als korte, letterlijk onderbouwde highlights in de conceptmail) mee. Herhaal hetzelfde onderwerp niet meer dan twee keer en vul een sterke selectie niet met zwakke opmerkingen. Minder als er minder bewijs is. | Prioriteit, categorie, observatie, bron |
 | 4. Beoordelen | Kies eerst een aantoonbaar persoonlijk adres van eigenaar/team, anders een gepubliceerd algemeen adres (ook via externe mailprovider). Zonder adres blijft het websiteonderzoek geldig, maar ontstaat geen geadresseerde conceptmail. | Openbare `public_audit`: alleen tellingen; privé `preview`: review-queue en tokens |
 
@@ -47,7 +47,7 @@ Gebruik [GitHub Actions — Leads Cold Pipeline](../../actions/workflows/leads-c
 - **`instantly_stage`:** zet **expliciet goedgekeurde** contacten klaar in een toegestane Draft/Paused Instantly-campagne. Vereist het oorspronkelijke `preview_run_id`, exacte `approved_review_tokens`, een campagne-ID en bevestiging. De campagne wordt **niet geactiveerd**.
 - **`draft`:** optionele fallback voor concepten in mijn.host. Ook dit vereist een exacte eerdere preview, goedkeuring en bevestiging. Fact-only records kunnen niet als mailboxconcept worden opgeslagen.
 
-De **eerste output** die je als gebruiker nodig hebt, is `overzicht.md` in het run-artifact en in de GitHub job summary. Dit bevat alleen totalen en uitleg, geen adressen of prospecttekst. Voor afzonderlijke kandidaten open je `review-queue.md` (met de gerangschikte bevindingen en bronnen) of de CSV. Geavanceerde JSON-bestanden zijn voor controle en herstel bedoeld, niet voor dagelijks gebruik.
+**Openbare `public_audit`:** bekijk alleen de geanonimiseerde tellingen in de GitHub job summary; deze modus uploadt geen review-artifact. **Privé `preview`:** open eerst `overzicht.md` en beoordeel daarna afzonderlijke kandidaten in `review-queue.md` of de CSV. Technische JSON-bestanden zijn bedoeld voor diagnose en herstel, niet voor dagelijks gebruik.
 
 ## Waarom gaat iets op hold?
 
@@ -55,7 +55,7 @@ Een bedrijf wordt niet automatisch geschikt omdat het een website heeft. Mogelij
 
 - Bedrijf al bekend, onderdrukt of eerder onderzocht; nooit blind opnieuw benaderen.
 - Geen gepubliceerd e-mailadres: **websiteonderzoek gaat gewoon door**. Publiek gepubliceerde zakelijke e-mails in bij het bedrijf passende schema.org JSON-LD tellen ook mee wanneer de koppeling met het bedrijf bevestigd is. Een expliciet vermelde persoon uit dezelfde bedrijfsgegevens krijgt alleen voorrang als diens werkgever en eigen e-mailadres controleerbaar aan het bedrijf zijn gekoppeld. Een aantoonbaar contactformulier, telefoonlink of bezochte Contact-pagina wordt apart geregistreerd. Een Contact-pagina bewijst niet dat het formulier werkt; geen van deze routes is een e-mailadres en niets wordt automatisch gebruikt. Een geadresseerde conceptmail blijft achterwege.
-- Een geverifieerde website telt als onderzocht na bezoek, ook zonder voldoende concrete observaties. De kwaliteitsmeting telt bruikbaar bewijs **apart**; geen geforceerde bevindingen om een hoog cijfer te halen.
+- Een geverifieerde website telt als onderzocht na bezoek, ook zonder voldoende concrete observaties. **Onderzochte websites** zijn dus niet hetzelfde als **websites met bruikbare bevindingen**. De kwaliteitsmeting telt bruikbaar bewijs **apart**; geen geforceerde bevindingen om een hoog cijfer te halen.
 - De openbare onderzoeksrun toont aparte **anonieme** aantallen voor bezochte sites, bruikbaar bewijs, gevonden e-mailadressen, contactformulieren, telefoonlinks en contactpagina's. Een gevonden contactroute is niet hetzelfde als een geverifieerd e-mailadres of een goedgekeurd concept.
 - Website onbereikbaar of robots-/domeinveiligheid laat lezen niet toe. Bij een verouderde URL probeert de scanner maximaal twee veilige alternatieven op hetzelfde domein; robots- of toegangswigeringen worden nooit omzeild.
 - Geen concrete, controleerbare observatie of geen betrouwbare taalherkenning.
