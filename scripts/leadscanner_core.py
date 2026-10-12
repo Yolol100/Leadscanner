@@ -117,8 +117,12 @@ def run(*, mode: str, region: str,
         repository_private: bool) -> dict:
     if not _params_valid(mode, region, keywords, radius_km, discovery_limit, verify_limit):
         raise SafeRunError("inputs")
-    if mode == "drafts" and not repository_private:
-        raise SafeRunError("privacy")
+    # The repository may remain public by explicit owner choice. Real drafts
+    # are still allowed ONLY from the trusted, manual, main-branch Actions
+    # job (or an already private environment), never PRs/pushes/audits.
+    trusted_main_manual = os.environ.get("LEADSCANNER_TRUSTED_MAIN_DRAFTS") == "true"
+    if mode == "drafts" and not (repository_private or trusted_main_manual):
+        raise SafeRunError("trusted_manual_run_required")
     if mode == "drafts" and not os.environ.get("OUTREACH_MAIL_PASSWORD"):
         raise SafeRunError("mailbox_credentials")
 
