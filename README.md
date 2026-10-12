@@ -23,7 +23,9 @@ Er ontstaat géén toestemming om te mailen of een campagne te activeren.
 De eerste echte Instantly-proefkopie is met succes afgerond en via exact destination- en registry-readback bevestigd. De totale overdracht verloopt in gecontroleerde, hervatbare batches; bij een onbekende provideruitkomst volgt eerst een read-only reconciliatie, nooit een blinde herhaling.
 Reguliere persoonlijke previews blijven privé-only.
 
-**Herstelstatus 12 oktober 2026:** de gecontroleerde herstelproef heeft 1 eerder gedeeltelijk gekopieerd contact alsnog volledig gepersonaliseerd, met exacte Instantly- en registry-readback. Daarna mag uitsluitend de bestaande niet-verzendende historische handoff de resterende 776 beoordeelde records in groepen van maximaal 100 hervatten; provider-kopieergroepen zijn begrensd op 10. Een volledige overdracht is pas bevestigd na een nieuwe geanonimiseerde eindcontrole.\n\n**Oude artifact-opslag gecontroleerd (11 oktober 2026):** tijdens drie eenmalige
+**Herstelstatus 12 oktober 2026:** de afgeschermde proefkopie en de eerste herstelbatch zijn bevestigd, maar de volledige herstelrun is gestopt op de tweede batch doordat een verwachte Instantly-doelkopie ontbrak. Eerst volgt een nieuwe geanonimiseerde read-only reconciliatie. De oorspronkelijke contacten blijven bewaard en er is niets verzonden. De volledige overdracht is **niet** afgerond.
+
+**Oude artifact-opslag gecontroleerd (11 oktober 2026):** tijdens drie eenmalige
 Actions-opschonings-/verificatieruns zijn 105 artifacts verwijderd (waaronder
 tijdelijke controlerapporten uit die runs). Bij de laatste API-readback bleven
 40 artifacts over; allemaal met een expliciet toegelaten naam voor
