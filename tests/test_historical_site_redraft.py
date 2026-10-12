@@ -54,6 +54,20 @@ class HistoricalSiteRebuildTests(unittest.TestCase):
             },
         }), "https://sample.nl")
 
+    def test_source_hints_do_not_perform_dns_and_reject_local_or_credentialed_urls(self):
+        site_row = {"company_name": None, "website": "https://made-up-site.nl/"}
+        with patch("socket.getaddrinfo", side_effect=AssertionError("source loop must not do DNS")):
+            self.assertEqual(historical_site(site_row), "https://made-up-site.nl/")
+        for unsafe in (
+            "http://127.0.0.1/", "https://10.10.1.1/", "http://localhost/",
+            "https://admin:secret@business.nl", "http://server.local/path",
+            "https://business.nl:8080/",
+        ):
+            self.assertEqual(
+                historical_site({"website": unsafe}), "",
+                msg="unsafe source URL must fail before live website crawl",
+            )
+
     def test_missing_company_name_can_use_only_correlated_domain_for_research(self):
         row = {
             "company_name": None, "website": "https://sample.nl/",
