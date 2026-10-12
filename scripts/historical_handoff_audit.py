@@ -28,6 +28,21 @@ REQUIRED_SUFFIXES = (
 )
 
 
+# Fixed field categories only. These labels are public-safe; never emit
+# destination values, recipient identifiers, URLs, copy, or hashes.
+DESTINATION_DIFF_FIELDS = {
+    "reviewed_subject": "leadscanner_subject",
+    "reviewed_body": "leadscanner_body",
+    "reviewed_observation": "leadscanner_observation",
+    "reviewed_action": "leadscanner_value_action",
+    "reviewed_evidence": "leadscanner_evidence_url",
+    "reviewed_source_type": "leadscanner_evidence_source_type",
+    "handoff_status": "leadscanner_handoff_status",
+    "handoff_date": "leadscanner_handoff_review_date",
+    "handoff_digest": "leadscanner_handoff_content_sha256",
+}
+
+
 def _reviewed_refresh(row: dict) -> tuple[str, str]:
     """Return (language, hold_reason) without exposing private input."""
     if row.get("status") in {-1, -2, -3}:
@@ -178,17 +193,29 @@ def audit_destination_copies(rows: list[dict], destination: dict[str, dict], cli
                 continue
             if actual_variables == expected_variables:
                 counters["exact_personalization_verified"] += 1
-            elif not _text(actual_variables.get("leadscanner_handoff_status")):
+                continue
+            if not _text(actual_variables.get("leadscanner_handoff_status")):
                 counters["copied_pending_personalization"] += 1
             else:
                 counters["changed_or_unexpected_personalization"] += 1
-    return {k: int(counters[k]) for k in (
+            for label, key in DESTINATION_DIFF_FIELDS.items():
+                if actual_variables.get(key) != expected_variables.get(key):
+                    counters["mismatch_" + label] += 1
+            other_keys = (
+                set(actual_variables) | set(expected_variables)
+            ) - set(DESTINATION_DIFF_FIELDS.values())
+            if any(actual_variables.get(key) != expected_variables.get(key) for key in other_keys):
+                counters["mismatch_other_existing_variable"] += 1
+    report_keys = (
         "exact_personalization_verified", "copied_pending_personalization",
         "changed_or_unexpected_personalization",
         "target_copy_source_mismatch", "target_identity_or_state_conflict",
         "unexpected_source_or_language", "unexpected_unrelated_target",
         "duplicate_across_campaigns", "missing_target_id",
-    )}
+        "mismatch_other_existing_variable",
+    )
+    report_keys += tuple("mismatch_" + label for label in DESTINATION_DIFF_FIELDS)
+    return {key: int(counters[key]) for key in report_keys}
 
 
 def run() -> dict:
