@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 from requests.exceptions import ReadTimeout
 
 from update_dedupe_registry import (
@@ -8,6 +8,7 @@ from update_dedupe_registry import (
     plan_registry_update,
     read_live_values,
     update_registry,
+    check_registry_access,
 )
 
 
@@ -137,6 +138,29 @@ class RegistryUpdateTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "live_registry_headers_mismatch"):
             plan_registry_update(self.readback([expected]), [["company", "domain"]])
 
+
+    def test_registry_access_preflight_does_not_mutate_headers(self):
+        client = Mock()
+        with patch("update_dedupe_registry._authorized_session", return_value=(client, "redacted")), \
+             patch("update_dedupe_registry.read_live_values", return_value=[HEADERS, self.row()]):
+            result = check_registry_access(spreadsheet_id="test", sheet_name="DedupeRegistry")
+        self.assertEqual(result["write_intent"], "read_verified_write_unproven")
+        client.put.assert_not_called()
+        client.post.assert_not_called()
+
+    def test_registry_closure_rechecks_previously_existing_exact_identity(self):
+        expected = self.row()
+        changed = list(expected)
+        changed[4] = "sent"
+        client = Mock()
+        with patch("update_dedupe_registry._authorized_session", return_value=(client, "redacted")), \
+             patch("update_dedupe_registry.read_live_values",
+                   side_effect=[[HEADERS, expected], [HEADERS, changed]]), \
+             patch("update_dedupe_registry.append_values") as appended:
+            with self.assertRaisesRegex(RuntimeError, "registry_exact_readback_mismatch"):
+                update_registry(self.readback([expected]), spreadsheet_id="test", sheet_name="DedupeRegistry")
+        appended.assert_called_once()
+        self.assertEqual(appended.call_args.args[-1], [])
 
     def test_readonly_registry_get_retries_one_sheets_timeout(self):
         session = Mock()
