@@ -33,6 +33,7 @@ EXPECTED_REVIEWED = 776
 REVIEW_DATE = "2026-10-12"
 MAX_DESTINATION_PAGES = 60
 COPY_BATCH_SIZE = 10
+MAX_DEFERRED_COPIES_PER_BATCH = 20
 
 
 def destination_rows(client, campaign_id: str) -> dict[str, dict]:
@@ -376,27 +377,51 @@ def stage_batch(
             try:
                 _wait_job(client, job)
             except RuntimeError as error:
-                if str(error) not in {
+                kind = str(error)
+                if kind not in {
                     "routing_background_job_unknown_status",
                     "routing_background_job_pending_no_retry",
+                    "routing_background_job_failed",
                 }:
-                    # A provider-reported failure cannot be turned into an
-                    # implicit successful mutation.
                     raise
-                # Never accept an unfamiliar or still-pending job status as
-                # success on its own. Continue ONLY after every requested
-                # destination copy is independently visible and read back.
-                count["job_status_reconciled_by_destination"] += 1
-            latest = await_destination_copies(
-                client, cid,
-                {_text(row.get("email")).casefold() for row in absent},
-            )
+                # A failed or unfamiliar provider job is never automatically
+                # successful. Independently check EVERY destination copy.
+                count["job_status_requires_destination_proof"] += 1
+                if kind == "routing_background_job_failed":
+                    count["job_reported_failed"] += 1
+            try:
+                latest = await_destination_copies(
+                    client, cid,
+                    {_text(row.get("email")).casefold() for row in absent},
+                )
+            except RuntimeError as error:
+                if str(error) != "historical_handoff_copied_lead_visibility_unconfirmed":
+                    raise
+                # A partial or failed background job may still have copied
+                # some leads. Confirm and personalize only visible copies;
+                # NEVER re-POST missing IDs from this uncertain job.
+                latest = destination_rows(client, cid)
+                appeared = [
+                    row for row in absent
+                    if _text(row.get("email")).casefold() in latest
+                ]
+                personalize_and_verify(language, appeared, latest)
+                for row in absent:
+                    source_is_unchanged(row, "historical_handoff_source_was_modified")
+                held = len(absent) - len(appeared)
+                count["copy_visibility_deferred"] += held
+                if count["copy_visibility_deferred"] > MAX_DEFERRED_COPIES_PER_BATCH:
+                    raise RuntimeError("historical_handoff_too_many_unconfirmed_copies")
+                continue
             personalize_and_verify(language, absent, latest)
         preflight_campaign(client, language, cid)
 
     report = {
         "schema_version": "leadscanner-historical-paused-stage/1.0",
-        "status": "partial" if count["destination_readback_deferred"] else "green",
+        "status": (
+            "partial" if count["destination_readback_deferred"]
+            or count["copy_visibility_deferred"] else "green"
+        ),
         "batch_offset": offset,
         "batch_size": len(source[offset:offset+BATCH_SIZE]),
         "source_count": len(source),

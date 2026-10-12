@@ -182,14 +182,14 @@ class PausedHandoffStageTests(unittest.TestCase):
              patch("historical_handoff_stage._wait_job", side_effect=RuntimeError("routing_background_job_unknown_status")), \
              patch("historical_handoff_stage.update_registry", return_value={"exact_readback": True}):
             report = stage_batch(client, offset=0)
-        self.assertEqual(report["counts"]["job_status_reconciled_by_destination"], 10)
+        self.assertEqual(report["counts"]["job_status_requires_destination_proof"], 10)
         self.assertEqual(report["counts"]["destination_personalization_confirmed"], 100)
         self.assertEqual(report["counts"]["registry_verified"], 100)
         self.assertEqual(len(client.posts), 10)
         self.assertEqual(len(client.patches), 100)
         self.assertEqual(report["email_sent"], 0)
 
-    def test_reported_failed_background_job_never_implicitly_succeeds(self):
+    def test_failed_background_job_is_not_success_without_exact_copy_readbacks(self):
         rows = source_rows()
         client = FakeClient(rows)
         with patch("historical_handoff_stage._source_rows", return_value=rows), \
@@ -197,11 +197,58 @@ class PausedHandoffStageTests(unittest.TestCase):
              patch("historical_handoff_stage.blocked_values", return_value=set()), \
              patch("historical_handoff_stage.preflight_campaign"), \
              patch("historical_handoff_stage.check_registry_access"), \
-             patch("historical_handoff_stage._wait_job", side_effect=RuntimeError("routing_background_job_failed")):
-            with self.assertRaisesRegex(RuntimeError, "routing_background_job_failed"):
-                stage_batch(client, offset=0)
+             patch("historical_handoff_stage._wait_job", side_effect=RuntimeError("routing_background_job_failed")), \
+             patch("historical_handoff_stage.update_registry", return_value={"exact_readback": True}):
+            # A provider job marked failed cannot block independently
+            # verified exact destination copies from being registered.
+            report = stage_batch(client, offset=0)
+        self.assertEqual(report["status"], "green")
+        self.assertEqual(report["counts"]["job_reported_failed"], 10)
+        self.assertEqual(report["counts"]["destination_personalization_confirmed"], 100)
+        self.assertEqual(report["counts"]["registry_verified"], 100)
+        self.assertEqual(len(client.posts), 10)
+        self.assertEqual(len(client.patches), 100)
+
+    def test_failed_partial_copy_holds_missing_without_reposting(self):
+        rows = source_rows()
+        client = FakeClient(rows)
+        original_request = client._request
+        def partial_move(method, path, *, json=None):
+            if method == "POST" and path == "/leads/move":
+                client.posts.append(deepcopy(json))
+                for src_id in json["ids"][:4]:
+                    src = client.sources[src_id]
+                    dest_id = "dest-" + src_id
+                    client.destinations[dest_id] = {
+                        **deepcopy(src), "id": dest_id,
+                        "list_id": None, "campaign": json["to_campaign_id"],
+                    }
+                return {"id": "background-fake-job-00001"}
+            return original_request(method, path, json=json)
+        client._request = partial_move
+        registry_rows = []
+        def registry_update(payload, **kwargs):
+            registry_rows.extend(payload["registry_rows"])
+            return {"exact_readback": True}
+        with patch("historical_handoff_stage._source_rows", return_value=rows), \
+             patch("historical_handoff_stage.fetch_live_registry", return_value=[]), \
+             patch("historical_handoff_stage.blocked_values", return_value=set()), \
+             patch("historical_handoff_stage.preflight_campaign"), \
+             patch("historical_handoff_stage.check_registry_access"), \
+             patch("historical_handoff_stage._wait_job", side_effect=RuntimeError("routing_background_job_failed")), \
+             patch("historical_handoff_stage.await_destination_copies", side_effect=RuntimeError("historical_handoff_copied_lead_visibility_unconfirmed")), \
+             patch("historical_handoff_stage.update_registry", side_effect=registry_update):
+            report = stage_batch(client, offset=0, max_targets=10)
+        self.assertEqual(report["status"], "partial")
+        self.assertEqual(report["counts"]["copy_visibility_deferred"], 6)
+        self.assertEqual(report["counts"]["destination_personalization_confirmed"], 4)
+        self.assertEqual(report["counts"]["registry_verified"], 4)
+        self.assertEqual(len(registry_rows), 4)
         self.assertEqual(len(client.posts), 1)
-        self.assertEqual(client.patches, [])
+        self.assertEqual(len(client.destinations), 4)
+        self.assertEqual(len(client.sources), 1128)
+        self.assertFalse(report["campaign_activation"])
+        self.assertEqual(report["email_sent"], 0)
 
     def test_async_completed_copy_is_polled_until_destination_is_visible(self):
         src = source_rows()[0]
