@@ -156,16 +156,19 @@ def _update_destination(client, source: dict, target: dict, campaign_id: str, *,
         client._request("PATCH", "/leads/" + lead_id, json={"custom_variables": expected})
     except Exception:
         raise RuntimeError("historical_handoff_write_outcome_unknown_reconcile_first") from None
-    for i in range(6):
+    # Instantly can acknowledge a PATCH before its exact custom variables
+    # are visible through GET. Poll reads only; a second PATCH is unsafe.
+    for attempt in range(len(COPY_VISIBILITY_DELAYS) + 1):
         after = _safe_readback(client, lead_id, campaign=campaign_id, email=email)
         if (
-            _custom(after) == expected
-            and after.get("status") == before.get("status")
-            and after.get("lt_interest_status") == before.get("lt_interest_status")
+            after.get("status") != before.get("status")
+            or after.get("lt_interest_status") != before.get("lt_interest_status")
         ):
+            raise RuntimeError("historical_handoff_destination_state_changed")
+        if _custom(after) == expected:
             return True
-        if i < 5:
-            sleep_fn((0.5, 1, 1.5, 2, 3)[i])
+        if attempt < len(COPY_VISIBILITY_DELAYS):
+            sleep_fn(COPY_VISIBILITY_DELAYS[attempt])
     raise RuntimeError("historical_handoff_destination_variables_readback_mismatch")
 
 
