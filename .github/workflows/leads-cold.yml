@@ -1291,9 +1291,25 @@ jobs:
           if [ "${{ contains(github.event.head_commit.message, '[historical-handoff-smoke]') }}" = 'true' ]; then
             python3 scripts/historical_handoff_stage.py --offset 0 --max-targets 1 --approved-cohort 776
           else
+            deferred=0
             for offset in 0 100 200 300 400 500 600 700 800 900 1000 1100; do
-              python3 scripts/historical_handoff_stage.py --offset "$offset" --approved-cohort 776
+              if python3 scripts/historical_handoff_stage.py --offset "$offset" --approved-cohort 776; then
+                :
+              else
+                status=$?
+                if [ "$status" -eq 2 ]; then
+                  # A confirmed provider PATCH with delayed readback is held
+                  # without retry. Process other independent contacts safely.
+                  deferred=1
+                else
+                  exit "$status"
+                fi
+              fi
             done
+            if [ "$deferred" -ne 0 ]; then
+              echo "HISTORICAL_PAUSED_STAGE=partial_reconciliation_required"
+              exit 1
+            fi
           fi
 
   # Historical first-party research is strictly separate from outreach.
