@@ -60,7 +60,15 @@ class HistoricalSiteRebuildTests(unittest.TestCase):
             "email": "info@sample.nl", "company_domain": "sample.nl",
             "payload": {},
         }
-        self.assertEqual(historical_brand_hint(row, "https://sample.nl/"), "sample")
+        self.assertFalse(historical_brand_hint(row, "https://sample.nl/"))
+        key = b"test-only-key"
+        corporate_history = {
+            "v2_key": key,
+            "v2_corporate": {token(key, "corporate", "sample.nl")},
+        }
+        self.assertEqual(
+            historical_brand_hint(row, "https://sample.nl/", corporate_history), "sample"
+        )
         row["email"] = "info@gmail.com"
         row["company_domain"] = "gmail.com"
         self.assertFalse(historical_brand_hint(row, "https://sample.nl/"))
@@ -70,6 +78,11 @@ class HistoricalSiteRebuildTests(unittest.TestCase):
             "leadscanner_site_refresh_evidence_url": "https://sample.nl/contact",
         }
         self.assertEqual(historical_brand_hint(row, "https://sample.nl/"), "sample")
+        # A shared provider must not acquire authority from its own domain.
+        row["payload"] = {}
+        row["email"] = "info@bigmailprovider.xyz"
+        row["company_domain"] = "bigmailprovider.xyz"
+        self.assertFalse(historical_brand_hint(row, "https://bigmailprovider.xyz"))
 
     def test_derived_domain_brand_without_live_text_proof_is_held(self):
         rows = source()
