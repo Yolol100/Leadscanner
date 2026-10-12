@@ -124,41 +124,66 @@ def candidate_identity(candidate: dict) -> dict:
     }
 
 
-def load_registry(path: Path) -> list[dict]:
-    with path.open("r", encoding="utf-8-sig", newline="") as handle:
-        reader = csv.DictReader(handle)
-        headers = set(reader.fieldnames or [])
-        missing = REQUIRED_REGISTRY_HEADERS - headers
-        if missing:
-            raise ValueError("registry_missing_headers:" + ",".join(sorted(missing)))
+def _parse_registry(fieldnames: object, records) -> list[dict]:
+    """Validate historical suppression independently of the transport."""
+    if not isinstance(fieldnames, (list, tuple)):
+        raise ValueError("registry_headers_missing")
+    names = [str(header) for header in fieldnames]
+    if len(names) != len(set(names)):
+        raise ValueError("registry_duplicate_headers")
+    missing = REQUIRED_REGISTRY_HEADERS - set(names)
+    if missing:
+        raise ValueError("registry_missing_headers:" + ",".join(sorted(missing)))
 
-        rows = []
-        for row_number, row in enumerate(reader, start=2):
-            if _text(row.get("exclude_from_new_leads")).casefold() not in TRUE_VALUES:
-                continue
-            identity = candidate_identity(
-                {
-                    "company": row.get("company"),
-                    "website": row.get("website"),
-                    "domain": row.get("domain"),
-                    "emails": row.get("emails"),
-                    "lead_ids": row.get("lead_ids"),
-                }
-            )
-            if not any((identity["company"], identity["domains"], identity["emails"], identity["lead_ids"])):
-                raise ValueError(f"registry_row_without_identity:{row_number}")
-            rows.append(
-                {
-                    "identity": identity,
-                    "status": _text(row.get("status")),
-                    "row_number": row_number,
-                }
-            )
-
+    rows = []
+    for row_number, row in enumerate(records, start=2):
+        if not isinstance(row, dict):
+            raise ValueError("registry_invalid_row")
+        if _text(row.get("exclude_from_new_leads")).casefold() not in TRUE_VALUES:
+            continue
+        identity = candidate_identity({
+            "company": row.get("company"),
+            "website": row.get("website"),
+            "domain": row.get("domain"),
+            "emails": row.get("emails"),
+            "lead_ids": row.get("lead_ids"),
+        })
+        if not any((identity["company"], identity["domains"], identity["emails"], identity["lead_ids"])):
+            raise ValueError(f"registry_row_without_identity:{row_number}")
+        rows.append({
+            "identity": identity,
+            "status": _text(row.get("status")),
+            "row_number": row_number,
+        })
     if not rows:
         raise ValueError("registry_has_no_active_exclusions")
     return rows
 
+
+def load_registry(path: Path) -> list[dict]:
+    """Local CSV input only for controlled tests and offline inspection."""
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        return _parse_registry(reader.fieldnames, reader)
+
+
+def load_registry_values(values: list[list[object]]) -> list[dict]:
+    """Load authorized Sheets values in memory; never export the live registry."""
+    if not isinstance(values, list) or not 1 < len(values) <= 100_001:
+        raise ValueError("registry_values_empty_or_oversized")
+    headers = values[0]
+    if not isinstance(headers, list) or not all(isinstance(k, str) for k in headers):
+        raise ValueError("registry_headers_invalid")
+    if len(headers) > 30:
+        raise ValueError("registry_headers_exceed_bound")
+    records = []
+    for raw in values[1:]:
+        if not isinstance(raw, list) or len(raw) > len(headers):
+            raise ValueError("registry_row_width_invalid")
+        if not any(str(value).strip() for value in raw):
+            continue
+        records.append(dict(zip(headers, (str(value) if value is not None else "" for value in raw))))
+    return _parse_registry(headers, records)
 
 def match_candidate(candidate: dict, registry_rows: list[dict]) -> dict | None:
     identity = candidate_identity(candidate)

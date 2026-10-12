@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 from requests.exceptions import ReadTimeout
 
 from update_dedupe_registry import (
@@ -8,6 +8,7 @@ from update_dedupe_registry import (
     plan_registry_update,
     read_live_values,
     update_registry,
+    check_registry_access,
 )
 
 
@@ -53,9 +54,8 @@ class RegistryUpdateTests(unittest.TestCase):
     def test_existing_email_is_not_appended_twice(self):
         existing = self.row(company="Ander Label", domain="ander.nl", email="info@acmefietsen.nl", lead_id="growth-bbbbbbbbbbbbbbbbbbbb")
         expected = self.row()
-        plan = plan_registry_update(self.readback([expected]), [HEADERS, existing])
-        self.assertEqual(plan["append_count"], 0)
-        self.assertEqual(plan["existing_count"], 1)
+        with self.assertRaisesRegex(ValueError, "registry_identity_collision_not_exact"):
+            plan_registry_update(self.readback([expected]), [HEADERS, existing])
 
     def test_company_identity_matches_accent_tolerant_preflight_rules(self):
         existing = self.row(
@@ -70,9 +70,8 @@ class RegistryUpdateTests(unittest.TestCase):
             email="new@nieuw.nl",
             lead_id="growth-cccccccccccccccccccc",
         )
-        plan = plan_registry_update(self.readback([expected]), [HEADERS, existing])
-        self.assertEqual(plan["append_count"], 0)
-        self.assertEqual(plan["existing_count"], 1)
+        with self.assertRaisesRegex(ValueError, "registry_identity_collision_not_exact"):
+            plan_registry_update(self.readback([expected]), [HEADERS, existing])
 
     def test_subdomain_identity_matches_preflight_domain_rules(self):
         existing = self.row(
@@ -87,9 +86,21 @@ class RegistryUpdateTests(unittest.TestCase):
             email="new@acmefietsen.nl",
             lead_id="growth-cccccccccccccccccccc",
         )
-        plan = plan_registry_update(self.readback([expected]), [HEADERS, existing])
-        self.assertEqual(plan["append_count"], 0)
-        self.assertEqual(plan["existing_count"], 1)
+        with self.assertRaisesRegex(ValueError, "registry_identity_collision_not_exact"):
+            plan_registry_update(self.readback([expected]), [HEADERS, existing])
+
+    def test_existing_domain_same_lead_id_but_changed_status_is_not_exact(self):
+        existing = self.row()
+        existing[4] = "sent"
+        expected = self.row()
+        with self.assertRaisesRegex(ValueError, "registry_identity_collision_not_exact"):
+            plan_registry_update(self.readback([expected]), [HEADERS, existing])
+
+    def test_two_new_drafts_colliding_on_domain_are_rejected(self):
+        one = self.row()
+        two = self.row(email="another@acmefietsen.nl", lead_id="growth-cccccccccccccccccccc")
+        with self.assertRaisesRegex(ValueError, "registry_identity_collision_not_exact"):
+            plan_registry_update(self.readback([one, two]), [HEADERS])
 
     def test_existing_identity_without_suppression_fails_closed(self):
         existing = self.row()
@@ -127,6 +138,29 @@ class RegistryUpdateTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "live_registry_headers_mismatch"):
             plan_registry_update(self.readback([expected]), [["company", "domain"]])
 
+
+    def test_registry_access_preflight_does_not_mutate_headers(self):
+        client = Mock()
+        with patch("update_dedupe_registry._authorized_session", return_value=(client, "redacted")), \
+             patch("update_dedupe_registry.read_live_values", return_value=[HEADERS, self.row()]):
+            result = check_registry_access(spreadsheet_id="test", sheet_name="DedupeRegistry")
+        self.assertEqual(result["write_intent"], "read_verified_write_unproven")
+        client.put.assert_not_called()
+        client.post.assert_not_called()
+
+    def test_registry_closure_rechecks_previously_existing_exact_identity(self):
+        expected = self.row()
+        changed = list(expected)
+        changed[4] = "sent"
+        client = Mock()
+        with patch("update_dedupe_registry._authorized_session", return_value=(client, "redacted")), \
+             patch("update_dedupe_registry.read_live_values",
+                   side_effect=[[HEADERS, expected], [HEADERS, changed]]), \
+             patch("update_dedupe_registry.append_values") as appended:
+            with self.assertRaisesRegex(RuntimeError, "registry_exact_readback_mismatch"):
+                update_registry(self.readback([expected]), spreadsheet_id="test", sheet_name="DedupeRegistry")
+        appended.assert_called_once()
+        self.assertEqual(appended.call_args.args[-1], [])
 
     def test_readonly_registry_get_retries_one_sheets_timeout(self):
         session = Mock()

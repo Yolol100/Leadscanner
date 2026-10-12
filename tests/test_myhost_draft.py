@@ -16,6 +16,7 @@ class FakeIMAP:
         self.live_capabilities = self.capabilities
         self.append_calls = 0
         self.tamper_new_uid_fetch = False
+        self.missing_draft_flag = False
 
     def capability(self):
         return "OK", [b" ".join(self.live_capabilities)]
@@ -47,6 +48,9 @@ class FakeIMAP:
         command = command.casefold()
         uid = int(str(args[0]))
         if command == "fetch":
+            if len(args) > 1 and args[1] == "(FLAGS)":
+                flag = b"\\Seen" if self.missing_draft_flag else b"\\Draft"
+                return "OK", [(b"1 (UID " + str(uid).encode() + b" FLAGS (" + flag + b"))", b"")]
             payload = self.messages[uid - 1]
             if self.tamper_new_uid_fetch and uid == len(self.messages):
                 msg = BytesParser(policy=default).parsebytes(payload)
@@ -91,6 +95,44 @@ class DraftTests(unittest.TestCase):
             "status": status,
             "contact_basis_status": basis,
         }
+
+    def test_imap_draft_flag_is_required_and_uncertain_append_rolled_back(self):
+        client = FakeIMAP()
+        client.missing_draft_flag = True
+        with patch("myhost_draft.connect_imap", return_value=client):
+            with self.assertRaisesRegex(RuntimeError, "draft flag missing"):
+                create_drafts({"rows": [self.row()]}, reject_changed_existing=True)
+        self.assertEqual(client.messages, [])
+
+    def test_existing_message_without_draft_flag_is_not_accepted(self):
+        client = FakeIMAP()
+        with patch("myhost_draft.connect_imap", return_value=client):
+            create_drafts({"rows": [self.row()]}, reject_changed_existing=True)
+        client.missing_draft_flag = True
+        with patch("myhost_draft.connect_imap", return_value=client):
+            with self.assertRaisesRegex(RuntimeError, "draft flag missing"):
+                create_drafts({"rows": [self.row()]}, reject_changed_existing=True)
+        self.assertEqual(len(client.messages), 1)
+
+    def test_draft_readback_rejects_wrong_from_sender(self):
+        _, expected = build_message(self.row())
+        actual = BytesParser(policy=default).parsebytes(expected.as_bytes())
+        del actual["From"]
+        actual["From"] = "Impersonator <impersonator@elsewhere.example>"
+        self.assertFalse(exact_message_matches(actual, expected))
+
+    def test_existing_draft_sender_changed_cannot_be_counted_exact(self):
+        client = FakeIMAP()
+        with patch("myhost_draft.connect_imap", return_value=client):
+            create_drafts({"rows": [self.row()]}, reject_changed_existing=True)
+        altered = BytesParser(policy=default).parsebytes(client.messages[0])
+        del altered["From"]
+        altered["From"] = "Other <other@sender.example>"
+        client.messages[0] = altered.as_bytes(policy=default)
+        with patch("myhost_draft.connect_imap", return_value=client):
+            with self.assertRaisesRegex(RuntimeError, "automatic replacement is disabled"):
+                create_drafts({"rows": [self.row()]}, reject_changed_existing=True)
+        self.assertEqual(len(client.messages), 1)
 
     def test_post_login_capability_refresh_detects_uidplus(self):
         client = FakeIMAP(uidplus=False)

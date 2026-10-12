@@ -113,6 +113,11 @@ def plan_registry_update(readback: dict, current_values: list[list[object]]) -> 
         if matches:
             if any(match[9].casefold() != "true" for match in matches):
                 raise ValueError("registry_identity_exists_without_suppression")
+            # A common domain/email/company is NOT proof that this particular
+            # new draft was registered. Never count a different lead ID or a
+            # different status/content as exact registry closure.
+            if len(matches) != 1 or matches[0] != row:
+                raise ValueError("registry_identity_collision_not_exact")
             existing_count += 1
             continue
         append_rows.append(row)
@@ -136,7 +141,7 @@ def exact_rows_present(expected_rows: list[list[str]], current_values: list[list
     return True
 
 
-def _authorized_session():
+def _authorized_session(*, read_only: bool = False):
     raw = (
         os.getenv("LEAD_REGISTRY_SERVICE_ACCOUNT_JSON", "").strip()
         or os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
@@ -155,9 +160,10 @@ def _authorized_session():
     except ImportError as exc:
         raise RuntimeError("google-auth is required for canonical registry writes") from exc
 
+    scope = ("https://www.googleapis.com/auth/spreadsheets.readonly"
+             if read_only else "https://www.googleapis.com/auth/spreadsheets")
     credentials = service_account.Credentials.from_service_account_info(
-        info,
-        scopes=["https://www.googleapis.com/auth/spreadsheets"],
+        info, scopes=[scope],
     )
     return AuthorizedSession(credentials), _text(info.get("client_email"))
 
@@ -210,28 +216,16 @@ def check_registry_access(*, spreadsheet_id: str, sheet_name: str) -> dict:
     if not current or normalize_row(current[0]) != HEADERS:
         raise RuntimeError("live_registry_headers_mismatch")
 
-    header_range = quote(f"{sheet_name}!A1:J1", safe="")
-    header_url = (
-        f"https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values/{header_range}"
-        "?valueInputOption=RAW"
-    )
-    response = session.put(
-        header_url,
-        json={"majorDimension": "ROWS", "values": [HEADERS]},
-        timeout=20,
-    )
-    if response.status_code not in {200, 201}:
-        raise RuntimeError(f"registry_write_preflight_failed status={response.status_code}")
-    confirmed = read_live_values(session, spreadsheet_id, sheet_name)
-    if not confirmed or normalize_row(confirmed[0]) != HEADERS:
-        raise RuntimeError("registry_write_preflight_readback_mismatch")
+    # No write as a readiness probe: the previous implementation rewrote
+    # the live header on every run. Write permissions are validated by the
+    # actual guarded registry closure after exact mailbox readback.
     return {
         "schema_version": "leadscanner-dedupe-registry-access/1.0",
         "status": "green",
         "spreadsheet_id": spreadsheet_id,
         "sheet_name": sheet_name,
         "service_account": client_email,
-        "write_intent": "validated_before_draft_creation",
+        "write_intent": "read_verified_write_unproven",
         "automatic_send": False,
     }
 
@@ -272,7 +266,7 @@ def update_registry(readback: dict, *, spreadsheet_id: str, sheet_name: str) -> 
     plan = plan_registry_update(readback, current)
     append_values(session, spreadsheet_id, sheet_name, plan["append_rows"])
     after = read_live_values(session, spreadsheet_id, sheet_name)
-    if not exact_rows_present(plan["append_rows"], after):
+    if not exact_rows_present([normalize_row(row) for row in readback["registry_rows"]], after):
         raise RuntimeError("registry_exact_readback_mismatch_after_append")
 
     return {
@@ -322,7 +316,7 @@ def main() -> int:
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     if args.check_only:
-        print("DEDUPE_REGISTRY_ACCESS=green write_intent=validated_before_draft_creation")
+        print("DEDUPE_REGISTRY_ACCESS=green write_intent=read_verified_write_unproven")
     else:
         print(
             "DEDUPE_REGISTRY_UPDATE=green "

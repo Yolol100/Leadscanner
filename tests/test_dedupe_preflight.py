@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from dedupe_preflight import normalize_company, normalize_domain, run
+from dedupe_preflight import normalize_company, normalize_domain, run, load_registry_values
 
 
 HEADERS = [
@@ -38,6 +38,25 @@ class DedupePreflightTests(unittest.TestCase):
             output = root / "out.json"
             candidate_path.write_text(json.dumps(candidates), encoding="utf-8")
             return run(registry, candidate_path, output)
+
+    def test_authorized_sheet_values_preserve_historical_suppressions(self):
+        row = ["Acme", "https://acme.nl", "acme.nl", "info@acme.nl",
+               "sent", "sent", "", "", "historical", "TRUE"]
+        records = load_registry_values([HEADERS, row, []])
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["status"], "sent")
+        self.assertIn("info@acme.nl", records[0]["identity"]["emails"])
+
+    def test_authorized_sheet_values_fail_closed_on_missing_identity(self):
+        row = ["", "", "", "", "concept", "", "", "", "", "TRUE"]
+        with self.assertRaisesRegex(ValueError, "without_identity"):
+            load_registry_values([HEADERS, row])
+
+    def test_authorized_sheet_values_reject_duplicate_headers(self):
+        bad = list(HEADERS)
+        bad[-1] = bad[-2]
+        with self.assertRaises(ValueError):
+            load_registry_values([bad, [""] * len(bad)])
 
     def test_company_normalization_is_exact_but_format_tolerant(self):
         self.assertEqual(normalize_company("Acme B.V."), normalize_company("ACME BV"))
