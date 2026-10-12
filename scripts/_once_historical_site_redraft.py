@@ -122,6 +122,8 @@ def historical_brand_hint(row: dict, site: str) -> str:
     if not old_official and not same_corporate_domain:
         return ""
     label = domain.split(".", 1)[0].replace("-", " ").strip()
+    if label.casefold() in {"www", "shop", "store", "online", "portal", "contact", "website"}:
+        return ""
     return label if 5 <= len(label) <= 70 and any(c.isalpha() for c in label) else ""
 
 
