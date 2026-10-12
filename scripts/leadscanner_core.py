@@ -230,7 +230,7 @@ def main() -> int:
     parser.add_argument("--verify-limit", type=int, default=60)
     args = parser.parse_args()
     keywords = list(dict.fromkeys(
-        value.strip() for value in re.split(r"[,\\n]+", args.keywords)
+        value.strip() for value in re.split(r"[,\n]+", args.keywords)
         if value.strip()
     ))
     try:
