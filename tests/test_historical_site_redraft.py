@@ -132,6 +132,21 @@ class HistoricalSiteRebuildTests(unittest.TestCase):
             "email_opened_step": None, "lt_interest_status": 0,
         }))
 
+    def test_website_without_independent_company_provenance_is_separate_hold(self):
+        rows = source()
+        rows[0]["website"] = "https://unrelated-site.nl/"
+        rows[0]["company_name"] = None
+        rows[0]["company_domain"] = "company0.nl"
+        no_fetch = Mock(side_effect=AssertionError("no live fetch for weak source link"))
+        report, batch = build_batch(
+            offset=0, rows=rows, history=suppression(rows),
+            verifier=no_fetch, researcher=no_fetch,
+        )
+        self.assertEqual(report["counts"]["hold_missing_business_identity"], 1)
+        self.assertEqual(report["counts"]["hold_missing_website"], 99)
+        no_fetch.assert_not_called()
+        self.assertEqual(batch["rows"], [])
+
     def test_original_registry_blocks_optouts_sends_but_allows_historical_concept_review(self):
         from dedupe_preflight import candidate_identity
         address = "person0@company0.nl"
