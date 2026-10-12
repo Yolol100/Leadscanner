@@ -27,6 +27,8 @@ from cold_stages import (
     PUBLIC_MAIL_DOMAINS, extract_emails, internal_links, normalize_domain, page_type_for_url,
     parse_html, safe_fetch_html,
 )
+from first_party_contacts import _verified_structured_emails, _verified_structured_people
+from url_safety import is_public_http_url
 from instantly_language_campaigns import inspect_lead_language, read_imported_leads
 from instantly_language_route import HOLD_FREE_MAIL
 from instantly_signature_repair import _campaigns_still_quiet
@@ -108,21 +110,59 @@ def _email_and_domain(row: dict) -> tuple[str, str] | None:
     return email, domain
 
 
+def _published_website_hint(row: dict, values: dict) -> str:
+    """Accept only a supplied public business URL, including a bare hostname."""
+    raw = _text(row.get("website") or values.get("website"))
+    if not raw or any(char.isspace() for char in raw):
+        return ""
+    if not raw.startswith(("http://", "https://")):
+        if "://" in raw or raw.startswith(("/", "@")):
+            return ""
+        raw = "https://" + raw
+    parsed = urlparse(raw)
+    if (
+        parsed.scheme not in {"http", "https"} or not parsed.hostname
+        or parsed.username is not None or parsed.password is not None
+        or not is_public_http_url(raw)
+    ):
+        return ""
+    return parsed._replace(fragment="").geturl()
+
+
+def _published_recipient(parsed: dict, email: str, domain: str, company: str) -> bool:
+    """An exact address visibly published or verified in matching JSON-LD."""
+    return (
+        email in extract_emails(parsed)
+        or email in _verified_structured_emails(parsed, domain, company)
+        or email in _verified_structured_people(parsed, domain, company)
+    )
+
+
 def _fetch_home(session, domain: str, website_hint: str) -> tuple[str | None, str | None]:
-    # Only trust an explicitly supplied URL if it is on the same email domain.
-    # Cross-domain website hints would need separate independent identity proof.
-    candidate = "https://" + domain + "/"
-    if website_hint and normalize_domain(website_hint) == normalize_domain(candidate):
+    """Bounded same-company URL recovery, never across a security denial."""
+    root = "https://" + domain + "/"
+    urls = []
+    if website_hint and normalize_domain(website_hint) == normalize_domain(root):
         parsed = urlparse(website_hint if "://" in website_hint else "https://" + website_hint)
         if parsed.scheme in {"https", "http"} and not parsed.username and not parsed.password:
-            candidate = parsed.geturl()
-    expected = normalize_domain(candidate)
-    for url in (candidate, "http://" + domain + "/"):
-        html, final_url, _ = safe_fetch_html(session, url, expected)
+            urls.append(parsed._replace(fragment="").geturl())
+    urls.append(root)
+    urls.append("https://www." + domain.removeprefix("www.") + "/")
+    urls.append("http://" + domain + "/")
+    expected = normalize_domain(root)
+    for url in list(dict.fromkeys(urls))[:4]:
+        if not is_public_http_url(url) or normalize_domain(url) != expected:
+            continue
+        html, final_url, status = safe_fetch_html(session, url, expected)
         if html and final_url:
             return html, final_url
+        if getattr(session, "policy_hold", False):
+            break
+        if status not in {None, 404, 410}:
+            break
+        if final_url and normalize_domain(final_url) != expected:
+            break
     return None, None
-
 
 def _scan_site(row: dict, *, refresh: bool = False) -> dict:
     values = _custom(row)
@@ -130,6 +170,8 @@ def _scan_site(row: dict, *, refresh: bool = False) -> dict:
     if address is None:
         return {"status": "invalid_email"}
     email, domain = address
+    if row.get("status") in {-1, -2, -3}:
+        return {"status": "suppressed"}
     if (
         values.get("leadscanner_import_origin") != "myhost_drafts"
         or values.get("leadscanner_contact_basis") != "review_required"
@@ -144,22 +186,22 @@ def _scan_site(row: dict, *, refresh: bool = False) -> dict:
     elif any(_text(values.get(key)) for key in REVIEW_KEYS):
         return {"status": "existing_research_hold"}
 
-    hint = _text(row.get("website") or values.get("website"))
-    # A business site published on the lead is a usable research target even
-    # when the lead uses a public email provider. Never infer a business from
-    # gmail/outlook or guess an address. Exact recipient proof is still needed.
-    hint_domain = normalize_domain(hint) if hint.startswith(("http://", "https://")) else ""
+    hint = _published_website_hint(row, values) if refresh else _text(row.get("website") or values.get("website"))
+    # A bare but explicit business hostname is a source, never an inferred
+    # website from Gmail/Outlook or the lead's personal email domain.
+    hint_domain = normalize_domain(hint) if hint else ""
     if refresh and hint_domain and hint_domain not in HOLD_FREE_MAIL | PUBLIC_MAIL_DOMAINS:
         domain = hint_domain
     elif domain in HOLD_FREE_MAIL | PUBLIC_MAIL_DOMAINS:
         return {"status": "personal_email_domain"}
+    company = _text(row.get("company_name") or values.get("company_name"))
     with requests.Session() as raw_session:
         session = PoliteSiteSession(raw_session, domain)
         html, url = _fetch_home(session, domain, hint)
         if not html or not url:
             return {"status": "unreachable_website"}
         parsed = parse_html(html)
-        confirmed_page = url if email in extract_emails(parsed) else None
+        confirmed_page = url if _published_recipient(parsed, email, domain, company) else None
         contact_parsed = []
         home_domain = normalize_domain(url)
         if not confirmed_page:
@@ -169,7 +211,7 @@ def _scan_site(row: dict, *, refresh: bool = False) -> dict:
                     continue
                 linked_parsed = parse_html(linked_html)
                 contact_parsed.append((linked_url, linked_parsed))
-                if email in extract_emails(linked_parsed):
+                if _published_recipient(linked_parsed, email, domain, company):
                     confirmed_page = linked_url
                     break
         if not confirmed_page and not refresh:
@@ -182,6 +224,8 @@ def _scan_site(row: dict, *, refresh: bool = False) -> dict:
             linked_html, linked_url, _ = safe_fetch_html(session, link, home_domain)
             if linked_html and linked_url:
                 linked = parse_html(linked_html)
+                if not confirmed_page and _published_recipient(linked, email, domain, company):
+                    confirmed_page = linked_url
                 evidence.extend(evidence_sentences(
                     linked.get("text") or "", linked_url, page_type_for_url(linked_url),
                 ))
@@ -193,12 +237,15 @@ def _scan_site(row: dict, *, refresh: bool = False) -> dict:
             "official_domain": home_domain,
             "evidence_candidates": evidence,
         })
-        if not confirmed_page:
-            return {"status": "recipient_not_confirmed_on_website"}
         if result.get("outreach_status") != "ready":
-            return {"status": "no_specific_first_party_signal"}
-        # Never make an NL email based on an EN site observation, or vice versa.
-        if inspect_lead_language(row) != result.get("language"):
+            return {"status": (
+                "recipient_not_confirmed_on_website" if not confirmed_page
+                else "no_specific_first_party_signal"
+            )}
+        # The refresh is an unapproved, new draft based on current first-party
+        # language. Preserve the original copy even when its language differs.
+        language_changed = inspect_lead_language(row) != result.get("language")
+        if language_changed and not refresh:
             return {"status": "observation_language_mismatch"}
         proposal = value_action_for(result)
         if proposal.get("value_action_status") != "proposed":
@@ -211,10 +258,30 @@ def _scan_site(row: dict, *, refresh: bool = False) -> dict:
             or len(observation) > 280 or len(action) > 200
             or any(fragment in observation + action for fragment in ILLEGAL_MARKUP)
             or normalize_domain(evidence_url) != home_domain
-            or normalize_domain(confirmed_page) != home_domain
+            or (confirmed_page and normalize_domain(confirmed_page) != home_domain)
         ):
             return {"status": "unsafe_or_unbound_candidate"}
         findings = result.get("selected_findings") or []
+        if not confirmed_page:
+            # Keep the website research for human investigation, but never
+            # produce an addressed draft for an unverified recipient.
+            return {
+                "status": "research_only",
+                "proposal": {
+                    "leadscanner_site_candidate_findings": json.dumps(findings, ensure_ascii=False, separators=(",", ":")),
+                    "leadscanner_site_candidate_observation": observation,
+                    "leadscanner_site_candidate_value_action": action,
+                    "leadscanner_site_candidate_subject": "",
+                    "leadscanner_site_candidate_body": "",
+                    "leadscanner_site_candidate_evidence_url": evidence_url,
+                    "leadscanner_site_candidate_source_type": "official_site",
+                    "leadscanner_site_candidate_signal_type": _text(proposal.get("signal_type")),
+                    "leadscanner_site_candidate_contact_url": "",
+                    "leadscanner_site_candidate_official_domain": home_domain,
+                    "leadscanner_site_candidate_checked_date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+                    "leadscanner_site_research_status": "research_only_contact_unverified",
+                },
+            }
         subject, body = draft_for_review(
             observation, action, _text(proposal.get("signal_type")),
             _text(result.get("language")), findings,
@@ -223,6 +290,7 @@ def _scan_site(row: dict, *, refresh: bool = False) -> dict:
             return {"status": "draft_quality_hold"}
         return {
             "status": "candidate",
+            "language_corrected": refresh and language_changed,
             "proposal": {
                 "leadscanner_site_candidate_findings": json.dumps(findings, ensure_ascii=False, separators=(",", ":")),
                 "leadscanner_site_candidate_observation": observation,
@@ -252,6 +320,7 @@ def _save_candidate(
         or _text(before.get("email")).casefold() != _text(row.get("email")).casefold()
         or before.get("list_id") != TARGET_LIST_ID
         or before.get("campaign") is not None
+        or before.get("status") in {-1, -2, -3}
     ):
         raise RuntimeError("site_research_prewrite_lead_identity_changed")
     original = _custom(row)
@@ -318,18 +387,41 @@ def research_imported_sites_batch(
         raise ValueError("site_research_offset_outside_source")
     batch = rows[offset:offset + BATCH_SIZE]
 
-    # Network reads in bounded parallel; never expose unsafe provider/site exceptions.
+    # Network reads in bounded parallel. Expose only fixed diagnostic codes,
+    # never exception messages, identifiers, URLs or provider response text.
     def scan_one(row: dict) -> dict:
-        try:
+        def perform():
             return scanner(row, refresh=True) if refresh and scanner is _scan_site else scanner(row)
-        except Exception:
-            return {"status": "site_scan_exception"}
+
+        def safe_error_kind(error: Exception) -> str:
+            if isinstance(error, requests.Timeout):
+                return "network_timeout"
+            if isinstance(error, requests.ConnectionError):
+                return "network_connection"
+            if isinstance(error, (ValueError, TypeError, KeyError, UnicodeError)):
+                return "data_format"
+            return "unexpected"
+
+        try:
+            return perform()
+        except (requests.Timeout, requests.ConnectionError) as first_error:
+            kind = safe_error_kind(first_error)
+            try:
+                return perform()  # one safe read-only retry, never a write
+            except Exception as retry_error:
+                kind = safe_error_kind(retry_error)
+        except Exception as error:
+            kind = safe_error_kind(error)
+        return {"status": "site_scan_exception", "error_kind": kind}
     with ThreadPoolExecutor(max_workers=workers) as pool:
         outcomes = list(pool.map(scan_one, batch))
     counts = Counter()
     saved = 0
+    research_saved = 0
+    languages_corrected = 0
+    exception_codes: Counter[str] = Counter()
     allowed_statuses = frozenset({
-        "candidate", "invalid_email", "personal_email_domain",
+        "candidate", "research_only", "suppressed", "invalid_email", "personal_email_domain",
         "source_not_review_required", "existing_live_observation_hold",
         "existing_research_hold", "existing_refresh_hold", "unreachable_website",
         "recipient_not_confirmed_on_website", "no_specific_first_party_signal",
@@ -340,13 +432,17 @@ def research_imported_sites_batch(
         status = _text(outcome.get("status")) if isinstance(outcome, dict) else "invalid_scan"
         if status not in allowed_statuses:
             raise RuntimeError("site_research_unknown_scanner_status")
-        if status == "candidate":
+        if status in {"candidate", "research_only"}:
             proposal = outcome.get("proposal") if isinstance(outcome, dict) else None
             expected_keys = set(REVIEW_KEYS)
             legacy_keys = expected_keys - {"leadscanner_site_candidate_findings"}
             if not isinstance(proposal, dict) or set(proposal) not in (expected_keys, legacy_keys):
                 raise RuntimeError("site_research_candidate_contract_invalid")
-            counts["candidates_found"] += 1
+            if status == "candidate":
+                counts["candidates_found"] += 1
+                languages_corrected += bool(outcome.get("language_corrected"))
+            else:
+                counts["research_only_found"] += 1
             if save_candidates:
                 if refresh:
                     proposal = {
@@ -356,9 +452,15 @@ def research_imported_sites_batch(
                         for key, value in proposal.items()
                     }
                 _save_candidate(client, row, proposal, refresh=refresh)
-                saved += 1
+                if status == "candidate":
+                    saved += 1
+                else:
+                    research_saved += 1
         else:
             counts[status or "invalid_scan"] += 1
+            if status == "site_scan_exception":
+                code = _text(outcome.get("error_kind")) if isinstance(outcome, dict) else ""
+                exception_codes[code if code in {"network_timeout", "network_connection", "data_format", "unexpected"} else "unexpected"] += 1
     _campaigns_still_quiet(client)
     return {
         "schema_version": "leadscanner-historical-site-research/1.0",
@@ -366,14 +468,18 @@ def research_imported_sites_batch(
         "source_list_identity_verified": True,
         "batch_offset": offset,
         "batch_size": len(batch),
-        "network_checked_count": len(batch) - counts["personal_email_domain"] - counts["invalid_email"] - counts["source_not_review_required"] - counts["existing_live_observation_hold"] - counts["existing_research_hold"] - counts["existing_refresh_hold"],
+        "network_checked_count": len(batch) - counts["personal_email_domain"] - counts["invalid_email"] - counts["suppressed"] - counts["source_not_review_required"] - counts["existing_live_observation_hold"] - counts["existing_research_hold"] - counts["existing_refresh_hold"],
         "previous_review_candidates_present": sum(
             any(_text(_custom(row).get(key)) for key in REVIEW_KEYS) for row in batch
         ),
         "refresh_mode": refresh,
         "candidate_count": counts["candidates_found"],
         "saved_candidate_count": saved,
-        "holds": {key: value for key, value in sorted(counts.items()) if key != "candidates_found"},
+        "research_only_count": counts["research_only_found"],
+        "saved_research_only_count": research_saved,
+        "language_corrected_review_count": languages_corrected,
+        "scan_exception_categories": dict(sorted(exception_codes.items())),
+        "holds": {key: value for key, value in sorted(counts.items()) if key not in {"candidates_found", "research_only_found"}},
         "save_candidates": save_candidates,
         "contact_basis_changes": 0,
         "reviewed_copy_changes": 0,
@@ -414,6 +520,7 @@ def main() -> int:
     print("SITE_RESEARCH_BATCH=green "
           f"offset={args.offset} checked={result['batch_size']} "
           f"candidate={result['candidate_count']} saved={result['saved_candidate_count']} "
+          f"research_only={result['research_only_count']} "
           f"hold={sum(result['holds'].values())}")
     return 0
 

@@ -1,5 +1,7 @@
 """Offline privacy, source, status and batch regression tests for legacy site research."""
 import unittest
+
+import requests
 from copy import deepcopy
 from unittest.mock import patch
 
@@ -235,7 +237,8 @@ class Tests(unittest.TestCase):
         with patch("instantly_historical_site_research.requests.Session", return_value=Session()), \
              patch("instantly_historical_site_research._fetch_home", return_value=(html, "https://studio-example.org/")) as fetch, \
              patch("instantly_historical_site_research.safe_fetch_html", return_value=(DETAIL, "https://studio-example.org/afspraak", 200)), \
-             patch("instantly_historical_site_research.inspect_lead_language", return_value="nl"):
+             patch("instantly_historical_site_research.inspect_lead_language", return_value="nl"), \
+             patch("instantly_historical_site_research.is_public_http_url", return_value=True):
             result = _scan_site(row, refresh=True)
         self.assertEqual(result["status"], "candidate")
         self.assertEqual(result["proposal"]["leadscanner_site_candidate_contact_url"], "https://studio-example.org/")
@@ -250,9 +253,11 @@ class Tests(unittest.TestCase):
              patch("instantly_historical_site_research._fetch_home", return_value=(html, "https://studio-example.org/")), \
              patch("instantly_historical_site_research.safe_fetch_html", return_value=(DETAIL, "https://studio-example.org/afspraak", 200)) as get:
             result = _scan_site(deepcopy(ROW), refresh=True)
-        self.assertEqual(result, {"status": "recipient_not_confirmed_on_website"})
+        self.assertEqual(result["status"], "research_only")
         self.assertGreaterEqual(get.call_count, 1)
-        self.assertNotIn("proposal", result)
+        self.assertEqual(result["proposal"]["leadscanner_site_candidate_body"], "")
+        self.assertEqual(result["proposal"]["leadscanner_site_candidate_subject"], "")
+        self.assertEqual(result["proposal"]["leadscanner_site_research_status"], "research_only_contact_unverified")
 
     def test_refresh_stores_new_version_separately_and_preserves_originals(self):
         old = deepcopy(ROW)
@@ -319,6 +324,84 @@ class Tests(unittest.TestCase):
                 refresh=True,
             )
         self.assertEqual(client.calls, [])
+
+    def test_refresh_language_mismatch_produces_review_only_new_language(self):
+        class Session:
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+        with patch("instantly_historical_site_research.requests.Session", return_value=Session()), \
+             patch("instantly_historical_site_research._fetch_home", return_value=(HTML, "https://studio-example.org/")), \
+             patch("instantly_historical_site_research.safe_fetch_html", return_value=(DETAIL, "https://studio-example.org/afspraak", 200)), \
+             patch("instantly_historical_site_research.inspect_lead_language", return_value="en"):
+            result = _scan_site(deepcopy(ROW), refresh=True)
+        self.assertEqual(result["status"], "candidate")
+        self.assertTrue(result["language_corrected"])
+        self.assertIn("leadscanner_site_candidate_body", result["proposal"])
+
+    def test_only_fixed_error_categories_leave_scanner(self):
+        with patch("instantly_historical_site_research._campaigns_still_quiet"), \
+             patch("instantly_historical_site_research._source_rows", return_value=[ROW]):
+            report = research_imported_sites_batch(
+                object(), offset=0, workers=1, refresh=True,
+                scanner=lambda row: (_ for _ in ()).throw(
+                    requests.Timeout("Sensitive contact details in exception")
+                ),
+            )
+        self.assertEqual(report["scan_exception_categories"], {"network_timeout": 1})
+        self.assertEqual(report["holds"], {"site_scan_exception": 1})
+        self.assertNotIn("Sensitive", str(report))
+
+    def test_research_only_saved_in_isolated_refresh_fields(self):
+        client = FakeClient()
+        payload = {key: "" for key in REVIEW_KEYS}
+        payload.update({
+            "leadscanner_site_candidate_findings": "[]",
+            "leadscanner_site_candidate_observation": OBSERVATION,
+            "leadscanner_site_candidate_evidence_url": "https://studio-example.org/afspraak",
+            "leadscanner_site_candidate_official_domain": "studio-example.org",
+            "leadscanner_site_research_status": "research_only_contact_unverified",
+        })
+        with patch("instantly_historical_site_research._campaigns_still_quiet"), \
+             patch("instantly_historical_site_research._source_rows", return_value=[ROW]):
+            result = research_imported_sites_batch(
+                client, offset=0, workers=1, save_candidates=True, refresh=True,
+                scanner=lambda row: {"status": "research_only", "proposal": payload},
+            )
+        self.assertEqual(result["saved_research_only_count"], 1)
+        self.assertEqual(result["candidate_count"], 0)
+        self.assertEqual(result["saved_candidate_count"], 0)
+        self.assertEqual(client.next_variables["leadscanner_site_refresh_body"], "")
+        self.assertEqual(client.next_variables["leadscanner_site_refresh_status"], "research_only_contact_unverified")
+        self.assertEqual(len(client.calls), 1)
+
+    def test_safe_home_recovers_missing_page_but_never_bypasses_forbidden(self):
+        with patch("instantly_historical_site_research.is_public_http_url", return_value=True), \
+             patch("instantly_historical_site_research.safe_fetch_html", side_effect=[
+                 (None, "https://studio-example.org/old", 404),
+                 ("<title>Studio Example</title>", "https://studio-example.org/", 200),
+             ]) as fetch:
+            html, url = _fetch_home(object(), "studio-example.org", "https://studio-example.org/old")
+        self.assertTrue(html)
+        self.assertEqual(url, "https://studio-example.org/")
+        self.assertEqual(fetch.call_count, 2)
+        with patch("instantly_historical_site_research.is_public_http_url", return_value=True), \
+             patch("instantly_historical_site_research.safe_fetch_html", return_value=(None, "https://studio-example.org/", 403)) as fetch:
+            html, url = _fetch_home(object(), "studio-example.org", "")
+        self.assertIsNone(html)
+        self.assertIsNone(url)
+        self.assertEqual(fetch.call_count, 1)
+
+    def test_network_exception_retries_once_and_returns_fixed_private_safe_code(self):
+        calls = []
+        def scanner(_row):
+            calls.append(1)
+            raise requests.Timeout("secret email in exception")
+        with patch("instantly_historical_site_research._campaigns_still_quiet"), \
+             patch("instantly_historical_site_research._source_rows", return_value=[ROW]):
+            result = research_imported_sites_batch(object(), offset=0, workers=1, scanner=scanner)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(result["scan_exception_categories"], {"network_timeout": 1})
+        self.assertNotIn("secret", str(result))
 
     def test_bad_offset_or_source_count_fails_before_provider(self):
         for kwargs in ({"offset": 1}, {"offset": -100}, {"offset": 0, "expected_count": 1127},
