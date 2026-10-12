@@ -22,6 +22,23 @@ class HistoricalSourceDiagnosticTests(unittest.TestCase):
         self.assertEqual(summary["duplicate_email"], 1)
         self.assertEqual(summary["missing_normalized_email"], 1)
 
+    def test_field_coverage_is_aggregate_only(self):
+        row = self.row(1, "info@sample.nl")
+        row["company_name"] = "Synthetic Business"
+        row["website"] = "https://sample.nl/"
+        row["company_domain"] = "sample.nl"
+        row["payload"] = {
+            "companyName": "Synthetic Business",
+            "leadscanner_site_refresh_official_domain": "sample.nl",
+        }
+        summary = classify([row])
+        self.assertEqual(summary["raw_company_name"], 1)
+        self.assertEqual(summary["raw_website"], 1)
+        self.assertEqual(summary["raw_company_domain"], 1)
+        self.assertEqual(summary["payload_company_name"], 1)
+        self.assertEqual(summary["payload_official_domain"], 1)
+        self.assertNotIn("Synthetic Business", str(summary))
+
     def test_copy_fields_are_not_logged_or_returned(self):
         row = self.row(1, "info@a.nl")
         row["payload"]["leadscanner_site_refresh_subject"] = "SYNTHETIC PRIVATE SUBJECT"
