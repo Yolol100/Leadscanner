@@ -197,6 +197,9 @@ def match_candidate(candidate: dict, registry_rows: list[dict]) -> dict | None:
         if "hmac_key" in row:
             from historical_suppression import email_or_domain_is_suppressed
             matched_by.extend(email_or_domain_is_suppressed(identity, row))
+        if "v2_key" in row:
+            from historical_v2 import match as match_historical_v2
+            matched_by.extend(match_historical_v2(identity, row))
         if identity["lead_ids"] & stored["lead_ids"]:
             matched_by.append("lead_id")
         if identity["emails"] & stored["emails"]:
