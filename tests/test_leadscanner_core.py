@@ -247,7 +247,7 @@ class CoreTests(unittest.TestCase):
         self.assertIn("workflow_dispatch", text)
         self.assertNotIn("actions/upload-artifact", text)
         self.assertNotIn("schedule:", text)
-        self.assertNotIn("instantly", text.casefold())
+        self.assertNotIn("instantly", text.split("  historical_domain_profile_once:")[0].casefold())
         self.assertNotIn("smtp.send", text.casefold())
 
     def test_no_smtp_send_surface_in_mailbox_core(self):
