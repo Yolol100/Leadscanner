@@ -347,6 +347,11 @@ def safe_fetch_html(session, url: str, expected_domain: str, *, timeout: int = D
                 if total >= MAX_BYTES:
                     break
             return b"".join(chunks).decode(response.encoding or "utf-8", errors="replace"), response_url, status
+        except requests.RequestException:
+            # A streamed response can fail *after* GET succeeded (truncated
+            # chunk, broken connection, content decoding, read timeout).
+            # Never pass a partial HTML body into first-party evidence checks.
+            return None, current, last_status
         finally:
             response.close()
     return None, current, last_status
