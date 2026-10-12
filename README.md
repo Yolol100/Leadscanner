@@ -23,7 +23,7 @@ Er ontstaat géén toestemming om te mailen of een campagne te activeren.
 De eerste echte Instantly-proefkopie is met succes afgerond en via exact destination- en registry-readback bevestigd. De totale overdracht verloopt in gecontroleerde, hervatbare batches; bij een onbekende provideruitkomst volgt eerst een read-only reconciliatie, nooit een blinde herhaling.
 Reguliere persoonlijke previews blijven privé-only.
 
-**Herstelstatus 12 oktober 2026:** de bestaande Instantly-handoff verwerkt inmiddels de tweede batch volledig, met 37 bevestigde doelkopieën. De volgende batch liep vast op een onzekere custom-variable-readback na een eenmalige providerwijziging, zonder automatische herhaling van die PATCH. Eerst volgt opnieuw een geanonimiseerde read-only bestemmingscontrole; pas daarna is verdere hervatting veilig. De bronrecords blijven ongewijzigd, campagnes zijn niet geactiveerd en er is niets verzonden.
+**Herstelstatus 12 oktober 2026:** de nieuwe read-only audit ([Actions #38282844230](../../actions/runs/38282844230)) bevestigt 1.128 historische bronrecords, 776 reviewvoorstellen, 145 volledig geverifieerde doelkopieën en 1 bestaande kopie die nog personalisatie mist. Nul dubbele of afwijkende doelrecords, NL/EN-campagnes veilig voor niet-verzendende staging. De bestaande route heeft nu drie onafhankelijke read-only-verificaties rond Instantly-backgroundjobs, kopiezichtbaarheid en PATCH-readback. Alle 571 tests zijn geslaagd. De geautoriseerde overdracht hervat zonder automatische verzending; afronding vereist nog een nieuwe volledige audit.
 
 **Oude artifact-opslag gecontroleerd (11 oktober 2026):** tijdens drie eenmalige
 Actions-opschonings-/verificatieruns zijn 105 artifacts verwijderd (waaronder
