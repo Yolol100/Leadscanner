@@ -95,7 +95,7 @@ def historical_name(row: dict) -> str:
             or _string(payload.get("company_name")))[:180]
 
 
-def historical_brand_hint(row: dict, site: str) -> str:
+def historical_brand_hint(row: dict, site: str, history: dict | None = None) -> str:
     """Bounded website-research hint when a provider company label is absent.
 
     The historical source must independently link this exact domain to its
@@ -119,7 +119,15 @@ def historical_brand_hint(row: dict, site: str) -> str:
     mail_domain = original_email.rsplit("@", 1)[-1] if original_email else ""
     company_domain = normalize_domain(row.get("company_domain"))
     same_corporate_domain = mail_domain == company_domain == domain
-    if not old_official and not same_corporate_domain:
+    # The public HMAC-v2 registry already classifies exactly 146 historical
+    # business domains independently. All other provider domains (including
+    # previously unseen shared mailbox services) must remain held.
+    known_corporate = bool(
+        history and isinstance(history.get("v2_key"), bytes)
+        and token(history["v2_key"], "corporate", domain)
+        in (history.get("v2_corporate") or set())
+    )
+    if not old_official and not (same_corporate_domain and known_corporate):
         return ""
     label = domain.split(".", 1)[0].replace("-", " ").strip()
     if label.casefold() in {"www", "shop", "store", "online", "portal", "contact", "website"}:
@@ -235,7 +243,7 @@ def build_batch(
         company = historical_name(row)
         derived_brand = False
         if site and not company:
-            company = historical_brand_hint(row, site)
+            company = historical_brand_hint(row, site, history)
             derived_brand = bool(company)
         if not site or not company:
             states[pos] = "hold_missing_website"
