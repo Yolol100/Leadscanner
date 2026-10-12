@@ -128,12 +128,78 @@ def audit_counts(rows: list[dict], registry_rows: list[dict], blocked: set[str],
     return report
 
 
+def audit_destination_copies(rows: list[dict], destination: dict[str, dict], client) -> dict[str, int]:
+    """Privately verify every existing target copy against exact reviewed source.
+
+    Never print or serialize destination IDs, recipient addresses, copy or hashes.
+    """
+    # Delayed import avoids circular dependency with stage's audit_counts.
+    from historical_handoff_stage import build_destination_variables
+    by_email = {
+        _text(row.get("email")).casefold(): row
+        for row in rows
+    }
+    counters: Counter[str] = Counter()
+    seen = set()
+    for language, dest_rows in destination.items():
+        for email, summary in dest_rows.items():
+            if email in seen:
+                counters["duplicate_across_campaigns"] += 1
+                continue
+            seen.add(email)
+            source = by_email.get(email)
+            if source is None:
+                counters["unexpected_unrelated_target"] += 1
+                continue
+            expected_language, hold = _reviewed_refresh(source)
+            if hold or expected_language != language:
+                counters["unexpected_source_or_language"] += 1
+                continue
+            lead_id = _text(summary.get("id"))
+            if not lead_id:
+                counters["missing_target_id"] += 1
+                continue
+            target = client.get_lead(lead_id)
+            campaign_id = TARGET_CAMPAIGNS[language][0]
+            if (
+                not isinstance(target, dict)
+                or _text(target.get("id")) != lead_id
+                or _text(target.get("email")).casefold() != email
+                or _text(target.get("campaign") or target.get("campaign_id")) != campaign_id
+                or target.get("status") in {-1, -2, -3}
+            ):
+                counters["target_identity_or_state_conflict"] += 1
+                continue
+            try:
+                expected_variables = build_destination_variables(source, target)
+                actual_variables = _custom(target)
+            except (ValueError, RuntimeError, TypeError, KeyError):
+                counters["target_copy_source_mismatch"] += 1
+                continue
+            if actual_variables == expected_variables:
+                counters["exact_personalization_verified"] += 1
+            elif not _text(actual_variables.get("leadscanner_handoff_status")):
+                counters["copied_pending_personalization"] += 1
+            else:
+                counters["changed_or_unexpected_personalization"] += 1
+    return {k: int(counters[k]) for k in (
+        "exact_personalization_verified", "copied_pending_personalization",
+        "changed_or_unexpected_personalization",
+        "target_copy_source_mismatch", "target_identity_or_state_conflict",
+        "unexpected_source_or_language", "unexpected_unrelated_target",
+        "duplicate_across_campaigns", "missing_target_id",
+    )}
+
+
 def run() -> dict:
     client = InstantlyClient(os.environ["INSTANTLY_API_KEY"])
     rows = _source_rows(client, EXPECTED_SOURCE_COUNT)
     registry = fetch_live_registry(registry_url=DEFAULT_REGISTRY_URL)
     blocked = blocked_values(client)
-    ready, destinations = {}, {}
+    # The existing source and destinations are read only. Destination lead
+    # readbacks detect partial /leads/move operations before resuming writes.
+    from historical_handoff_stage import destination_rows
+    ready, destinations, destination_records = {}, {}, {}
     for language, (campaign_id, _) in TARGET_CAMPAIGNS.items():
         try:
             preflight_campaign(client, language, campaign_id)
@@ -141,8 +207,11 @@ def run() -> dict:
             ready[language] = False
         else:
             ready[language] = True
-        destinations[language] = destination_emails(client, campaign_id)
-    return audit_counts(rows, registry, blocked, destinations, ready)
+        destination_records[language] = destination_rows(client, campaign_id)
+        destinations[language] = set(destination_records[language])
+    report = audit_counts(rows, registry, blocked, destinations, ready)
+    report["destination_readback"] = audit_destination_copies(rows, destination_records, client)
+    return report
 
 
 def main() -> int:
