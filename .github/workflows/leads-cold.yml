@@ -305,6 +305,7 @@ jobs:
             scripts/instantly_signature_repair.py \
             scripts/instantly_language_route.py \
             scripts/instantly_historical_site_research.py \
+            scripts/historical_handoff_audit.py \
             scripts/instantly_launch_audit.py \
             scripts/instantly_old_campaign_retire.py \
             scripts/update_dedupe_registry.py \
@@ -346,6 +347,7 @@ jobs:
             tests.test_instantly_signature_repair \
             tests.test_instantly_language_route \
             tests.test_instantly_historical_site_research \
+            tests.test_historical_handoff_audit \
             tests.test_instantly_launch_audit \
             tests.test_instantly_old_campaign_retire \
             tests.test_update_dedupe_registry \
@@ -1221,6 +1223,30 @@ jobs:
           path: results/instantly-sync.json
           if-no-files-found: warn
           retention-days: 1
+
+  # Explicit one-time private-in-runner read-only handoff inventory. Public
+  # logs contain aggregate counters only, never email addresses or message copy.
+  historical_handoff_audit:
+    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[historical-handoff-audit]')
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Install read-only handoff audit runtime
+        run: python3 -m pip install --disable-pip-version-check 'requests>=2,<3' 'google-auth>=2,<3'
+      - name: Verify 1128-source and non-sending Instantly destinations
+        env:
+          PYTHONPATH: scripts
+          INSTANTLY_API_KEY: ${{ secrets.INSTANTLY_API_KEY }}
+        run: |
+          set -euo pipefail
+          python3 scripts/historical_handoff_audit.py
 
   # Historical first-party research is strictly separate from outreach.
   # Only an explicit [historical-site-scan] main commit runs these twelve
