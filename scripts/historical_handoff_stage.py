@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import json
 import os
+import time
 from collections import Counter
 from datetime import datetime, timezone
 
@@ -111,7 +112,7 @@ def _safe_readback(client, lead_id: str, *, campaign: str, email: str) -> dict:
     return result
 
 
-def _update_destination(client, source: dict, target: dict, campaign_id: str) -> bool:
+def _update_destination(client, source: dict, target: dict, campaign_id: str, *, sleep_fn=time.sleep) -> bool:
     lead_id = _text(target.get("id"))
     email = _text(source.get("email")).casefold()
     before = _safe_readback(client, lead_id, campaign=campaign_id, email=email)
@@ -119,21 +120,28 @@ def _update_destination(client, source: dict, target: dict, campaign_id: str) ->
     expected = build_destination_variables(source, before)
     if current == expected:
         return False
-    if _text(current.get("leadscanner_handoff_status")) not in {"", "reviewed_staged_no_send"}:
+    if _text(current.get("leadscanner_handoff_status")) == "reviewed_staged_no_send":
+        # Previously content-bound review cannot silently be replaced by
+        # changed recipient copy, even if the source stayed reviewed.
+        raise RuntimeError("historical_handoff_already_staged_copy_changed")
+    if _text(current.get("leadscanner_handoff_status")):
         raise RuntimeError("historical_handoff_other_status_conflict")
-    # Never retry an uncertain PATCH. Rerun safely reconciles the destination.
+    # Never retry a PATCH of uncertain outcome. Retry GET-only propagation.
     try:
         client._request("PATCH", "/leads/" + lead_id, json={"custom_variables": expected})
     except Exception:
         raise RuntimeError("historical_handoff_write_outcome_unknown_reconcile_first") from None
-    after = _safe_readback(client, lead_id, campaign=campaign_id, email=email)
-    if (
-        _custom(after) != expected
-        or after.get("status") != before.get("status")
-        or after.get("lt_interest_status") != before.get("lt_interest_status")
-    ):
-        raise RuntimeError("historical_handoff_destination_variables_readback_mismatch")
-    return True
+    for i in range(6):
+        after = _safe_readback(client, lead_id, campaign=campaign_id, email=email)
+        if (
+            _custom(after) == expected
+            and after.get("status") == before.get("status")
+            and after.get("lt_interest_status") == before.get("lt_interest_status")
+        ):
+            return True
+        if i < 5:
+            sleep_fn((0.5, 1, 1.5, 2, 3)[i])
+    raise RuntimeError("historical_handoff_destination_variables_readback_mismatch")
 
 
 def _registry_row(row: dict, language: str) -> list[str]:
@@ -258,6 +266,16 @@ def stage_batch(client, *, offset: int, expected_reviewed: int = EXPECTED_REVIEW
             target = fresh.get(email)
             if not target:
                 raise RuntimeError("historical_handoff_copied_lead_missing")
+            source_now = client.get_lead(_text(row["id"]))
+            if (
+                not isinstance(source_now, dict)
+                or _custom(source_now) != _custom(row)
+                or source_now.get("campaign") is not None
+                or source_now.get("list_id") != TARGET_LIST_ID
+                or source_now.get("status") in {-1, -2, -3}
+            ):
+                raise RuntimeError("historical_handoff_source_changed_during_copy")
+            preflight_campaign(client, language, cid)
             changed = _update_destination(client, row, target, cid)
             count["destination_personalization_confirmed"] += 1
             if changed:
