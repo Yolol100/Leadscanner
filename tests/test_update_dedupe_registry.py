@@ -53,9 +53,8 @@ class RegistryUpdateTests(unittest.TestCase):
     def test_existing_email_is_not_appended_twice(self):
         existing = self.row(company="Ander Label", domain="ander.nl", email="info@acmefietsen.nl", lead_id="growth-bbbbbbbbbbbbbbbbbbbb")
         expected = self.row()
-        plan = plan_registry_update(self.readback([expected]), [HEADERS, existing])
-        self.assertEqual(plan["append_count"], 0)
-        self.assertEqual(plan["existing_count"], 1)
+        with self.assertRaisesRegex(ValueError, "registry_identity_collision_not_exact"):
+            plan_registry_update(self.readback([expected]), [HEADERS, existing])
 
     def test_company_identity_matches_accent_tolerant_preflight_rules(self):
         existing = self.row(
@@ -70,9 +69,8 @@ class RegistryUpdateTests(unittest.TestCase):
             email="new@nieuw.nl",
             lead_id="growth-cccccccccccccccccccc",
         )
-        plan = plan_registry_update(self.readback([expected]), [HEADERS, existing])
-        self.assertEqual(plan["append_count"], 0)
-        self.assertEqual(plan["existing_count"], 1)
+        with self.assertRaisesRegex(ValueError, "registry_identity_collision_not_exact"):
+            plan_registry_update(self.readback([expected]), [HEADERS, existing])
 
     def test_subdomain_identity_matches_preflight_domain_rules(self):
         existing = self.row(
@@ -87,9 +85,21 @@ class RegistryUpdateTests(unittest.TestCase):
             email="new@acmefietsen.nl",
             lead_id="growth-cccccccccccccccccccc",
         )
-        plan = plan_registry_update(self.readback([expected]), [HEADERS, existing])
-        self.assertEqual(plan["append_count"], 0)
-        self.assertEqual(plan["existing_count"], 1)
+        with self.assertRaisesRegex(ValueError, "registry_identity_collision_not_exact"):
+            plan_registry_update(self.readback([expected]), [HEADERS, existing])
+
+    def test_existing_domain_same_lead_id_but_changed_status_is_not_exact(self):
+        existing = self.row()
+        existing[4] = "sent"
+        expected = self.row()
+        with self.assertRaisesRegex(ValueError, "registry_identity_collision_not_exact"):
+            plan_registry_update(self.readback([expected]), [HEADERS, existing])
+
+    def test_two_new_drafts_colliding_on_domain_are_rejected(self):
+        one = self.row()
+        two = self.row(email="another@acmefietsen.nl", lead_id="growth-cccccccccccccccccccc")
+        with self.assertRaisesRegex(ValueError, "registry_identity_collision_not_exact"):
+            plan_registry_update(self.readback([one, two]), [HEADERS])
 
     def test_existing_identity_without_suppression_fails_closed(self):
         existing = self.row()
