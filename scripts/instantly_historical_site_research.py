@@ -51,6 +51,15 @@ REVIEW_KEYS = (
     "leadscanner_site_candidate_checked_date",
     "leadscanner_site_research_status",
 )
+# Fresh proposals are stored alongside the original site candidates.
+# Never overwrite the previous approved/review-only copy on a recheck.
+REFRESH_KEYS = tuple(
+    "leadscanner_site_refresh_" + key[len("leadscanner_site_candidate_"):]
+    if key.startswith("leadscanner_site_candidate_")
+    else "leadscanner_site_refresh_status"
+    for key in REVIEW_KEYS
+)
+
 LIVE_KEYS = (
     "leadscanner_observation", "leadscanner_value_action",
     "leadscanner_evidence_url", "leadscanner_evidence_source_type",
@@ -115,14 +124,12 @@ def _fetch_home(session, domain: str, website_hint: str) -> tuple[str | None, st
     return None, None
 
 
-def _scan_site(row: dict) -> dict:
+def _scan_site(row: dict, *, refresh: bool = False) -> dict:
     values = _custom(row)
     address = _email_and_domain(row)
     if address is None:
         return {"status": "invalid_email"}
     email, domain = address
-    if domain in HOLD_FREE_MAIL | PUBLIC_MAIL_DOMAINS:
-        return {"status": "personal_email_domain"}
     if (
         values.get("leadscanner_import_origin") != "myhost_drafts"
         or values.get("leadscanner_contact_basis") != "review_required"
@@ -131,10 +138,21 @@ def _scan_site(row: dict) -> dict:
         return {"status": "source_not_review_required"}
     if any(_text(values.get(key)) for key in LIVE_KEYS):
         return {"status": "existing_live_observation_hold"}
-    if any(_text(values.get(key)) for key in REVIEW_KEYS):
+    if refresh:
+        if any(_text(values.get(key)) for key in REFRESH_KEYS):
+            return {"status": "existing_refresh_hold"}
+    elif any(_text(values.get(key)) for key in REVIEW_KEYS):
         return {"status": "existing_research_hold"}
 
     hint = _text(row.get("website") or values.get("website"))
+    # A business site published on the lead is a usable research target even
+    # when the lead uses a public email provider. Never infer a business from
+    # gmail/outlook or guess an address. Exact recipient proof is still needed.
+    hint_domain = normalize_domain(hint) if hint.startswith(("http://", "https://")) else ""
+    if refresh and hint_domain and hint_domain not in HOLD_FREE_MAIL | PUBLIC_MAIL_DOMAINS:
+        domain = hint_domain
+    elif domain in HOLD_FREE_MAIL | PUBLIC_MAIL_DOMAINS:
+        return {"status": "personal_email_domain"}
     with requests.Session() as raw_session:
         session = PoliteSiteSession(raw_session, domain)
         html, url = _fetch_home(session, domain, hint)
@@ -154,10 +172,11 @@ def _scan_site(row: dict) -> dict:
                 if email in extract_emails(linked_parsed):
                     confirmed_page = linked_url
                     break
-        if not confirmed_page:
+        if not confirmed_page and not refresh:
             return {"status": "recipient_not_confirmed_on_website"}
 
-        # Read a bounded, diverse set of public pages before prioritizing observations.
+        # Research the site regardless of recipient email; contact proof
+        # controls whether an addressed candidate can be saved, not coverage.
         evidence = []
         for link in broad_research_links(parsed, url, home_domain, limit=15):
             linked_html, linked_url, _ = safe_fetch_html(session, link, home_domain)
@@ -174,6 +193,8 @@ def _scan_site(row: dict) -> dict:
             "official_domain": home_domain,
             "evidence_candidates": evidence,
         })
+        if not confirmed_page:
+            return {"status": "recipient_not_confirmed_on_website"}
         if result.get("outreach_status") != "ready":
             return {"status": "no_specific_first_party_signal"}
         # Never make an NL email based on an EN site observation, or vice versa.
@@ -219,7 +240,10 @@ def _scan_site(row: dict) -> dict:
         }
 
 
-def _save_candidate(client, row: dict, proposal: dict, *, sleep_fn=time.sleep) -> None:
+def _save_candidate(
+    client, row: dict, proposal: dict, *, refresh: bool = False,
+    sleep_fn=time.sleep,
+) -> None:
     lead_id = row["id"]
     before = client.get_lead(lead_id)
     if (
@@ -234,11 +258,19 @@ def _save_candidate(client, row: dict, proposal: dict, *, sleep_fn=time.sleep) -
     actual = _custom(before)
     if actual != original:
         raise RuntimeError("site_research_prewrite_variables_changed")
+    unavailable = REFRESH_KEYS + LIVE_KEYS if refresh else REVIEW_KEYS + LIVE_KEYS
     if (
         actual.get("leadscanner_contact_basis") != "review_required"
-        or any(_text(actual.get(key)) for key in REVIEW_KEYS + LIVE_KEYS)
+        or any(_text(actual.get(key)) for key in unavailable)
     ):
         raise RuntimeError("site_research_prewrite_review_state_changed")
+    expected = set(REFRESH_KEYS if refresh else REVIEW_KEYS)
+    legacy = expected - {
+        "leadscanner_site_refresh_findings" if refresh
+        else "leadscanner_site_candidate_findings"
+    }
+    if refresh and set(proposal) not in (expected, legacy):
+        raise ValueError("site_research_proposal_fields_invalid")
     new_variables = dict(actual)
     new_variables.update(proposal)
     # Never retry a write with an uncertain response. The provider owns the data.
@@ -268,7 +300,7 @@ def _save_candidate(client, row: dict, proposal: dict, *, sleep_fn=time.sleep) -
 def research_imported_sites_batch(
     client, *, offset: int, expected_count: int = EXPECTED_SOURCE_COUNT,
     save_candidates: bool = False, workers: int = MAX_WORKERS,
-    scanner=_scan_site,
+    scanner=_scan_site, refresh: bool = False,
 ) -> dict:
     if type(offset) is not int or offset < 0 or offset % BATCH_SIZE:
         raise ValueError("site_research_offset_must_be_multiple_of_100")
@@ -278,6 +310,8 @@ def research_imported_sites_batch(
         raise ValueError("site_research_worker_limit_invalid")
     if type(save_candidates) is not bool:
         raise ValueError("site_research_save_flag_invalid")
+    if type(refresh) is not bool:
+        raise ValueError("site_research_refresh_flag_invalid")
     _campaigns_still_quiet(client)
     rows = _source_rows(client, expected_count)
     if offset >= len(rows):
@@ -287,7 +321,7 @@ def research_imported_sites_batch(
     # Network reads in bounded parallel; never expose unsafe provider/site exceptions.
     def scan_one(row: dict) -> dict:
         try:
-            return scanner(row)
+            return scanner(row, refresh=True) if refresh and scanner is _scan_site else scanner(row)
         except Exception:
             return {"status": "site_scan_exception"}
     with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -297,7 +331,7 @@ def research_imported_sites_batch(
     allowed_statuses = frozenset({
         "candidate", "invalid_email", "personal_email_domain",
         "source_not_review_required", "existing_live_observation_hold",
-        "existing_research_hold", "unreachable_website",
+        "existing_research_hold", "existing_refresh_hold", "unreachable_website",
         "recipient_not_confirmed_on_website", "no_specific_first_party_signal",
         "observation_language_mismatch", "no_relevant_action",
         "unsafe_or_unbound_candidate", "draft_quality_hold", "site_scan_exception", "invalid_scan",
@@ -314,7 +348,14 @@ def research_imported_sites_batch(
                 raise RuntimeError("site_research_candidate_contract_invalid")
             counts["candidates_found"] += 1
             if save_candidates:
-                _save_candidate(client, row, proposal)
+                if refresh:
+                    proposal = {
+                        ("leadscanner_site_refresh_" + key[len("leadscanner_site_candidate_"):]
+                         if key.startswith("leadscanner_site_candidate_")
+                         else "leadscanner_site_refresh_status"): value
+                        for key, value in proposal.items()
+                    }
+                _save_candidate(client, row, proposal, refresh=refresh)
                 saved += 1
         else:
             counts[status or "invalid_scan"] += 1
@@ -322,10 +363,14 @@ def research_imported_sites_batch(
     return {
         "schema_version": "leadscanner-historical-site-research/1.0",
         "source_count": len(rows),
-        "source_list_id": TARGET_LIST_ID,
+        "source_list_identity_verified": True,
         "batch_offset": offset,
         "batch_size": len(batch),
-        "network_checked_count": len(batch) - counts["personal_email_domain"] - counts["invalid_email"] - counts["source_not_review_required"] - counts["existing_live_observation_hold"] - counts["existing_research_hold"],
+        "network_checked_count": len(batch) - counts["personal_email_domain"] - counts["invalid_email"] - counts["source_not_review_required"] - counts["existing_live_observation_hold"] - counts["existing_research_hold"] - counts["existing_refresh_hold"],
+        "previous_review_candidates_present": sum(
+            any(_text(_custom(row).get(key)) for key in REVIEW_KEYS) for row in batch
+        ),
+        "refresh_mode": refresh,
         "candidate_count": counts["candidates_found"],
         "saved_candidate_count": saved,
         "holds": {key: value for key, value in sorted(counts.items()) if key != "candidates_found"},
@@ -346,6 +391,7 @@ def main() -> int:
     parser.add_argument("--expected-count", type=int, default=EXPECTED_SOURCE_COUNT)
     parser.add_argument("--workers", type=int, default=MAX_WORKERS)
     parser.add_argument("--save-candidates", action="store_true")
+    parser.add_argument("--refresh-reviewed", action="store_true")
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
     key = os.environ.get("INSTANTLY_API_KEY", "")
@@ -357,6 +403,7 @@ def main() -> int:
         result = research_imported_sites_batch(
             InstantlyClient(key), offset=args.offset, expected_count=args.expected_count,
             workers=args.workers, save_candidates=args.save_candidates,
+            refresh=args.refresh_reviewed,
         )
     except Exception:
         # The true exception may contain private provider or prospect data.
