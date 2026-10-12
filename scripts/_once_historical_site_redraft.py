@@ -398,6 +398,10 @@ def build_batch(
             continue
         selected_domains.add(domain)
         selected_emails.add(contact)
+        generated["_historical_source_email_token"] = token(
+            history["v2_key"], "email",
+            normalize_email(indexed[pos].get("email"))
+        )
         ready_candidates.append(generated)
         states[pos] = "ready_for_review"
 
@@ -413,10 +417,17 @@ def build_batch(
     # Opaque deterministic IDs for this *historical* rebuild; no new leads
     # are registered. Old IMAP drafts retain their old IDs, are never changed.
     key = history["v2_key"]
+    original_tokens = {
+        normalize_email(candidate["public_business_email"]):
+        candidate["_historical_source_email_token"]
+        for candidate in ready_candidates
+    }
     for record in review_batch["rows"]:
+        address = normalize_email(record["email"])
         record["lead_id"] = "growth-" + token(
-            key, "email", _string(record["email"]).casefold()
+            key, "email", address
         )[:20]
+        record["_historical_source_email_token"] = original_tokens[address]
     if len({r["lead_id"] for r in review_batch["rows"]}) != len(review_batch["rows"]):
         raise RuntimeError("batch_incomplete")
 
@@ -441,6 +452,51 @@ def build_batch(
     return public, review_batch
 
 
+def require_fresh_registry_before_imap(
+    batch: dict, previous_history: dict, fresh_registry: list[dict],
+) -> None:
+    """Fail closed if a blocked identity changed while sites were crawled."""
+    historical = [
+        row for row in fresh_registry
+        if row.get("status") == "historical_v2_suppression"
+    ]
+    if (len(historical) != 1
+            or historical[0].get("v2_key") != previous_history.get("v2_key")
+            or len(historical[0].get("v2_emails") or ()) != EXPECTED):
+        raise RuntimeError("fresh_historical_registry_changed")
+    fresh = historical[0]
+    ordinary = [
+        row for row in fresh_registry
+        if row.get("status") != "historical_v2_suppression"
+    ]
+    for row in batch.get("rows") or []:
+        if row.get("status") != "review_draft" or row.get("automatic_send") is not False:
+            raise RuntimeError("fresh_draft_status_invalid")
+        source_hash = _string(row.get("_historical_source_email_token"))
+        if not source_hash or source_hash not in fresh["v2_emails"]:
+            raise RuntimeError("fresh_original_email_missing")
+        selected_email = normalize_email(row.get("email"))
+        fresh_email_hash = token(fresh["v2_key"], "email", selected_email)
+        if fresh_email_hash in fresh["v2_emails"] and fresh_email_hash != source_hash:
+            raise RuntimeError("fresh_other_historical_recipient")
+        identity = {
+            "email": selected_email,
+            "website": row.get("website"),
+            "company": row.get("company"),
+            "official_domain": row.get("official_domain"),
+        }
+        for entry in ordinary:
+            found = match_candidate(identity, [entry])
+            if not found:
+                continue
+            old_status = _string(found.get("registry_status")).casefold()
+            if old_status not in {"concept", "review_draft", "draft"}:
+                raise RuntimeError("fresh_registry_existing_exclusion")
+            if ("email" in (found.get("matched_by") or [])
+                    and fresh_email_hash != source_hash):
+                raise RuntimeError("fresh_other_existing_concept")
+
+
 def run(offset: int, mode: str) -> dict:
     if mode not in {"audit", "drafts"}:
         raise RuntimeError("unsupported_mode")
@@ -463,6 +519,11 @@ def run(offset: int, mode: str) -> dict:
         if (os.getenv("LEADSCANNER_TRUSTED_HISTORICAL_WRITE") != "true"
                 or not os.getenv("OUTREACH_MAIL_PASSWORD")):
             raise RuntimeError("trusted_main_required")
+        # Current dedupe may have changed during website research. Read it
+        # again immediately before any mailbox write; never trust stale holds.
+        require_fresh_registry_before_imap(
+            review_batch, history_rows[0], fetch_registry()
+        )
         from myhost_draft import create_drafts
         saved = create_drafts(review_batch, reject_changed_existing=True)
         proof = audit_exact_readback(review_batch, saved)
@@ -489,6 +550,9 @@ def main() -> int:
             "source_integrity_hold", "batch_incomplete", "offset_out_of_bounds",
             "historical_suppression_incomplete", "historical_suppression_missing",
             "trusted_main_required", "imap_readback_incomplete",
+            "fresh_historical_registry_changed", "fresh_draft_status_invalid",
+            "fresh_original_email_missing", "fresh_other_historical_recipient",
+            "fresh_registry_existing_exclusion", "fresh_other_existing_concept",
         }
         code = str(error) if str(error) in fixed else "private_failure_hold"
         print("HISTORICAL_SITE_REBUILD=red stage=" + code + " details_suppressed")
