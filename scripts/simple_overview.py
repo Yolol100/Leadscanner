@@ -30,8 +30,8 @@ COUNT_LABELS = {
 DROP_LABELS = {
     "cheap_filter": "Eerste selectie",
     "dedupe": "Al bekend of uitgesloten",
-    "verification": "Contact niet bevestigd",
-    "research": "Geen bruikbaar onderzoek",
+    "verification": "Website niet geverifieerd",
+    "research": "Websiteonderzoek niet afgerond",
     "outreach": "Geen concrete observatie",
     "value_action": "Geen passend voorstel",
     "mail": "Concept voldoet niet",
@@ -70,7 +70,7 @@ def render_overview(manifest: dict) -> str:
             f"- Na de historische dubbele-contactcontrole: **{counts.get('dedupe_kept', 0)}**",
             f"- Websites geverifieerd: **{counts.get('verified_for_research', 0)}**", "",
             "## 2. Website onderzoeken", "",
-            f"- Onderzochte websites met bruikbare bronnen: **{counts.get('research_ready', 0)}**",
+            f"- Websites onderzocht: **{counts.get('research_ready', 0)}**",
             f"- Gepubliceerde zakelijke e-mailadressen gevonden: **{counts.get('contacts_found', 0)}**",
             f"- Waarvan contactpersonen met naam: **{counts.get('named_contacts', 0)}**",
             f"- Websites met concrete bevindingen: **{counts.get('outreach_reason_ready', 0)}**", "",
@@ -85,7 +85,7 @@ def render_overview(manifest: dict) -> str:
         reasons = (manifest.get("diagnostics") or {}).get("drop_reasons") or {}
         if isinstance(reasons, dict):
             ranked = sorted(
-                ((sum(int(n) for n in details.values()), DROP_LABELS.get(name, name))
+                ((sum(int(n) for n in details.values()), DROP_LABELS.get(name, "Overige oorzaken"))
                  for name, details in reasons.items() if isinstance(details, dict)
                  and all(type(n) is int and n >= 0 for n in details.values())),
                 reverse=True,
