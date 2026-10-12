@@ -476,6 +476,79 @@ class PausedHandoffStageTests(unittest.TestCase):
             "value_contract",
         )
 
+    def test_confirmed_capacity_shortage_blocks_all_new_copy_jobs(self):
+        rows = source_rows()
+        original = deepcopy(rows)
+        client = FakeClient(rows)
+        with patch("historical_handoff_stage._source_rows", return_value=rows), \
+             patch("historical_handoff_stage.fetch_live_registry", return_value=[]), \
+             patch("historical_handoff_stage.blocked_values", return_value=set()), \
+             patch("historical_handoff_stage.preflight_campaign"), \
+             patch("historical_handoff_stage.check_registry_access"), \
+             patch("historical_handoff_stage.audit_workspace_capacity", return_value={
+                 "status": "insufficient", "sufficient_for_remaining": False,
+                 "remaining_capacity_band": "1-9",
+             }) as billing_check:
+            with self.assertRaisesRegex(RuntimeError, "provider_capacity_insufficient"):
+                stage_batch(client, offset=0)
+        billing_check.assert_called_once()
+        self.assertEqual(billing_check.call_args.args[1], 776)
+        self.assertEqual(client.posts, [])
+        self.assertEqual(client.patches, [])
+        self.assertEqual(rows, original)
+        self.assertEqual(len(client.sources), 1128)
+
+    def test_capacity_shortage_still_reconciles_existing_exact_copy_safely(self):
+        rows = source_rows()
+        client = FakeClient(rows)
+        original = deepcopy(rows[0])
+        already = deepcopy(rows[0])
+        already["id"] = "dest-" + rows[0]["id"]
+        already["list_id"] = None
+        already["campaign"] = TARGET_CAMPAIGNS["nl"][0]
+        client.destinations[already["id"]] = already
+        recorded = []
+        def record_registry(payload, **kwargs):
+            recorded.extend(payload["registry_rows"])
+            return {"exact_readback": True}
+        with patch("historical_handoff_stage._source_rows", return_value=rows), \
+             patch("historical_handoff_stage.fetch_live_registry", return_value=[]), \
+             patch("historical_handoff_stage.blocked_values", return_value=set()), \
+             patch("historical_handoff_stage.preflight_campaign"), \
+             patch("historical_handoff_stage.check_registry_access"), \
+             patch("historical_handoff_stage.audit_workspace_capacity", return_value={
+                 "status": "at_limit", "sufficient_for_remaining": False,
+                 "remaining_capacity_band": "0",
+             }), \
+             patch("historical_handoff_stage.update_registry", side_effect=record_registry):
+            with self.assertRaisesRegex(RuntimeError, "provider_capacity_insufficient"):
+                stage_batch(client, offset=0)
+        self.assertEqual(len(client.patches), 1)
+        self.assertEqual(len(recorded), 1)
+        self.assertEqual(client.posts, [])
+        self.assertEqual(client.sources[original["id"]], original)
+        self.assertEqual(len(client.destinations), 1)
+
+    def test_adequate_provider_capacity_does_not_change_existing_stage_flow(self):
+        rows = source_rows()
+        client = FakeClient(rows)
+        with patch("historical_handoff_stage._source_rows", return_value=rows), \
+             patch("historical_handoff_stage.fetch_live_registry", return_value=[]), \
+             patch("historical_handoff_stage.blocked_values", return_value=set()), \
+             patch("historical_handoff_stage.preflight_campaign"), \
+             patch("historical_handoff_stage.check_registry_access"), \
+             patch("historical_handoff_stage._wait_job"), \
+             patch("historical_handoff_stage.audit_workspace_capacity", return_value={
+                 "status": "sufficient", "sufficient_for_remaining": True,
+                 "remaining_capacity_band": "529+",
+             }), \
+             patch("historical_handoff_stage.update_registry", return_value={"exact_readback": True}):
+            result = stage_batch(client, offset=0, max_targets=1)
+        self.assertEqual(result["counts"]["destination_personalization_confirmed"], 1)
+        self.assertEqual(len(client.posts), 1)
+        self.assertEqual(result["email_sent"], 0)
+        self.assertFalse(result["campaign_activation"])
+
     def test_invalid_offset_or_cohort_aborts_without_provider_read(self):
         fake = FakeClient([])
         for offset, reviewed in ((1, EXPECTED_REVIEWED), (-100, EXPECTED_REVIEWED), (0, 777)):
