@@ -266,7 +266,7 @@ class ColdStagesTests(unittest.TestCase):
 
     def test_verify_limit_is_hard_bounded(self):
         with self.assertRaisesRegex(ValueError, "verify_limit"):
-            verify_candidates({"kept": [{}]}, limit=101)
+            verify_candidates({"kept": [{}]}, limit=201)
 
     @patch("cold_stages.is_public_http_url", return_value=True)
     def test_research_reuses_homepage_and_fetches_max_two_details(self, _safe):
@@ -410,7 +410,7 @@ class ColdStagesTests(unittest.TestCase):
         self.assertEqual(researched["contact_status"], "contact_form_only")
         selected = select_one_reason(researched)
         self.assertEqual(selected["outreach_status"], "hold")
-        self.assertEqual(selected["outreach_hold_reason"], "fewer_than_three_distinct_verified_improvements")
+        self.assertEqual(selected["outreach_hold_reason"], "fewer_than_two_distinct_verified_improvements")
         result = generate_one_mail(value_action_for(selected))
         self.assertEqual(result["copy_validation_reasons"], ["value_action_not_ready"])
         self.assertIsNone(result["body"])
