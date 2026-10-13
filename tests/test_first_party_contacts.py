@@ -60,6 +60,58 @@ class FirstPartyContactsTests(unittest.TestCase):
         self.assertEqual(contact["contact_name_source_url"], "https://acmefietsen.nl/over-ons")
         self.assertEqual(contact["contact_role_source_url"], "https://acmefietsen.nl/over-ons")
 
+    def test_existing_recipient_stays_selected_when_official_site_publishes_two(self):
+        pages = [
+            page("/", '<a href="mailto:info@acmefietsen.nl">Contact</a>'),
+            page("/team", '<p>Eigenaar Jan Jansen</p><a href="mailto:jan.jansen@gmail.com">Mail Jan</a>'),
+        ]
+        normal = select_site_contact(pages, "acmefietsen.nl")
+        self.assertEqual(normal["public_business_email"], "jan.jansen@gmail.com")
+        existing = select_site_contact(
+            pages, "acmefietsen.nl", expected_email="info@acmefietsen.nl")
+        self.assertEqual(existing["public_business_email"], "info@acmefietsen.nl")
+        self.assertEqual(existing["email_source_url"], "https://acmefietsen.nl/")
+
+    def test_existing_recipient_must_be_actually_published(self):
+        pages = [page("/contact", '<a href="mailto:info@acmefietsen.nl">Contact</a>')]
+        found = select_site_contact(
+            pages, "acmefietsen.nl", expected_email="unknown@acmefietsen.nl")
+        self.assertEqual(found["public_business_email"], "info@acmefietsen.nl")
+        self.assertNotEqual(found["public_business_email"], "unknown@acmefietsen.nl")
+
+    def test_existing_recipient_never_selects_unrelated_supplier(self):
+        pages = [
+            page("/", '<p>Website door Studio <a href="mailto:dev@studio.nl">Mail</a></p>'),
+            page("/contact", '<a href="mailto:info@acmefietsen.nl">Contact</a>'),
+        ]
+        found = select_site_contact(
+            pages, "acmefietsen.nl", expected_email="dev@studio.nl")
+        self.assertEqual(found["public_business_email"], "info@acmefietsen.nl")
+
+    def test_existing_recipient_propagates_to_research_without_new_lead_preference(self):
+        candidate = {
+            "ready_for_research": True,
+            "official_url": "https://acmefietsen.nl/",
+            "official_domain": "acmefietsen.nl",
+            "name_hint": "Acme Fietsen",
+            "original_recipient": "info@acmefietsen.nl",
+            "homepage_text_excerpt": "Acme Fietsen geeft advies. Eigenaar Jan Jansen helpt klanten.",
+            "homepage_mailtos": ["info@acmefietsen.nl", "jan.jansen@gmail.com"],
+            "homepage_mailto_contexts": [],
+            "homepage_contact_form_present": False,
+            "homepage_phone_link_present": False,
+            "homepage_structured_data": [],
+            "contact_links": [],
+            "research_links": [],
+        }
+        result = research_candidate(candidate, session_factory=lambda: Session([]))
+        self.assertEqual(result["contact_status"], "verified_official_site")
+        self.assertEqual(result["public_business_email"], "info@acmefietsen.nl")
+        without_target = dict(candidate)
+        without_target.pop("original_recipient")
+        normal = research_candidate(without_target, session_factory=lambda: Session([]))
+        self.assertEqual(normal["public_business_email"], "jan.jansen@gmail.com")
+
     def test_owner_role_directly_before_full_name_is_not_mistaken_for_name(self):
         contact = select_site_contact([
             page("/over-ons", """

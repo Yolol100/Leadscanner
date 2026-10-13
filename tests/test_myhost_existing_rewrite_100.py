@@ -38,6 +38,12 @@ class FakeHeaderClient:
 
 
 class ExistingRewriteTests(unittest.TestCase):
+    def test_anonymous_hold_categories_are_closed_vocabulary(self):
+        self.assertEqual(len(target.SOURCE_HOLD_REASONS), 6)
+        self.assertIn("historically_contacted_or_blocked", target.SOURCE_HOLD_REASONS)
+        self.assertIn("hold_robots_policy", target.SITE_HOLD_STATUSES)
+        self.assertNotIn("email", target.SITE_HOLD_STATUSES)
+
     def test_stable_inventory_exact_1173_and_100_windows(self):
         client = FakeHeaderClient()
         ordered = target.inventory_existing(client, "Drafts")

@@ -330,8 +330,8 @@ def _verified_structured_people(parsed: dict, domain: str, company_name: str) ->
     return contacts
 
 
-def select_site_contact(parsed_pages: list[dict], domain: str, *, company_name: str = "") -> dict:
-    """Choose a sourced business contact. A missing email never vetoes research."""
+def select_site_contact(parsed_pages: list[dict], domain: str, *, company_name: str = "", expected_email: str | None = None) -> dict:
+    """Choose a sourced contact; retain an existing recipient only if published."""
     owner_sources = {}
     for page in parsed_pages:
         for name in owner_names([page]):
@@ -446,7 +446,12 @@ def select_site_contact(parsed_pages: list[dict], domain: str, *, company_name: 
             "contact_search_pages_checked": len(parsed_pages),
             "named_owner_found_on_site": bool(owners) or structured_owner_seen,
         }
-    best = min(candidates, key=lambda item: item[:5])[-1]
+    # An existing-only Draft already has a fixed To address. A verified, publicly
+    # published recipient must not be rejected just because a named owner ranks
+    # ahead of the company mailbox in new-lead contact discovery.
+    wanted = _email(expected_email) if expected_email else ""
+    matching = [item for item in candidates if item[4] == wanted] if wanted else []
+    best = min(matching or candidates, key=lambda item: item[:5])[-1]
     return {
         **best,
         "contact_status": "verified_official_site",

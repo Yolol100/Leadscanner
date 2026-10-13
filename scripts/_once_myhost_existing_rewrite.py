@@ -43,6 +43,17 @@ BATCH_SIZE = 100
 EXPECTED_TAGGED_DRAFTS = 1173
 MAX_MESSAGES = 2000
 VALID_CONCEPT_STATES = {"concept", "draft", "review_draft"}
+SOURCE_HOLD_REASONS = {
+    "invalid_target_identity", "historically_contacted_or_blocked",
+    "original_site_or_identity_unresolved",
+    "no_verified_shared_mail_provider_site", "unknown_corporate_brand",
+    "excluded_concept_or_contact",
+}
+SITE_HOLD_STATUSES = {
+    "hold_missing_domain", "hold_robots_policy",
+    "hold_unreachable_official_site", "hold_identity_not_proven",
+    "skipped_competitor",
+}
 
 
 def _address(msg, field="To") -> str:
@@ -231,7 +242,10 @@ def run(offset: int, *, write: bool) -> dict:
                 continue
             site, company, reason = source_hint(item, sources, history, ordinary)
             if reason:
+                if reason not in SOURCE_HOLD_REASONS:
+                    raise RuntimeError("unknown_anonymous_source_hold")
                 counters["hold_identity_or_history"] += 1
+                counters["source_hold_" + reason] += 1
                 continue
             try:
                 original = _original_snapshot(client, folder, lead)
@@ -257,6 +271,9 @@ def run(offset: int, *, write: bool) -> dict:
                 eligible.append(candidate)
             else:
                 counters["hold_site_verification"] += 1
+                site_reason = candidate.get("contact_status")
+                counter_key = site_reason if site_reason in SITE_HOLD_STATUSES else "other"
+                counters["site_hold_" + counter_key] += 1
         researched = research_candidates(
             {"candidates": eligible}, limit=len(eligible), max_workers=6,
         )["candidates"] if eligible else []
