@@ -55,7 +55,7 @@ class VerifiedIssueTests(unittest.TestCase):
         candidate["site_issue_candidates"] = []
         self.assertEqual(select_one_reason(candidate)["outreach_status"], "hold")
         candidate["site_issue_candidates"] = [
-            {"**result["selected_findings"][0], "severity": 100,
+            {**result["selected_findings"][0], "severity": 100,
              "observation_nl": result["selected_findings"][0]["observation"]}
         ]
         self.assertEqual(select_one_reason(candidate)["outreach_status"], "hold")
