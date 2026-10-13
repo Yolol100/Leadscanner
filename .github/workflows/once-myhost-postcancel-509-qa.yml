@@ -41,12 +41,14 @@ jobs:
               BACKUP_FOLDER, _find_backup_folder, _backup_inventory, _open_inventory,
           )
           from _once_myhost_safe_hold import _one_uid, _raw_uid
-          from myhost_draft import connect_imap, select_folder
+          from myhost_draft import connect_imap, select_folder, find_drafts_folder
           stage = 'connection'
           try:
               with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
                   client = connect_imap()
                   try:
+                      stage = 'drafts_folder_selection'
+                      find_drafts_folder(client)
                       stage = 'original_inventory'
                       folder, active, held = _open_inventory(client, strict_initial=True)
                       stage = 'folder_listing'
@@ -83,7 +85,13 @@ jobs:
           except Exception as exc:
               allowed = {'initial_inventory_509_664_changed', 'hold_union_baseline_changed',
                          'backup_contains_unrelated_messages', 'copied_original_not_still_active',
-                         'original_bytes_changed_after_cancel', 'imap_duplicate_lead_id'}
+                         'original_bytes_changed_after_cancel', 'imap_duplicate_lead_id',
+                         'real_drafts_folder_missing_or_ambiguous',
+                         'configured_drafts_folder_is_recovery_folder',
+                         'imap_folder_list_failed', 'hold_folder_unrelated_content',
+                         'imap_inventory_search_failed', 'imap_inventory_count_invalid',
+                         'imap_inventory_incomplete', 'imap_noncanonical_tagged_draft',
+                         'hold_overlap_missing_copy', 'hold_overlap_copy_mismatch'}
               code = str(exc) if str(exc) in allowed else 'private_failure'
               print('POSTCANCEL_509=red stage=' + stage + ' reason=' + code)
               raise SystemExit(1)
