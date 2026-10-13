@@ -338,6 +338,10 @@ def classify_evidence(item: dict) -> dict | None:
     return best
 
 def select_one_reason(candidate: dict) -> dict:
+    # New live website research carries a structured issue field. Generic
+    # product/booking descriptions must NEVER count as confirmed defects.
+    if "site_issue_candidates" in candidate:
+        return select_verified_site_issues(candidate)
     result = dict(candidate)
     result.update({
         "outreach_status": "hold",
