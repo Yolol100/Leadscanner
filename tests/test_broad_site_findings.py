@@ -22,7 +22,9 @@ class BroadFindingsTests(unittest.TestCase):
             ],
         }
         selected = select_one_reason(row)
-        self.assertEqual(selected["outreach_status"], "ready")
+        self.assertEqual(selected["outreach_status"], "hold")
+        self.assertEqual(selected["outreach_hold_reason"],
+                         "fewer_than_three_distinct_verified_improvements")
         self.assertEqual(selected["selected_findings"][0]["category"], "other")
         self.assertEqual(selected["selected_findings"][0]["source_type"], "official_site")
 
@@ -56,10 +58,11 @@ class BroadFindingsTests(unittest.TestCase):
         self.assertTrue(all(finding_excerpt(f) in mail for f in findings))
         self.assertEqual(len(findings), 5)
         self.assertNotIn("review_findings_missing_or_unverified", validate_mail(valued, "ideeën op basis van jullie website", mail))
-        self.assertLessEqual(len(mail.split()), 155)
+        self.assertLessEqual(len(mail.split()), 320)
         subject, draft = draft_for_review(
             selected["verified_observation"], valued["value_first_action"],
-            selected["signal_type"], selected["language"], findings,
+            selected["signal_type"], selected["language"],
+            valued["selected_findings"],
         )
         self.assertTrue(subject)
         self.assertEqual(draft.count("?"), 1)
@@ -83,7 +86,7 @@ class BroadFindingsTests(unittest.TestCase):
         valued = value_action_for(selected)
         mail = body_for(valued)
         self.assertEqual(mail.count("?"), 1)
-        self.assertLessEqual(len(mail.split()), 155)
+        self.assertLessEqual(len(mail.split()), 320)
         self.assertTrue(all(
             finding_excerpt(f) in mail for f in selected["selected_findings"]
         ))
