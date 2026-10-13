@@ -108,10 +108,10 @@ def prepare_review_batch(payload: dict) -> dict:
         # Defense in depth: a forged ready/green flag cannot smuggle an old
         # one-point or generic email into Drafts.
         findings = review_findings(candidate.get("selected_findings"), domain)
-        if not 3 <= len(findings) <= 6 or len({
+        if not 2 <= len(findings) <= 3 or len({
             str(finding.get("category") or "") for finding in findings
         }) != len(findings):
-            raise ValueError("review_requires_three_to_six_distinct_improvements")
+            raise ValueError("review_requires_two_to_three_distinct_improvements")
         if any(
             not improvement_line(finding, _text(candidate.get("language")), i)
             or improvement_line(finding, _text(candidate.get("language")), i) not in body
