@@ -18,7 +18,7 @@ De gebruiker heeft expliciet gekozen dat de repo openbaar blijft en dat het Goog
 - Maximaal zes concrete, onafhankelijke eerstehands bevindingen. Een opvallend onderdeel is niet automatisch een fout. Geen verzonnen tekortkomingen, resultaten, testimonials, prijzen of rendement.
 - Eén korte NL/EN-mail met verifieerbaar sitefeit, één klein voorgesteld voorbeeld en één vriendelijke vraag. De kwaliteitsvalidator bepaalt of het concept geschikt is. Zonder bewijs of contact wordt geen concept opgeslagen.
 - Status review_draft betekent dat een mens het concept beoordeelt. Een concept is geen toestemming om reclame te versturen.
-- Sla uitsluitend via beveiligde IMAP op in Drafts; controleer UID, \\Draft-flag, **From**, ontvanger, onderwerp, body en status exact. Vervang gewijzigde concepten nooit automatisch. Bij onzekere uitkomst geen blinde herhaling.
+- Sla uitsluitend via beveiligde IMAP op in Drafts; controleer UID, \\Draft-flag, **From**, ontvanger, onderwerp, body en status exact. Herschrijf bestaande concepten alleen na expliciete gebruikersopdracht, originele-websitecontrole, brongebonden contactcheck en UID-specifieke beveiligde vervanging met exact readback. In de bestaande-only herschrijfmodus mogen onderwerp, inhoud en reviewstatus veranderen, maar de geverifieerde ontvanger mag nooit veranderen en een ontbrekend concept mag nooit worden aangemaakt. Bij onzekere uitkomst geen blinde herhaling.
 - Registreer in de dedupe-registry pas na bewezen IMAP-readback.
 - Geen SMTP, geplande verzendingen, automatische follow-ups, campagnes of activatie.
 - Alle invoer en requests begrenzen, veilige URL's afdwingen en geen gevoelige logs of artifacts maken.
