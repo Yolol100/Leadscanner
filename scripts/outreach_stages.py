@@ -679,6 +679,7 @@ def draft_for_review(
     observation: str, action: str, signal: str, language: str,
     findings: list[dict] | None = None,
     contact_person_name: str | None = None,
+    website_type: str | None = None,
 ) -> tuple[str, str]:
     """One shared, review-only email renderer for new and historical leads.
 
@@ -701,6 +702,7 @@ def draft_for_review(
         "language": language,
         "selected_findings": selected,
         "contact_person_name": contact_person_name,
+        "website_type": website_type,
     }
     subject, body = subject_for(candidate), body_for(candidate)
     # Website quotes may themselves contain questions; only our own CTA counts.
@@ -818,6 +820,7 @@ def generate_one_mail(candidate: dict) -> dict:
         _text(candidate.get("language")),
         candidate.get("selected_findings"),
         _text(candidate.get("contact_person_name")),
+        _text(candidate.get("website_type")),
     )
     reasons = validate_mail(candidate, subject, body) if subject and body else ["draft_quality_hold"]
     result.update({
