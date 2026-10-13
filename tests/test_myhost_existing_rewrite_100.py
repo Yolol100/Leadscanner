@@ -186,17 +186,46 @@ class ExistingRewriteTests(unittest.TestCase):
 
     def test_three_review_required_drafts_fail_closed_if_evidence_drifts(self):
         from collections import Counter
-        c = Counter({"already_correct": 60, "ready_to_rewrite": 2})
-        evidence = target._verify_revision_evidence(
-            500, [None] * 62, c, {"lead-a": "revision", "lead-b": "revision"})
-        self.assertEqual((evidence["active_after"], evidence["held_after"]), (507, 666))
+        robots = Counter({
+            "checked": 62, "already_correct": 60, "researched": 60,
+            "hold_site_verification": 2, "site_hold_hold_robots_policy": 2,
+        })
+        recovered = target._verify_revision_evidence(
+            500, [None] * 62, robots, {"lead-a": "site", "lead-b": "site"})
+        self.assertEqual((recovered["active_after"], recovered["held_after"]),
+                         (507, 666))
+        self.assertEqual(recovered["expected_moves"], 2)
         with self.assertRaisesRegex(RuntimeError, "three_revision_evidence_drift"):
             target._verify_revision_evidence(
-                500, [None] * 62, c, {"lead-a": "revision", "lead-b": "source"})
+                500, [None] * 62, robots,
+                {"lead-a": "revision", "lead-b": "site"})
         with self.assertRaisesRegex(RuntimeError, "three_revision_evidence_drift"):
             target._verify_revision_evidence(
-                1000, [None] * 65, Counter({"already_correct": 65}),
-                {})
+                500, [None] * 62,
+                Counter(dict(robots, site_hold_hold_robots_policy=1)),
+                {"lead-a": "site", "lead-b": "site"})
+        with self.assertRaisesRegex(RuntimeError, "three_revision_evidence_drift"):
+            target._verify_revision_evidence(
+                500, [None] * 62,
+                Counter(dict(robots, hold_contact_not_currently_published=1)),
+                {"lead-a": "site", "lead-b": "site"})
+        with self.assertRaisesRegex(RuntimeError, "three_revision_evidence_drift"):
+            target._verify_revision_evidence(
+                500, [None] * 62, robots, {"lead-a": "site"})
+
+        one = Counter({"checked": 65, "already_correct": 64,
+                       "researched": 65, "ready_to_rewrite": 1})
+        recovered = target._verify_revision_evidence(
+            1000, [None] * 65, one, {"lead-c": "revision"})
+        self.assertEqual((recovered["active_after"], recovered["held_after"]),
+                         (506, 667))
+        with self.assertRaisesRegex(RuntimeError, "three_revision_evidence_drift"):
+            target._verify_revision_evidence(
+                1000, [None] * 65, one, {"lead-c": "site"})
+        with self.assertRaisesRegex(RuntimeError, "three_revision_evidence_drift"):
+            target._verify_revision_evidence(
+                1000, [None] * 65, Counter({"checked": 65, "already_correct": 65,
+                                            "researched": 65}), {})
 
 
 if __name__ == "__main__":
