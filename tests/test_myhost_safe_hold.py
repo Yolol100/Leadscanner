@@ -200,5 +200,23 @@ class HoldTests(unittest.TestCase):
         self.assertNotIn("create_drafts(", section)
         self.assertNotIn("move_to_hold(", section)
 
+    def test_independent_mailbox_audit_cannot_retrigger_writers(self):
+        from pathlib import Path
+        workflow = (Path(__file__).resolve().parents[1] /
+                    ".github/workflows/once-myhost-final-three-hold.yml").read_text()
+        self.assertIn("[myhost-final-qa-readonly]", workflow)
+        self.assertIn("[myhost-three-diagnose]", workflow)
+        self.assertIn("[myhost-final-three-verified-hold]", workflow)
+        audit = workflow.split("  final_mailbox_readback:\\n".replace("\\\\n", "\\n"))
+        self.assertEqual(len(audit), 2)
+        readonly_job = audit[1]
+        self.assertIn("len(active) != 506 or len(held) != 667", readonly_job)
+        self.assertIn("FINAL_READONLY=green", readonly_job)
+        for forbidden in ("LEADSCANNER_TRUSTED_HOLD", "LEADSCANNER_TRUSTED_REWRITE",
+                          "--mode cleanup", "--mode hold_revision",
+                          "uid_expunge_only(", "move_to_hold(", "create_drafts("):
+            self.assertNotIn(forbidden, readonly_job)
+
+
 if __name__ == "__main__":
     unittest.main()
