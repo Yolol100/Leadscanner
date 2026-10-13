@@ -318,8 +318,10 @@ def require_existing_drafts(
             raise RuntimeError(f"Existing draft identity mismatch for {lead_id}")
         if normalize_text(actual.get("To", "")) != normalize_text(expected.get("To", "")):
             raise RuntimeError(f"Existing draft recipient mismatch for {lead_id}")
-        if review_status_from_message(actual) != review_status_from_message(expected):
-            raise RuntimeError(f"Existing draft review status mismatch for {lead_id}")
+        # A user-authorized existing-only rewrite may also update the legacy
+        # review marker. The original UID, canonical lead ID and exact To must
+        # still be verified, and the replacement stays a Draft.
+        require_draft_flag(client, uid_for_message_id(client, existing[0]))
 
 
 def _rollback_appended_uid(client, folder: str, uid: bytes, lead_id: str, cause: Exception) -> None:
