@@ -1,0 +1,99 @@
+name: One-time independent historical 43 Draft and 1128-contact audit
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: leadscanner-historical-independent-readonly
+  cancel-in-progress: false
+
+jobs:
+  test:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      github.run_number == 1 &&
+      contains(github.event.head_commit.message, '[historical-independent-audit]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - run: python3 -m pip install --disable-pip-version-check -r requirements-cold.txt 'google-auth>=2,<3'
+      - name: Private-source-free synthetic regression suite
+        env:
+          PYTHONPATH: scripts
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q scripts
+          python3 -m unittest discover -s tests -p 'test_*.py' -q
+
+  inventory:
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    concurrency:
+      group: leadscanner-mijnhost-drafts
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - run: python3 -m pip install --disable-pip-version-check -r requirements-cold.txt 'google-auth>=2,<3'
+      - name: Full 1128-source read, current IMAP readonly inventory, 43 content/UID flags and quota
+        env:
+          PYTHONPATH: scripts
+          INSTANTLY_API_KEY: ${{ secrets.INSTANTLY_API_KEY }}
+          LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON || secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
+          OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
+        run: |
+          set -euo pipefail
+          python3 scripts/_once_historical_myhost_audit.py --mode inventory
+
+  batch:
+    needs: [test, inventory]
+    if: always() && needs.test.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        offset: [0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - run: python3 -m pip install --disable-pip-version-check -r requirements-cold.txt 'google-auth>=2,<3'
+      - name: Independently refresh max 100 sources with real websites and compare persisted Draft bytes
+        env:
+          PYTHONPATH: scripts
+          OFFSET: ${{ matrix.offset }}
+          INSTANTLY_API_KEY: ${{ secrets.INSTANTLY_API_KEY }}
+          LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON || secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
+          OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
+        run: |
+          set -euo pipefail
+          python3 scripts/_once_historical_myhost_audit.py --mode batch --offset "$OFFSET"
