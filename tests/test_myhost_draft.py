@@ -85,6 +85,51 @@ class FakeIMAP:
 
 
 class DraftTests(unittest.TestCase):
+    def test_backup_with_redraft_in_name_is_not_the_real_drafts_folder(self):
+        from myhost_draft import find_drafts_folder
+        class Folders:
+            def list(self):
+                return "OK", [
+                    b'(\HasNoChildren) "/" "Leadscanner_Originals_20261013_Before509Redraft"',
+                    b'(\HasNoChildren \Drafts) "/" "Concepten"',
+                ]
+        with patch.dict(os.environ, {"OUTREACH_DRAFT_FOLDER": ""}):
+            self.assertEqual(find_drafts_folder(Folders()), "Concepten")
+
+    def test_drafts_special_use_flag_has_priority_even_for_custom_name(self):
+        from myhost_draft import find_drafts_folder
+        class Folders:
+            def list(self):
+                return "OK", [
+                    b'(\HasNoChildren) "/" "INBOX.Drafts"',
+                    b'(\HasNoChildren \Drafts) "/" "INBOX/Compositions"',
+                    b'(\HasNoChildren) "/" "Leadscanner_Originals_20261013_Before509Redraft"',
+                ]
+        with patch.dict(os.environ, {"OUTREACH_DRAFT_FOLDER": ""}):
+            self.assertEqual(find_drafts_folder(Folders()), "INBOX/Compositions")
+
+    def test_ambiguous_draft_folders_fail_closed(self):
+        from myhost_draft import find_drafts_folder
+        class Folders:
+            def list(self):
+                return "OK", [
+                    b'(\HasNoChildren) "/" "Drafts"',
+                    b'(\HasNoChildren) "/" "Concepten"',
+                ]
+        with patch.dict(os.environ, {"OUTREACH_DRAFT_FOLDER": ""}):
+            with self.assertRaisesRegex(RuntimeError, "ambiguous"):
+                find_drafts_folder(Folders())
+
+    def test_manual_drafts_setting_cannot_select_recovery_folder(self):
+        from myhost_draft import find_drafts_folder
+        with patch.dict(os.environ, {
+            "OUTREACH_DRAFT_FOLDER": "Leadscanner_Originals_20261013_Before509Redraft"
+        }):
+            with self.assertRaisesRegex(RuntimeError, "recovery_folder"):
+                find_drafts_folder(FakeIMAP())
+        with patch.dict(os.environ, {"OUTREACH_DRAFT_FOLDER": "INBOX.Concepten"}):
+            self.assertEqual(find_drafts_folder(FakeIMAP()), "INBOX.Concepten")
+
     def row(self, status="review_draft", basis="review_required"):
         return {
             "lead_id": "growth-0123456789abcdefabcd",

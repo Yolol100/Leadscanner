@@ -234,26 +234,45 @@ def connect_imap():
 
 
 def find_drafts_folder(client) -> str:
+    """Never mistake Leadscanner recovery/backups for real Drafts.
+
+    Prefer the RFC 6154 IMAP special-use Drafts flag (even on a custom name).
+    If absent, accept exactly one Drafts/Concepten folder, not substring
+    matches such as 'Before509Redraft'.
+    """
     preferred = os.getenv("OUTREACH_DRAFT_FOLDER", "").strip()
     if preferred:
+        if any(part.startswith("leadscanner_") for part in
+               preferred.casefold().replace("/", ".").split(".")):
+            raise RuntimeError("configured_drafts_folder_is_recovery_folder")
         return preferred
 
     status, rows = client.list()
     if status != "OK":
-        raise RuntimeError("Could not list IMAP folders")
+        raise RuntimeError("imap_folder_list_failed")
 
-    choices: list[str] = []
+    special = []
+    named = []
     for raw in rows or []:
-        text = raw.decode("utf-8", errors="replace")
-        match = re.search(r'"([^"\\]*(?:\\.[^"\\]*)*)"\s*$', text)
-        folder = match.group(1).replace('\\\"', '"') if match else text.split()[-1].strip('"')
-        choices.append(folder)
+        entry = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else str(raw)
+        parts = entry.rsplit('"', 2)
+        folder = parts[-2] if len(parts) >= 3 else entry.split()[-1].strip('"')
+        lowered = folder.casefold()
+        if any(part.startswith("leadscanner_") for part in
+               lowered.replace("/", ".").split(".")):
+            continue
+        flags = entry.split(")", 1)[0].casefold()
+        if "\\drafts" in flags:
+            special.append(folder)
+        elif lowered.replace("/", ".").split(".")[-1] in (
+            "draft", "drafts", "concept", "concepten"
+        ):
+            named.append(folder)
 
-    for folder in choices:
-        low = folder.casefold()
-        if "draft" in low or "concept" in low:
-            return folder
-    raise RuntimeError("No Drafts/Concepten IMAP folder found")
+    matches = list(dict.fromkeys(special if special else named))
+    if len(matches) != 1:
+        raise RuntimeError("real_drafts_folder_missing_or_ambiguous")
+    return matches[0]
 
 
 def select_folder(client, folder: str, *, readonly: bool = True) -> None:
