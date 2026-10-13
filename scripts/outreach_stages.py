@@ -198,6 +198,31 @@ def detect_language(candidate: dict, observation: str) -> str:
     return "unknown"
 
 
+def copy_quality_problems(observation: str, action: str) -> list[str]:
+    """Fail closed on SEO titles and canned value claims, before any Draft."""
+    reasons = []
+    observed = _text(observation)
+    proposal = _text(action)
+    # A web page title, breadcrumb or navigation label is not a business
+    # observation, even if it appears on the company's own official website.
+    seo_segments = re.split(r"\\s+(?:-|–|—|\\|)\\s+", observed)
+    if len(seo_segments) >= 2 and len(observed.split()) <= 16 and not re.search(r"[.!?]", observed):
+        reasons.append("page_title_is_not_a_business_observation")
+    if len(observed.split()) < 9:
+        reasons.append("observation_lacks_usable_context")
+    # Existing auto-proposals such as 'een korte voorbeeldvariant voor de
+    # reserveringsroute' are promises without a verified improvement. They
+    # can no longer pass as actionable, ready-to-review content.
+    vague = re.search(
+        r"\\b(?:voorbeeldvariant|voorbeeldschets|websitebezoekersroute|"
+        r"short example|reservation flow|booking flow|visitor journeys)\\b",
+        normalize_text(proposal),
+    )
+    if vague or len(proposal.split()) < 8:
+        reasons.append("specific_website_improvement_not_verified")
+    return reasons
+
+
 def evidence_is_usable(item: dict) -> bool:
     if not isinstance(item, dict):
         return False
@@ -206,6 +231,9 @@ def evidence_is_usable(item: dict) -> bool:
     text = re.sub(r"\s+", " ", _text(item.get("text"))).strip()
     words = text.split()
     if not 6 <= len(words) <= 40:
+        return False
+    if "page_title_is_not_a_business_observation" in copy_quality_problems(
+        text, "een concrete verbetering voor de doelgroep en de pagina"):
         return False
     low = normalize_text(text)
     if any(term in low for term in BLOCKED_EVIDENCE_TERMS):
@@ -566,6 +594,8 @@ def draft_for_review(
         return "", ""
     if any(markup in observation + action for markup in ("{{", "}}", "{%", "%}", "\x00")):
         return "", ""
+    if copy_quality_problems(observation, action):
+        return "", ""
     try:
         source_domain = normalize_domain((findings or [{}])[0].get("source_url"))
         selected = review_findings(findings, source_domain)
@@ -595,6 +625,18 @@ def validate_mail(candidate: dict, subject: str, body: str) -> list[str]:
     reasons: list[str] = []
     subject_words = subject.split()
     body_words = body.split()
+
+    reasons.extend(copy_quality_problems(
+        _text(candidate.get("verified_observation")),
+        _text(candidate.get("value_first_action")),
+    ))
+    if (
+        "Op jullie website viel me dit detail op:" in body
+        or "I noticed one detail on your website:" in body
+        or "Dat is vrijblijvend." in body
+        or "Zal ik dat voorbeeld per mail sturen?" in body
+    ):
+        reasons.append("robotic_outreach_template_not_approved")
 
     if not subject or subject != subject.casefold():
         reasons.append("subject_must_be_lowercase")
@@ -679,8 +721,9 @@ def generate_one_mail(candidate: dict) -> dict:
     )
     reasons = validate_mail(candidate, subject, body) if subject and body else ["draft_quality_hold"]
     result.update({
-        "subject": subject,
-        "body": body,
+        # Never pass known weak copy downstream merely marked as hold.
+        "subject": subject if not reasons else None,
+        "body": body if not reasons else None,
         "copy_validation_status": "green" if not reasons else "hold",
         "copy_validation_reasons": reasons,
         "mail_status": "ready_for_human_review" if not reasons else "hold",
