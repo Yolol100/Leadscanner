@@ -43,38 +43,44 @@ from outreach_stages import (
 )
 
 BATCH_SIZE = 100
-# Private read-only evidence: run 38424781490, completed successfully.
-# Its 509-active / 664-held / 1173-union baseline proves the failed prior
-# write run did not change the inventory. Never bypass robots policy.
-# Fail closed if the live result differs before any UID COPY or EXPUNGE.
+# Confirmed by independent read-only IMAP source review run 38428608113.
+# Existing totals: 509 active, 664 recoverably held, union exactly 1173.
+# Window 500 contains 2 official-site robots blocks, 1 unverified public
+# business address and 1 stale draft copy. Window 1000 has 1 stale copy.
+# Preserve everyone else: fail closed on changed evidence or inventory.
 REVISION_CHECKPOINTS = {
     500: {"active_before": 509, "held_before": 664,
-          "checked": 62, "already_correct": 60, "researched": 60,
-          "ready_to_rewrite": 0, "hold_site_verification": 2,
-          "site_hold_hold_robots_policy": 2, "hold_reason": "site",
-          "expected_moves": 2, "active_after": 507, "held_after": 666},
-    1000: {"active_before": 507, "held_before": 666,
+          "checked": 62, "already_correct": 58, "researched": 60,
+          "ready_to_rewrite": 1, "hold_site_verification": 2,
+          "site_hold_hold_robots_policy": 2,
+          "hold_contact_not_currently_published": 1,
+          "hold_reasons": {"site": 2, "address": 1, "revision": 1},
+          "expected_moves": 4, "active_after": 505, "held_after": 668},
+    1000: {"active_before": 505, "held_before": 668,
            "checked": 65, "already_correct": 64, "researched": 65,
            "ready_to_rewrite": 1, "hold_site_verification": 0,
-           "site_hold_hold_robots_policy": 0, "hold_reason": "revision",
-           "expected_moves": 1, "active_after": 506, "held_after": 667},
+           "site_hold_hold_robots_policy": 0,
+           "hold_contact_not_currently_published": 0,
+           "hold_reasons": {"revision": 1},
+           "expected_moves": 1, "active_after": 504, "held_after": 669},
 }
 
 
 def _verify_revision_evidence(offset, window, counters, to_hold):
-    """Require exactly two robots-blocked sites or one draft-copy mismatch."""
+    """Allow only the exact five evidence-flagged existing drafts, no others."""
     expected = REVISION_CHECKPOINTS[offset]
-    allowed = {
+    fields = (
         "checked", "researched", "already_correct", "ready_to_rewrite",
         "hold_site_verification", "site_hold_hold_robots_policy",
-    }
+        "hold_contact_not_currently_published",
+    )
     if (len(window) != expected["checked"]
-            or any(counters[key] != expected[key] for key in allowed)
+            or any(counters[key] != expected[key] for key in fields)
             or any(value != 0 for key, value in counters.items()
-                   if key not in allowed)
+                   if key not in fields)
             or len(to_hold) != expected["expected_moves"]
-            or set(to_hold.values()) != {expected["hold_reason"]}):
-        raise RuntimeError("three_revision_evidence_drift")
+            or Counter(to_hold.values()) != Counter(expected["hold_reasons"])):
+        raise RuntimeError("five_draft_evidence_drift")
     return expected
 
 EXPECTED_TAGGED_DRAFTS = 1173
@@ -448,7 +454,7 @@ def run(offset: int, *, write: bool, cleanup: bool = False, hold_revision: bool 
                 counters["archived_for_recovery"] != expected_revision["expected_moves"]
                 or len(active_after) != expected_revision["active_after"]
                 or len(held_after) != expected_revision["held_after"]):
-                raise RuntimeError("three_revision_final_inventory_mismatch")
+                raise RuntimeError("five_draft_final_inventory_mismatch")
         return {
             "status": "green",
             "mode": "cleanup" if cleanup else ("rewrite" if write else "review"),
