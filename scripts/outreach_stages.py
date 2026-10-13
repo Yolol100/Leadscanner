@@ -711,6 +711,17 @@ def generate_one_mail(candidate: dict) -> dict:
         result["copy_validation_reasons"] = ["unverified_business_contact"]
         return result
 
+    # Keep weak or obviously machine-templated marketing out of the Drafts
+    # folder entirely. A real published contact is not sufficient evidence
+    # that an offer is interesting, specific or worth sending.
+    copy_problems = copy_quality_problems(
+        _text(candidate.get("verified_observation")),
+        _text(candidate.get("value_first_action")),
+    )
+    if copy_problems:
+        result["copy_validation_reasons"] = copy_problems
+        return result
+
     subject, body = draft_for_review(
         _text(candidate.get("verified_observation")),
         _text(candidate.get("value_first_action")),
