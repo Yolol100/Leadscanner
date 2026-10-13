@@ -616,8 +616,9 @@ def body_for(candidate: dict) -> str:
         greeting = f"Beste {first}," if first else "Beste,"
         return (
             f"{greeting}\n\n"
-            f"Ik heb jullie {kind} bekeken. Daarbij vielen me deze "
-            f"{len(findings)} mogelijkheden op om het voor bezoekers duidelijker te maken:\n\n"
+            f"Ik heb jullie {kind} bekeken en geanalyseerd. "
+            f"Dit zijn {len(findings)} concrete punten die me opvielen, "
+            "met een verbetervoorstel bij ieder punt:\n\n"
             f"{points}\n\n"
             f"Ik kan vrijblijvend {action} uitwerken en per mail sturen. "
             "Zou je zo'n voorbeeld willen ontvangen?\n\n"
@@ -627,8 +628,9 @@ def body_for(candidate: dict) -> str:
     greeting = f"Dear {first}," if first else "Dear team,"
     return (
         f"{greeting}\n\n"
-        f"I reviewed your {kind} and noticed these {len(findings)} "
-        "opportunities to make the experience clearer for visitors:\n\n"
+        f"I reviewed and analysed your {kind}. "
+        f"These {len(findings)} concrete points stood out, "
+        "with a practical improvement idea for each:\n\n"
         f"{points}\n\n"
         f"I can prepare {action} free of charge and email it over. "
         "Would you like to see an example?\n\n"
