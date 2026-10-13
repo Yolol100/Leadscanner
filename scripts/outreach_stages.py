@@ -529,26 +529,37 @@ def choose_value_actions(payload: dict) -> dict:
     }
 
 
+def site_kind(candidate: dict, language: str) -> str:
+    """Never infer a webshop just because a restaurant takes online orders."""
+    kind = _text(candidate.get("website_type")).casefold()
+    if kind in {"webshop", "online_store", "ecommerce"}:
+        return "webshop" if language == "nl" else "online store"
+    return "website"
+
+
 def subject_for(candidate: dict) -> str:
-    signal = _text(candidate.get("signal_type"))
     language = _text(candidate.get("language"))
-    if language not in {"nl", "en"}:
+    findings = candidate.get("selected_findings") or []
+    if language not in {"nl", "en"} or not MIN_MAIL_IMPROVEMENTS <= len(findings) <= MAX_MAIL_IMPROVEMENTS:
         return ""
-    if len(candidate.get("selected_findings") or []) > 1:
-        return {"nl": "ideeën op basis van jullie website", "en": "ideas from your website"}[language]
-    return SUBJECTS.get(signal, {"nl": "idee voor jullie website", "en": "idea for your website"})[language].casefold()
+    count = len(findings)
+    kind = site_kind(candidate, language)
+    return (
+        f"{count} verbeterideeën voor jullie {kind}"
+        if language == "nl" else f"{count} practical ideas for your {kind}"
+    ).casefold()
 
 
-def finding_excerpt(finding: dict, *, max_words: int = 11) -> str:
-    """A short, literal prefix of the cited observation; not a claimed defect."""
+def finding_excerpt(finding: dict, *, max_words: int | None = None) -> str:
+    """Preserve actual source text, rather than an awkward cut-off SEO quote."""
     observation = re.sub(r"\s+", " ", _text(finding.get("observation"))).strip()
-    words = observation.replace("?", "").split()
-    return " ".join(words[:max_words]) + ("…" if len(words) > max_words else "")
+    if max_words is not None and len(observation.split()) > max_words:
+        return " ".join(observation.split()[:max_words]) + "…"
+    return observation
 
 
 def safe_recipient_first_name(value: object) -> str:
-    # Only a directly associated, publicly stated person's first name; never
-    # address a generic mailbox as an unconfirmed owner.
+    # Only a directly associated publicly stated name; never invent an owner.
     name = _text(value)
     if (
         not 3 <= len(name) <= 72
@@ -560,50 +571,67 @@ def safe_recipient_first_name(value: object) -> str:
     return first if len(first) >= 2 else ""
 
 
-def body_for(candidate: dict) -> str:
-    language = _text(candidate.get("language"))
-    observation = _text(candidate.get("verified_observation"))
-    action = _text(candidate.get("value_first_action"))
-    findings = candidate.get("selected_findings") or []
-    first = safe_recipient_first_name(candidate.get("contact_person_name"))
-    greeting_nl = f"Hoi {first}," if first else "Hoi,"
-    greeting_en = f"Hi {first}," if first else "Hi,"
-    if len(findings) > 1:
-        lines = "\n".join("- " + finding_excerpt(item) for item in findings[:MAX_DRAFT_HIGHLIGHTS])
-        if language == "nl":
-            return (
-                f"{greeting_nl}\n\n"
-                "Op jullie website vielen me deze concrete punten op:\n"
-                f"{lines}\n\n"
-                f"Ik kan {action} uitwerken. Zal ik een kort voorbeeld opsturen?\n\n"
-                "Geen interesse? Laat het gerust weten; dan stop ik.\n\n"
-                "Groet,\nAndrew Baeten"
-            ).replace("Geen interesse?", "Geen interesse:")
-        return (
-            f"{greeting_en}\n\n"
-            "I noticed these details on your website:\n"
-            f"{lines}\n\n"
-            f"I can prepare {action}. May I share a short example?\n\n"
-            "Not relevant? Just reply no and I'll stop.\n\n"
-            "Best,\nAndrew Baeten"
-        ).replace("Not relevant?", "Not relevant:")
+def improvement_line(finding: dict, language: str, number: int) -> str:
+    """Explicit observation + honest proposed fix; no unsupported defect."""
+    category = _text(finding.get("category"))
+    expected = IMPROVEMENT_IDEAS.get(category, {}).get(language)
+    if expected is None:
+        return ""
+    label, suggestion = expected
+    if (finding.get("topic_label") != label
+            or finding.get("suggested_improvement") != suggestion
+            or finding.get("source_type") != "official_site"):
+        return ""
+    observed = finding_excerpt(finding).rstrip(" .")
+    if not observed or looks_like_page_title(observed):
+        return ""
     if language == "nl":
+        return f"{number}. {label}: {observed}.\n   Verbeteridee: {suggestion}."
+    return f"{number}. {label}: {observed}.\n   Suggested improvement: {suggestion}."
+
+
+def body_for(candidate: dict) -> str:
+    """A Dutch/English draft with 3–6 independently grounded improvements."""
+    language = _text(candidate.get("language"))
+    findings = candidate.get("selected_findings") or []
+    action = _text(candidate.get("value_first_action"))
+    if (
+        language not in {"nl", "en"}
+        or not MIN_MAIL_IMPROVEMENTS <= len(findings) <= MAX_MAIL_IMPROVEMENTS
+        or not action
+        or len({_text(f.get("category")) for f in findings if isinstance(f, dict)}) != len(findings)
+    ):
+        return ""
+    lines = [improvement_line(f, language, i) for i, f in enumerate(findings, 1)]
+    if any(not line for line in lines):
+        return ""
+    points = "\n".join(lines)
+    first = safe_recipient_first_name(candidate.get("contact_person_name"))
+    kind = site_kind(candidate, language)
+    if language == "nl":
+        greeting = f"Beste {first}," if first else "Beste,"
         return (
-            f"{greeting_nl}\n\n"
-            f"Op jullie website viel me dit detail op: {observation}\n\n"
-            f"Als je wilt, kan ik {action} maken. Dat is vrijblijvend.\n\n"
-            "Zal ik dat voorbeeld per mail sturen?\n\n"
-            "Geen interesse, laat het gerust weten; dan stop ik.\n\n"
-            "Groet,\nAndrew Baeten"
+            f"{greeting}\n\n"
+            f"Ik heb jullie {kind} bekeken. Daarbij vielen me deze "
+            f"{len(findings)} mogelijkheden op om het voor bezoekers duidelijker te maken:\n\n"
+            f"{points}\n\n"
+            f"Ik kan vrijblijvend {action} uitwerken en per mail sturen. "
+            "Zou je zo'n voorbeeld willen ontvangen?\n\n"
+            "Als je geen interesse hebt, hoef je niet te reageren.\n\n"
+            "Met vriendelijke groeten,\nAndrew"
         )
+    greeting = f"Dear {first}," if first else "Dear team,"
     return (
-        f"{greeting_en}\n\n"
-        f"I noticed one detail on your website: {observation}\n\n"
-        f"If useful, I can prepare {action} with no obligation.\n\n"
-        "Would you like me to email it to you?\n\n"
-        "If it isn't relevant, just reply 'no' and I'll stop.\n\n"
-        "Best,\nAndrew Baeten"
+        f"{greeting}\n\n"
+        f"I reviewed your {kind} and noticed these {len(findings)} "
+        "opportunities to make the experience clearer for visitors:\n\n"
+        f"{points}\n\n"
+        f"I can prepare {action} free of charge and email it over. "
+        "Would you like to see an example?\n\n"
+        "If you're not interested, there's no need to reply.\n\n"
+        "Kind regards,\nAndrew"
     )
+
 
 def review_findings(findings: object, domain: object) -> list[dict]:
     """Return verified, ordered first-party findings; reject unsafe review data.
