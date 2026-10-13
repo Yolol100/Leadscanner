@@ -1,4 +1,4 @@
-name: One-off 509 existing Drafts 3-6 verified site improvements (50 each)
+name: One-off 509 existing Drafts 2-3 verified site issues (50 each)
 on:
   push:
     branches: [main]
