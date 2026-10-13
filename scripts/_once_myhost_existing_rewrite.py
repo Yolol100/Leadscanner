@@ -43,26 +43,37 @@ from outreach_stages import (
 )
 
 BATCH_SIZE = 100
-# Fixed, anonymous evidence from run 38410356197. This one-shot continuation
-# must never select a different cohort or reuse another run's mailbox state.
+# Private read-only evidence: run 38424781490, completed successfully.
+# Its 509-active / 664-held / 1173-union baseline proves the failed prior
+# write run did not change the inventory. Never bypass robots policy.
+# Fail closed if the live result differs before any UID COPY or EXPUNGE.
 REVISION_CHECKPOINTS = {
     500: {"active_before": 509, "held_before": 664,
-          "checked": 62, "already_correct": 60, "ready_to_rewrite": 2,
-          "active_after": 507, "held_after": 666},
+          "checked": 62, "already_correct": 60, "researched": 60,
+          "ready_to_rewrite": 0, "hold_site_verification": 2,
+          "site_hold_hold_robots_policy": 2, "hold_reason": "site",
+          "expected_moves": 2, "active_after": 507, "held_after": 666},
     1000: {"active_before": 507, "held_before": 666,
-           "checked": 65, "already_correct": 64, "ready_to_rewrite": 1,
-           "active_after": 506, "held_after": 667},
+           "checked": 65, "already_correct": 64, "researched": 65,
+           "ready_to_rewrite": 1, "hold_site_verification": 0,
+           "site_hold_hold_robots_policy": 0, "hold_reason": "revision",
+           "expected_moves": 1, "active_after": 506, "held_after": 667},
 }
 
 
 def _verify_revision_evidence(offset, window, counters, to_hold):
-    """Require exactly the previously observed 3 stale copies, no new failures."""
+    """Require exactly two robots-blocked sites or one draft-copy mismatch."""
     expected = REVISION_CHECKPOINTS[offset]
+    allowed = {
+        "checked", "researched", "already_correct", "ready_to_rewrite",
+        "hold_site_verification", "site_hold_hold_robots_policy",
+    }
     if (len(window) != expected["checked"]
-            or counters["already_correct"] != expected["already_correct"]
-            or counters["ready_to_rewrite"] != expected["ready_to_rewrite"]
-            or len(to_hold) != expected["ready_to_rewrite"]
-            or any(reason != "revision" for reason in to_hold.values())):
+            or any(counters[key] != expected[key] for key in allowed)
+            or any(value != 0 for key, value in counters.items()
+                   if key not in allowed)
+            or len(to_hold) != expected["expected_moves"]
+            or set(to_hold.values()) != {expected["hold_reason"]}):
         raise RuntimeError("three_revision_evidence_drift")
     return expected
 
@@ -434,7 +445,7 @@ def run(offset: int, *, write: bool, cleanup: bool = False, hold_revision: bool 
             counters["active_after"] = len(active_after)
             counters["archived_total_after"] = len(held_after)
             if expected_revision is not None and (
-                counters["archived_for_recovery"] != expected_revision["ready_to_rewrite"]
+                counters["archived_for_recovery"] != expected_revision["expected_moves"]
                 or len(active_after) != expected_revision["active_after"]
                 or len(held_after) != expected_revision["held_after"]):
                 raise RuntimeError("three_revision_final_inventory_mismatch")
