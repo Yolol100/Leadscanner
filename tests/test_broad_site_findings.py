@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import patch
 
 from cold_stages import broad_research_links, parse_html
-from outreach_stages import select_one_reason, value_action_for, body_for, validate_mail, draft_for_review
+from outreach_stages import select_one_reason, value_action_for, body_for, validate_mail, draft_for_review, subject_for
 
 
 def item(text, path):
@@ -57,7 +57,7 @@ class BroadFindingsTests(unittest.TestCase):
         self.assertEqual(MAX_DRAFT_HIGHLIGHTS, 6)
         self.assertTrue(all(finding_excerpt(f) in mail for f in findings))
         self.assertEqual(len(findings), 5)
-        self.assertNotIn("review_findings_missing_or_unverified", validate_mail(valued, "ideeën op basis van jullie website", mail))
+        self.assertNotIn("review_findings_missing_or_unverified", validate_mail(valued, subject_for(valued), mail))
         self.assertLessEqual(len(mail.split()), 320)
         subject, draft = draft_for_review(
             selected["verified_observation"], valued["value_first_action"],
@@ -91,7 +91,7 @@ class BroadFindingsTests(unittest.TestCase):
             finding_excerpt(f) in mail for f in selected["selected_findings"]
         ))
         self.assertEqual(
-            validate_mail(valued, "ideeën op basis van jullie website", mail), []
+            validate_mail(valued, subject_for(valued), mail), []
         )
 
     def test_portfolio_is_not_promoted_by_irrelevant_process_context(self):
