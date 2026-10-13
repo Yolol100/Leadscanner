@@ -16,7 +16,9 @@ from urllib.parse import urlparse
 from cold_stages import normalize_domain
 
 MAX_CANDIDATES = 100
-MAX_BODY_WORDS = 155
+MAX_BODY_WORDS = 320
+MIN_MAIL_IMPROVEMENTS = 3
+MAX_MAIL_IMPROVEMENTS = 6
 MAX_SUBJECT_WORDS = 8
 MAX_DRAFT_HIGHLIGHTS = 6  # Include every verified finding, never pad weak evidence.
 
@@ -144,6 +146,73 @@ SUBJECTS = {
 }
 
 
+# Proposals, not claims of existing defects: an official-site observation must
+# accompany each proposal. When fewer than 3 independent source-backed routes
+# exist, the company stays on hold. Never pad with page titles or generic copy.
+IMPROVEMENT_IDEAS = {
+    "appointment": {
+        "nl": ("Afspraken", "de keuze voor het soort afspraak en de vervolgstappen direct bij het formulier uitleggen"),
+        "en": ("Appointments", "explain appointment types and the next steps alongside the form"),
+    },
+    "quote_request": {
+        "nl": ("Offerte aanvragen", "de benodigde informatie en de volgende stap al bij de aanvraag tonen"),
+        "en": ("Quote requests", "show required details and next steps by the request form"),
+    },
+    "reservation": {
+        "nl": ("Reserveren", "keuze van tijdstip, groepsgrootte en bevestiging bij de reserveeractie verduidelijken"),
+        "en": ("Reservations", "clarify times, party size and confirmation next to the reservation action"),
+    },
+    "ordering": {
+        "nl": ("Bestellen", "bezorging en afhalen eerder als duidelijke keuzestappen tonen"),
+        "en": ("Ordering", "make delivery and collection clearer as separate steps"),
+    },
+    "delivery": {
+        "nl": ("Bezorging en afhalen", "bezorgmogelijkheden en afhaalafspraken in één overzicht tonen"),
+        "en": ("Delivery and collection", "put delivery and collection options in one clear overview"),
+    },
+    "returns": {
+        "nl": ("Retourneren", "de retourstappen en bijbehorende voorwaarden kort bij elkaar zetten"),
+        "en": ("Returns", "bring the return steps and conditions into a concise overview"),
+    },
+    "product_information": {
+        "nl": ("Productinformatie", "belangrijkste productverschillen direct vergelijkbaar maken"),
+        "en": ("Product information", "make the key differences between products easy to compare"),
+    },
+    "support": {
+        "nl": ("Veelgestelde vragen", "vragen per onderwerp bundelen met duidelijke vervolglinks"),
+        "en": ("Help and FAQs", "group questions by topic with clear next links"),
+    },
+    "contact": {
+        "nl": ("Contact", "de contactkeuzes en de gewenste vervolgstap op één plek tonen"),
+        "en": ("Contact", "present contact options and the next step together"),
+    },
+    "services": {
+        "nl": ("Diensten", "een kort keuzeoverzicht toevoegen dat bezoekers naar de juiste dienst leidt"),
+        "en": ("Services", "add a short choice guide that leads visitors to the right service"),
+    },
+    "portfolio": {
+        "nl": ("Projecten", "de voorbeelden per soort project makkelijker vindbaar maken"),
+        "en": ("Projects", "make examples easier to find by project type"),
+    },
+    "navigation": {
+        "nl": ("Navigatie", "de meest gebruikte zoek- en filterroutes bij elkaar presenteren"),
+        "en": ("Navigation", "present the main search and filtering options together"),
+    },
+}
+
+
+def looks_like_page_title(text: str) -> bool:
+    """Page titles/breadcrumbs are not researched UX findings."""
+    observed = re.sub(r"\s+", " ", _text(text)).strip()
+    parts = re.split(r"\s+[-–—|]\s+", observed)
+    return (
+        len(parts) >= 2
+        and len(observed.split()) <= 17
+        and all(len(part.split()) <= 7 for part in parts)
+        and not re.search(r"[.!?]", observed)
+    )
+
+
 def _text(value: object) -> str:
     return str(value or "").strip()
 
@@ -206,6 +275,8 @@ def evidence_is_usable(item: dict) -> bool:
     text = re.sub(r"\s+", " ", _text(item.get("text"))).strip()
     words = text.split()
     if not 6 <= len(words) <= 40:
+        return False
+    if looks_like_page_title(text):
         return False
     low = normalize_text(text)
     if any(term in low for term in BLOCKED_EVIDENCE_TERMS):
@@ -318,7 +389,7 @@ def select_one_reason(candidate: dict) -> dict:
         score, category = -entry[0], entry[3]["signal_type"]
         # Repeating one website journey is not six distinct opportunities.
         # Do not pad strong observations with unrelated, weak copy.
-        if category_counts.get(category, 0) >= 2:
+        if category_counts.get(category, 0) >= 1:
             continue
         if category == "other" and other_count >= 1:
             continue
@@ -347,6 +418,11 @@ def select_one_reason(candidate: dict) -> dict:
             "source_type": "official_site",
             "page_type": _text(item.get("page_type")) or "detail",
         })
+    result["selected_findings"] = findings
+    eligible_categories = [f["category"] for f in findings if f["category"] in IMPROVEMENT_IDEAS]
+    if len(eligible_categories) < MIN_MAIL_IMPROVEMENTS:
+        result["outreach_hold_reason"] = "fewer_than_three_distinct_verified_improvements"
+        return result
     top = findings[0]
     result.update({
         "outreach_status": "ready",
@@ -376,12 +452,13 @@ def select_reasons(payload: dict) -> dict:
         "candidates": results,
         "handoff": {
             "next": "value_first_action",
-            "rule": "exactly_one_first_party_reason_or_hold",
+            "rule": "three_to_six_distinct_first_party_improvements_or_hold",
         },
     }
 
 
 def value_action_for(candidate: dict) -> dict:
+    """Prepare three to six distinct, traceable improvement ideas or hold."""
     result = dict(candidate)
     result.update({
         "value_action_status": "hold",
@@ -391,33 +468,51 @@ def value_action_for(candidate: dict) -> dict:
     })
     if candidate.get("outreach_status") != "ready":
         return result
-
     language = _text(candidate.get("language"))
     if language not in {"nl", "en"}:
         result["value_action_hold_reason"] = "language_not_verified"
         return result
-    findings = candidate.get("selected_findings") or []
-    signal = _text(candidate.get("signal_type"))
-    match = next((entry for entry in ALL_SIGNALS if entry[0] == signal), None)
-    labels = match[3] if match else OTHER_LABELS
-    if len(findings) > 1:
-        action = ("een korte voorbeeldschets voor de belangrijkste bezoekersroutes"
-                  if language == "nl" else "a short example of the main visitor journeys")
-    elif language == "nl":
-        action = f"een korte voorbeeldvariant voor de {labels['nl']}"
-    else:
-        label = labels["en"]
-        article = "an" if label[:1].lower() in "aeiou" else "a"
-        action = f"{article} short example for the {label}"
-
+    domain = normalize_domain(candidate.get("official_domain"))
+    selected = []
+    seen_categories = set()
+    for raw in candidate.get("selected_findings") or []:
+        if not isinstance(raw, dict):
+            continue
+        category = _text(raw.get("category"))
+        idea = IMPROVEMENT_IDEAS.get(category, {}).get(language)
+        if (
+            not idea or category in seen_categories
+            or raw.get("source_type") != "official_site"
+            or not domain or normalize_domain(raw.get("source_url")) != domain
+            or not _text(raw.get("observation")) or looks_like_page_title(_text(raw.get("observation")))
+        ):
+            continue
+        selected.append({
+            **raw, "topic_label": idea[0], "suggested_improvement": idea[1],
+        })
+        seen_categories.add(category)
+    if not MIN_MAIL_IMPROVEMENTS <= len(selected) <= MAX_MAIL_IMPROVEMENTS:
+        result["value_action_hold_reason"] = "fewer_than_three_distinct_verified_improvements"
+        return result
+    action = (
+        "een nieuwe voorbeeldopzet van een van deze onderdelen"
+        if language == "nl"
+        else "a redesigned example of one of these sections"
+    )
     result.update({
+        "selected_findings": selected,
+        "verified_observation": selected[0]["observation"],
+        "verified_observation_source_url": selected[0]["source_url"],
+        "verified_observation_source_type": "official_site",
+        "signal_type": selected[0]["category"],
         "value_action_status": "proposed",
         "value_action_type": "website_example",
         "value_first_action": action,
-        "value_action_evidence_url": _text(candidate.get("verified_observation_source_url")),
+        "value_action_evidence_url": selected[0]["source_url"],
         "value_action_hold_reason": None,
     })
     return result
+
 
 def choose_value_actions(payload: dict) -> dict:
     candidates = payload.get("candidates") or []
@@ -438,26 +533,37 @@ def choose_value_actions(payload: dict) -> dict:
     }
 
 
+def site_kind(candidate: dict, language: str) -> str:
+    """Never infer a webshop just because a restaurant takes online orders."""
+    kind = _text(candidate.get("website_type")).casefold()
+    if kind in {"webshop", "online_store", "ecommerce"}:
+        return "webshop" if language == "nl" else "online store"
+    return "website"
+
+
 def subject_for(candidate: dict) -> str:
-    signal = _text(candidate.get("signal_type"))
     language = _text(candidate.get("language"))
-    if language not in {"nl", "en"}:
+    findings = candidate.get("selected_findings") or []
+    if language not in {"nl", "en"} or not MIN_MAIL_IMPROVEMENTS <= len(findings) <= MAX_MAIL_IMPROVEMENTS:
         return ""
-    if len(candidate.get("selected_findings") or []) > 1:
-        return {"nl": "ideeën op basis van jullie website", "en": "ideas from your website"}[language]
-    return SUBJECTS.get(signal, {"nl": "idee voor jullie website", "en": "idea for your website"})[language].casefold()
+    count = len(findings)
+    kind = site_kind(candidate, language)
+    return (
+        f"{count} verbeterideeën voor jullie {kind}"
+        if language == "nl" else f"{count} practical ideas for your {kind}"
+    ).casefold()
 
 
-def finding_excerpt(finding: dict, *, max_words: int = 11) -> str:
-    """A short, literal prefix of the cited observation; not a claimed defect."""
+def finding_excerpt(finding: dict, *, max_words: int | None = None) -> str:
+    """Preserve actual source text, rather than an awkward cut-off SEO quote."""
     observation = re.sub(r"\s+", " ", _text(finding.get("observation"))).strip()
-    words = observation.replace("?", "").split()
-    return " ".join(words[:max_words]) + ("…" if len(words) > max_words else "")
+    if max_words is not None and len(observation.split()) > max_words:
+        return " ".join(observation.split()[:max_words]) + "…"
+    return observation
 
 
 def safe_recipient_first_name(value: object) -> str:
-    # Only a directly associated, publicly stated person's first name; never
-    # address a generic mailbox as an unconfirmed owner.
+    # Only a directly associated publicly stated name; never invent an owner.
     name = _text(value)
     if (
         not 3 <= len(name) <= 72
@@ -469,50 +575,69 @@ def safe_recipient_first_name(value: object) -> str:
     return first if len(first) >= 2 else ""
 
 
-def body_for(candidate: dict) -> str:
-    language = _text(candidate.get("language"))
-    observation = _text(candidate.get("verified_observation"))
-    action = _text(candidate.get("value_first_action"))
-    findings = candidate.get("selected_findings") or []
-    first = safe_recipient_first_name(candidate.get("contact_person_name"))
-    greeting_nl = f"Hoi {first}," if first else "Hoi,"
-    greeting_en = f"Hi {first}," if first else "Hi,"
-    if len(findings) > 1:
-        lines = "\n".join("- " + finding_excerpt(item) for item in findings[:MAX_DRAFT_HIGHLIGHTS])
-        if language == "nl":
-            return (
-                f"{greeting_nl}\n\n"
-                "Op jullie website vielen me deze concrete punten op:\n"
-                f"{lines}\n\n"
-                f"Ik kan {action} uitwerken. Zal ik een kort voorbeeld opsturen?\n\n"
-                "Geen interesse? Laat het gerust weten; dan stop ik.\n\n"
-                "Groet,\nAndrew Baeten"
-            ).replace("Geen interesse?", "Geen interesse:")
-        return (
-            f"{greeting_en}\n\n"
-            "I noticed these details on your website:\n"
-            f"{lines}\n\n"
-            f"I can prepare {action}. May I share a short example?\n\n"
-            "Not relevant? Just reply no and I'll stop.\n\n"
-            "Best,\nAndrew Baeten"
-        ).replace("Not relevant?", "Not relevant:")
+def improvement_line(finding: dict, language: str, number: int) -> str:
+    """Explicit observation + honest proposed fix; no unsupported defect."""
+    category = _text(finding.get("category"))
+    expected = IMPROVEMENT_IDEAS.get(category, {}).get(language)
+    if expected is None:
+        return ""
+    label, suggestion = expected
+    if (finding.get("topic_label") != label
+            or finding.get("suggested_improvement") != suggestion
+            or finding.get("source_type") != "official_site"):
+        return ""
+    observed = finding_excerpt(finding).rstrip(" .")
+    if not observed or looks_like_page_title(observed):
+        return ""
     if language == "nl":
+        return f"{number}. {label}: {observed}.\n   Verbeteridee: {suggestion}."
+    return f"{number}. {label}: {observed}.\n   Suggested improvement: {suggestion}."
+
+
+def body_for(candidate: dict) -> str:
+    """A Dutch/English draft with 3–6 independently grounded improvements."""
+    language = _text(candidate.get("language"))
+    findings = candidate.get("selected_findings") or []
+    action = _text(candidate.get("value_first_action"))
+    if (
+        language not in {"nl", "en"}
+        or not MIN_MAIL_IMPROVEMENTS <= len(findings) <= MAX_MAIL_IMPROVEMENTS
+        or not action
+        or len({_text(f.get("category")) for f in findings if isinstance(f, dict)}) != len(findings)
+    ):
+        return ""
+    lines = [improvement_line(f, language, i) for i, f in enumerate(findings, 1)]
+    if any(not line for line in lines):
+        return ""
+    points = "\n".join(lines)
+    first = safe_recipient_first_name(candidate.get("contact_person_name"))
+    kind = site_kind(candidate, language)
+    if language == "nl":
+        greeting = f"Beste {first}," if first else "Beste,"
         return (
-            f"{greeting_nl}\n\n"
-            f"Op jullie website viel me dit detail op: {observation}\n\n"
-            f"Als je wilt, kan ik {action} maken. Dat is vrijblijvend.\n\n"
-            "Zal ik dat voorbeeld per mail sturen?\n\n"
-            "Geen interesse, laat het gerust weten; dan stop ik.\n\n"
-            "Groet,\nAndrew Baeten"
+            f"{greeting}\n\n"
+            f"Ik heb jullie {kind} bekeken en geanalyseerd. "
+            f"Dit zijn {len(findings)} concrete punten die me opvielen, "
+            "met een verbetervoorstel bij ieder punt:\n\n"
+            f"{points}\n\n"
+            f"Ik kan vrijblijvend {action} uitwerken en per mail sturen. "
+            "Zou je zo'n voorbeeld willen ontvangen?\n\n"
+            "Als je geen interesse hebt, hoef je niet te reageren.\n\n"
+            "Met vriendelijke groeten,\nAndrew"
         )
+    greeting = f"Dear {first}," if first else "Dear team,"
     return (
-        f"{greeting_en}\n\n"
-        f"I noticed one detail on your website: {observation}\n\n"
-        f"If useful, I can prepare {action} with no obligation.\n\n"
-        "Would you like me to email it to you?\n\n"
-        "If it isn't relevant, just reply 'no' and I'll stop.\n\n"
-        "Best,\nAndrew Baeten"
+        f"{greeting}\n\n"
+        f"I reviewed and analysed your {kind}. "
+        f"These {len(findings)} concrete points stood out, "
+        "with a practical improvement idea for each:\n\n"
+        f"{points}\n\n"
+        f"I can prepare {action} free of charge and email it over. "
+        "Would you like to see an example?\n\n"
+        "If you're not interested, there's no need to reply.\n\n"
+        "Kind regards,\nAndrew"
     )
+
 
 def review_findings(findings: object, domain: object) -> list[dict]:
     """Return verified, ordered first-party findings; reject unsafe review data.
@@ -556,6 +681,7 @@ def draft_for_review(
     observation: str, action: str, signal: str, language: str,
     findings: list[dict] | None = None,
     contact_person_name: str | None = None,
+    website_type: str | None = None,
 ) -> tuple[str, str]:
     """One shared, review-only email renderer for new and historical leads.
 
@@ -578,10 +704,11 @@ def draft_for_review(
         "language": language,
         "selected_findings": selected,
         "contact_person_name": contact_person_name,
+        "website_type": website_type,
     }
     subject, body = subject_for(candidate), body_for(candidate)
     # Website quotes may themselves contain questions; only our own CTA counts.
-    quoted_questions = 0 if len(selected) > 1 else observation.count("?")
+    quoted_questions = sum(finding_excerpt(item).count("?") for item in selected)
     if (
         not subject or not body or body.count("?") - quoted_questions != 1
         or len(body.split()) > MAX_BODY_WORDS
@@ -592,58 +719,77 @@ def draft_for_review(
 
 
 def validate_mail(candidate: dict, subject: str, body: str) -> list[str]:
+    """No green status for generic one-point or unsupported marketing mail."""
     reasons: list[str] = []
     subject_words = subject.split()
     body_words = body.split()
-
     if not subject or subject != subject.casefold():
         reasons.append("subject_must_be_lowercase")
+    if subject != subject_for(candidate):
+        reasons.append("subject_must_match_number_of_improvements")
     if len(subject_words) > MAX_SUBJECT_WORDS:
         reasons.append("subject_too_long")
     if "!" in subject or re.match(r"^(re|fwd):", subject, flags=re.I):
         reasons.append("subject_trick_or_exclamation_not_allowed")
     if len(body_words) > MAX_BODY_WORDS:
         reasons.append("body_too_long")
-    # A literal website observation may include its own question mark; only
-    # our call-to-action counts toward the single-question rule.
-    quote_questions = 0 if len(candidate.get("selected_findings") or []) > 1 else _text(candidate.get("verified_observation")).count("?")
-    if body.count("?") - quote_questions != 1:
-        reasons.append("exactly_one_question_cta_required")
-    if "Andrew Baeten" not in body or "Webactueel" in body:
-        reasons.append("andrew_baeten_sender_identity_required")
     try:
         findings = review_findings(candidate.get("selected_findings"), candidate.get("official_domain"))
     except (ValueError, TypeError):
         findings = []
         reasons.append("review_findings_missing_or_unverified")
-    if len(findings) > 1:
-        # The review queue and exact approval token retain every finding.
-        # A multi-point draft must quote every selected independently verified point.
-        if any(finding_excerpt(item) not in body for item in findings[:MAX_DRAFT_HIGHLIGHTS]):
-            reasons.append("review_findings_missing_or_unverified")
-    elif _text(candidate.get("verified_observation")) not in body:
-        reasons.append("verified_observation_missing_from_body")
+    if not MIN_MAIL_IMPROVEMENTS <= len(findings) <= MAX_MAIL_IMPROVEMENTS:
+        reasons.append("requires_three_to_six_sourced_improvements")
+    if len({_text(f.get("category")) for f in findings}) != len(findings):
+        reasons.append("duplicate_improvement_category")
+    lang = _text(candidate.get("language"))
+    for n, finding in enumerate(findings, 1):
+        line = improvement_line(finding, lang, n)
+        if not line or line not in body:
+            reasons.append("sourced_improvement_missing_or_unreviewed")
+            break
+    observed_questions = sum(finding_excerpt(finding).count("?") for finding in findings)
+    if body.count("?") - observed_questions != 1:
+        reasons.append("exactly_one_question_cta_required")
+    if not body.endswith((
+        "Met vriendelijke groeten,\nAndrew" if lang == "nl"
+        else "Kind regards,\nAndrew" if lang == "en" else ""
+    )) or not body.endswith("\nAndrew"):
+        reasons.append("verified_andrew_signature_required")
+    if not body.startswith("Beste") and lang == "nl":
+        reasons.append("dutch_greeting_required")
+    if not body.startswith("Dear") and lang == "en":
+        reasons.append("english_greeting_required")
+    if "Webactueel" in body:
+        reasons.append("unapproved_sender_brand")
     if _text(candidate.get("verified_observation_source_type")) != "official_site":
         reasons.append("observation_must_be_first_party")
     if _text(candidate.get("value_action_status")) != "proposed":
         reasons.append("value_action_must_be_proposed")
     if _text(candidate.get("value_first_action")) not in body:
         reasons.append("value_action_missing_from_body")
-
+    if (
+        "Als je geen interesse hebt, hoef je niet te reageren." not in body
+        if lang == "nl" else
+        "If you're not interested, there's no need to reply." not in body
+    ):
+        reasons.append("no_reply_needed_when_not_interested")
     low = normalize_text(body)
     forbidden = (
-        "meeting", "call boeken", "plan een gesprek", "schedule a call", "book a call",
-        "demo call", "roi", "return on investment", "garantie", "guarantee",
-        "omzet", "revenue", "conversie stijgt", "increase conversions",
+        "meeting", "call boeken", "plan een gesprek", "schedule a call",
+        "book a call", "demo call", "roi", "return on investment",
+        "garantie", "guarantee", "omzet", "revenue",
+        "conversie stijgt", "increase conversions",
         "ik heb alvast", "ik heb gemaakt", "i already made", "i have made",
+        "op jullie website viel me dit detail op", "i noticed one detail on your website",
     )
     if any(term in low for term in forbidden):
-        reasons.append("unsupported_or_high_friction_claim")
+        reasons.append("unsupported_or_robotic_marketing_claim")
     if re.search(r"(?:€|£|\$|\b\d+(?:[.,]\d+)?\s*%)", body):
         reasons.append("price_or_percentage_not_allowed")
     if _text(candidate.get("public_business_email")) and _text(candidate.get("public_business_email")) in body:
         reasons.append("recipient_email_must_not_appear_in_body")
-    return reasons
+    return list(dict.fromkeys(reasons))
 
 
 def generate_one_mail(candidate: dict) -> dict:
@@ -676,11 +822,12 @@ def generate_one_mail(candidate: dict) -> dict:
         _text(candidate.get("language")),
         candidate.get("selected_findings"),
         _text(candidate.get("contact_person_name")),
+        _text(candidate.get("website_type")),
     )
     reasons = validate_mail(candidate, subject, body) if subject and body else ["draft_quality_hold"]
     result.update({
-        "subject": subject,
-        "body": body,
+        "subject": subject if not reasons else None,
+        "body": body if not reasons else None,
         "copy_validation_status": "green" if not reasons else "hold",
         "copy_validation_reasons": reasons,
         "mail_status": "ready_for_human_review" if not reasons else "hold",
