@@ -1,7 +1,7 @@
 """One-off existing-only redraft: 509 old mijn.host Drafts, 50 per cohort.
 
 Always research the current first-party website; draft 2-3 confirmed defects
-points or quarantine the old unqualified Draft. Copy all original raw messages
+points without discarding weak originals. Copy original raw messages
 to a private rollback folder BEFORE any changes. No sends, no new lead IDs,
 no recipient changes and no raw PII or messages in public runner logs.
 """
@@ -169,7 +169,7 @@ def _research_window(window, sources, history, ordinary):
         }
         _, expected_msg = build_message(draft)
         if (len([line for line in body.splitlines()
-                 if line.lstrip().startswith(tuple(f"{n}. " for n in range(1, 7)))]) < 3
+                 if line.lstrip().startswith(tuple(f"{n}. " for n in range(1, 4)))]) < 2
                 or body.count("Verbeteridee:") + body.count("Suggested improvement:") < 2):
             decisions[lead] = ("hold", "insufficient_two_to_three_verified_issues", None)
             continue
@@ -366,6 +366,56 @@ def _run_window(offset, *, write=False):
         client.logout()
 
 
+def _preview(offset, count):
+    """Close the read-only IMAP snapshot before potentially slow web research.
+
+    Batches of 200 can take many minutes; holding IMAP across website I/O
+    risks server timeouts and a misleading generic failure after research.
+    """
+    if count not in {50, 100, 150, 200} or not (
+        0 <= offset < TOTAL_ACTIVE and offset % count == 0
+    ):
+        raise RuntimeError("invalid_readonly_preview_cohort_offset")
+    try:
+        client = connect_imap()
+    except Exception as exc:
+        raise RuntimeError("preview_imap_connect_failed") from exc
+    try:
+        try:
+            _drafts, active, held = _open_inventory(client, strict_initial=True)
+        except Exception as exc:
+            raise RuntimeError("preview_mailbox_inventory_failed") from exc
+    finally:
+        # IMAP is read-only here. A disconnect failure cannot invalidate
+        # an already verified snapshot or imply any message was modified.
+        try:
+            client.logout()
+        except Exception:
+            pass
+    cohort = active[offset:offset + count]
+    try:
+        sources, history, ordinary = _source_context()
+    except Exception as exc:
+        raise RuntimeError("preview_source_context_failed") from exc
+    try:
+        decisions = _research_window(cohort, sources, history, ordinary)
+    except Exception as exc:
+        if str(exc) in {"all_websites_failed_systemically",
+                        "site_copy_generation_batch_failed"}:
+            raise
+        raise RuntimeError("preview_research_decision_failed") from exc
+    counts = Counter()
+    for action, reason, _ in decisions.values():
+        counts["ready_for_rewrite" if action == "rewrite" else reason] += 1
+    return {"mode": "preview", "offset": offset,
+            "checked": len(cohort),
+            "counts": dict(sorted(counts.items())),
+            "active": len(active), "held": len(held),
+            "total": EXPECTED_TAGGED_DRAFTS,
+            "source_evidence_researched_as_available": True,
+            "emails_sent": 0, "mailbox_writes": False}
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=("preview", "backup", "rewrite"), required=True)
@@ -386,28 +436,7 @@ def main():
             if args.mode == "backup":
                 result = _backup_all()
             elif args.mode == "preview":
-                # Preview needs no backup; check the original stable 509 cohort.
-                client = connect_imap()
-                try:
-                    drafts, active, held = _open_inventory(client, strict_initial=True)
-                    if (args.count not in {50, 100, 150, 200} or
-                            not (0 <= args.offset < TOTAL_ACTIVE and args.offset % args.count == 0)):
-                        raise RuntimeError("invalid_readonly_preview_cohort_offset")
-                    cohort = active[args.offset:args.offset + args.count]
-                    sources, history, ordinary = _source_context()
-                    decisions = _research_window(cohort, sources, history, ordinary)
-                    counts = Counter()
-                    for action, reason, _ in decisions.values():
-                        counts["ready_for_rewrite" if action == "rewrite" else reason] += 1
-                    result = {"mode": "preview", "offset": args.offset,
-                              "checked": len(cohort),
-                              "counts": dict(sorted(counts.items())),
-                              "active": len(active), "held": len(held),
-                              "total": EXPECTED_TAGGED_DRAFTS,
-                              "source_evidence_researched_as_available": True,
-                              "emails_sent": 0, "mailbox_writes": False}
-                finally:
-                    client.logout()
+                result = _preview(args.offset, args.count)
             else:
                 if args.count != STEP:
                     raise RuntimeError("writers_must_remain_maximum_fifty_per_batch")
@@ -422,6 +451,10 @@ def main():
             "site_research_batch_failed",
             "site_copy_generation_batch_failed",
             "all_websites_failed_systemically",
+            "preview_imap_connect_failed",
+            "preview_mailbox_inventory_failed",
+            "preview_source_context_failed",
+            "preview_research_decision_failed",
         }:
             code = "unexpected_failure"
         print("MYHOST_REDRAFT50=red stage=" + args.mode
