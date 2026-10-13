@@ -1,0 +1,19 @@
+name: Emergency stop of unsafe 509 Draft continuation
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  cancel_current_mailbox_job:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      contains(github.event.head_commit.message, '[myhost-stop-509]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    concurrency:
+      group: leadscanner-mijnhost-drafts
+      cancel-in-progress: true
+    steps:
+      - name: Cancel preceding pending mailbox job, no inbox access
+        run: echo "STOP_509_EMERGENCY=green no_mailbox_credentials no_mailbox_writes"
