@@ -180,6 +180,53 @@ class Existing509RedraftTests(unittest.TestCase):
         self.assertEqual(result[target["lead_id"]][:2],
                          ("hold", "insufficient_three_to_six_facts"))
 
+    def test_unqualified_drafts_stay_active_without_move(self):
+        class FakeIMAP:
+            def logout(self):
+                pass
+        targets = [row(1)]
+        with patch.object(mod, "connect_imap", return_value=FakeIMAP()), \
+             patch.object(mod, "_eligible_window",
+                          return_value=("Drafts", targets, [], targets)), \
+             patch.object(mod, "_source_context", return_value=({}, {}, [])), \
+             patch.object(mod, "_research_window", return_value={
+                 targets[0]["lead_id"]: ("hold", "site_unverified", None),
+             }), \
+             patch.object(mod, "_same_backup", return_value=True), \
+             patch.object(mod, "_original_snapshot") as original, \
+             patch.object(mod, "_one_address", side_effect=[
+                 targets[0]["recipient"], mod.SENDER]), \
+             patch.object(mod, "require_uidplus"), \
+             patch.object(mod, "ensure_hold_folder") as mkdir, \
+             patch.object(mod, "move_to_hold") as mover, \
+             patch.object(mod, "create_drafts") as writer, \
+             patch.object(mod, "validate_hold_inventory",
+                          return_value=(targets, [row(i) for i in range(2, 666)])), \
+             patch.object(mod, "_backup_inventory", return_value=targets):
+            report = mod._run_window(0, write=True)
+        self.assertEqual(report["counts"]["unqualified_unchanged"], 1)
+        self.assertEqual(report["counts"]["site_unverified"], 1)
+        self.assertEqual(report["active_after"], 1)
+        original.assert_called_once()
+        mkdir.assert_not_called()
+        mover.assert_not_called()
+        writer.assert_not_called()
+
+    def test_site_research_failure_has_only_safe_reason_code(self):
+        target = row(1)
+        with patch.object(mod, "source_hint", return_value=(
+                "https://firm1.nl", "firm1", "")), \
+             patch.object(mod, "verify_candidates", return_value={
+                 "candidates": [{"lead_id": target["lead_id"],
+                                 "ready_for_research": True}]
+             }), \
+             patch.object(mod, "research_candidates",
+                          side_effect=RuntimeError("sensitive-website.example")):
+            with self.assertRaisesRegex(
+                RuntimeError, "^site_research_batch_failed$"
+            ):
+                mod._research_window([target], {}, {}, [])
+
     def test_no_sending_and_no_new_lead_ids_in_one_off(self):
         src = (pathlib.Path(__file__).resolve().parents[1] /
                "scripts/_once_redraft_509_in_50.py").read_text()
