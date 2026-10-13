@@ -1,6 +1,6 @@
 """One-off existing-only redraft: 509 old mijn.host Drafts, 50 per cohort.
 
-Always research the current first-party website; draft 3-6 sourced improvement
+Always research the current first-party website; draft 2-3 confirmed defects
 points or quarantine the old unqualified Draft. Copy all original raw messages
 to a private rollback folder BEFORE any changes. No sends, no new lead IDs,
 no recipient changes and no raw PII or messages in public runner logs.
@@ -42,7 +42,7 @@ BACKUP_FOLDER = "Leadscanner_Originals_20261013_Before509Redraft"
 SENDER = "info@andrewbaeten.nl"
 HOLD_REASONS = (
     "source_identity_or_history", "site_unverified", "contact_unverified",
-    "insufficient_three_to_six_facts", "changed_since_snapshot",
+    "insufficient_two_to_three_verified_issues", "changed_since_snapshot",
 )
 
 
@@ -132,7 +132,7 @@ def _research_window(window, sources, history, ordinary):
         except Exception as exc:
             raise RuntimeError("site_copy_generation_batch_failed") from exc
         if not subject or not body:
-            decisions[lead] = ("hold", "insufficient_three_to_six_facts", None)
+            decisions[lead] = ("hold", "insufficient_two_to_three_verified_issues", None)
             continue
         draft = {
             "lead_id": lead, "email": recipient, "company": cand.get("name_hint"),
@@ -143,8 +143,8 @@ def _research_window(window, sources, history, ordinary):
         _, expected_msg = build_message(draft)
         if (len([line for line in body.splitlines()
                  if line.lstrip().startswith(tuple(f"{n}. " for n in range(1, 7)))]) < 3
-                or body.count("Verbeteridee:") + body.count("Suggested improvement:") < 3):
-            decisions[lead] = ("hold", "insufficient_three_to_six_facts", None)
+                or body.count("Verbeteridee:") + body.count("Suggested improvement:") < 2):
+            decisions[lead] = ("hold", "insufficient_two_to_three_verified_issues", None)
             continue
         decisions[lead] = ("rewrite", "source_supported", (draft, expected_msg))
     if set(decisions) != {item["lead_id"] for item in window}:
@@ -343,6 +343,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=("preview", "backup", "rewrite"), required=True)
     parser.add_argument("--offset", type=int, default=0)
+    parser.add_argument("--count", type=int, default=STEP,
+                        help="Read-only websites per cohort: 50, 100, 150, or 200")
     args = parser.parse_args()
     if not os.getenv("OUTREACH_MAIL_PASSWORD"):
         print("MYHOST_REDRAFT50=red details_suppressed")
@@ -361,9 +363,10 @@ def main():
                 client = connect_imap()
                 try:
                     drafts, active, held = _open_inventory(client, strict_initial=True)
-                    if not (0 <= args.offset < TOTAL_ACTIVE and args.offset % STEP == 0):
+                    if (args.count not in {50, 100, 150, 200} or
+                            not (0 <= args.offset < TOTAL_ACTIVE and args.offset % args.count == 0)):
                         raise RuntimeError("invalid_readonly_preview_cohort_offset")
-                    cohort = active[args.offset:args.offset + STEP]
+                    cohort = active[args.offset:args.offset + args.count]
                     sources, history, ordinary = _source_context()
                     decisions = _research_window(cohort, sources, history, ordinary)
                     counts = Counter()
@@ -379,6 +382,8 @@ def main():
                 finally:
                     client.logout()
             else:
+                if args.count != STEP:
+                    raise RuntimeError("writers_must_remain_maximum_fifty_per_batch")
                 if os.getenv("LEADSCANNER_AUTHORIZED_509_REDRAFT") != "true":
                     raise RuntimeError("redraft_write_not_authorized")
                 result = _run_window(args.offset, write=True)
