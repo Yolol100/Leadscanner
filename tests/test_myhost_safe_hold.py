@@ -176,5 +176,20 @@ class HoldTests(unittest.TestCase):
         self.assertEqual(len(self.client.folders[HOLD_FOLDER]), 1)
 
 
+    def test_hold_only_recheck_is_guarded_by_live_inventory_and_disables_rewrite(self):
+        from pathlib import Path
+        workflow = (Path(__file__).resolve().parents[1] /
+                    ".github/workflows/once-myhost-safe-hold-and-rewrite.yml").read_text()
+        self.assertIn("[myhost-cleanup-656]", workflow)
+        self.assertIn("[myhost-529-hold-only]", workflow)
+        self.assertIn("len(active) != 529 or len(held) != 644", workflow)
+        self.assertIn("validate_hold_inventory(", workflow)
+        self.assertIn("require_uidplus(client, 'reversible recovery hold')", workflow)
+        self.assertIn(
+            """if: "!contains(github.event.head_commit.message, '[myhost-529-hold-only]')\"""",
+            workflow,
+        )
+        self.assertIn("MYHOST_529_PREFLIGHT=red details_suppressed", workflow)
+
 if __name__ == "__main__":
     unittest.main()
