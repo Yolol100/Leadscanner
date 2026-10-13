@@ -1,0 +1,81 @@
+name: Independent read-only post-cancel 509 Draft integrity check
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  postcancel_integrity:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      github.run_attempt == 1 &&
+      startsWith(github.event.head_commit.message, 'POSTCANCEL509_READONLY:')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    concurrency:
+      group: leadscanner-mijnhost-drafts
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - run: python3 -m pip install --disable-pip-version-check -r requirements-cold.txt 'google-auth>=2,<3'
+      - name: Inspect only active, old hold, and partial original backups
+        env:
+          PYTHONPATH: scripts
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from contextlib import redirect_stdout, redirect_stderr
+          from io import StringIO
+          from _once_redraft_509_in_50 import (
+              BACKUP_FOLDER, _find_backup_folder, _backup_inventory, _open_inventory,
+          )
+          from _once_myhost_safe_hold import _one_uid, _raw_uid
+          from myhost_draft import connect_imap, select_folder
+          try:
+              with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+                  client = connect_imap()
+                  try:
+                      folder, active, held = _open_inventory(client, strict_initial=True)
+                      status, listed = client.list()
+                      if status != 'OK':
+                          raise RuntimeError('folder_listing_unavailable')
+                      has_backup = any(BACKUP_FOLDER.encode() in item
+                                       for item in listed or [] if isinstance(item, bytes))
+                      originals = []
+                      if has_backup:
+                          _find_backup_folder(client, folder, create=False)
+                          originals = _backup_inventory(client, expected=None)
+                      active_ids = {item['lead_id'] for item in active}
+                      if not {item['lead_id'] for item in originals}.issubset(active_ids):
+                          raise RuntimeError('copied_original_not_still_active')
+                      for saved in originals:
+                          original = _one_uid(client, folder, saved['lead_id'],
+                                              require_draft=True)
+                          restored = _one_uid(client, BACKUP_FOLDER, saved['lead_id'])
+                          if original is None or restored is None:
+                              raise RuntimeError('postcancel_missing_copy')
+                          select_folder(client, folder, readonly=True)
+                          left = _raw_uid(client, original)
+                          select_folder(client, BACKUP_FOLDER, readonly=True)
+                          right = _raw_uid(client, restored)
+                          if left != right:
+                              raise RuntimeError('original_bytes_changed_after_cancel')
+                      copied = len(originals)
+                  finally:
+                      client.logout()
+          except Exception:
+              print('POSTCANCEL_509=red details_suppressed')
+              raise SystemExit(1)
+          print(f'POSTCANCEL_509=green active=509 held=664 union=1173 partial_backup_count={copied} originals_preserved=1 writes=0')
+          PY
