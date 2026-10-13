@@ -29,7 +29,7 @@ class RewriteWorkflowTests(unittest.TestCase):
     def test_old_blanket_rewrite_prohibition_removed_without_new_draft_creation(self):
         rules = (Path(__file__).resolve().parents[1] / "AGENTS.md").read_text(encoding="utf-8")
         self.assertNotIn("Vervang gewijzigde concepten nooit automatisch.", rules)
-        self.assertIn("geen ontbrekend concept worden aangemaakt", rules)
+        self.assertIn("een ontbrekend concept mag nooit worden aangemaakt", rules)
 
 
 if __name__ == "__main__":
