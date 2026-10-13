@@ -322,14 +322,95 @@ def batch_report(offset):
     }
 
 
+def deep_duplicate_report():
+    """Cross-check the 43 historic run Drafts against ALL other Draft headers.
+
+    Bounded header-only FETCH on the entire folder; no body of unrelated
+    drafts is fetched or persisted, no UID/recipient is printed publicly.
+    """
+    from email.parser import BytesParser
+    from email.policy import default
+    _, _, _, source, records, initial = source_and_mailbox_snapshot()
+    if len(records) != EXPECTED_NEW:
+        raise RuntimeError("historic_baseline_missing")
+    focus_emails = {r["email"] for r in records}
+    focus_ids = {r["lead_id"] for r in records}
+    focus_domains = {r["domain"] for r in records if r["domain"]}
+    # Read all folder headers, including untagged and prior Drafts. Do not
+    # equate the 43 audited Drafts with the whole 1,180-message mailbox.
+    client = connect_imap()
+    try:
+        folder = find_drafts_folder(client)
+        select_folder(client, folder, readonly=True)
+        status, response = client.search(None, "ALL")
+        if status != "OK":
+            raise RuntimeError("imap_folder_scan_hold")
+        message_ids = (response[0] if response else b"").split()
+        if not EXPECTED_NEW <= len(message_ids) <= 5000:
+            raise RuntimeError("imap_folder_count_out_of_bounds")
+        recipient_counts, domain_counts, lead_counts = Counter(), Counter(), Counter()
+        header_ok = 0
+        with_to = 0
+        for start in range(0, len(message_ids), 40):
+            seq = b",".join(message_ids[start:start + 40]).decode("ascii")
+            status, payload = client.fetch(
+                seq, "(BODY.PEEK[HEADER.FIELDS (TO X-Leadscanner-Lead-ID X-Webactueel-Lead-ID)])",
+            )
+            if status != "OK":
+                raise RuntimeError("imap_header_fetch_hold")
+            for part in payload or []:
+                if not isinstance(part, tuple) or len(part) < 2 or not isinstance(part[1], bytes):
+                    continue
+                header_ok += 1
+                msg = BytesParser(policy=default).parsebytes(part[1])
+                email = _one_address(msg, "To")
+                lead = lead_id_from_message(msg)
+                if email:
+                    with_to += 1
+                    recipient_counts[email] += 1
+                    if "@" in email:
+                        domain = normalize_domain(email.rsplit("@", 1)[1])
+                        if domain:
+                            domain_counts[domain] += 1
+                if lead:
+                    lead_counts[lead] += 1
+        if header_ok != len(message_ids):
+            raise RuntimeError("imap_header_readback_incomplete")
+        cross_email = sum(recipient_counts[email] - 1 for email in focus_emails
+                          if recipient_counts[email] > 1)
+        cross_lead = sum(lead_counts[lid] - 1 for lid in focus_ids
+                         if lead_counts[lid] > 1)
+        cross_domain = sum(domain_counts[domain] - 1 for domain in focus_domains
+                           if domain_counts[domain] > 1)
+        return {
+            "status": "green" if not (cross_email or cross_lead or cross_domain) else "hold",
+            "source_checked": source["source_checked"],
+            "folder_messages": len(message_ids),
+            "header_messages_read": header_ok,
+            "header_messages_with_to": with_to,
+            "historic_drafts": len(records),
+            "cross_recipient_duplicates": cross_email,
+            "cross_lead_id_duplicates": cross_lead,
+            "cross_business_domain_duplicates": cross_domain,
+            "writes": 0, "sends": 0,
+        }
+    finally:
+        try:
+            client.logout()
+        except Exception:
+            pass
+
+
 def main():
     cli = argparse.ArgumentParser()
-    cli.add_argument("--mode", required=True, choices=("inventory", "batch"))
+    cli.add_argument("--mode", required=True, choices=("inventory", "batch", "deep"))
     cli.add_argument("--offset", type=int, default=0)
     args = cli.parse_args()
     try:
         with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
-            result = inventory_report() if args.mode == "inventory" else batch_report(args.offset)
+            result = (inventory_report() if args.mode == "inventory" else
+                      deep_duplicate_report() if args.mode == "deep" else
+                      batch_report(args.offset))
     except Exception as exc:
         print("HISTORICAL_INDEPENDENT_AUDIT=red " + safe_failure_marker(exc)
               + " details_suppressed")
