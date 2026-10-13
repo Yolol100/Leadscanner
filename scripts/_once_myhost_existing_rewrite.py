@@ -39,7 +39,7 @@ from _once_myhost_safe_hold import (
     HOLD_FOLDER, ensure_hold_folder, move_to_hold, validate_hold_inventory,
 )
 from outreach_stages import (
-    generate_one_mail, select_one_reason, value_action_for,
+    generate_one_mail, select_one_reason, select_verified_site_issues, value_action_for,
 )
 
 BATCH_SIZE = 100
@@ -195,10 +195,10 @@ def source_hint(
 
 
 def rewrite_copy(candidate: dict) -> tuple[str, str]:
-    """Require 3-6 distinct, first-party improvement points for old Drafts."""
-    ranked = select_one_reason(candidate)
+    """Require 2-3 objectively verified, important site issues for old Drafts."""
+    ranked = select_verified_site_issues(candidate)
     findings = ranked.get("selected_findings") or []
-    if ranked.get("outreach_status") != "ready" or not 3 <= len(findings) <= 6:
+    if ranked.get("outreach_status") != "ready" or not 2 <= len(findings) <= 3:
         return "", ""
     if any(
         item.get("source_type") != "official_site"
