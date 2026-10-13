@@ -408,5 +408,63 @@ class DraftTests(unittest.TestCase):
         self.assertTrue(exact_message_matches(actual, expected))
 
 
+    def test_strict_new_draft_rejects_old_different_lead_id_same_recipient(self):
+        client = FakeIMAP()
+        old = self.row()
+        old["lead_id"] = "growth-" + "a" * 20
+        with patch("myhost_draft.connect_imap", return_value=client):
+            create_drafts({"rows": [old]})
+        original = list(client.messages)
+        new = self.row()
+        new["lead_id"] = "growth-" + "b" * 20
+        with patch("myhost_draft.connect_imap", return_value=client):
+            with self.assertRaisesRegex(RuntimeError, "duplicate_existing_draft"):
+                create_drafts({"rows": [new]}, reject_changed_existing=True)
+        self.assertEqual(client.messages, original)
+        self.assertEqual(client.append_calls, 1)
+
+    def test_strict_new_draft_rejects_same_business_with_different_recipient(self):
+        class SearchLikeIMAP(FakeIMAP):
+            def search(self, charset, *criteria):
+                if criteria and criteria[0] == "TO":
+                    pattern = str(criteria[-1]).strip('"').casefold()
+                    hits = []
+                    for index, raw in enumerate(self.messages, 1):
+                        msg = BytesParser(policy=default).parsebytes(raw)
+                        if pattern in str(msg.get("To", "")).casefold():
+                            hits.append(str(index).encode())
+                    return "OK", [b" ".join(hits)]
+                return super().search(charset, *criteria)
+
+        client = SearchLikeIMAP()
+        previous = self.row()
+        previous["lead_id"] = "growth-" + "c" * 20
+        with patch("myhost_draft.connect_imap", return_value=client):
+            create_drafts({"rows": [previous]})
+        new = self.row()
+        new["lead_id"] = "growth-" + "d" * 20
+        new["email"] = "directie@voorbeeld.nl"
+        with patch("myhost_draft.connect_imap", return_value=client):
+            with self.assertRaisesRegex(RuntimeError, "duplicate_existing_draft"):
+                create_drafts({"rows": [new]}, reject_changed_existing=True)
+        self.assertEqual(client.append_calls, 1)
+        self.assertEqual(len(client.messages), 1)
+
+    def test_strict_shared_mail_provider_not_automatically_one_business(self):
+        client = FakeIMAP()
+        previous = self.row()
+        previous["lead_id"] = "growth-" + "e" * 20
+        previous["email"] = "hello@gmail.com"
+        with patch("myhost_draft.connect_imap", return_value=client):
+            create_drafts({"rows": [previous]})
+        new = self.row()
+        new["lead_id"] = "growth-" + "f" * 20
+        new["email"] = "other@gmail.com"
+        with patch("myhost_draft.connect_imap", return_value=client):
+            result = create_drafts({"rows": [new]}, reject_changed_existing=True)
+        self.assertEqual(result["created_count"], 1)
+        self.assertEqual(len(client.messages), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

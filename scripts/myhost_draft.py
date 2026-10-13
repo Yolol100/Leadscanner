@@ -336,6 +336,51 @@ def _rollback_appended_uid(client, folder: str, uid: bytes, lead_id: str, cause:
         ) from cause
 
 
+def _strict_no_other_recipient_draft(client, folder: str, msg: EmailMessage) -> None:
+    """Fail closed on old differently-tagged same-recipient/company Drafts.
+
+    A stable Lead-ID by itself is NOT sufficient. The independent historical
+    audit found 34 existing To-email collisions and 42 domain overlaps among
+    older drafts that had different Lead-ID headers. Do not read/delete/swap
+    any such older draft; refuse the NEW append instead.
+    """
+    from email.utils import getaddresses
+    from cold_stages import PUBLIC_MAIL_DOMAINS
+    from dedupe_preflight import normalize_domain, domains_match
+
+    addresses = getaddresses(msg.get_all("To", []))
+    if len(addresses) != 1:
+        raise RuntimeError("invalid_target_recipient")
+    target = addresses[0][1].strip().casefold()
+    if not target or target.count("@") != 1 or any(c in target for c in '"\r\n'):
+        raise RuntimeError("invalid_target_recipient")
+    target_domain = normalize_domain(target.rsplit("@", 1)[1])
+    corporate = bool(target_domain and target_domain not in PUBLIC_MAIL_DOMAINS)
+    lookup = [target]
+    if corporate:
+        lookup.append(target_domain)
+
+    select_folder(client, folder, readonly=True)
+    hits: set[bytes] = set()
+    for value in lookup:
+        status, data = client.search(None, "TO", '"' + value + '"')
+        if status != "OK":
+            raise RuntimeError("recipient_duplicate_search_failed")
+        hits.update((data[0] if data else b"").split())
+    if len(hits) > 2000:
+        raise RuntimeError("recipient_duplicate_search_unbounded")
+    for message_id in sorted(hits, key=int):
+        old = fetch_message(client, message_id)
+        for _, previous_email in getaddresses(old.get_all("To", [])):
+            previous = previous_email.strip().casefold()
+            if not previous or previous.count("@") != 1:
+                continue
+            old_domain = normalize_domain(previous.rsplit("@", 1)[1])
+            if previous == target or (corporate and old_domain and
+                                      domains_match(old_domain, target_domain)):
+                raise RuntimeError("duplicate_existing_draft_recipient_or_company_domain")
+
+
 def append_and_verify(client, folder: str, lead_id: str, msg: EmailMessage, *, reject_changed_existing: bool = False) -> str:
     existing = find_message_ids(client, folder, lead_id)
     if len(existing) > 1:
@@ -357,6 +402,9 @@ def append_and_verify(client, folder: str, lead_id: str, msg: EmailMessage, *, r
             )
         existing_uid = uid_for_message_id(client, existing[0])
         existing_snapshot = actual
+
+    if reject_changed_existing and not existing:
+        _strict_no_other_recipient_draft(client, folder, msg)
 
     raw = msg.as_bytes(policy=default)
     status, _ = client.append(
