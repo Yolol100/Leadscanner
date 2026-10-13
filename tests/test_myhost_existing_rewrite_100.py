@@ -114,7 +114,7 @@ class ExistingRewriteTests(unittest.TestCase):
         self.assertTrue(subject.startswith("3 verbeterideeën"))
         self.assertTrue(body.startswith("Beste,"))
         self.assertEqual(body.count("Verbeteridee:"), 3)
-        self.assertTrue(body.endswith("Met vriendelijke groeten,\\nAndrew"))
+        self.assertTrue(body.endswith("Met vriendelijke groeten,\nAndrew"))
         self.assertEqual(body.count("?"), 1)
 
     def test_english_copy_has_three_improvements_and_correct_signoff(self):
@@ -123,7 +123,7 @@ class ExistingRewriteTests(unittest.TestCase):
         self.assertTrue(subject.startswith("3 practical ideas"))
         self.assertTrue(body.startswith("Dear team,"))
         self.assertEqual(body.count("Suggested improvement:"), 3)
-        self.assertTrue(body.endswith("Kind regards,\\nAndrew"))
+        self.assertTrue(body.endswith("Kind regards,\nAndrew"))
         self.assertEqual(body.count("?"), 1)
 
     def test_one_point_historical_copy_is_never_ready(self):
