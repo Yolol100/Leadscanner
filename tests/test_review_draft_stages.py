@@ -5,22 +5,28 @@ from review_draft_stages import audit_exact_readback, prepare_review_batch, stab
 
 class ReviewDraftStagesTests(unittest.TestCase):
     def mail_candidate(self):
-        return {
+        from outreach_stages import generate_mails, choose_value_actions, select_reasons
+        candidate = {
             "name_hint": "Acme Fietsen",
             "official_domain": "acmefietsen.nl",
             "official_url": "https://acmefietsen.nl/",
             "public_business_email": "info@acmefietsen.nl",
-            "subject": "idee voor jullie afspraakroute",
-            "body": "Hallo,\n\nKorte gecontroleerde mail.\n\nGroet,\nAndrew",
-            "mail_status": "ready_for_human_review",
-            "copy_validation_status": "green",
-            "automatic_send": False,
-            "verified_observation": "Klanten kunnen online een afspraak aanvragen.",
-            "verified_observation_source_url": "https://acmefietsen.nl/afspraak",
-            "verified_observation_source_type": "official_site",
-            "signal_type": "appointment",
-            "value_first_action": "een korte voorbeeldvariant voor de afspraakroute",
+            "research_status": "ready",
+            "evidence_candidates": [
+                {"text": "Klanten kunnen online een werkplaatsafspraak aanvragen voor onderhoud.",
+                 "source_url": "https://acmefietsen.nl/afspraak",
+                 "source_type": "official_site", "page_type": "process"},
+                {"text": "Vraag online een offerte aan voor reparatie via ons formulier.",
+                 "source_url": "https://acmefietsen.nl/offerte",
+                 "source_type": "official_site", "page_type": "process"},
+                {"text": "Bestel onderdelen online en kies daarna het gewenste afhaalmoment.",
+                 "source_url": "https://acmefietsen.nl/bestellen",
+                 "source_type": "official_site", "page_type": "process"},
+            ],
         }
+        return generate_mails(choose_value_actions(select_reasons({
+            "candidates": [candidate],
+        })))["candidates"][0]
 
     def test_unverified_person_source_outside_official_domain_is_rejected(self):
         candidate = self.mail_candidate()
@@ -34,6 +40,23 @@ class ReviewDraftStagesTests(unittest.TestCase):
         b = stable_lead_id("acmefietsen.nl", "info@acmefietsen.nl")
         self.assertEqual(a, b)
         self.assertRegex(a, r"^growth-[0-9a-f]{20}$")
+
+    def test_forged_green_draft_with_two_points_is_rejected(self):
+        candidate = self.mail_candidate()
+        candidate["selected_findings"] = candidate["selected_findings"][:2]
+        with self.assertRaisesRegex(
+            ValueError, "review_requires_three_to_six_distinct_improvements"
+        ):
+            prepare_review_batch({"candidates": [candidate]})
+
+    def test_content_changed_after_mail_approval_is_rejected(self):
+        candidate = self.mail_candidate()
+        suggested = candidate["selected_findings"][0]["suggested_improvement"]
+        candidate["body"] = candidate["body"].replace(suggested, "ongecontroleerde reclame")
+        with self.assertRaisesRegex(
+            ValueError, "review_missing_source_backed_improvement"
+        ):
+            prepare_review_batch({"candidates": [candidate]})
 
     def test_prepare_review_batch_is_review_only(self):
         result = prepare_review_batch({"candidates": [self.mail_candidate()]})
