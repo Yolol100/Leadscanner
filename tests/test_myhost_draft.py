@@ -108,6 +108,37 @@ class DraftTests(unittest.TestCase):
         with patch.dict(os.environ, {"OUTREACH_DRAFT_FOLDER": ""}):
             self.assertEqual(find_drafts_folder(Folders()), "INBOX/Compositions")
 
+    def test_unquoted_imap_list_mailbox_atom_never_returns_delimiter(self):
+        from myhost_draft import find_drafts_folder
+        class Folders:
+            def list(self):
+                return "OK", [
+                    b'(\HasNoChildren) "." "Leadscanner_Originals_20261013_Before509Redraft"',
+                    b'(\HasNoChildren \Drafts) "." Drafts',
+                ]
+        with patch.dict(os.environ, {"OUTREACH_DRAFT_FOLDER": ""}):
+            self.assertEqual(find_drafts_folder(Folders()), "Drafts")
+
+    def test_preferred_name_only_when_imap_server_lists_it(self):
+        from myhost_draft import find_drafts_folder
+        class Folders:
+            def list(self):
+                return "OK", [b'(\HasNoChildren \Drafts) "." INBOX.Concepten']
+        with patch.dict(os.environ, {"OUTREACH_DRAFT_FOLDER": "INBOX.Concepten"}):
+            self.assertEqual(find_drafts_folder(Folders()), "INBOX.Concepten")
+        with patch.dict(os.environ, {"OUTREACH_DRAFT_FOLDER": "."}):
+            with self.assertRaisesRegex(RuntimeError, "hierarchy_delimiter"):
+                find_drafts_folder(Folders())
+
+    def test_unparseable_special_use_never_guesses_folder(self):
+        from myhost_draft import find_drafts_folder
+        class Folders:
+            def list(self):
+                return "OK", [b'(\Drafts) "."']
+        with patch.dict(os.environ, {"OUTREACH_DRAFT_FOLDER": ""}):
+            with self.assertRaisesRegex(RuntimeError, "unparseable"):
+                find_drafts_folder(Folders())
+
     def test_ambiguous_draft_folders_fail_closed(self):
         from myhost_draft import find_drafts_folder
         class Folders:
@@ -128,7 +159,8 @@ class DraftTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "recovery_folder"):
                 find_drafts_folder(FakeIMAP())
         with patch.dict(os.environ, {"OUTREACH_DRAFT_FOLDER": "INBOX.Concepten"}):
-            self.assertEqual(find_drafts_folder(FakeIMAP()), "INBOX.Concepten")
+            with self.assertRaisesRegex(RuntimeError, "not_verified"):
+                find_drafts_folder(FakeIMAP())
 
     def row(self, status="review_draft", basis="review_required"):
         return {
