@@ -409,9 +409,10 @@ class ColdStagesTests(unittest.TestCase):
         researched = research_candidate(row, session_factory=lambda: FakeSession([]))
         self.assertEqual(researched["contact_status"], "contact_form_only")
         selected = select_one_reason(researched)
-        self.assertEqual(selected["outreach_status"], "ready")
+        self.assertEqual(selected["outreach_status"], "hold")
+        self.assertEqual(selected["outreach_hold_reason"], "fewer_than_three_distinct_verified_improvements")
         result = generate_one_mail(value_action_for(selected))
-        self.assertEqual(result["copy_validation_reasons"], ["no_published_business_contact"])
+        self.assertEqual(result["copy_validation_reasons"], ["value_action_not_ready"])
         self.assertIsNone(result["body"])
         self.assertFalse(result["automatic_send"])
 

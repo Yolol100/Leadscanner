@@ -14,7 +14,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from dedupe_preflight import domains_match, normalize_domain
-from outreach_stages import review_findings
+from outreach_stages import review_findings, validate_mail, improvement_line
 
 MAX_DRAFTS = 100
 
@@ -97,8 +97,6 @@ def prepare_review_batch(payload: dict) -> dict:
             ):
                 raise ValueError(f"review_contact_{field}_source_not_first_party")
 
-        # Keep all selected official-site findings visible through human review.
-        findings = review_findings(candidate.get("selected_findings"), domain)
         lead_id = stable_lead_id(domain, email)
         if (
             any(domains_match(domain, seen) for seen in seen_domains)
@@ -106,10 +104,26 @@ def prepare_review_batch(payload: dict) -> dict:
             or lead_id in seen_ids
         ):
             raise ValueError("duplicate_review_draft_identity")
+
+        # Defense in depth: a forged ready/green flag cannot smuggle an old
+        # one-point or generic email into Drafts.
+        findings = review_findings(candidate.get("selected_findings"), domain)
+        if not 3 <= len(findings) <= 6 or len({
+            str(finding.get("category") or "") for finding in findings
+        }) != len(findings):
+            raise ValueError("review_requires_three_to_six_distinct_improvements")
+        if any(
+            not improvement_line(finding, _text(candidate.get("language")), i)
+            or improvement_line(finding, _text(candidate.get("language")), i) not in body
+            for i, finding in enumerate(findings, 1)
+        ):
+            raise ValueError("review_missing_source_backed_improvement")
+        if validate_mail(candidate, subject, body):
+            raise ValueError("review_mail_failed_independent_copy_validation")
+
         seen_domains.add(domain)
         seen_emails.add(email)
         seen_ids.add(lead_id)
-
         rows.append({
             "lead_id": lead_id,
             "company": company,
