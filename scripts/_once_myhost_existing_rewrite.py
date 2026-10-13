@@ -35,6 +35,9 @@ from myhost_draft import (
     select_folder, uid_for_message_id, build_message,
     LEAD_ID_HEADERS, LEAD_ID_RE,
 )
+from _once_myhost_safe_hold import (
+    HOLD_FOLDER, ensure_hold_folder, move_to_hold, validate_hold_inventory,
+)
 from outreach_stages import (
     generate_one_mail, select_one_reason, value_action_for,
 )
@@ -63,7 +66,7 @@ def _address(msg, field="To") -> str:
     return normalize_email(parsed[0][1])
 
 
-def inventory_existing(client, folder: str) -> list[dict]:
+def inventory_existing(client, folder: str, *, expected_total: int | None = EXPECTED_TAGGED_DRAFTS) -> list[dict]:
     """Stable lead-id ordering: replacement changes UID, not the batch slot."""
     select_folder(client, folder, readonly=True)
     ids = set()
@@ -72,7 +75,7 @@ def inventory_existing(client, folder: str) -> list[dict]:
         if status != "OK":
             raise RuntimeError("imap_inventory_search_failed")
         ids.update((data[0] if data else b"").split())
-    if not 1 <= len(ids) <= MAX_MESSAGES:
+    if not 0 <= len(ids) <= MAX_MESSAGES:
         raise RuntimeError("imap_inventory_count_invalid")
     records = []
     ordered = sorted(ids, key=int)
@@ -102,7 +105,7 @@ def inventory_existing(client, folder: str) -> list[dict]:
     if len(records) != len(ids):
         raise RuntimeError("imap_inventory_incomplete")
     records.sort(key=lambda item: item["lead_id"])
-    if len(records) != EXPECTED_TAGGED_DRAFTS:
+    if expected_total is not None and len(records) != expected_total:
         raise RuntimeError("imap_tagged_baseline_changed")
     if len({row["lead_id"] for row in records}) != len(records):
         raise RuntimeError("imap_duplicate_lead_id")
@@ -204,9 +207,14 @@ def _original_snapshot(client, folder: str, lead: str):
     return original
 
 
-def run(offset: int, *, write: bool) -> dict:
+def run(offset: int, *, write: bool, cleanup: bool = False) -> dict:
     if offset < 0 or offset % BATCH_SIZE or offset >= EXPECTED_TAGGED_DRAFTS:
         raise RuntimeError("offset_out_of_bounds")
+    if write and cleanup:
+        raise RuntimeError("hold_and_rewrite_must_be_separate_phases")
+    if cleanup and (os.getenv("LEADSCANNER_TRUSTED_HOLD") != "true"
+                    or not os.getenv("OUTREACH_MAIL_PASSWORD")):
+        raise RuntimeError("trusted_hold_required")
     if write and (os.getenv("LEADSCANNER_TRUSTED_REWRITE") != "true"
                   or not os.getenv("OUTREACH_MAIL_PASSWORD")):
         raise RuntimeError("trusted_main_required")
@@ -226,26 +234,36 @@ def run(offset: int, *, write: bool) -> dict:
     client = connect_imap()
     try:
         folder = find_drafts_folder(client)
-        all_drafts = inventory_existing(client, folder)
-        window = all_drafts[offset:offset + BATCH_SIZE]
-        if len(window) != min(BATCH_SIZE, EXPECTED_TAGGED_DRAFTS - offset):
+        if cleanup:
+            ensure_hold_folder(client, folder)
+        all_active, all_held = validate_hold_inventory(
+            client, folder, HOLD_FOLDER, inventory_existing, EXPECTED_TAGGED_DRAFTS,
+        )
+        held_ids = {item["lead_id"] for item in all_held}
+        # Preserve original 1173 lead slots even during interrupted COPY/EXPUNGE.
+        stable_inventory = sorted(
+            {item["lead_id"]: item for item in (all_held + all_active)}.values(),
+            key=lambda item: item["lead_id"],
+        )
+        if len(stable_inventory) != EXPECTED_TAGGED_DRAFTS:
+            raise RuntimeError("hold_stable_inventory_invalid")
+        active_ids = {item["lead_id"] for item in all_active}
+        window = [item for item in stable_inventory[offset:offset + BATCH_SIZE]
+                  if item["lead_id"] in active_ids
+                  and (cleanup or item["lead_id"] not in held_ids)]
+        if len(window) > min(BATCH_SIZE, EXPECTED_TAGGED_DRAFTS - offset):
             raise RuntimeError("batch_size_unstable")
         counters = Counter({"checked": len(window)})
         hints = []
         snapshots = {}
+        to_hold = {}
+        index = {item["lead_id"]: item for item in window}
         sender = normalize_email(os.environ.get(
             "OUTREACH_SENDER_EMAIL", "info@andrewbaeten.nl"))
         for item in window:
             lead = item["lead_id"]
             if not item["recipient"] or item["sender"] != sender:
                 counters["hold_invalid_existing_sender_or_recipient"] += 1
-                continue
-            site, company, reason = source_hint(item, sources, history, ordinary)
-            if reason:
-                if reason not in SOURCE_HOLD_REASONS:
-                    raise RuntimeError("unknown_anonymous_source_hold")
-                counters["hold_identity_or_history"] += 1
-                counters["source_hold_" + reason] += 1
                 continue
             try:
                 original = _original_snapshot(client, folder, lead)
@@ -257,6 +275,14 @@ def run(offset: int, *, write: bool) -> dict:
                 counters["hold_identity_drift"] += 1
                 continue
             snapshots[lead] = original
+            site, company, reason = source_hint(item, sources, history, ordinary)
+            if reason:
+                if reason not in SOURCE_HOLD_REASONS:
+                    raise RuntimeError("unknown_anonymous_source_hold")
+                counters["hold_identity_or_history"] += 1
+                counters["source_hold_" + reason] += 1
+                to_hold[lead] = "source"
+                continue
             hints.append({
                 "lead_id": lead, "name_hint": company, "website_hint": site,
                 "category_hint": "", "original_recipient": item["recipient"],
@@ -274,6 +300,7 @@ def run(offset: int, *, write: bool) -> dict:
                 site_reason = candidate.get("contact_status")
                 counter_key = site_reason if site_reason in SITE_HOLD_STATUSES else "other"
                 counters["site_hold_" + counter_key] += 1
+                to_hold[candidate["lead_id"]] = "site"
         researched = research_candidates(
             {"candidates": eligible}, limit=len(eligible), max_workers=6,
         )["candidates"] if eligible else []
@@ -285,10 +312,12 @@ def run(offset: int, *, write: bool) -> dict:
                     or candidate.get("contact_status") != "verified_official_site"
                     or normalize_email(candidate.get("public_business_email")) != expected_to):
                 counters["hold_contact_not_currently_published"] += 1
+                to_hold[lead] = "address"
                 continue
             subject, body = rewrite_copy(candidate)
             if not subject or not body:
                 counters["hold_insufficient_evidence_or_copy"] += 1
+                to_hold[lead] = "evidence"
                 continue
             target = {
                 "lead_id": lead, "email": expected_to,
@@ -347,11 +376,33 @@ def run(offset: int, *, write: bool) -> dict:
             "ready_to_rewrite",
         )) != len(window):
             raise RuntimeError("batch_accounting_incomplete")
+        if cleanup:
+            for lead in sorted(to_hold):
+                item = index[lead]
+                snapshot = snapshots.get(lead)
+                if snapshot is None:
+                    counters["hold_unsafe_snapshot"] += 1
+                    continue
+                if (_address(snapshot) != item["recipient"]
+                        or _address(snapshot, "From") != sender):
+                    counters["hold_unsafe_identity"] += 1
+                    continue
+                if move_to_hold(client, folder, HOLD_FOLDER, lead,
+                                item["recipient"], sender, snapshot):
+                    counters["archived_for_recovery"] += 1
+                else:
+                    counters["hold_concurrent_change"] += 1
+            active_after, held_after = validate_hold_inventory(
+                client, folder, HOLD_FOLDER, inventory_existing, EXPECTED_TAGGED_DRAFTS,
+            )
+            counters["active_after"] = len(active_after)
+            counters["archived_total_after"] = len(held_after)
         return {
             "status": "green",
-            "mode": "rewrite" if write else "review",
+            "mode": "cleanup" if cleanup else ("rewrite" if write else "review"),
             "offset": offset,
-            "total_tagged": len(all_drafts),
+            "total_tagged": len(stable_inventory),
+            "archive_folder": HOLD_FOLDER if cleanup else None,
             "counts": dict(sorted(counters.items())),
             "emails_sent": 0,
             "drafts_created": 0,
@@ -368,11 +419,11 @@ def run(offset: int, *, write: bool) -> dict:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--offset", type=int, required=True)
-    parser.add_argument("--mode", choices=("review", "rewrite"), required=True)
+    parser.add_argument("--mode", choices=("review", "rewrite", "cleanup"), required=True)
     args = parser.parse_args()
     try:
         with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
-            result = run(args.offset, write=args.mode == "rewrite")
+            result = run(args.offset, write=args.mode == "rewrite", cleanup=args.mode == "cleanup")
     except Exception as exc:
         # Fail closed: never publish provider exception messages, URLs, email
         # addresses, contact IDs, copies, source evidence or stack frames.
