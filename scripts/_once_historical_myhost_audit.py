@@ -335,7 +335,11 @@ def deep_duplicate_report():
         raise RuntimeError("historic_baseline_missing")
     focus_emails = {r["email"] for r in records}
     focus_ids = {r["lead_id"] for r in records}
-    focus_domains = {r["domain"] for r in records if r["domain"]}
+    # Shared public mailbox providers are not company identities. Count
+    # corporate-domain collisions only; exact To collisions still count.
+    from cold_stages import PUBLIC_MAIL_DOMAINS
+    focus_domains = {r["domain"] for r in records
+                     if r["domain"] and r["domain"] not in PUBLIC_MAIL_DOMAINS}
     # Read all folder headers, including untagged and prior Drafts. Do not
     # equate the 43 audited Drafts with the whole 1,180-message mailbox.
     client = connect_imap()
@@ -370,7 +374,7 @@ def deep_duplicate_report():
                     recipient_counts[email] += 1
                     if "@" in email:
                         domain = normalize_domain(email.rsplit("@", 1)[1])
-                        if domain:
+                        if domain and domain not in PUBLIC_MAIL_DOMAINS:
                             domain_counts[domain] += 1
                 if lead:
                     lead_counts[lead] += 1
