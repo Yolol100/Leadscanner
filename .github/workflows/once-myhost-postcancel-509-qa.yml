@@ -9,7 +9,7 @@ jobs:
     if: >-
       github.ref == 'refs/heads/main' &&
       github.run_attempt == 1 &&
-      startsWith(github.event.head_commit.message, 'POSTCANCEL509_READONLY:')
+      startsWith(github.event.head_commit.message, 'POSTCANCEL509_DIAG:')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     concurrency:
@@ -42,11 +42,14 @@ jobs:
           )
           from _once_myhost_safe_hold import _one_uid, _raw_uid
           from myhost_draft import connect_imap, select_folder
+          stage = 'connection'
           try:
               with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
                   client = connect_imap()
                   try:
+                      stage = 'original_inventory'
                       folder, active, held = _open_inventory(client, strict_initial=True)
+                      stage = 'folder_listing'
                       status, listed = client.list()
                       if status != 'OK':
                           raise RuntimeError('folder_listing_unavailable')
@@ -54,11 +57,14 @@ jobs:
                                        for item in listed or [] if isinstance(item, bytes))
                       originals = []
                       if has_backup:
+                          stage = 'backup_inventory'
                           _find_backup_folder(client, folder, create=False)
                           originals = _backup_inventory(client, expected=None)
+                      stage = 'backups_still_active'
                       active_ids = {item['lead_id'] for item in active}
                       if not {item['lead_id'] for item in originals}.issubset(active_ids):
                           raise RuntimeError('copied_original_not_still_active')
+                      stage = 'compare_backups_byte_for_byte'
                       for saved in originals:
                           original = _one_uid(client, folder, saved['lead_id'],
                                               require_draft=True)
@@ -74,8 +80,12 @@ jobs:
                       copied = len(originals)
                   finally:
                       client.logout()
-          except Exception:
-              print('POSTCANCEL_509=red details_suppressed')
+          except Exception as exc:
+              allowed = {'initial_inventory_509_664_changed', 'hold_union_baseline_changed',
+                         'backup_contains_unrelated_messages', 'copied_original_not_still_active',
+                         'original_bytes_changed_after_cancel', 'imap_duplicate_lead_id'}
+              code = str(exc) if str(exc) in allowed else 'private_failure'
+              print('POSTCANCEL_509=red stage=' + stage + ' reason=' + code)
               raise SystemExit(1)
           print(f'POSTCANCEL_509=green active=509 held=664 union=1173 partial_backup_count={copied} originals_preserved=1 writes=0')
           PY
