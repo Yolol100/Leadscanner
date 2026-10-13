@@ -188,5 +188,17 @@ class HoldTests(unittest.TestCase):
         self.assertIn('if: "!contains(github.event.head_commit.message', workflow)
         self.assertIn("MYHOST_529_PREFLIGHT=red details_suppressed", workflow)
 
+
+    def test_final_diagnostic_is_distinct_read_only_job(self):
+        from pathlib import Path
+        workflow = (Path(__file__).resolve().parents[1] /
+                    ".github/workflows/once-myhost-final-three-hold.yml").read_text()
+        section = workflow.split("  diagnose:\n", 1)[1]
+        self.assertIn("[myhost-three-diagnose]", section)
+        self.assertIn("run(offset, write=False, cleanup=False)", section)
+        self.assertNotIn("LEADSCANNER_TRUSTED_HOLD: 'true'", section)
+        self.assertNotIn("create_drafts(", section)
+        self.assertNotIn("move_to_hold(", section)
+
 if __name__ == "__main__":
     unittest.main()
