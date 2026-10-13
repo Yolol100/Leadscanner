@@ -36,8 +36,8 @@ from review_draft_stages import audit_exact_readback, prepare_review_batch
 from url_safety import is_public_http_url
 
 BATCH_SIZE = 100
-MIN_FINDINGS = 4
-MAX_FINDINGS = 6
+MIN_FINDINGS = 2
+MAX_FINDINGS = 3
 # Exact per-100-contact approval ceilings from the read-only twelve-batch
 # audit (11 baseline jobs + the separately proven repaired batch 11).
 # New findings after re-crawling never expand the user-approved 53 drafts.
@@ -366,7 +366,7 @@ def build_batch(
         if ranked.get("outreach_status") != "ready" or not MIN_FINDINGS <= len(findings) <= MAX_FINDINGS:
             states[pos] = "hold_insufficient_findings"
             continue
-        counts["websites_with_four_to_six_findings"] += 1
+        counts["websites_with_two_to_three_findings"] += 1
         if (candidate.get("contact_status") != "verified_official_site"
                 or not _string(candidate.get("public_business_email"))
                 or not _string(candidate.get("email_source_url"))):
@@ -446,7 +446,7 @@ def build_batch(
             **{k: int(counts[k]) for k in (
                 "checked", "historical_email_excluded", "websites_checked",
                 "websites_verified", "websites_researched",
-                "webpages_fetched", "websites_with_four_to_six_findings",
+                "webpages_fetched", "websites_with_two_to_three_findings",
                 "mail_quality_evaluated", "derived_brand_confirmed_live",
             )},
         },
