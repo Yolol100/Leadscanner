@@ -501,6 +501,10 @@ def value_action_for(candidate: dict) -> dict:
     )
     result.update({
         "selected_findings": selected,
+        "verified_observation": selected[0]["observation"],
+        "verified_observation_source_url": selected[0]["source_url"],
+        "verified_observation_source_type": "official_site",
+        "signal_type": selected[0]["category"],
         "value_action_status": "proposed",
         "value_action_type": "website_example",
         "value_first_action": action,
