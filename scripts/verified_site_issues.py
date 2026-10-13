@@ -33,7 +33,7 @@ class _IssueMarkup(HTMLParser):
                          or bool(str(a.get("title") or "").strip())
                          or self.label_depth > 0)
                 self.controls.append((a.get("id"), named))
-        if tag == "a":
+        if tag == "a" and a.get("href"):
             self._active_link = {
                 "has_img": False,
                 "accessible": bool(str(a.get("aria-label") or "").strip()
