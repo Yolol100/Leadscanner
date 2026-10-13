@@ -78,6 +78,40 @@ def _source_context():
     return sources, history[0], ordinary
 
 
+def _bounded_resilient_site_stage(rows, stage, *, workers):
+    """A bad remote site may hold its own lead, not fail 200 other sites.
+
+    Process groups of 50; if one group fails, retry records individually.
+    If every site fails, fail closed (probable systemic/provider outage).
+    """
+    if not rows:
+        return []
+    output = []
+    failed = 0
+    for start in range(0, len(rows), STEP):
+        group = rows[start:start + STEP]
+        try:
+            data = stage({"candidates": group}, limit=len(group),
+                         max_workers=workers)["candidates"]
+            if len(data) != len(group):
+                raise RuntimeError("website_stage_result_count_mismatch")
+            output.extend(data)
+        except Exception:
+            for row in group:
+                try:
+                    data = stage({"candidates": [row]}, limit=1,
+                                 max_workers=1)["candidates"]
+                    if len(data) != 1:
+                        raise RuntimeError("single_site_result_count_mismatch")
+                    output.extend(data)
+                except Exception:
+                    failed += 1
+                    output.append({**row, "site_stage_failed": True})
+    if failed == len(rows):
+        raise RuntimeError("all_websites_failed_systemically")
+    return output
+
+
 def _research_window(window, sources, history, ordinary):
     """Source + public website evidence. No IMAP writes or raw output."""
     decisions = {}
@@ -95,32 +129,25 @@ def _research_window(window, sources, history, ordinary):
             "category_hint": "",
             "original_recipient": record["recipient"],
         })
-    if hints:
-        try:
-            verified = verify_candidates(
-                {"candidates": hints}, limit=len(hints), max_workers=8
-            )["candidates"]
-        except Exception as exc:
-            raise RuntimeError("candidate_verification_batch_failed") from exc
-    else:
-        verified = []
+    verified = _bounded_resilient_site_stage(
+        hints, verify_candidates, workers=8
+    )
     eligible = []
     for cand in verified:
-        if cand.get("ready_for_research"):
+        if cand.get("site_stage_failed"):
+            decisions[cand["lead_id"]] = ("hold", "technical_site_error", None)
+        elif cand.get("ready_for_research"):
             eligible.append(cand)
         else:
             decisions[cand["lead_id"]] = ("hold", "site_unverified", None)
-    if eligible:
-        try:
-            researched = research_candidates(
-                {"candidates": eligible}, limit=len(eligible), max_workers=6
-            )["candidates"]
-        except Exception as exc:
-            raise RuntimeError("site_research_batch_failed") from exc
-    else:
-        researched = []
+    researched = _bounded_resilient_site_stage(
+        eligible, research_candidates, workers=6
+    )
     for cand in researched:
         lead = cand["lead_id"]
+        if cand.get("site_stage_failed"):
+            decisions[lead] = ("hold", "technical_site_error", None)
+            continue
         recipient = next(item["recipient"] for item in window if item["lead_id"] == lead)
         if (cand.get("research_status") != "ready"
                 or cand.get("contact_status") != "verified_official_site"
@@ -394,6 +421,7 @@ def main():
             "candidate_verification_batch_failed",
             "site_research_batch_failed",
             "site_copy_generation_batch_failed",
+            "all_websites_failed_systemically",
         }:
             code = "unexpected_failure"
         print("MYHOST_REDRAFT50=red stage=" + args.mode
