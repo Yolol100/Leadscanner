@@ -96,9 +96,12 @@ def _research_window(window, sources, history, ordinary):
             "original_recipient": record["recipient"],
         })
     if hints:
-        verified = verify_candidates(
-            {"candidates": hints}, limit=len(hints), max_workers=8
-        )["candidates"]
+        try:
+            verified = verify_candidates(
+                {"candidates": hints}, limit=len(hints), max_workers=8
+            )["candidates"]
+        except Exception as exc:
+            raise RuntimeError("candidate_verification_batch_failed") from exc
     else:
         verified = []
     eligible = []
@@ -108,9 +111,12 @@ def _research_window(window, sources, history, ordinary):
         else:
             decisions[cand["lead_id"]] = ("hold", "site_unverified", None)
     if eligible:
-        researched = research_candidates(
-            {"candidates": eligible}, limit=len(eligible), max_workers=6
-        )["candidates"]
+        try:
+            researched = research_candidates(
+                {"candidates": eligible}, limit=len(eligible), max_workers=6
+            )["candidates"]
+        except Exception as exc:
+            raise RuntimeError("site_research_batch_failed") from exc
     else:
         researched = []
     for cand in researched:
@@ -121,7 +127,10 @@ def _research_window(window, sources, history, ordinary):
                 or normalize_email(cand.get("public_business_email")) != recipient):
             decisions[lead] = ("hold", "contact_unverified", None)
             continue
-        subject, body = rewrite_copy(cand)
+        try:
+            subject, body = rewrite_copy(cand)
+        except Exception as exc:
+            raise RuntimeError("site_copy_generation_batch_failed") from exc
         if not subject or not body:
             decisions[lead] = ("hold", "insufficient_three_to_six_facts", None)
             continue
@@ -272,7 +281,7 @@ def _run_window(offset, *, write=False):
                     "all_sources_researched": True, "mailbox_writes": False,
                     "emails_sent": 0, "created_new_leads": 0}
         require_uidplus(client, "existing-only 50 Draft redraft")
-        ensure_hold_folder(client, drafts)
+        # No recovery-folder creation or move for unqualified active Drafts.
         if normalize_email(os.getenv("OUTREACH_SENDER_EMAIL") or SENDER) != SENDER:
             raise RuntimeError("expected_sender_changed")
         for item in targets:
@@ -288,12 +297,10 @@ def _run_window(offset, *, write=False):
                 continue
             action, reason, payload = decisions[lead]
             if action == "hold":
-                if move_to_hold(client, drafts, HOLD_FOLDER, lead,
-                                item["recipient"], SENDER, original):
-                    counts["archived_for_recovery"] += 1
-                    counts[reason] += 1
-                else:
-                    counts["hold_user_edited"] += 1
+                # Keep unqualified originals in the active Drafts folder.
+                # Moving them to recovery would hide them without approval.
+                counts["unqualified_unchanged"] += 1
+                counts[reason] += 1
                 continue
             row, expected_msg = payload
             fresh_registry = fetch_registry()
@@ -375,8 +382,17 @@ def main():
                 if os.getenv("LEADSCANNER_AUTHORIZED_509_REDRAFT") != "true":
                     raise RuntimeError("redraft_write_not_authorized")
                 result = _run_window(args.offset, write=True)
-    except Exception:
-        print("MYHOST_REDRAFT50=red stage=" + args.mode + " details_suppressed")
+    except Exception as exc:
+        # Print only fixed internal reason codes; never leak site/recipient data.
+        code = str(exc)
+        if code not in {
+            "candidate_verification_batch_failed",
+            "site_research_batch_failed",
+            "site_copy_generation_batch_failed",
+        }:
+            code = "unexpected_failure"
+        print("MYHOST_REDRAFT50=red stage=" + args.mode
+              + " reason=" + code + " details_suppressed")
         return 1
     print("MYHOST_REDRAFT50=green " + json.dumps(result, sort_keys=True))
     return 0
