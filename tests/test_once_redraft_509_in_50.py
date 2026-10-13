@@ -178,7 +178,7 @@ class Existing509RedraftTests(unittest.TestCase):
              patch.object(mod, "rewrite_copy", return_value=("", "")):
             result = mod._research_window([target], {}, {}, [])
         self.assertEqual(result[target["lead_id"]][:2],
-                         ("hold", "insufficient_three_to_six_facts"))
+                         ("hold", "insufficient_two_to_three_verified_issues"))
 
     def test_unqualified_drafts_stay_active_without_move(self):
         class FakeIMAP:
@@ -224,7 +224,7 @@ class Existing509RedraftTests(unittest.TestCase):
              patch.object(mod, "research_candidates",
                           side_effect=RuntimeError("sensitive-website.example")):
             with self.assertRaisesRegex(
-                RuntimeError, "^site_research_batch_failed$"
+                RuntimeError, "^all_websites_failed_systemically$"
             ):
                 mod._research_window([target], {}, {}, [])
 
