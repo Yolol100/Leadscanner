@@ -322,6 +322,11 @@ def main():
     if not os.getenv("OUTREACH_MAIL_PASSWORD"):
         print("MYHOST_REDRAFT50=red details_suppressed")
         return 1
+    if args.mode in ("backup", "rewrite") and (
+        os.getenv("LEADSCANNER_AUTHORIZED_509_REDRAFT") != "true"
+    ):
+        print("MYHOST_REDRAFT50=red write_not_authorized")
+        return 1
     try:
         with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
             if args.mode == "backup":
