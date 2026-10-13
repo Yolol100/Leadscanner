@@ -195,40 +195,44 @@ def source_hint(
 
 
 def rewrite_copy(candidate: dict) -> tuple[str, str]:
-    """One first-party observation, single suggested improvement and soft CTA."""
+    """Require 3-6 distinct, first-party improvement points for old Drafts."""
     ranked = select_one_reason(candidate)
     findings = ranked.get("selected_findings") or []
-    if ranked.get("outreach_status") != "ready" or not findings:
+    if ranked.get("outreach_status") != "ready" or not 3 <= len(findings) <= 6:
         return "", ""
-    top = findings[0]
-    if (top.get("source_type") != "official_site" or
-            normalize_domain(top.get("source_url")) !=
-            normalize_domain(candidate.get("official_domain"))):
+    if any(
+        item.get("source_type") != "official_site"
+        or normalize_domain(item.get("source_url")) !=
+            normalize_domain(candidate.get("official_domain"))
+        for item in findings
+    ):
         return "", ""
-    ranked["selected_findings"] = [top]
-    ranked["verified_observation"] = top["observation"]
-    ranked["verified_observation_source_url"] = top["source_url"]
-    ranked["verified_observation_source_type"] = "official_site"
     proposed = value_action_for(ranked)
+    if proposed.get("value_action_status") != "proposed":
+        return "", ""
     completed = generate_one_mail(proposed)
-    if (completed.get("mail_status") != "ready_for_human_review" or
-            completed.get("copy_validation_status") != "green"):
+    if (completed.get("mail_status") != "ready_for_human_review"
+            or completed.get("copy_validation_status") != "green"):
         return "", ""
-    subject = str(completed["subject"])
-    body = str(completed["body"])
+    subject, body = str(completed["subject"]), str(completed["body"])
     lang = completed.get("language")
-    if lang == "nl" and body.endswith("Groet,\nAndrew Baeten"):
-        body = body[:-len("Groet,\nAndrew Baeten")] + "Met vriendelijke groeten,\nAndrew"
-    elif lang == "en" and body.endswith("Best,\nAndrew Baeten"):
-        body = body[:-len("Best,\nAndrew Baeten")] + "Kind regards,\nAndrew"
-    else:
-        return "", ""
-    if (len(subject.split()) > 8 or len(body.split()) > 155
-            or body.count("?") - str(top["observation"]).count("?") != 1
-            or top["observation"] not in body or not body.endswith("\nAndrew")
-            or any(value in body for value in ("{{", "}}", "{%", "%}", "\x00"))):
+    expected_signature = (
+        "Met vriendelijke groeten,\nAndrew" if lang == "nl"
+        else "Kind regards,\nAndrew" if lang == "en" else ""
+    )
+    if (
+        len(subject.split()) > 8 or len(body.split()) > 320
+        or not body.endswith(expected_signature)
+        or not all(
+            item.get("observation") in body
+            and item.get("suggested_improvement") in body
+            for item in proposed["selected_findings"]
+        )
+        or any(value in body for value in ("{{", "}}", "{%", "%}", "\x00"))
+    ):
         return "", ""
     return subject, body
+
 
 
 def _original_snapshot(client, folder: str, lead: str):
