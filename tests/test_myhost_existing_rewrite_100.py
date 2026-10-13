@@ -83,50 +83,53 @@ class ExistingRewriteTests(unittest.TestCase):
         self.assertEqual(site, "https://fonteinonline.nl")
         self.assertEqual(name, "fonteinonline")
 
-    def test_dutch_copy_uses_verified_point_and_exact_signoff(self):
-        base = {
-            "official_domain": "voorbeeld.nl",
-            "language": "nl",
+    def _three_first_party_facts(self, language, domain):
+        if language == "nl":
+            samples = [
+                ("Klanten kunnen online een afspraak plannen voor de werkplaats.", "afspraak"),
+                ("Vraag online een offerte aan voor onderhoud via ons formulier.", "offerte"),
+                ("Bestel producten online en kies het gewenste afhaalmoment.", "bestellen"),
+            ]
+        else:
+            samples = [
+                ("Customers can book a service appointment using our online form.", "booking"),
+                ("Visitors can request a quote for repairs using our online form.", "quote"),
+                ("Customers can order online and choose a pickup time.", "ordering"),
+            ]
+        return {
+            "official_domain": domain,
+            "research_status": "ready",
+            "public_business_email": "info@" + domain,
+            "evidence_candidates": [
+                {"text": fact, "source_type": "official_site",
+                 "source_url": "https://" + domain + "/" + route,
+                 "page_type": "process"}
+                for fact, route in samples
+            ],
         }
-        obs = "Op de contactpagina is een online offerteaanvraag beschikbaar."
-        finding = {"source_type": "official_site", "source_url": "https://voorbeeld.nl/contact",
-                   "observation": obs}
-        ranked = {"outreach_status": "ready", "selected_findings": [finding],
-                  "verified_observation": obs,
-                  "verified_observation_source_url": finding["source_url"],
-                  "verified_observation_source_type": "official_site"}
-        prepared = {"language": "nl", "value_action_status": "proposed"}
-        generated = {
-            "mail_status": "ready_for_human_review", "copy_validation_status": "green",
-            "language": "nl", "subject": "idee voor jullie offerteaanvraag",
-            "body": ("Hoi,\n\nOp de contactpagina is een online offerteaanvraag beschikbaar.\n\n"
-                     "Kan ik een kleine voorbeeldverbetering sturen?\n\nGroet,\nAndrew Baeten"),
-        }
-        with patch.object(target, "select_one_reason", return_value=ranked), \
-             patch.object(target, "value_action_for", return_value=prepared), \
-             patch.object(target, "generate_one_mail", return_value=generated):
-            subject, body = target.rewrite_copy(base)
-        self.assertEqual(subject, "idee voor jullie offerteaanvraag")
-        self.assertIn(obs, body)
-        self.assertTrue(body.endswith("Met vriendelijke groeten,\nAndrew"))
-        self.assertNotIn("Andrew Baeten", body)
 
-    def test_english_signoff_and_no_synthetic_facts(self):
-        obs = "Visitors can request a quote using the online form."
-        finding = {"source_type": "official_site", "source_url": "https://example.org/contact",
-                   "observation": obs}
-        result = {
-            "mail_status": "ready_for_human_review", "copy_validation_status": "green",
-            "language": "en", "subject": "idea for your quote flow",
-            "body": "Hi,\n\n"+obs+"\n\nCan I share an example?\n\nBest,\nAndrew Baeten",
-        }
-        with patch.object(target, "select_one_reason", return_value={
-                "outreach_status": "ready", "selected_findings": [finding]}), \
-             patch.object(target, "value_action_for", return_value={}), \
-             patch.object(target, "generate_one_mail", return_value=result):
-            _, body = target.rewrite_copy({"official_domain":"example.org"})
-        self.assertTrue(body.endswith("Kind regards,\nAndrew"))
-        self.assertIn(obs, body)
+    def test_dutch_copy_has_three_improvements_and_correct_signoff(self):
+        subject, body = target.rewrite_copy(
+            self._three_first_party_facts("nl", "voorbeeld.nl"))
+        self.assertTrue(subject.startswith("3 verbeterideeën"))
+        self.assertTrue(body.startswith("Beste,"))
+        self.assertEqual(body.count("Verbeteridee:"), 3)
+        self.assertTrue(body.endswith("Met vriendelijke groeten,\\nAndrew"))
+        self.assertEqual(body.count("?"), 1)
+
+    def test_english_copy_has_three_improvements_and_correct_signoff(self):
+        subject, body = target.rewrite_copy(
+            self._three_first_party_facts("en", "example.org"))
+        self.assertTrue(subject.startswith("3 practical ideas"))
+        self.assertTrue(body.startswith("Dear team,"))
+        self.assertEqual(body.count("Suggested improvement:"), 3)
+        self.assertTrue(body.endswith("Kind regards,\\nAndrew"))
+        self.assertEqual(body.count("?"), 1)
+
+    def test_one_point_historical_copy_is_never_ready(self):
+        row = self._three_first_party_facts("nl", "voorbeeld.nl")
+        row["evidence_candidates"] = row["evidence_candidates"][:1]
+        self.assertEqual(target.rewrite_copy(row), ("", ""))
 
     def test_nonofficial_evidence_never_leads_to_email(self):
         with patch.object(target, "select_one_reason", return_value={
