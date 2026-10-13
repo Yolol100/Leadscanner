@@ -1,6 +1,6 @@
 """One-off existing-only redraft: 509 old mijn.host Drafts, 50 per cohort.
 
-Always research the current first-party website; draft 3-6 sourced improvement
+Always research the current first-party website; draft 2-3 confirmed defects
 points or quarantine the old unqualified Draft. Copy all original raw messages
 to a private rollback folder BEFORE any changes. No sends, no new lead IDs,
 no recipient changes and no raw PII or messages in public runner logs.
@@ -42,7 +42,7 @@ BACKUP_FOLDER = "Leadscanner_Originals_20261013_Before509Redraft"
 SENDER = "info@andrewbaeten.nl"
 HOLD_REASONS = (
     "source_identity_or_history", "site_unverified", "contact_unverified",
-    "insufficient_three_to_six_facts", "changed_since_snapshot",
+    "insufficient_two_to_three_verified_issues", "changed_since_snapshot",
 )
 
 
@@ -78,6 +78,40 @@ def _source_context():
     return sources, history[0], ordinary
 
 
+def _bounded_resilient_site_stage(rows, stage, *, workers):
+    """A bad remote site may hold its own lead, not fail 200 other sites.
+
+    Process groups of 50; if one group fails, retry records individually.
+    If every site fails, fail closed (probable systemic/provider outage).
+    """
+    if not rows:
+        return []
+    output = []
+    failed = 0
+    for start in range(0, len(rows), STEP):
+        group = rows[start:start + STEP]
+        try:
+            data = stage({"candidates": group}, limit=len(group),
+                         max_workers=workers)["candidates"]
+            if len(data) != len(group):
+                raise RuntimeError("website_stage_result_count_mismatch")
+            output.extend(data)
+        except Exception:
+            for row in group:
+                try:
+                    data = stage({"candidates": [row]}, limit=1,
+                                 max_workers=1)["candidates"]
+                    if len(data) != 1:
+                        raise RuntimeError("single_site_result_count_mismatch")
+                    output.extend(data)
+                except Exception:
+                    failed += 1
+                    output.append({**row, "site_stage_failed": True})
+    if failed == len(rows):
+        raise RuntimeError("all_websites_failed_systemically")
+    return output
+
+
 def _research_window(window, sources, history, ordinary):
     """Source + public website evidence. No IMAP writes or raw output."""
     decisions = {}
@@ -95,35 +129,37 @@ def _research_window(window, sources, history, ordinary):
             "category_hint": "",
             "original_recipient": record["recipient"],
         })
-    if hints:
-        verified = verify_candidates(
-            {"candidates": hints}, limit=len(hints), max_workers=8
-        )["candidates"]
-    else:
-        verified = []
+    verified = _bounded_resilient_site_stage(
+        hints, verify_candidates, workers=8
+    )
     eligible = []
     for cand in verified:
-        if cand.get("ready_for_research"):
+        if cand.get("site_stage_failed"):
+            decisions[cand["lead_id"]] = ("hold", "technical_site_error", None)
+        elif cand.get("ready_for_research"):
             eligible.append(cand)
         else:
             decisions[cand["lead_id"]] = ("hold", "site_unverified", None)
-    if eligible:
-        researched = research_candidates(
-            {"candidates": eligible}, limit=len(eligible), max_workers=6
-        )["candidates"]
-    else:
-        researched = []
+    researched = _bounded_resilient_site_stage(
+        eligible, research_candidates, workers=6
+    )
     for cand in researched:
         lead = cand["lead_id"]
+        if cand.get("site_stage_failed"):
+            decisions[lead] = ("hold", "technical_site_error", None)
+            continue
         recipient = next(item["recipient"] for item in window if item["lead_id"] == lead)
         if (cand.get("research_status") != "ready"
                 or cand.get("contact_status") != "verified_official_site"
                 or normalize_email(cand.get("public_business_email")) != recipient):
             decisions[lead] = ("hold", "contact_unverified", None)
             continue
-        subject, body = rewrite_copy(cand)
+        try:
+            subject, body = rewrite_copy(cand)
+        except Exception as exc:
+            raise RuntimeError("site_copy_generation_batch_failed") from exc
         if not subject or not body:
-            decisions[lead] = ("hold", "insufficient_three_to_six_facts", None)
+            decisions[lead] = ("hold", "insufficient_two_to_three_verified_issues", None)
             continue
         draft = {
             "lead_id": lead, "email": recipient, "company": cand.get("name_hint"),
@@ -134,8 +170,8 @@ def _research_window(window, sources, history, ordinary):
         _, expected_msg = build_message(draft)
         if (len([line for line in body.splitlines()
                  if line.lstrip().startswith(tuple(f"{n}. " for n in range(1, 7)))]) < 3
-                or body.count("Verbeteridee:") + body.count("Suggested improvement:") < 3):
-            decisions[lead] = ("hold", "insufficient_three_to_six_facts", None)
+                or body.count("Verbeteridee:") + body.count("Suggested improvement:") < 2):
+            decisions[lead] = ("hold", "insufficient_two_to_three_verified_issues", None)
             continue
         decisions[lead] = ("rewrite", "source_supported", (draft, expected_msg))
     if set(decisions) != {item["lead_id"] for item in window}:
@@ -272,7 +308,7 @@ def _run_window(offset, *, write=False):
                     "all_sources_researched": True, "mailbox_writes": False,
                     "emails_sent": 0, "created_new_leads": 0}
         require_uidplus(client, "existing-only 50 Draft redraft")
-        ensure_hold_folder(client, drafts)
+        # No recovery-folder creation or move for unqualified active Drafts.
         if normalize_email(os.getenv("OUTREACH_SENDER_EMAIL") or SENDER) != SENDER:
             raise RuntimeError("expected_sender_changed")
         for item in targets:
@@ -288,12 +324,10 @@ def _run_window(offset, *, write=False):
                 continue
             action, reason, payload = decisions[lead]
             if action == "hold":
-                if move_to_hold(client, drafts, HOLD_FOLDER, lead,
-                                item["recipient"], SENDER, original):
-                    counts["archived_for_recovery"] += 1
-                    counts[reason] += 1
-                else:
-                    counts["hold_user_edited"] += 1
+                # Keep unqualified originals in the active Drafts folder.
+                # Moving them to recovery would hide them without approval.
+                counts["unqualified_unchanged"] += 1
+                counts[reason] += 1
                 continue
             row, expected_msg = payload
             fresh_registry = fetch_registry()
@@ -336,6 +370,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=("preview", "backup", "rewrite"), required=True)
     parser.add_argument("--offset", type=int, default=0)
+    parser.add_argument("--count", type=int, default=STEP,
+                        help="Read-only websites per cohort: 50, 100, 150, or 200")
     args = parser.parse_args()
     if not os.getenv("OUTREACH_MAIL_PASSWORD"):
         print("MYHOST_REDRAFT50=red details_suppressed")
@@ -354,9 +390,10 @@ def main():
                 client = connect_imap()
                 try:
                     drafts, active, held = _open_inventory(client, strict_initial=True)
-                    if not (0 <= args.offset < TOTAL_ACTIVE and args.offset % STEP == 0):
+                    if (args.count not in {50, 100, 150, 200} or
+                            not (0 <= args.offset < TOTAL_ACTIVE and args.offset % args.count == 0)):
                         raise RuntimeError("invalid_readonly_preview_cohort_offset")
-                    cohort = active[args.offset:args.offset + STEP]
+                    cohort = active[args.offset:args.offset + args.count]
                     sources, history, ordinary = _source_context()
                     decisions = _research_window(cohort, sources, history, ordinary)
                     counts = Counter()
@@ -372,11 +409,23 @@ def main():
                 finally:
                     client.logout()
             else:
+                if args.count != STEP:
+                    raise RuntimeError("writers_must_remain_maximum_fifty_per_batch")
                 if os.getenv("LEADSCANNER_AUTHORIZED_509_REDRAFT") != "true":
                     raise RuntimeError("redraft_write_not_authorized")
                 result = _run_window(args.offset, write=True)
-    except Exception:
-        print("MYHOST_REDRAFT50=red stage=" + args.mode + " details_suppressed")
+    except Exception as exc:
+        # Print only fixed internal reason codes; never leak site/recipient data.
+        code = str(exc)
+        if code not in {
+            "candidate_verification_batch_failed",
+            "site_research_batch_failed",
+            "site_copy_generation_batch_failed",
+            "all_websites_failed_systemically",
+        }:
+            code = "unexpected_failure"
+        print("MYHOST_REDRAFT50=red stage=" + args.mode
+              + " reason=" + code + " details_suppressed")
         return 1
     print("MYHOST_REDRAFT50=green " + json.dumps(result, sort_keys=True))
     return 0

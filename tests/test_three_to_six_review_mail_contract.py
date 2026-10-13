@@ -1,4 +1,4 @@
-"""User contract: 3-6 verified practical suggestions, no synthetic send."""
+"""User contract: 2-3 verified practical suggestions, no synthetic send."""
 import unittest
 
 from outreach_stages import (
@@ -58,8 +58,8 @@ class ThreeToSixReviewMailContract(unittest.TestCase):
         self.assertIsNone(result["subject"])
         self.assertIsNone(result["body"])
 
-    def test_one_or_two_good_facts_cannot_create_a_draft(self):
-        for count in (1, 2):
+    def test_one_good_fact_cannot_create_a_draft(self):
+        for count in (1,):
             with self.subTest(count=count):
                 result = review(candidate(count))
                 self.assertEqual(result["mail_status"], "hold")
@@ -83,7 +83,7 @@ class ThreeToSixReviewMailContract(unittest.TestCase):
             self.assertIn(part["suggested_improvement"], item["body"])
             self.assertTrue(part["source_url"].startswith("https://testwinkel.nl/"))
 
-    def test_six_is_supported_without_repetition_or_padding(self):
+    def test_maximum_three_without_repetition_or_padding(self):
         item = review(candidate(6, store=True))
         self.assertEqual(item["mail_status"], "ready_for_human_review",
                          msg=str({"reason": item["copy_validation_reasons"],
@@ -91,10 +91,10 @@ class ThreeToSixReviewMailContract(unittest.TestCase):
                                   "value_hold": item.get("value_action_hold_reason"),
                                   "count": len(item.get("selected_findings") or []),
                                   "categories": [f.get("category") for f in (item.get("selected_findings") or [])]}))
-        self.assertEqual(item["subject"], "6 verbeterideeën voor jullie webshop")
-        self.assertEqual(item["body"].count("Verbeteridee:"), 6)
+        self.assertEqual(item["subject"], "3 verbeterideeën voor jullie webshop")
+        self.assertEqual(item["body"].count("Verbeteridee:"), 3)
         self.assertLessEqual(len(item["body"].split()), 320)
-        self.assertEqual(len({f["category"] for f in item["selected_findings"]}), 6)
+        self.assertEqual(len({f["category"] for f in item["selected_findings"]}), 3)
 
     def test_language_is_en_when_first_party_site_is_english(self):
         item = review(candidate(3, language="en", domain="example.org"))

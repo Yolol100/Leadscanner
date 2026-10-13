@@ -8,6 +8,8 @@ Contracts:
 """
 from __future__ import annotations
 
+from verified_site_issues import markup_issues, verified_broken_link
+
 import argparse
 import json
 import re
@@ -27,8 +29,8 @@ from site_crawl import PoliteSiteSession
 from url_safety import is_public_http_url
 
 MAX_DISCOVERY = 5000
-MAX_VERIFY = 100
-MAX_RESEARCH = 100
+MAX_VERIFY = 200
+MAX_RESEARCH = 200
 MAX_VERIFY_WORKERS = 10
 MAX_RESEARCH_WORKERS = 6
 MAX_BYTES = 750_000
@@ -534,6 +536,7 @@ def verify_candidate(candidate: dict, *, session_factory=requests.Session) -> di
         "homepage_contact_form_present": False,
         "homepage_phone_link_present": False,
         "homepage_structured_data": [],
+        "homepage_issue_candidates": [],
     })
     reason = cheap_competitor_reason(candidate)
     if reason:
@@ -584,6 +587,7 @@ def verify_candidate(candidate: dict, *, session_factory=requests.Session) -> di
     result["homepage_contact_form_present"] = parsed["contact_form_present"]
     result["homepage_phone_link_present"] = parsed["phone_link_present"]
     result["homepage_structured_data"] = parsed["structured_data"]
+    result["homepage_issue_candidates"] = markup_issues(html, final_url)
     result["contact_links"] = preferred_contact_links(parsed, final_url, domain, limit=MAX_CONTACT_PAGES)
     result["research_links"] = broad_research_links(parsed, final_url, domain)
     if not identity_ok:
@@ -697,6 +701,7 @@ def research_candidate(candidate: dict, *, session_factory=requests.Session) -> 
     result["research_status"] = "hold_not_ready"
     result["researched_urls"] = []
     result["evidence_candidates"] = []
+    result["site_issue_candidates"] = list(candidate.get("homepage_issue_candidates") or [])
     result["research_pages_attempted"] = 0
     result["research_pages_fetched"] = 0
     result["research_page_failure_counts"] = {}
@@ -738,6 +743,7 @@ def research_candidate(candidate: dict, *, session_factory=requests.Session) -> 
     ))
     pending = business_links[:4] + contact_links[:4] + business_links[4:] + contact_links[4:]
     attempted = {official_url}
+    link_sources = {link: official_url for link in pending}
     while pending and len(attempted) - 1 < MAX_RESEARCH_PAGES:
         link = pending.pop(0)
         if link in attempted:
@@ -760,8 +766,17 @@ def research_candidate(candidate: dict, *, session_factory=requests.Session) -> 
             else:
                 reason = "request_unavailable"
             page_failures[reason] += 1
+            # A single 404 can be transient. Only two exact failures on
+            # an actual first-party internal link count as a confirmed issue.
+            if status == 404 and link in link_sources:
+                _retry_html, _retry_url, retry_status = safe_fetch_html(session, link, domain)
+                if retry_status == 404 and not getattr(session, "policy_hold", False):
+                    result["site_issue_candidates"].append(
+                        verified_broken_link(link_sources[link], link)
+                    )
             continue
         parsed = parse_html(html)
+        result["site_issue_candidates"].extend(markup_issues(html, final_url))
         researched_urls.append(final_url)
         pages.append({"source_url": final_url, "parsed": parsed})
         evidence_pages.append(evidence_sentences(
@@ -778,6 +793,8 @@ def research_candidate(candidate: dict, *, session_factory=requests.Session) -> 
             url for url in child_research
             if url not in attempted and url not in pending and url not in new_contacts
         ]
+        for child in new_contacts + new_research:
+            link_sources.setdefault(child, final_url)
         pending = new_contacts + pending[:3] + new_research[:4] + pending[3:]
         if len(pending) > 2 * MAX_RESEARCH_PAGES:
             pending = pending[:2 * MAX_RESEARCH_PAGES]
@@ -806,6 +823,12 @@ def research_candidate(candidate: dict, *, session_factory=requests.Session) -> 
     result["research_pages_fetched"] = len(researched_urls)
     result["research_page_failure_counts"] = dict(sorted(page_failures.items()))
     result["evidence_candidates"] = deduped
+    issues = sorted(result["site_issue_candidates"], key=lambda issue: -issue["severity"])
+    result["site_issue_candidates"] = list({
+        issue["category"]: issue for issue in reversed(issues)
+    }.values())
+    result["site_issue_candidates"].sort(key=lambda issue: -issue["severity"])
+    result["site_issue_candidates"] = result["site_issue_candidates"][:3]
     # A reachable, verified website was researched even if its content is too
     # brief for a reliable outreach observation. Never turn a weak finding
     # into a claim merely to improve the coverage metric.

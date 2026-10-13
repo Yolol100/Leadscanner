@@ -41,11 +41,11 @@ class ReviewDraftStagesTests(unittest.TestCase):
         self.assertEqual(a, b)
         self.assertRegex(a, r"^growth-[0-9a-f]{20}$")
 
-    def test_forged_green_draft_with_two_points_is_rejected(self):
+    def test_forged_green_draft_with_one_point_is_rejected(self):
         candidate = self.mail_candidate()
-        candidate["selected_findings"] = candidate["selected_findings"][:2]
+        candidate["selected_findings"] = candidate["selected_findings"][:1]
         with self.assertRaisesRegex(
-            ValueError, "review_requires_three_to_six_distinct_improvements"
+            ValueError, "review_requires_two_to_three_distinct_improvements"
         ):
             prepare_review_batch({"candidates": [candidate]})
 

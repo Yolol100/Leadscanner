@@ -106,12 +106,31 @@ class ExistingRewriteTests(unittest.TestCase):
                  "page_type": "process"}
                 for fact, route in samples
             ],
+            "site_issue_candidates": [
+                {
+                    "category": name, "source_type": "official_site",
+                    "source_url": "https://" + domain + "/contact",
+                    "severity": rank,
+                    "observation_nl": dutch, "observation_en": english,
+                }
+                for name, rank, dutch, english in [
+                    ("broken_internal_link", 100,
+                     "Een interne link op de website geeft bij twee controles de status HTTP 404",
+                     "An internal website link returned HTTP 404 in two separate checks"),
+                    ("unlabeled_form_control", 90,
+                     "Een invoerveld in het formulier heeft geen correct gekoppeld toegankelijk label",
+                     "An input field in the form has no properly associated accessible label"),
+                    ("unnamed_image_link", 85,
+                     "Een afbeeldingslink in de HTML mist een tekstalternatief en toegankelijke naam",
+                     "An image link in the HTML lacks alternative text and an accessible name"),
+                ]
+            ],
         }
 
     def test_dutch_copy_has_three_improvements_and_correct_signoff(self):
         subject, body = target.rewrite_copy(
             self._three_first_party_facts("nl", "voorbeeld.nl"))
-        self.assertTrue(subject.startswith("3 verbeterideeën"))
+        self.assertTrue(subject.startswith("3 technische aandachtspunten"))
         self.assertTrue(body.startswith("Beste,"))
         self.assertEqual(body.count("Verbeteridee:"), 3)
         self.assertTrue(body.endswith("Met vriendelijke groeten,\nAndrew"))
@@ -120,7 +139,7 @@ class ExistingRewriteTests(unittest.TestCase):
     def test_english_copy_has_three_improvements_and_correct_signoff(self):
         subject, body = target.rewrite_copy(
             self._three_first_party_facts("en", "example.org"))
-        self.assertTrue(subject.startswith("3 practical ideas"))
+        self.assertTrue(subject.startswith("3 verified site issues"))
         self.assertTrue(body.startswith("Dear team,"))
         self.assertEqual(body.count("Suggested improvement:"), 3)
         self.assertTrue(body.endswith("Kind regards,\nAndrew"))
@@ -128,11 +147,11 @@ class ExistingRewriteTests(unittest.TestCase):
 
     def test_one_point_historical_copy_is_never_ready(self):
         row = self._three_first_party_facts("nl", "voorbeeld.nl")
-        row["evidence_candidates"] = row["evidence_candidates"][:1]
+        row["site_issue_candidates"] = row["site_issue_candidates"][:1]
         self.assertEqual(target.rewrite_copy(row), ("", ""))
 
     def test_nonofficial_evidence_never_leads_to_email(self):
-        with patch.object(target, "select_one_reason", return_value={
+        with patch.object(target, "select_verified_site_issues", return_value={
             "outreach_status": "ready",
             "selected_findings": [{
                 "source_type": "web_search",

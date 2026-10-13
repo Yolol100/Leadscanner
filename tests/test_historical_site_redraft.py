@@ -242,6 +242,16 @@ class HistoricalSiteRebuildTests(unittest.TestCase):
                     finding("Bestel online uw onderdelen en kies het gewenste afleveradres.", "bestellen"),
                     finding("Onze klanten vinden antwoorden in de kennisbank met veelgestelde vragen.", "vragen"),
                 ],
+                "site_issue_candidates": [
+                    {"category": name, "source_type": "official_site",
+                     "source_url": "https://sample.nl/contact",
+                     "severity": rank, "observation_nl": observation}
+                    for name, rank, observation in (
+                        ("broken_internal_link", 100, "Een interne link op de website geeft bij twee controles een status HTTP 404"),
+                        ("unlabeled_form_control", 90, "Een invoerveld in het formulier heeft geen correct gekoppeld toegankelijk label"),
+                        ("unnamed_image_link", 85, "Een afbeeldingslink in de HTML heeft geen tekstalternatief of toegankelijke naam"),
+                    )
+                ],
             })
             return {"candidates": [verified]}
         verifier.side_effect = check_verify
@@ -253,11 +263,11 @@ class HistoricalSiteRebuildTests(unittest.TestCase):
         self.assertEqual(report["counts"]["checked"], BATCH_SIZE)
         self.assertEqual(report["counts"]["ready_for_review"], 1)
         self.assertEqual(report["counts"]["hold_missing_website"], 99)
-        self.assertEqual(report["counts"]["websites_with_four_to_six_findings"], 1)
+        self.assertEqual(report["counts"]["websites_with_two_to_three_findings"], 1)
         self.assertEqual(report["counts"]["mail_quality_evaluated"], 1)
         self.assertEqual(len(batch["rows"]), 1)
         mail = batch["rows"][0]
-        self.assertEqual(len(mail["selected_findings"]), 4)
+        self.assertEqual(len(mail["selected_findings"]), 3)
         for item in mail["selected_findings"]:
             from outreach_stages import finding_excerpt
             self.assertIn(finding_excerpt(item), mail["body"])
