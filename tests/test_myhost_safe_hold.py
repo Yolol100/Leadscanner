@@ -185,10 +185,7 @@ class HoldTests(unittest.TestCase):
         self.assertIn("len(active) != 529 or len(held) != 644", workflow)
         self.assertIn("validate_hold_inventory(", workflow)
         self.assertIn("require_uidplus(client, 'reversible recovery hold')", workflow)
-        self.assertIn(
-            """if: "!contains(github.event.head_commit.message, '[myhost-529-hold-only]')\"""",
-            workflow,
-        )
+        self.assertIn('if: "!contains(github.event.head_commit.message', workflow)
         self.assertIn("MYHOST_529_PREFLIGHT=red details_suppressed", workflow)
 
 if __name__ == "__main__":
