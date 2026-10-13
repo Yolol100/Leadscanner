@@ -184,48 +184,54 @@ class ExistingRewriteTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "revision_holding_not_authorized"):
                 target.run(300, write=False, cleanup=True, hold_revision=True)
 
-    def test_three_review_required_drafts_fail_closed_if_evidence_drifts(self):
+    def test_exact_five_draft_hold_reason_counts_and_inventory(self):
         from collections import Counter
-        robots = Counter({
-            "checked": 62, "already_correct": 60, "researched": 60,
-            "hold_site_verification": 2, "site_hold_hold_robots_policy": 2,
+        first = Counter({
+            "checked": 62, "already_correct": 58, "researched": 60,
+            "ready_to_rewrite": 1, "hold_site_verification": 2,
+            "site_hold_hold_robots_policy": 2,
+            "hold_contact_not_currently_published": 1,
         })
-        recovered = target._verify_revision_evidence(
-            500, [None] * 62, robots, {"lead-a": "site", "lead-b": "site"})
-        self.assertEqual((recovered["active_after"], recovered["held_after"]),
-                         (507, 666))
-        self.assertEqual(recovered["expected_moves"], 2)
-        with self.assertRaisesRegex(RuntimeError, "three_revision_evidence_drift"):
-            target._verify_revision_evidence(
-                500, [None] * 62, robots,
-                {"lead-a": "revision", "lead-b": "site"})
-        with self.assertRaisesRegex(RuntimeError, "three_revision_evidence_drift"):
-            target._verify_revision_evidence(
-                500, [None] * 62,
-                Counter(dict(robots, site_hold_hold_robots_policy=1)),
-                {"lead-a": "site", "lead-b": "site"})
-        with self.assertRaisesRegex(RuntimeError, "three_revision_evidence_drift"):
-            target._verify_revision_evidence(
-                500, [None] * 62,
-                Counter(dict(robots, hold_contact_not_currently_published=1)),
-                {"lead-a": "site", "lead-b": "site"})
-        with self.assertRaisesRegex(RuntimeError, "three_revision_evidence_drift"):
-            target._verify_revision_evidence(
-                500, [None] * 62, robots, {"lead-a": "site"})
+        targets = {"a": "site", "b": "site", "c": "address", "d": "revision"}
+        accepted = target._verify_revision_evidence(500, [None] * 62, first, targets)
+        self.assertEqual((accepted["expected_moves"], accepted["active_after"],
+                          accepted["held_after"]), (4, 505, 668))
+        second = Counter({
+            "checked": 65, "already_correct": 64, "researched": 65,
+            "ready_to_rewrite": 1,
+        })
+        accepted = target._verify_revision_evidence(
+            1000, [None] * 65, second, {"e": "revision"})
+        self.assertEqual((accepted["expected_moves"], accepted["active_after"],
+                          accepted["held_after"]), (1, 504, 669))
 
-        one = Counter({"checked": 65, "already_correct": 64,
-                       "researched": 65, "ready_to_rewrite": 1})
-        recovered = target._verify_revision_evidence(
-            1000, [None] * 65, one, {"lead-c": "revision"})
-        self.assertEqual((recovered["active_after"], recovered["held_after"]),
-                         (506, 667))
-        with self.assertRaisesRegex(RuntimeError, "three_revision_evidence_drift"):
+    def test_exact_five_draft_hold_fails_closed_on_any_changed_evidence(self):
+        from collections import Counter
+        good = Counter({
+            "checked": 62, "already_correct": 58, "researched": 60,
+            "ready_to_rewrite": 1, "hold_site_verification": 2,
+            "site_hold_hold_robots_policy": 2,
+            "hold_contact_not_currently_published": 1,
+        })
+        targets = {"a": "site", "b": "site", "c": "address", "d": "revision"}
+        cases = [
+            (Counter(dict(good, hold_contact_not_currently_published=0)), targets),
+            (Counter(dict(good, hold_contact_not_currently_published=2)), targets),
+            (Counter(dict(good, already_correct=59)), targets),
+            (Counter(dict(good, site_hold_hold_robots_policy=1)), targets),
+            (Counter(dict(good, hold_insufficient_evidence_or_copy=1)), targets),
+            (good, {"a": "site", "b": "site", "c": "address", "d": "address"}),
+            (good, {"a": "site", "b": "site", "c": "address"}),
+        ]
+        for observed, held in cases:
+            with self.subTest(observed=dict(observed), reasons=held):
+                with self.assertRaisesRegex(RuntimeError, "five_draft_evidence_drift"):
+                    target._verify_revision_evidence(500, [None] * 62, observed, held)
+        with self.assertRaisesRegex(RuntimeError, "five_draft_evidence_drift"):
             target._verify_revision_evidence(
-                1000, [None] * 65, one, {"lead-c": "site"})
-        with self.assertRaisesRegex(RuntimeError, "three_revision_evidence_drift"):
-            target._verify_revision_evidence(
-                1000, [None] * 65, Counter({"checked": 65, "already_correct": 65,
-                                            "researched": 65}), {})
+                1000, [None] * 65,
+                Counter({"checked": 65, "already_correct": 65,
+                         "researched": 65}), {})
 
 
 if __name__ == "__main__":
