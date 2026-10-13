@@ -176,5 +176,28 @@ class ExistingRewriteTests(unittest.TestCase):
         self.assertNotIn("sendmail(", program)
 
 
+    def test_three_review_required_drafts_require_explicit_gate(self):
+        with patch.dict(os.environ, {"LEADSCANNER_HOLD_REVISION": "false"}):
+            with self.assertRaisesRegex(RuntimeError, "revision_holding_not_authorized"):
+                target.run(500, write=False, cleanup=True, hold_revision=True)
+        with patch.dict(os.environ, {"LEADSCANNER_HOLD_REVISION": "true"}):
+            with self.assertRaisesRegex(RuntimeError, "revision_holding_not_authorized"):
+                target.run(300, write=False, cleanup=True, hold_revision=True)
+
+    def test_three_review_required_drafts_fail_closed_if_evidence_drifts(self):
+        from collections import Counter
+        c = Counter({"already_correct": 60, "ready_to_rewrite": 2})
+        evidence = target._verify_revision_evidence(
+            500, [None] * 62, c, {"lead-a": "revision", "lead-b": "revision"})
+        self.assertEqual((evidence["active_after"], evidence["held_after"]), (507, 666))
+        with self.assertRaisesRegex(RuntimeError, "three_revision_evidence_drift"):
+            target._verify_revision_evidence(
+                500, [None] * 62, c, {"lead-a": "revision", "lead-b": "source"})
+        with self.assertRaisesRegex(RuntimeError, "three_revision_evidence_drift"):
+            target._verify_revision_evidence(
+                1000, [None] * 65, Counter({"already_correct": 65}),
+                {})
+
+
 if __name__ == "__main__":
     unittest.main()
