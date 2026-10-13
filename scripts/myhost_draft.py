@@ -234,18 +234,19 @@ def connect_imap():
 
 
 def find_drafts_folder(client) -> str:
-    """Never mistake Leadscanner recovery/backups for real Drafts.
+    """Identify exactly one real Drafts mailbox from IMAP LIST, never backups.
 
-    Prefer the RFC 6154 IMAP special-use Drafts flag (even on a custom name).
-    If absent, accept exactly one Drafts/Concepten folder, not substring
-    matches such as 'Before509Redraft'.
+    An IMAP LIST response may return an unquoted mailbox atom or a quoted
+    mailbox name. The hierarchy separator is never the mailbox name.
     """
     preferred = os.getenv("OUTREACH_DRAFT_FOLDER", "").strip()
-    if preferred:
-        if any(part.startswith("leadscanner_") for part in
-               preferred.casefold().replace("/", ".").split(".")):
-            raise RuntimeError("configured_drafts_folder_is_recovery_folder")
-        return preferred
+    if preferred in {".", "/", ".."}:
+        raise RuntimeError("configured_drafts_folder_is_hierarchy_delimiter")
+    if preferred and any(
+        part.startswith("leadscanner_")
+        for part in preferred.casefold().replace("/", ".").split(".")
+    ):
+        raise RuntimeError("configured_drafts_folder_is_recovery_folder")
 
     status, rows = client.list()
     if status != "OK":
@@ -255,24 +256,39 @@ def find_drafts_folder(client) -> str:
     named = []
     for raw in rows or []:
         entry = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else str(raw)
-        parts = entry.rsplit('"', 2)
-        folder = parts[-2] if len(parts) >= 3 else entry.split()[-1].strip('"')
-        lowered = folder.casefold()
-        if any(part.startswith("leadscanner_") for part in
-               lowered.replace("/", ".").split(".")):
+        match = re.fullmatch(
+            r'\((?P<flags>[^)]*)\)\s+(?:"(?:\\.|[^"\\])*"|NIL)\s+'
+            r'(?P<mailbox>"(?:\\.|[^"\\])*"|[^\s"]+)\s*',
+            entry,
+        )
+        if match is None:
+            if "\\drafts" in entry.casefold():
+                raise RuntimeError("imap_drafts_list_unparseable")
             continue
-        flags = entry.split(")", 1)[0].casefold()
+        token = match.group("mailbox")
+        folder = token[1:-1].replace('\\"', '"').replace('\\\\', '\\') if token.startswith('"') else token
+        low = folder.casefold()
+        if low in {".", "/", ".."} or any(
+            part.startswith("leadscanner_")
+            for part in low.replace("/", ".").split(".")
+        ):
+            continue
+        flags = match.group("flags").casefold().split()
         if "\\drafts" in flags:
             special.append(folder)
-        elif lowered.replace("/", ".").split(".")[-1] in (
+        elif low.replace("/", ".").split(".")[-1] in (
             "draft", "drafts", "concept", "concepten"
         ):
             named.append(folder)
 
-    matches = list(dict.fromkeys(special if special else named))
-    if len(matches) != 1:
+    possibilities = list(dict.fromkeys(special if special else named))
+    if preferred:
+        if preferred not in possibilities:
+            raise RuntimeError("configured_drafts_folder_not_verified")
+        return preferred
+    if len(possibilities) != 1:
         raise RuntimeError("real_drafts_folder_missing_or_ambiguous")
-    return matches[0]
+    return possibilities[0]
 
 
 def select_folder(client, folder: str, *, readonly: bool = True) -> None:
