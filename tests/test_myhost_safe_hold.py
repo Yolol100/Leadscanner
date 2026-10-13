@@ -146,6 +146,7 @@ class HoldTests(unittest.TestCase):
 
     def test_missing_uidplus_blocks_any_write(self):
         self.client.no_uidplus = True
+        self.client.capabilities = (b"IMAP4REV1",)
         with self.assertRaisesRegex(RuntimeError, "UIDPLUS"):
             self.act()
         self.assertEqual(len(self.client.folders[HOLD_FOLDER]), 0)
