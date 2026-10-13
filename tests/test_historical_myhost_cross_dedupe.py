@@ -17,16 +17,22 @@ class HeaderOnlyIMAP:
         self.readonly.append(readonly)
         return "OK", [b"3"]
     def search(self, *args):
-        return "OK", [b"1 2 3"]
+        return "OK", [b" ".join(str(i + 1).encode()
+                                for i in range(len(self.texts)))]
     def fetch(self, seq, selector):
         self.fetch_calls.append(selector)
-        return "OK", [(b"1", x) for x in self.texts]
+        indices = [int(value) - 1 for value in seq.split(",")]
+        return "OK", [(str(i+1).encode(), self.texts[i]) for i in indices]
     def logout(self):
         self.closed = True
 
 
 class CrossDuplicateTests(unittest.TestCase):
     def _run(self, texts):
+        texts = list(texts)
+        while len(texts) < 43:
+            i = len(texts)
+            texts.append((f"To: one{i}@unique{i}.nl\r\n\r\n").encode())
         client = HeaderOnlyIMAP(texts)
         baseline = (
             None, None, None, {"source_checked": 1128},
