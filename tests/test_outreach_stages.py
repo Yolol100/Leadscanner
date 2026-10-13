@@ -60,11 +60,11 @@ class OutreachStagesTests(unittest.TestCase):
                 self.assertNotIn("ROI", body)
                 if language == "nl":
                     self.assertTrue(body.startswith("Beste,"))
-                    self.assertTrue(body.endswith("Met vriendelijke groeten,\\nAndrew"))
+                    self.assertTrue(body.endswith("Met vriendelijke groeten,\nAndrew"))
                     self.assertIn("Als je geen interesse hebt, hoef je niet te reageren.", body)
                 else:
                     self.assertTrue(body.startswith("Dear team,"))
-                    self.assertTrue(body.endswith("Kind regards,\\nAndrew"))
+                    self.assertTrue(body.endswith("Kind regards,\nAndrew"))
                     self.assertIn("If you're not interested, there's no need to reply.", body)
 
     def test_ambiguous_website_language_is_held_regardless_of_domain(self):
@@ -127,7 +127,7 @@ class OutreachStagesTests(unittest.TestCase):
             mail = generate_one_mail(valued)
             body = mail["body"]
             self.assertEqual(body.count("Andrew"), 1)
-            self.assertTrue(body.endswith("\\nAndrew"))
+            self.assertTrue(body.endswith("\nAndrew"))
             self.assertEqual(body.count("?"), 1)
             self.assertNotIn("Webactueel", body)
             self.assertNotIn("ROI", body)
@@ -156,7 +156,7 @@ class OutreachStagesTests(unittest.TestCase):
             "candidates": [candidate],
         })))["candidates"][0]
         self.assertEqual(row["mail_status"], "ready_for_human_review")
-        self.assertTrue(row["body"].startswith("Beste Jan,\\n\\n"))
+        self.assertTrue(row["body"].startswith("Beste Jan,\n\n"))
         self.assertFalse(row["automatic_send"])
 
     def test_generic_company_description_is_hold(self):
