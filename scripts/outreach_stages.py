@@ -17,10 +17,10 @@ from cold_stages import normalize_domain
 
 MAX_CANDIDATES = 100
 MAX_BODY_WORDS = 320
-MIN_MAIL_IMPROVEMENTS = 3
-MAX_MAIL_IMPROVEMENTS = 6
+MIN_MAIL_IMPROVEMENTS = 2
+MAX_MAIL_IMPROVEMENTS = 3
 MAX_SUBJECT_WORDS = 8
-MAX_DRAFT_HIGHLIGHTS = 6  # Include every verified finding, never pad weak evidence.
+MAX_DRAFT_HIGHLIGHTS = 3  # Include every verified finding, never pad weak evidence.
 
 NL_MARKERS = (" jullie ", " onze ", " voor ", " een ", " het ", " met ", " kunnen ", " afspraak ", " offerte ")
 EN_MARKERS = (" your ", " our ", " for ", " the ", " with ", " can ", " booking ", " quote ", " services ")
@@ -197,6 +197,18 @@ IMPROVEMENT_IDEAS = {
     "navigation": {
         "nl": ("Navigatie", "de meest gebruikte zoek- en filterroutes bij elkaar presenteren"),
         "en": ("Navigation", "present the main search and filtering options together"),
+    },
+    "broken_internal_link": {
+        "nl": ("Kapotte interne link", "de link herstellen of rechtstreeks naar de juiste bestaande pagina verwijzen"),
+        "en": ("Broken internal link", "fix the link or point it directly to the correct existing page"),
+    },
+    "unlabeled_form_control": {
+        "nl": ("Formulierlabel", "een correct gekoppeld en duidelijk invoerlabel toevoegen"),
+        "en": ("Form label", "add a descriptive label that is correctly associated with the field"),
+    },
+    "unnamed_image_link": {
+        "nl": ("Afbeeldingslink", "de link een duidelijk tekstalternatief of toegankelijke naam geven"),
+        "en": ("Image link", "give the link meaningful alternative text or an accessible name"),
     },
 }
 
@@ -404,7 +416,7 @@ def select_one_reason(candidate: dict) -> dict:
         other_count += category == "other"
         low_count += score < 70
         strong_count += score >= 70
-        if len(selected) == 6:
+        if len(selected) == MAX_MAIL_IMPROVEMENTS:
             break
     findings = []
     for negative_score, _, item, classification, _, observation in selected:
@@ -421,7 +433,7 @@ def select_one_reason(candidate: dict) -> dict:
     result["selected_findings"] = findings
     eligible_categories = [f["category"] for f in findings if f["category"] in IMPROVEMENT_IDEAS]
     if len(eligible_categories) < MIN_MAIL_IMPROVEMENTS:
-        result["outreach_hold_reason"] = "fewer_than_three_distinct_verified_improvements"
+        result["outreach_hold_reason"] = "fewer_than_two_distinct_verified_improvements"
         return result
     top = findings[0]
     result.update({
@@ -438,6 +450,65 @@ def select_one_reason(candidate: dict) -> dict:
     })
     return result
 
+VERIFIED_DEFECT_CATEGORIES = {
+    "broken_internal_link", "unlabeled_form_control", "unnamed_image_link",
+}
+
+
+def select_verified_site_issues(candidate: dict) -> dict:
+    """Existing-draft mode: only 2-3 high-impact independently observed defects.
+
+    Old general descriptions of booking, products or services are NEVER proof
+    that something is broken. Uncertain/mixed site language => no mail.
+    """
+    result = dict(candidate)
+    result.update({"outreach_status": "hold", "selected_findings": [],
+                   "outreach_hold_reason": "fewer_than_two_verified_site_issues"})
+    if candidate.get("research_status") != "ready":
+        result["outreach_hold_reason"] = "research_not_ready"
+        return result
+    domain = normalize_domain(candidate.get("official_domain"))
+    language = detect_language(candidate, "")
+    if not domain or language not in {"nl", "en"}:
+        result["outreach_hold_reason"] = "site_language_or_identity_unverified"
+        return result
+    findings = []
+    seen = set()
+    ranked = sorted(candidate.get("site_issue_candidates") or [],
+                    key=lambda item: -int(item.get("severity", 0)))
+    for issue in ranked:
+        if (not isinstance(issue, dict)
+                or issue.get("category") not in VERIFIED_DEFECT_CATEGORIES
+                or issue.get("source_type") != "official_site"
+                or normalize_domain(issue.get("source_url")) != domain
+                or issue["category"] in seen):
+            continue
+        observed = str(issue.get("observation_" + language) or "").strip()
+        if not observed or len(observed.split()) < 8:
+            continue
+        findings.append({
+            "category": issue["category"], "priority": "high",
+            "score": int(issue["severity"]), "observation": observed,
+            "source_url": issue["source_url"], "source_type": "official_site",
+            "page_type": "detail", "confirmed_static_issue": True,
+        })
+        seen.add(issue["category"])
+        if len(findings) == MAX_MAIL_IMPROVEMENTS:
+            break
+    if len(findings) < MIN_MAIL_IMPROVEMENTS:
+        return result
+    result.update({
+        "outreach_status": "ready", "outreach_hold_reason": None,
+        "selected_findings": findings, "language": language,
+        "verified_observation": findings[0]["observation"],
+        "verified_observation_source_url": findings[0]["source_url"],
+        "verified_observation_source_type": "official_site",
+        "signal_type": findings[0]["category"], "signal_score": findings[0]["score"],
+        "reason_for_outreach": findings[0]["observation"],
+    })
+    return result
+
+
 def select_reasons(payload: dict) -> dict:
     candidates = payload.get("candidates") or []
     if not isinstance(candidates, list):
@@ -452,13 +523,13 @@ def select_reasons(payload: dict) -> dict:
         "candidates": results,
         "handoff": {
             "next": "value_first_action",
-            "rule": "three_to_six_distinct_first_party_improvements_or_hold",
+            "rule": "two_to_three_distinct_first_party_improvements_or_hold",
         },
     }
 
 
 def value_action_for(candidate: dict) -> dict:
-    """Prepare three to six distinct, traceable improvement ideas or hold."""
+    """Prepare two or three distinct, traceable improvement ideas or hold."""
     result = dict(candidate)
     result.update({
         "value_action_status": "hold",
@@ -492,7 +563,7 @@ def value_action_for(candidate: dict) -> dict:
         })
         seen_categories.add(category)
     if not MIN_MAIL_IMPROVEMENTS <= len(selected) <= MAX_MAIL_IMPROVEMENTS:
-        result["value_action_hold_reason"] = "fewer_than_three_distinct_verified_improvements"
+        result["value_action_hold_reason"] = "fewer_than_two_distinct_verified_improvements"
         return result
     action = (
         "een nieuwe voorbeeldopzet van een van deze onderdelen"
@@ -548,6 +619,10 @@ def subject_for(candidate: dict) -> str:
         return ""
     count = len(findings)
     kind = site_kind(candidate, language)
+    verified = all(f.get("confirmed_static_issue") for f in findings)
+    if verified:
+        return (f"{count} technische aandachtspunten voor jullie {kind}"
+                if language == "nl" else f"{count} verified site issues to review").casefold()
     return (
         f"{count} verbeterideeën voor jullie {kind}"
         if language == "nl" else f"{count} practical ideas for your {kind}"
@@ -587,6 +662,9 @@ def improvement_line(finding: dict, language: str, number: int) -> str:
             or finding.get("source_type") != "official_site"):
         return ""
     observed = finding_excerpt(finding).rstrip(" .")
+    if finding.get("confirmed_static_issue"):
+        page = urlparse(_text(finding.get("source_url"))).path[:90] or "/"
+        observed += f" (pagina {page})"
     if not observed or looks_like_page_title(observed):
         return ""
     if language == "nl":
@@ -595,7 +673,7 @@ def improvement_line(finding: dict, language: str, number: int) -> str:
 
 
 def body_for(candidate: dict) -> str:
-    """A Dutch/English draft with 3–6 independently grounded improvements."""
+    """A Dutch/English draft with 2–3 independently grounded improvements."""
     language = _text(candidate.get("language"))
     findings = candidate.get("selected_findings") or []
     action = _text(candidate.get("value_first_action"))
@@ -647,8 +725,8 @@ def review_findings(findings: object, domain: object) -> list[dict]:
     """
     if findings is None or findings == []:
         return []
-    if not isinstance(findings, list) or len(findings) > 6:
-        raise ValueError("review_findings_must_be_list_of_at_most_six")
+    if not isinstance(findings, list) or len(findings) > MAX_MAIL_IMPROVEMENTS:
+        raise ValueError("review_findings_must_be_list_of_at_most_three")
     expected_domain = normalize_domain(domain)
     if not expected_domain:
         raise ValueError("review_findings_require_official_domain")
@@ -739,7 +817,7 @@ def validate_mail(candidate: dict, subject: str, body: str) -> list[str]:
         findings = []
         reasons.append("review_findings_missing_or_unverified")
     if not MIN_MAIL_IMPROVEMENTS <= len(findings) <= MAX_MAIL_IMPROVEMENTS:
-        reasons.append("requires_three_to_six_sourced_improvements")
+        reasons.append("requires_two_to_three_sourced_improvements")
     if len({_text(f.get("category")) for f in findings}) != len(findings):
         reasons.append("duplicate_improvement_category")
     lang = _text(candidate.get("language"))
