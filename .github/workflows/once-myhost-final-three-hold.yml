@@ -1,4 +1,4 @@
-name: One-time 2 robots-held plus 1 stale Draft to recovery (no send)
+name: One-time exact 5 flagged Drafts to recoverable hold (no send)
 on:
   push:
     branches: [main]
@@ -9,7 +9,7 @@ jobs:
     if: >-
       github.ref == 'refs/heads/main' &&
       github.run_attempt == 1 &&
-      contains(github.event.head_commit.message, '[myhost-final-three-verified-hold]')
+      contains(github.event.head_commit.message, '[myhost-five-hold-exact]')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     concurrency:
@@ -80,7 +80,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: python3 -m pip install --disable-pip-version-check -r requirements-cold.txt 'google-auth>=2,<3'
-      - name: Reverify exact two revisions in original identity window 500
+      - name: Move exactly 2 robots-blocked, 1 unpublished-contact and 1 stale-copy Drafts from window 500
         env:
           PYTHONPATH: scripts
           LEADSCANNER_TRUSTED_HOLD: 'true'
@@ -113,7 +113,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: python3 -m pip install --disable-pip-version-check -r requirements-cold.txt 'google-auth>=2,<3'
-      - name: Reverify exact one revision in original identity window 1000
+      - name: Move exactly 1 stale-copy Draft from window 1000
         env:
           PYTHONPATH: scripts
           LEADSCANNER_TRUSTED_HOLD: 'true'
@@ -253,12 +253,12 @@ jobs:
                       folder = find_drafts_folder(client)
                       active, held = validate_hold_inventory(
                           client, folder, HOLD_FOLDER, inventory_existing, 1173)
-                      if len(active) != 506 or len(held) != 667:
+                      if len(active) != 504 or len(held) != 669:
                           raise RuntimeError('final_mailbox_state_not_accepted')
                   finally:
                       client.logout()
           except Exception:
               print('FINAL_READONLY=red private_details_suppressed')
               raise SystemExit(1)
-          print('FINAL_READONLY=green active=506 held=667 union=1173 no_mailbox_writes=1')
+          print('FINAL_READONLY=green active=504 held=669 union=1173 no_mailbox_writes=1')
           PY
