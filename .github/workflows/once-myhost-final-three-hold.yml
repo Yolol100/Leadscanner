@@ -262,3 +262,41 @@ jobs:
               raise SystemExit(1)
           print('FINAL_READONLY=green active=506 held=667 union=1173 no_mailbox_writes=1')
           PY
+
+  quality_content_readonly:
+    # One-off read-only check: no new Drafts, no sending, no hold moves.
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      github.run_attempt == 1 &&
+      contains(github.event.head_commit.message, '[myhost-quality-readonly-509]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 110
+    concurrency:
+      group: leadscanner-mijnhost-drafts
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - run: python3 -m pip install --disable-pip-version-check -r requirements-cold.txt 'google-auth>=2,<3'
+      - name: Confirm quality classifier and read-only guards
+        env:
+          PYTHONPATH: scripts
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_draft_quality_readonly.py' -v
+      - name: Read only exact 509 tagged Drafts with aggregate 50-item counts
+        env:
+          PYTHONPATH: scripts
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
+        run: |
+          set -euo pipefail
+          python3 scripts/draft_quality_readonly.py
