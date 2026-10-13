@@ -207,7 +207,7 @@ class HoldTests(unittest.TestCase):
         self.assertIn("[myhost-final-qa-readonly]", workflow)
         self.assertIn("[myhost-three-diagnose]", workflow)
         self.assertIn("[myhost-final-three-verified-hold]", workflow)
-        audit = workflow.split("  final_mailbox_readback:\\n".replace("\\\\n", "\\n"))
+        audit = workflow.split("  final_mailbox_readback:\n", 1)
         self.assertEqual(len(audit), 2)
         readonly_job = audit[1]
         self.assertIn("len(active) != 506 or len(held) != 667", readonly_job)
