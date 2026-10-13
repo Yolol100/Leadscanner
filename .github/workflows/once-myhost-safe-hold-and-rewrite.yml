@@ -9,7 +9,7 @@ jobs:
     if: >-
       github.ref == 'refs/heads/main' &&
       github.run_attempt == 1 &&
-      contains(github.event.head_commit.message, '[myhost-cleanup-656]')
+      (contains(github.event.head_commit.message, '[myhost-cleanup-656]') || contains(github.event.head_commit.message, '[myhost-529-hold-only]'))
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -28,6 +28,41 @@ jobs:
           set -euo pipefail
           python3 -m compileall -q scripts
           python3 -m unittest discover -s tests -p 'test_*.py' -q
+      - name: Verify exact active and recovery inventory before any hold-only change
+        if: contains(github.event.head_commit.message, '[myhost-529-hold-only]')
+        env:
+          PYTHONPATH: scripts
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from contextlib import redirect_stdout, redirect_stderr
+          from io import StringIO
+          from _once_myhost_existing_rewrite import inventory_existing
+          from _once_myhost_safe_hold import HOLD_FOLDER, validate_hold_inventory
+          from myhost_draft import connect_imap, find_drafts_folder, require_uidplus
+          try:
+              with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+                  client = connect_imap()
+                  try:
+                      folder = find_drafts_folder(client)
+                      active, held = validate_hold_inventory(
+                          client, folder, HOLD_FOLDER, inventory_existing, 1173,
+                      )
+                      require_uidplus(client, 'reversible recovery hold')
+                      if len(active) != 529 or len(held) != 644:
+                          raise RuntimeError('unexpected_current_mailbox_inventory')
+                  finally:
+                      client.logout()
+          except Exception:
+              print('MYHOST_529_PREFLIGHT=red details_suppressed')
+              raise SystemExit(1)
+          print('MYHOST_529_PREFLIGHT=green active=529 held=644 union=1173 uidplus=ready')
+          PY
   cleanup:
     needs: verify
     runs-on: ubuntu-24.04
@@ -68,6 +103,7 @@ jobs:
           python3 scripts/_once_myhost_existing_rewrite.py --offset "$OFFSET" --mode cleanup
   rewrite:
     needs: cleanup
+    if: "!contains(github.event.head_commit.message, '[myhost-529-hold-only]')"
     runs-on: ubuntu-24.04
     timeout-minutes: 110
     strategy:
