@@ -130,3 +130,82 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/_once_myhost_existing_rewrite.py --offset 1000 --mode hold_revision
+
+  diagnose:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      github.run_attempt == 1 &&
+      contains(github.event.head_commit.message, '[myhost-three-diagnose]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 110
+    concurrency:
+      group: leadscanner-mijnhost-drafts
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - run: python3 -m pip install --disable-pip-version-check -r requirements-cold.txt 'google-auth>=2,<3'
+      - name: Diagnose live mailbox count and two original windows, strictly read-only
+        env:
+          PYTHONPATH: scripts
+          INSTANTLY_API_KEY: ${{ secrets.INSTANTLY_API_KEY }}
+          LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON || secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
+          OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from contextlib import redirect_stdout, redirect_stderr
+          from io import StringIO
+          import json
+          from _once_myhost_existing_rewrite import run, inventory_existing
+          from _once_myhost_safe_hold import HOLD_FOLDER, validate_hold_inventory
+          from myhost_draft import connect_imap, find_drafts_folder
+          safe_codes = {
+              "three_revision_evidence_drift",
+              "three_revision_mailbox_baseline_changed",
+              "three_revision_final_inventory_mismatch",
+              "hold_union_baseline_changed",
+              "hold_folder_unrelated_content",
+              "imap_duplicate_lead_id",
+              "historical_source_invalid",
+              "historical_registry_invalid",
+              "imap_existing_target_not_unique",
+          }
+          try:
+              with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+                  client = connect_imap()
+                  try:
+                      folder = find_drafts_folder(client)
+                      active, held = validate_hold_inventory(
+                          client, folder, HOLD_FOLDER, inventory_existing, 1173)
+                  finally:
+                      client.logout()
+              print("THREE_READONLY_INVENTORY=green " +
+                    json.dumps({"active": len(active), "held": len(held), "total": 1173}))
+              for offset in (500, 1000):
+                  with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+                      output = run(offset, write=False, cleanup=False)
+                  if output["status"] != "green" or output["emails_sent"] or output["drafts_created"]:
+                      raise RuntimeError("unsafe_readonly_report")
+                  print("THREE_READONLY_WINDOW=green " +
+                        json.dumps({"offset": offset, "counts": output["counts"]},
+                                   sort_keys=True))
+          except Exception as exc:
+              code = str(exc)
+              if code not in safe_codes:
+                  code = "unclassified_private_failure"
+              print("THREE_READONLY=red reason=" + code)
+              raise SystemExit(1)
+          print("THREE_READONLY=green no_mailbox_writes=1")
+          PY
