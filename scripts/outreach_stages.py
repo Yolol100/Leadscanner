@@ -205,7 +205,7 @@ def copy_quality_problems(observation: str, action: str) -> list[str]:
     proposal = _text(action)
     # A web page title, breadcrumb or navigation label is not a business
     # observation, even if it appears on the company's own official website.
-    seo_segments = re.split(r"\\s+(?:-|–|—|\\|)\\s+", observed)
+    seo_segments = re.split(r"\s+(?:-|–|—|\|)\s+", observed)
     if len(seo_segments) >= 2 and len(observed.split()) <= 16 and not re.search(r"[.!?]", observed):
         reasons.append("page_title_is_not_a_business_observation")
     if len(observed.split()) < 9:
@@ -214,8 +214,8 @@ def copy_quality_problems(observation: str, action: str) -> list[str]:
     # reserveringsroute' are promises without a verified improvement. They
     # can no longer pass as actionable, ready-to-review content.
     vague = re.search(
-        r"\\b(?:voorbeeldvariant|voorbeeldschets|websitebezoekersroute|"
-        r"short example|reservation flow|booking flow|visitor journeys)\\b",
+        r"\b(?:voorbeeldvariant|voorbeeldschets|websitebezoekersroute|"
+        r"short example|reservation flow|booking flow|visitor journeys)\b",
         normalize_text(proposal),
     )
     if vague or len(proposal.split()) < 8:
