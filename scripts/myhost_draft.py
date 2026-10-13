@@ -234,8 +234,17 @@ def connect_imap():
 
 
 def find_drafts_folder(client) -> str:
+    """Select the real Drafts mailbox, never a Leadscanner rollback/hold copy.
+
+    Prefer IMAP special-use Drafts, else one exact Drafts/Concepten path.
+    Generic substring matching incorrectly selected temporary folders named
+    'Before509Redraft', risking a false baseline and wrong mailbox target.
+    """
     preferred = os.getenv("OUTREACH_DRAFT_FOLDER", "").strip()
     if preferred:
+        if any(part.startswith("leadscanner_")
+               for part in re.split(r"[./]", preferred.casefold())):
+            raise RuntimeError("Configured Drafts folder cannot be a Leadscanner recovery folder")
         return preferred
 
     status, rows = client.list()
@@ -243,17 +252,463 @@ def find_drafts_folder(client) -> str:
         raise RuntimeError("Could not list IMAP folders")
 
     choices: list[str] = []
+    special: list[str] = []
     for raw in rows or []:
-        text = raw.decode("utf-8", errors="replace")
-        match = re.search(r'"([^"\\]*(?:\\.[^"\\]*)*)"\s*$', text)
-        folder = match.group(1).replace('\\\"', '"') if match else text.split()[-1].strip('"')
-        choices.append(folder)
+        text = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else str(raw)
+        match = re.search(r'"([^"\\]*(?:\\.[^"\\]*)*)"\s*
 
-    for folder in choices:
+def select_folder(client, folder: str, *, readonly: bool = True) -> None:
+    if client.select(f'"{folder}"', readonly=readonly)[0] != "OK":
+        raise RuntimeError("Could not open drafts folder")
+
+
+def find_message_ids(client, folder: str, lead_id: str, *, ensure_selected: bool = True) -> list[bytes]:
+    if ensure_selected:
+        select_folder(client, folder)
+    matches = set()
+    for header in LEAD_ID_HEADERS:
+        status, data = client.search(None, "HEADER", header, f'"{lead_id}"')
+        if status != "OK":
+            raise RuntimeError(f"Could not search draft readback for {lead_id}")
+        matches.update((data[0] if data else b"").split())
+    return sorted(matches, key=int)
+
+
+def fetch_message(client, message_id: bytes) -> EmailMessage:
+    status, data = client.fetch(message_id, "(RFC822)")
+    if status != "OK":
+        raise RuntimeError("Could not fetch draft for readback")
+    for item in data or []:
+        if isinstance(item, tuple) and len(item) >= 2 and isinstance(item[1], (bytes, bytearray)):
+            return BytesParser(policy=default).parsebytes(bytes(item[1]))
+    raise RuntimeError("IMAP readback returned no message bytes")
+
+
+def plain_body(msg: EmailMessage) -> str:
+    if msg.is_multipart():
+        part = msg.get_body(preferencelist=("plain",))
+        return normalize_text(part.get_content() if part else "")
+    return normalize_text(msg.get_content())
+
+
+def exact_message_matches(actual: EmailMessage, expected: EmailMessage) -> bool:
+    return (
+        normalize_text(actual.get("To", "")) == normalize_text(expected.get("To", ""))
+        and normalize_text(actual.get("From", "")) == normalize_text(expected.get("From", ""))
+        and normalize_text(actual.get("Subject", "")) == normalize_text(expected.get("Subject", ""))
+        and lead_id_from_message(actual) == lead_id_from_message(expected)
+        and review_status_from_message(actual) == review_status_from_message(expected)
+        and plain_body(actual) == plain_body(expected)
+    )
+
+
+def require_existing_drafts(
+    client,
+    folder: str,
+    prepared: list[tuple[dict, str, EmailMessage]],
+) -> None:
+    select_folder(client, folder, readonly=True)
+    for row, lead_id, expected in prepared:
+        existing = find_message_ids(client, folder, lead_id, ensure_selected=False)
+        if len(existing) != 1:
+            raise RuntimeError(
+                f"rewrite-existing-only requires exactly one existing draft for {lead_id}, found {len(existing)}"
+            )
+        actual = fetch_message(client, existing[0])
+        if lead_id_from_message(actual) != lead_id:
+            raise RuntimeError(f"Existing draft identity mismatch for {lead_id}")
+        if normalize_text(actual.get("To", "")) != normalize_text(expected.get("To", "")):
+            raise RuntimeError(f"Existing draft recipient mismatch for {lead_id}")
+        # A user-authorized existing-only rewrite may also update the legacy
+        # review marker. The original UID, canonical lead ID and exact To must
+        # still be verified, and the replacement stays a Draft.
+        require_draft_flag(client, uid_for_message_id(client, existing[0]))
+
+
+def _rollback_appended_uid(client, folder: str, uid: bytes, lead_id: str, cause: Exception) -> None:
+    try:
+        uid_expunge_only(
+            client,
+            folder,
+            uid,
+            operation=f"rollback appended draft for {lead_id}",
+        )
+    except Exception as rollback_exc:
+        raise RuntimeError(
+            f"{cause}; rollback of newly appended draft failed: {rollback_exc}"
+        ) from cause
+
+
+def _strict_no_other_recipient_draft(client, folder: str, msg: EmailMessage) -> None:
+    """Fail closed on old differently-tagged same-recipient/company Drafts.
+
+    A stable Lead-ID by itself is NOT sufficient. The independent historical
+    audit found 34 existing To-email collisions and 42 domain overlaps among
+    older drafts that had different Lead-ID headers. Do not read/delete/swap
+    any such older draft; refuse the NEW append instead.
+    """
+    from email.utils import getaddresses
+    from cold_stages import PUBLIC_MAIL_DOMAINS
+    from dedupe_preflight import normalize_domain, domains_match
+
+    addresses = getaddresses(msg.get_all("To", []))
+    if len(addresses) != 1:
+        raise RuntimeError("invalid_target_recipient")
+    target = addresses[0][1].strip().casefold()
+    if not target or target.count("@") != 1 or any(c in target for c in '"\r\n'):
+        raise RuntimeError("invalid_target_recipient")
+    target_domain = normalize_domain(target.rsplit("@", 1)[1])
+    corporate = bool(target_domain and target_domain not in PUBLIC_MAIL_DOMAINS)
+    lookup = [target]
+    if corporate:
+        lookup.append(target_domain)
+
+    select_folder(client, folder, readonly=True)
+    hits: set[bytes] = set()
+    for value in lookup:
+        status, data = client.search(None, "TO", '"' + value + '"')
+        if status != "OK":
+            raise RuntimeError("recipient_duplicate_search_failed")
+        hits.update((data[0] if data else b"").split())
+    if len(hits) > 2000:
+        raise RuntimeError("recipient_duplicate_search_unbounded")
+    for message_id in sorted(hits, key=int):
+        old = fetch_message(client, message_id)
+        for _, previous_email in getaddresses(old.get_all("To", [])):
+            previous = previous_email.strip().casefold()
+            if not previous or previous.count("@") != 1:
+                continue
+            old_domain = normalize_domain(previous.rsplit("@", 1)[1])
+            if previous == target or (corporate and old_domain and
+                                      domains_match(old_domain, target_domain)):
+                raise RuntimeError("duplicate_existing_draft_recipient_or_company_domain")
+
+
+def append_and_verify(client, folder: str, lead_id: str, msg: EmailMessage, *, reject_changed_existing: bool = False) -> str:
+    existing = find_message_ids(client, folder, lead_id)
+    if len(existing) > 1:
+        raise RuntimeError(f"Expected at most one existing draft for {lead_id}, found {len(existing)}")
+
+    # Every APPEND must have a target-only rollback path before the write starts.
+    require_uidplus(client, f"draft append for {lead_id}")
+
+    existing_uid = None
+    existing_snapshot = None
+    if existing:
+        actual = fetch_message(client, existing[0])
+        if exact_message_matches(actual, msg):
+            require_draft_flag(client, uid_for_message_id(client, existing[0]))
+            return "existing"
+        if reject_changed_existing:
+            raise RuntimeError(
+                f"Changed existing draft for {lead_id}; automatic replacement is disabled"
+            )
+        existing_uid = uid_for_message_id(client, existing[0])
+        existing_snapshot = actual
+
+    if reject_changed_existing and not existing:
+        _strict_no_other_recipient_draft(client, folder, msg)
+
+    raw = msg.as_bytes(policy=default)
+    status, _ = client.append(
+        folder,
+        "(\\Draft)",
+        imaplib.Time2Internaldate(__import__("time").time()),
+        raw,
+    )
+    if status != "OK":
+        raise RuntimeError(f"IMAP APPEND failed for {lead_id}")
+
+    new_uid = None
+    old_removed = False
+    try:
+        ids_after_append = find_message_ids(client, folder, lead_id)
+        new_ids = [message_id for message_id in ids_after_append if message_id not in existing]
+        if len(new_ids) != 1:
+            raise RuntimeError(
+                f"Expected one new draft after append for {lead_id}, found {len(new_ids)}"
+            )
+        new_uid = uid_for_message_id(client, new_ids[0])
+        new_actual = fetch_message_uid(client, new_uid)
+        if not exact_message_matches(new_actual, msg):
+            raise RuntimeError(f"Draft UID readback mismatch for {lead_id}")
+        require_draft_flag(client, new_uid)
+
+        if existing:
+            current_old = fetch_message_uid(client, existing_uid)
+            if lead_id_from_message(current_old) != lead_id:
+                raise RuntimeError(f"Existing draft identity changed before replacement for {lead_id}")
+            if not exact_message_matches(current_old, existing_snapshot):
+                raise RuntimeError(f"Existing draft changed before target-only replacement for {lead_id}")
+            uid_expunge_only(
+                client,
+                folder,
+                existing_uid,
+                operation=f"bounded draft replacement for {lead_id}",
+            )
+            old_removed = True
+
+            final_ids = find_message_ids(client, folder, lead_id)
+            if len(final_ids) != 1:
+                raise RuntimeError(
+                    f"Expected one final draft after replacement for {lead_id}, found {len(final_ids)}"
+                )
+            final_actual = fetch_message(client, final_ids[0])
+            if not exact_message_matches(final_actual, msg):
+                raise RuntimeError(f"Final replacement readback mismatch for {lead_id}")
+            return "replaced"
+
+        if len(ids_after_append) != 1:
+            raise RuntimeError(f"Expected one draft after append for {lead_id}, found {len(ids_after_append)}")
+        return "created"
+    except Exception as exc:
+        if new_uid is not None and not old_removed:
+            _rollback_appended_uid(client, folder, new_uid, lead_id, exc)
+        raise
+
+
+def create_drafts(batch: dict, *, rewrite_existing_only: bool = False, reject_changed_existing: bool = False) -> dict:
+    rows = [
+        row
+        for row in (batch.get("rows") or [])
+        if row.get("status") in {"draft_ready", "review_draft"}
+    ]
+    if len(rows) > MAX_DRAFTS_PER_RUN:
+        raise RuntimeError(f"At most {MAX_DRAFTS_PER_RUN} drafts may be created per run")
+
+    prepared: list[tuple[dict, str, EmailMessage]] = []
+    seen_lead_ids: set[str] = set()
+    for row in rows:
+        lead_id, msg = build_message(row)
+        if lead_id in seen_lead_ids:
+            raise RuntimeError(f"duplicate draft lead_id: {lead_id}")
+        seen_lead_ids.add(lead_id)
+        prepared.append((row, lead_id, msg))
+
+    if not prepared:
+        return {
+            "eligible_count": 0,
+            "created_count": 0,
+            "existing_count": 0,
+            "replaced_count": 0,
+            "draft_folder": None,
+            "review_required_count": 0,
+            "items": [],
+            "smtp_send": "not_available",
+            "rewrite_existing_only": rewrite_existing_only,
+            "reject_changed_existing": reject_changed_existing,
+        }
+
+    client = connect_imap()
+    try:
+        folder = find_drafts_folder(client)
+        if rewrite_existing_only:
+            require_existing_drafts(client, folder, prepared)
+        created = 0
+        existing = 0
+        replaced = 0
+        items = []
+        created_targets: list[tuple[str, bytes]] = []
+        try:
+            for row, lead_id, msg in prepared:
+                outcome = append_and_verify(client, folder, lead_id, msg, reject_changed_existing=reject_changed_existing)
+                if outcome == "created":
+                    created += 1
+                elif outcome == "replaced":
+                    replaced += 1
+                else:
+                    existing += 1
+
+                final_ids = find_message_ids(client, folder, lead_id)
+                if len(final_ids) != 1:
+                    raise RuntimeError(
+                        f"Expected exactly one final draft for readback {lead_id}, found {len(final_ids)}"
+                    )
+                if outcome == "created":
+                    created_targets.append((lead_id, uid_for_message_id(client, final_ids[0])))
+                actual = fetch_message(client, final_ids[0])
+                if not exact_message_matches(actual, msg):
+                    raise RuntimeError(f"Final exact readback mismatch for {lead_id}")
+                require_draft_flag(client, uid_for_message_id(client, final_ids[0]))
+                items.append(
+                    {
+                        "lead_id": lead_id,
+                        "to": normalize_text(actual.get("To", "")),
+                        "subject": normalize_text(actual.get("Subject", "")),
+                        "body": plain_body(actual),
+                        "review_status": review_status_from_message(actual) or "not-required",
+                        "outcome": outcome,
+                    }
+                )
+        except Exception as exc:
+            if reject_changed_existing and created_targets:
+                rollback_errors = []
+                for created_lead_id, created_uid in reversed(created_targets):
+                    try:
+                        uid_expunge_only(
+                            client,
+                            folder,
+                            created_uid,
+                            operation=f"strict batch rollback for {created_lead_id}",
+                        )
+                    except Exception as rollback_exc:
+                        rollback_errors.append(f"{created_lead_id}:{rollback_exc}")
+                if rollback_errors:
+                    raise RuntimeError(
+                        f"{exc}; strict batch rollback failed: {'; '.join(rollback_errors)}"
+                    ) from exc
+            raise
+        return {
+            "eligible_count": len(rows),
+            "created_count": created,
+            "existing_count": existing,
+            "replaced_count": replaced,
+            "draft_folder": folder,
+            "review_required_count": sum(1 for row in rows if row.get("status") == "review_draft"),
+            "items": items,
+            "smtp_send": "not_available",
+            "rewrite_existing_only": rewrite_existing_only,
+            "reject_changed_existing": reject_changed_existing,
+        }
+    finally:
+        try:
+            client.logout()
+        except Exception:
+            pass
+
+
+def live_self_draft_smoke() -> dict[str, object]:
+    """One synthetic, self-addressed Draft; verify and expunge only that UID.
+
+    Designed for a manually trusted GitHub Actions run. No prospect, no send,
+    no registry write, no raw provider information in the public result.
+    """
+    mailbox = os.getenv("OUTREACH_MAIL_USER", "").strip()
+    if mailbox.count("@") != 1 or any(c in mailbox for c in "\r\n<>"):
+        raise RuntimeError("smoke_mailbox_address_unconfigured")
+    lead_id = "growth-" + secrets.token_hex(10)
+    row = {
+        "lead_id": lead_id,
+        "email": mailbox,
+        "subject": "Leadscanner conceptcontrole (niet versturen)",
+        "body": "Dit is een tijdelijke IMAP-concepttest. Er is geen e-mail verstuurd.",
+        "status": "review_draft",
+        "contact_basis_status": "review_required",
+    }
+    _, expected = build_message(row)
+    client = connect_imap()
+    folder = None
+    verified = False
+    deleted = False
+    try:
+        folder = find_drafts_folder(client)
+        require_uidplus(client, "isolated synthetic draft smoke")
+        existing = find_message_ids(client, folder, lead_id)
+        if existing:
+            raise RuntimeError("smoke_identity_collision")
+        result = append_and_verify(
+            client, folder, lead_id, expected, reject_changed_existing=True
+        )
+        if result != "created":
+            raise RuntimeError("smoke_not_newly_created")
+        candidates = find_message_ids(client, folder, lead_id)
+        if len(candidates) != 1:
+            raise RuntimeError("smoke_not_exactly_one")
+        actual = fetch_message(client, candidates[0])
+        if not exact_message_matches(actual, expected):
+            raise RuntimeError("smoke_content_mismatch")
+        uid = uid_for_message_id(client, candidates[0])
+        require_draft_flag(client, uid)
+        verified = True
+    finally:
+        # Even after a failed post-APPEND verification, clean up ONLY the
+        # uniquely tagged synthetic message after exact, local readback.
+        try:
+            if folder is not None:
+                ids = find_message_ids(client, folder, lead_id)
+                if len(ids) == 1:
+                    candidate = fetch_message(client, ids[0])
+                    if exact_message_matches(candidate, expected):
+                        uid = uid_for_message_id(client, ids[0])
+                        uid_expunge_only(
+                            client, folder, uid,
+                            operation="target-only synthetic smoke cleanup",
+                        )
+                        deleted = not find_message_ids(client, folder, lead_id)
+        finally:
+            try:
+                client.logout()
+            except Exception:
+                pass
+    if not verified or not deleted:
+        raise RuntimeError("smoke_verification_or_cleanup_failed")
+    return {
+        "status": "green",
+        "synthetic_draft_created": 1,
+        "exact_imap_readback": 1,
+        "synthetic_draft_cleaned": 1,
+        "emails_sent": 0,
+        "prospect_records_touched": 0,
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--batch", required=True)
+    parser.add_argument("--report", required=True)
+    parser.add_argument(
+        "--rewrite-existing-only",
+        action="store_true",
+        help="Require one matching draft for every lead before writing; never create missing drafts.",
+    )
+    parser.add_argument(
+        "--reject-changed-existing",
+        action="store_true",
+        help="Allow exact retries but reject any changed existing draft instead of replacing it.",
+    )
+    args = parser.parse_args()
+
+    batch = json.loads(Path(args.batch).read_text(encoding="utf-8"))
+    result = create_drafts(
+        batch,
+        rewrite_existing_only=args.rewrite_existing_only,
+        reject_changed_existing=args.reject_changed_existing,
+    )
+    report = Path(args.report)
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(
+        "MYHOST_DRAFT_SYNC=green "
+        f"eligible={result['eligible_count']} "
+        f"created={result['created_count']} "
+        f"existing={result['existing_count']} "
+        f"replaced={result['replaced_count']} "
+        f"review_required={result['review_required_count']} "
+        f"rewrite_existing_only={str(result['rewrite_existing_only']).lower()} "
+        f"reject_changed_existing={str(result['reject_changed_existing']).lower()} "
+        "smtp_send=not_available"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+, text)
+        folder = match.group(1).replace('\\\"', '"') if match else text.split()[-1].strip('"')
         low = folder.casefold()
-        if "draft" in low or "concept" in low:
-            return folder
-    raise RuntimeError("No Drafts/Concepten IMAP folder found")
+        if any(part.startswith("leadscanner_")
+               for part in re.split(r"[./]", low)):
+            continue
+        if not re.search(r"(?:^|[./])(?:drafts?|concepten?)$", low):
+            continue
+        choices.append(folder)
+        if "\\drafts" in text.casefold().split(')')[0]:
+            special.append(folder)
+
+    candidates = list(dict.fromkeys(special or choices))
+    if len(candidates) != 1:
+        raise RuntimeError("Real Drafts mailbox missing or ambiguous")
+    return candidates[0]
 
 
 def select_folder(client, folder: str, *, readonly: bool = True) -> None:
