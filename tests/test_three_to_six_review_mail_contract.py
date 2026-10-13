@@ -85,7 +85,12 @@ class ThreeToSixReviewMailContract(unittest.TestCase):
 
     def test_six_is_supported_without_repetition_or_padding(self):
         item = review(candidate(6, store=True))
-        self.assertEqual(item["mail_status"], "ready_for_human_review")
+        self.assertEqual(item["mail_status"], "ready_for_human_review",
+                         msg=str({"reason": item["copy_validation_reasons"],
+                                  "outreach_hold": item.get("outreach_hold_reason"),
+                                  "value_hold": item.get("value_action_hold_reason"),
+                                  "count": len(item.get("selected_findings") or []),
+                                  "categories": [f.get("category") for f in (item.get("selected_findings") or [])]}))
         self.assertEqual(item["subject"], "6 verbeterideeën voor jullie webshop")
         self.assertEqual(item["body"].count("Verbeteridee:"), 6)
         self.assertLessEqual(len(item["body"].split()), 320)
