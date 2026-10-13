@@ -410,7 +410,7 @@ class ColdStagesTests(unittest.TestCase):
         self.assertEqual(researched["contact_status"], "contact_form_only")
         selected = select_one_reason(researched)
         self.assertEqual(selected["outreach_status"], "hold")
-        self.assertEqual(selected["outreach_hold_reason"], "fewer_than_two_distinct_verified_improvements")
+        self.assertEqual(selected["outreach_hold_reason"], "site_language_or_identity_unverified")
         result = generate_one_mail(value_action_for(selected))
         self.assertEqual(result["copy_validation_reasons"], ["value_action_not_ready"])
         self.assertIsNone(result["body"])
