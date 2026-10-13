@@ -8,8 +8,8 @@ jobs:
   test:
     if: >-
       github.ref == 'refs/heads/main' &&
-      github.run_number == 1 &&
-      contains(github.event.head_commit.message, '[historical-full-folder-dedupe]')
+      github.run_number == 2 &&
+      contains(github.event.head_commit.message, '[historical-corrected-dedupe]')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:

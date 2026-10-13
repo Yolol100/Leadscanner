@@ -83,5 +83,25 @@ class CrossDuplicateTests(unittest.TestCase):
         self.assertEqual(result["cross_business_domain_duplicates"], 0)
 
 
+    def test_shared_mailbox_provider_does_not_count_as_company_collision(self):
+        original = (
+            None, None, None, {"source_checked": 1128},
+            [{"lead_id": "growth-" + "a" * 20,
+              "email": "owner@gmail.com", "domain": "gmail.com"}] * 43, {},
+        )
+        mailbox = HeaderOnlyIMAP([
+            b"To: owner@gmail.com\r\nX-Leadscanner-Lead-ID: growth-" + b"a"*20 + b"\r\n\r\n",
+            b"To: other@gmail.com\r\nX-Leadscanner-Lead-ID: growth-" + b"b"*20 + b"\r\n\r\n",
+            b"To: third@different.nl\r\n\r\n",
+        ] + [(f"To: person{i}@unique{i}.nl\r\n\r\n").encode() for i in range(40)])
+        with patch.object(audit, "source_and_mailbox_snapshot", return_value=original), \
+             patch.object(audit, "connect_imap", return_value=mailbox):
+            result = audit.deep_duplicate_report()
+        self.assertEqual(result["cross_business_domain_duplicates"], 0)
+        self.assertEqual(result["cross_recipient_duplicates"], 0)
+        self.assertEqual(result["status"], "green")
+
+
+
 if __name__ == "__main__":
     unittest.main()
