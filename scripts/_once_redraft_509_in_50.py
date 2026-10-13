@@ -174,8 +174,15 @@ def _backup_all():
         drafts, active, held = _open_inventory(client, strict_initial=True)
         require_uidplus(client, "one-off 509 Draft recovery backup")
         _find_backup_folder(client, drafts, create=True)
-        if _backup_inventory(client, expected=0):
-            raise RuntimeError("backup_folder_must_start_empty")
+        existing = _backup_inventory(client, expected=None)
+        active_ids = {item["lead_id"] for item in active}
+        original_ids = {item["lead_id"] for item in existing}
+        if not original_ids.issubset(active_ids):
+            raise RuntimeError("partial_backup_unrelated_originals")
+        # A cancelled COPY may have left recoverable originals. Only reuse
+        # a copy when its raw bytes still exactly equal the live Draft.
+        reused = 0
+        copied = 0
         for item in active:
             lead = item["lead_id"]
             original_uid = _one_uid(client, drafts, lead, require_draft=True)
@@ -183,6 +190,15 @@ def _backup_all():
                 raise RuntimeError("original_draft_missing")
             select_folder(client, drafts, readonly=True)
             original_raw = _raw_uid(client, original_uid)
+            if lead in original_ids:
+                saved_uid = _one_uid(client, BACKUP_FOLDER, lead)
+                if saved_uid is None:
+                    raise RuntimeError("partial_backup_missing")
+                select_folder(client, BACKUP_FOLDER, readonly=True)
+                if _raw_uid(client, saved_uid) != original_raw:
+                    raise RuntimeError("partial_backup_content_changed")
+                reused += 1
+                continue
             select_folder(client, drafts, readonly=False)
             if _raw_uid(client, original_uid) != original_raw:
                 raise RuntimeError("original_changed_during_backup")
@@ -196,11 +212,13 @@ def _backup_all():
             select_folder(client, BACKUP_FOLDER, readonly=True)
             if _raw_uid(client, saved_uid) != original_raw:
                 raise RuntimeError("backup_exact_bytes_mismatch")
+            copied += 1
         verified = _backup_inventory(client, expected=EXPECTED_BACKUPS)
         if {x["lead_id"] for x in verified} != {x["lead_id"] for x in active}:
             raise RuntimeError("backup_identity_coverage_mismatch")
         _open_inventory(client, strict_initial=True)
-        return {"originals_backed_up": len(verified), "active": len(active),
+        return {"originals_backed_up": len(verified), "reused_exact_backups": reused,
+                "new_exact_backups": copied, "active": len(active),
                 "held": len(held), "total": EXPECTED_TAGGED_DRAFTS,
                 "mail_sent": 0, "mail_replaced": 0}
     finally:
@@ -336,18 +354,20 @@ def main():
                 client = connect_imap()
                 try:
                     drafts, active, held = _open_inventory(client, strict_initial=True)
-                    if args.offset != 0:
-                        raise RuntimeError("preview_only_initial_50")
-                    cohort = active[:STEP]
+                    if not (0 <= args.offset < TOTAL_ACTIVE and args.offset % STEP == 0):
+                        raise RuntimeError("invalid_readonly_preview_cohort_offset")
+                    cohort = active[args.offset:args.offset + STEP]
                     sources, history, ordinary = _source_context()
                     decisions = _research_window(cohort, sources, history, ordinary)
                     counts = Counter()
                     for action, reason, _ in decisions.values():
                         counts["ready_for_rewrite" if action == "rewrite" else reason] += 1
-                    result = {"mode": "preview", "checked": len(cohort),
+                    result = {"mode": "preview", "offset": args.offset,
+                              "checked": len(cohort),
                               "counts": dict(sorted(counts.items())),
                               "active": len(active), "held": len(held),
                               "total": EXPECTED_TAGGED_DRAFTS,
+                              "source_evidence_researched_as_available": True,
                               "emails_sent": 0, "mailbox_writes": False}
                 finally:
                     client.logout()

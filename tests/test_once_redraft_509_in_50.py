@@ -79,6 +79,72 @@ class Existing509RedraftTests(unittest.TestCase):
         verify.assert_not_called()
         research.assert_not_called()
 
+    def test_resume_64_byte_identical_originals_and_copy_only_other_445(self):
+        originals = [row(i) for i in range(1, 510)]
+        held = [row(i) for i in range(510, 1174)]
+        class FakeIMAP:
+            def __init__(self):
+                self.writes = []
+            def uid(self, *args):
+                self.writes.append(args)
+                return "OK", [b"UID COPY OK"]
+            def logout(self):
+                pass
+        fake = FakeIMAP()
+        with patch.object(mod, "connect_imap", return_value=fake), \
+             patch.object(mod, "_open_inventory",
+                          return_value=("Drafts", originals, held)) as inventory, \
+             patch.object(mod, "require_uidplus"), \
+             patch.object(mod, "_find_backup_folder"), \
+             patch.object(mod, "_backup_inventory",
+                          side_effect=[originals[:64], originals]) as backups, \
+             patch.object(mod, "_one_uid", return_value=b"101"), \
+             patch.object(mod, "_raw_uid", return_value=b"original-exact-raw"), \
+             patch.object(mod, "select_folder"):
+            outcome = mod._backup_all()
+        self.assertEqual(outcome["reused_exact_backups"], 64)
+        self.assertEqual(outcome["new_exact_backups"], 445)
+        self.assertEqual(outcome["originals_backed_up"], 509)
+        self.assertEqual(outcome["mail_sent"], 0)
+        self.assertEqual(outcome["mail_replaced"], 0)
+        self.assertEqual(len(fake.writes), 445)
+        self.assertTrue(all(args[0] == "copy" for args in fake.writes))
+        self.assertEqual(inventory.call_count, 2)
+        self.assertEqual(backups.call_count, 2)
+
+    def test_partial_original_mismatch_fails_before_any_copy(self):
+        originals = [row(i) for i in range(1, 510)]
+        held = [row(i) for i in range(510, 1174)]
+        class FakeIMAP:
+            def __init__(self):
+                self.writes = []
+            def uid(self, *args):
+                self.writes.append(args)
+                raise AssertionError("unsafe write attempted")
+            def logout(self):
+                pass
+        fake = FakeIMAP()
+        with patch.object(mod, "connect_imap", return_value=fake), \
+             patch.object(mod, "_open_inventory",
+                          return_value=("Drafts", originals, held)), \
+             patch.object(mod, "require_uidplus"), \
+             patch.object(mod, "_find_backup_folder"), \
+             patch.object(mod, "_backup_inventory", return_value=originals[:64]), \
+             patch.object(mod, "_one_uid", return_value=b"101"), \
+             patch.object(mod, "_raw_uid",
+                          side_effect=[b"current-content", b"old-content"]), \
+             patch.object(mod, "select_folder"):
+            with self.assertRaisesRegex(RuntimeError, "partial_backup_content_changed"):
+                mod._backup_all()
+        self.assertEqual(fake.writes, [])
+
+    def test_readonly_all_cohorts_have_exact_50_or_9(self):
+        originals = [row(i) for i in range(1, 510)]
+        for offset in range(0, 509, mod.STEP):
+            with self.subTest(offset=offset):
+                window = originals[offset:offset + mod.STEP]
+                self.assertEqual(len(window), 9 if offset == 500 else 50)
+
     def test_backup_fails_before_copy_on_changed_mailbox_inventory(self):
         class FakeIMAP:
             def __init__(self):
