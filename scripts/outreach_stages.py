@@ -700,7 +700,7 @@ def draft_for_review(
     }
     subject, body = subject_for(candidate), body_for(candidate)
     # Website quotes may themselves contain questions; only our own CTA counts.
-    quoted_questions = 0 if len(selected) > 1 else observation.count("?")
+    quoted_questions = sum(finding_excerpt(item).count("?") for item in selected)
     if (
         not subject or not body or body.count("?") - quoted_questions != 1
         or len(body.split()) > MAX_BODY_WORDS
@@ -711,58 +711,77 @@ def draft_for_review(
 
 
 def validate_mail(candidate: dict, subject: str, body: str) -> list[str]:
+    """No green status for generic one-point or unsupported marketing mail."""
     reasons: list[str] = []
     subject_words = subject.split()
     body_words = body.split()
-
     if not subject or subject != subject.casefold():
         reasons.append("subject_must_be_lowercase")
+    if subject != subject_for(candidate):
+        reasons.append("subject_must_match_number_of_improvements")
     if len(subject_words) > MAX_SUBJECT_WORDS:
         reasons.append("subject_too_long")
     if "!" in subject or re.match(r"^(re|fwd):", subject, flags=re.I):
         reasons.append("subject_trick_or_exclamation_not_allowed")
     if len(body_words) > MAX_BODY_WORDS:
         reasons.append("body_too_long")
-    # A literal website observation may include its own question mark; only
-    # our call-to-action counts toward the single-question rule.
-    quote_questions = 0 if len(candidate.get("selected_findings") or []) > 1 else _text(candidate.get("verified_observation")).count("?")
-    if body.count("?") - quote_questions != 1:
-        reasons.append("exactly_one_question_cta_required")
-    if "Andrew Baeten" not in body or "Webactueel" in body:
-        reasons.append("andrew_baeten_sender_identity_required")
     try:
         findings = review_findings(candidate.get("selected_findings"), candidate.get("official_domain"))
     except (ValueError, TypeError):
         findings = []
         reasons.append("review_findings_missing_or_unverified")
-    if len(findings) > 1:
-        # The review queue and exact approval token retain every finding.
-        # A multi-point draft must quote every selected independently verified point.
-        if any(finding_excerpt(item) not in body for item in findings[:MAX_DRAFT_HIGHLIGHTS]):
-            reasons.append("review_findings_missing_or_unverified")
-    elif _text(candidate.get("verified_observation")) not in body:
-        reasons.append("verified_observation_missing_from_body")
+    if not MIN_MAIL_IMPROVEMENTS <= len(findings) <= MAX_MAIL_IMPROVEMENTS:
+        reasons.append("requires_three_to_six_sourced_improvements")
+    if len({_text(f.get("category")) for f in findings}) != len(findings):
+        reasons.append("duplicate_improvement_category")
+    lang = _text(candidate.get("language"))
+    for n, finding in enumerate(findings, 1):
+        line = improvement_line(finding, lang, n)
+        if not line or line not in body:
+            reasons.append("sourced_improvement_missing_or_unreviewed")
+            break
+    observed_questions = sum(finding_excerpt(finding).count("?") for finding in findings)
+    if body.count("?") - observed_questions != 1:
+        reasons.append("exactly_one_question_cta_required")
+    if not body.endswith((
+        "Met vriendelijke groeten,\nAndrew" if lang == "nl"
+        else "Kind regards,\nAndrew" if lang == "en" else ""
+    )) or not body.endswith("\nAndrew"):
+        reasons.append("verified_andrew_signature_required")
+    if not body.startswith("Beste") and lang == "nl":
+        reasons.append("dutch_greeting_required")
+    if not body.startswith("Dear") and lang == "en":
+        reasons.append("english_greeting_required")
+    if "Webactueel" in body:
+        reasons.append("unapproved_sender_brand")
     if _text(candidate.get("verified_observation_source_type")) != "official_site":
         reasons.append("observation_must_be_first_party")
     if _text(candidate.get("value_action_status")) != "proposed":
         reasons.append("value_action_must_be_proposed")
     if _text(candidate.get("value_first_action")) not in body:
         reasons.append("value_action_missing_from_body")
-
+    if (
+        "Als je geen interesse hebt, hoef je niet te reageren." not in body
+        if lang == "nl" else
+        "If you're not interested, there's no need to reply." not in body
+    ):
+        reasons.append("no_reply_needed_when_not_interested")
     low = normalize_text(body)
     forbidden = (
-        "meeting", "call boeken", "plan een gesprek", "schedule a call", "book a call",
-        "demo call", "roi", "return on investment", "garantie", "guarantee",
-        "omzet", "revenue", "conversie stijgt", "increase conversions",
+        "meeting", "call boeken", "plan een gesprek", "schedule a call",
+        "book a call", "demo call", "roi", "return on investment",
+        "garantie", "guarantee", "omzet", "revenue",
+        "conversie stijgt", "increase conversions",
         "ik heb alvast", "ik heb gemaakt", "i already made", "i have made",
+        "op jullie website viel me dit detail op", "i noticed one detail on your website",
     )
     if any(term in low for term in forbidden):
-        reasons.append("unsupported_or_high_friction_claim")
+        reasons.append("unsupported_or_robotic_marketing_claim")
     if re.search(r"(?:€|£|\$|\b\d+(?:[.,]\d+)?\s*%)", body):
         reasons.append("price_or_percentage_not_allowed")
     if _text(candidate.get("public_business_email")) and _text(candidate.get("public_business_email")) in body:
         reasons.append("recipient_email_must_not_appear_in_body")
-    return reasons
+    return list(dict.fromkeys(reasons))
 
 
 def generate_one_mail(candidate: dict) -> dict:
@@ -798,8 +817,8 @@ def generate_one_mail(candidate: dict) -> dict:
     )
     reasons = validate_mail(candidate, subject, body) if subject and body else ["draft_quality_hold"]
     result.update({
-        "subject": subject,
-        "body": body,
+        "subject": subject if not reasons else None,
+        "body": body if not reasons else None,
         "copy_validation_status": "green" if not reasons else "hold",
         "copy_validation_reasons": reasons,
         "mail_status": "ready_for_human_review" if not reasons else "hold",
