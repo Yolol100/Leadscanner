@@ -4,6 +4,9 @@ on:
     branches: [main]
 permissions:
   contents: read
+concurrency:
+  group: leadscanner-mijnhost-drafts
+  cancel-in-progress: true
 jobs:
   cancel_current_mailbox_job:
     if: >-
