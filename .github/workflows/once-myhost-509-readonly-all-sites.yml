@@ -37,7 +37,7 @@ jobs:
       fail-fast: false
       max-parallel: 2
       matrix:
-        offset: [0, 50, 100, 150, 200, 250, 300, 350, 400, 450, 500]
+        offset: [0, 200, 400]
     runs-on: ubuntu-24.04
     timeout-minutes: 150
     concurrency:
@@ -65,4 +65,4 @@ jobs:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: |
           set -euo pipefail
-          python3 scripts/_once_redraft_509_in_50.py --mode preview --offset ${{ matrix.offset }}
+          python3 scripts/_once_redraft_509_in_50.py --mode preview --count 200 --offset ${{ matrix.offset }}
