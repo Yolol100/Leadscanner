@@ -96,6 +96,28 @@ class DraftTests(unittest.TestCase):
         with patch.dict(os.environ, {"OUTREACH_DRAFT_FOLDER": ""}):
             self.assertEqual(find_drafts_folder(Folders()), "Concepten")
 
+    def test_unquoted_imap_folder_atom_after_quoted_delimiter(self):
+        from myhost_draft import find_drafts_folder
+        class Folders:
+            def list(self):
+                return "OK", [
+                    b'(\HasNoChildren \Drafts) "." INBOX.Drafts',
+                    b'(\HasNoChildren) "." Leadscanner_Originals_20261013_Before509Redraft',
+                ]
+        with patch.dict(os.environ, {"OUTREACH_DRAFT_FOLDER": ""}):
+            self.assertEqual(find_drafts_folder(Folders()), "INBOX.Drafts")
+
+    def test_unquoted_atoms_and_quoted_drafts_do_not_confuse_delimiter(self):
+        from myhost_draft import find_drafts_folder
+        class Folders:
+            def list(self):
+                return "OK", [
+                    b'(\HasNoChildren) "." LEADSCANNER_BACKUPS',
+                    b'(\HasNoChildren) "." "Concepten"',
+                ]
+        with patch.dict(os.environ, {"OUTREACH_DRAFT_FOLDER": ""}):
+            self.assertEqual(find_drafts_folder(Folders()), "Concepten")
+
     def test_drafts_special_use_flag_has_priority_even_for_custom_name(self):
         from myhost_draft import find_drafts_folder
         class Folders:
