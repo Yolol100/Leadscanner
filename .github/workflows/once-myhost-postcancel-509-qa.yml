@@ -94,6 +94,7 @@ jobs:
                   finally:
                       client.logout()
           except Exception as exc:
+              import re
               allowed = {'initial_inventory_509_664_changed', 'hold_union_baseline_changed',
                          'backup_contains_unrelated_messages', 'copied_original_not_still_active',
                          'original_bytes_changed_after_cancel', 'imap_duplicate_lead_id',
@@ -103,10 +104,22 @@ jobs:
                          'imap_inventory_search_failed', 'imap_inventory_count_invalid',
                          'imap_inventory_incomplete', 'imap_noncanonical_tagged_draft',
                          'hold_overlap_missing_copy', 'hold_overlap_copy_mismatch'}
-              code = str(exc) if str(exc) in allowed else 'private_failure'
+              raw = str(exc)
+              if raw in allowed:
+                  code = raw
+              elif raw == 'Could not open drafts folder':
+                  code = 'imap_select_failed'
+              elif re.fullmatch(r'[a-z][a-z0-9_]{2,75}', raw):
+                  code = raw
+              else:
+                  code = 'private_failure'
+              exception_type = type(exc).__name__
+              if exception_type not in {'RuntimeError','ValueError','TypeError','AttributeError',
+                                        'error','abort','readonly','OSError','TimeoutError'}:
+                  exception_type = 'OtherException'
               metric = (f' counts={safe_counts[0]},{safe_counts[1]},{safe_counts[2]}'
                         if safe_counts is not None else '')
-              print('POSTCANCEL_509=red stage=' + stage + ' reason=' + code + metric)
+              print('POSTCANCEL_509=red stage=' + stage + ' reason=' + code + ' class=' + exception_type + metric)
               raise SystemExit(1)
           print(f'POSTCANCEL_509=green active=509 held=664 union=1173 partial_backup_count={copied} originals_preserved=1 writes=0')
           PY
