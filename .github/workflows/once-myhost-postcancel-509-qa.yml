@@ -45,12 +45,28 @@ jobs:
           from myhost_draft import connect_imap, select_folder, find_drafts_folder
           stage = 'connection'
           safe_counts = None
+          folder_probe = {}
           try:
               with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
                   client = connect_imap()
                   try:
                       stage = 'drafts_folder_selection'
                       folder = find_drafts_folder(client)
+                      folder_probe = {
+                          'selected_length': len(folder),
+                          'selected_has_slash': '/' in folder,
+                          'selected_has_dot': '.' in folder,
+                          'selected_looks_like_recovery': 'leadscanner' in folder.casefold(),
+                      }
+                      for quote_mode, candidate_path in (
+                          ('quoted', '"' + folder + '"'),
+                          ('unquoted', folder),
+                      ):
+                          try:
+                              status, _ = client.select(candidate_path, readonly=True)
+                              folder_probe[quote_mode + '_select_ok'] = status == 'OK'
+                          except Exception:
+                              folder_probe[quote_mode + '_select_ok'] = False
                       stage = 'active_inventory'
                       active = inventory_existing(client, folder, expected_total=None)
                       stage = 'held_inventory'
@@ -119,7 +135,9 @@ jobs:
                   exception_type = 'OtherException'
               metric = (f' counts={safe_counts[0]},{safe_counts[1]},{safe_counts[2]}'
                         if safe_counts is not None else '')
-              print('POSTCANCEL_509=red stage=' + stage + ' reason=' + code + ' class=' + exception_type + metric)
+              import json
+              print('POSTCANCEL_509=red stage=' + stage + ' reason=' + code + ' class=' + exception_type + metric
+                    + ' folder_probe=' + json.dumps(folder_probe, sort_keys=True))
               raise SystemExit(1)
           print(f'POSTCANCEL_509=green active=509 held=664 union=1173 partial_backup_count={copied} originals_preserved=1 writes=0')
           PY
