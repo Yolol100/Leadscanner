@@ -201,12 +201,13 @@ class Existing509RedraftTests(unittest.TestCase):
              patch.object(mod, "move_to_hold") as mover, \
              patch.object(mod, "create_drafts") as writer, \
              patch.object(mod, "validate_hold_inventory",
-                          return_value=(targets, [row(i) for i in range(2, 666)])), \
+                          return_value=([row(i) for i in range(1, 510)],
+                                        [row(i) for i in range(510, 1174)])), \
              patch.object(mod, "_backup_inventory", return_value=targets):
             report = mod._run_window(0, write=True)
         self.assertEqual(report["counts"]["unqualified_unchanged"], 1)
         self.assertEqual(report["counts"]["site_unverified"], 1)
-        self.assertEqual(report["active_after"], 1)
+        self.assertEqual(report["active_after"], 509)
         original.assert_called_once()
         mkdir.assert_not_called()
         mover.assert_not_called()
