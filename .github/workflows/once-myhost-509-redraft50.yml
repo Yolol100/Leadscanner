@@ -9,8 +9,8 @@ jobs:
     if: >-
       github.ref == 'refs/heads/main' &&
       github.run_attempt == 1 &&
-      (contains(github.event.head_commit.message, '[myhost-509-preview]') ||
-       contains(github.event.head_commit.message, '[myhost-509-redraft]'))
+      (startsWith(github.event.head_commit.message, 'PREVIEW509_SITE_AUDIT_ONLY:') ||
+       startsWith(github.event.head_commit.message, 'APPROVED509_REDRAFT_ALL:'))
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -32,7 +32,7 @@ jobs:
 
   preview:
     needs: unit_tests
-    if: "contains(github.event.head_commit.message, '[myhost-509-preview]')"
+    if: "startsWith(github.event.head_commit.message, 'PREVIEW509_SITE_AUDIT_ONLY:')"
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     concurrency:
@@ -66,7 +66,7 @@ jobs:
 
   backup:
     needs: unit_tests
-    if: "contains(github.event.head_commit.message, '[myhost-509-redraft]')"
+    if: "startsWith(github.event.head_commit.message, 'APPROVED509_REDRAFT_ALL:')"
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     concurrency:
@@ -101,7 +101,7 @@ jobs:
 
   batch_0:
     needs: backup
-    if: "contains(github.event.head_commit.message, '[myhost-509-redraft]')"
+    if: "startsWith(github.event.head_commit.message, 'APPROVED509_REDRAFT_ALL:')"
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     concurrency:
@@ -136,7 +136,7 @@ jobs:
 
   batch_1:
     needs: batch_0
-    if: "contains(github.event.head_commit.message, '[myhost-509-redraft]')"
+    if: "startsWith(github.event.head_commit.message, 'APPROVED509_REDRAFT_ALL:')"
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     concurrency:
@@ -171,7 +171,7 @@ jobs:
 
   batch_2:
     needs: batch_1
-    if: "contains(github.event.head_commit.message, '[myhost-509-redraft]')"
+    if: "startsWith(github.event.head_commit.message, 'APPROVED509_REDRAFT_ALL:')"
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     concurrency:
@@ -206,7 +206,7 @@ jobs:
 
   batch_3:
     needs: batch_2
-    if: "contains(github.event.head_commit.message, '[myhost-509-redraft]')"
+    if: "startsWith(github.event.head_commit.message, 'APPROVED509_REDRAFT_ALL:')"
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     concurrency:
@@ -241,7 +241,7 @@ jobs:
 
   batch_4:
     needs: batch_3
-    if: "contains(github.event.head_commit.message, '[myhost-509-redraft]')"
+    if: "startsWith(github.event.head_commit.message, 'APPROVED509_REDRAFT_ALL:')"
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     concurrency:
@@ -276,7 +276,7 @@ jobs:
 
   batch_5:
     needs: batch_4
-    if: "contains(github.event.head_commit.message, '[myhost-509-redraft]')"
+    if: "startsWith(github.event.head_commit.message, 'APPROVED509_REDRAFT_ALL:')"
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     concurrency:
@@ -311,7 +311,7 @@ jobs:
 
   batch_6:
     needs: batch_5
-    if: "contains(github.event.head_commit.message, '[myhost-509-redraft]')"
+    if: "startsWith(github.event.head_commit.message, 'APPROVED509_REDRAFT_ALL:')"
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     concurrency:
@@ -346,7 +346,7 @@ jobs:
 
   batch_7:
     needs: batch_6
-    if: "contains(github.event.head_commit.message, '[myhost-509-redraft]')"
+    if: "startsWith(github.event.head_commit.message, 'APPROVED509_REDRAFT_ALL:')"
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     concurrency:
@@ -381,7 +381,7 @@ jobs:
 
   batch_8:
     needs: batch_7
-    if: "contains(github.event.head_commit.message, '[myhost-509-redraft]')"
+    if: "startsWith(github.event.head_commit.message, 'APPROVED509_REDRAFT_ALL:')"
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     concurrency:
@@ -416,7 +416,7 @@ jobs:
 
   batch_9:
     needs: batch_8
-    if: "contains(github.event.head_commit.message, '[myhost-509-redraft]')"
+    if: "startsWith(github.event.head_commit.message, 'APPROVED509_REDRAFT_ALL:')"
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     concurrency:
@@ -451,7 +451,7 @@ jobs:
 
   batch_10:
     needs: batch_9
-    if: "contains(github.event.head_commit.message, '[myhost-509-redraft]')"
+    if: "startsWith(github.event.head_commit.message, 'APPROVED509_REDRAFT_ALL:')"
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     concurrency:
