@@ -132,6 +132,7 @@ jobs:
           python3 scripts/_once_myhost_existing_rewrite.py --offset 1000 --mode hold_revision
 
   diagnose:
+    # Read-only recheck after the prior hold_500 failed; never rerun a writer.
     if: >-
       github.ref == 'refs/heads/main' &&
       github.run_attempt == 1 &&
