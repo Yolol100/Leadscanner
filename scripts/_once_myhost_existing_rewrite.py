@@ -43,6 +43,29 @@ from outreach_stages import (
 )
 
 BATCH_SIZE = 100
+# Fixed, anonymous evidence from run 38410356197. This one-shot continuation
+# must never select a different cohort or reuse another run's mailbox state.
+REVISION_CHECKPOINTS = {
+    500: {"active_before": 509, "held_before": 664,
+          "checked": 62, "already_correct": 60, "ready_to_rewrite": 2,
+          "active_after": 507, "held_after": 666},
+    1000: {"active_before": 507, "held_before": 666,
+           "checked": 65, "already_correct": 64, "ready_to_rewrite": 1,
+           "active_after": 506, "held_after": 667},
+}
+
+
+def _verify_revision_evidence(offset, window, counters, to_hold):
+    """Require exactly the previously observed 3 stale copies, no new failures."""
+    expected = REVISION_CHECKPOINTS[offset]
+    if (len(window) != expected["checked"]
+            or counters["already_correct"] != expected["already_correct"]
+            or counters["ready_to_rewrite"] != expected["ready_to_rewrite"]
+            or len(to_hold) != expected["ready_to_rewrite"]
+            or any(reason != "revision" for reason in to_hold.values())):
+        raise RuntimeError("three_revision_evidence_drift")
+    return expected
+
 EXPECTED_TAGGED_DRAFTS = 1173
 MAX_MESSAGES = 2000
 VALID_CONCEPT_STATES = {"concept", "draft", "review_draft"}
@@ -207,11 +230,15 @@ def _original_snapshot(client, folder: str, lead: str):
     return original
 
 
-def run(offset: int, *, write: bool, cleanup: bool = False) -> dict:
+def run(offset: int, *, write: bool, cleanup: bool = False, hold_revision: bool = False) -> dict:
     if offset < 0 or offset % BATCH_SIZE or offset >= EXPECTED_TAGGED_DRAFTS:
         raise RuntimeError("offset_out_of_bounds")
     if write and cleanup:
         raise RuntimeError("hold_and_rewrite_must_be_separate_phases")
+    if hold_revision and (write or not cleanup
+                          or offset not in REVISION_CHECKPOINTS
+                          or os.getenv("LEADSCANNER_HOLD_REVISION") != "true"):
+        raise RuntimeError("revision_holding_not_authorized")
     if cleanup and (os.getenv("LEADSCANNER_TRUSTED_HOLD") != "true"
                     or not os.getenv("OUTREACH_MAIL_PASSWORD")):
         raise RuntimeError("trusted_hold_required")
@@ -239,6 +266,11 @@ def run(offset: int, *, write: bool, cleanup: bool = False) -> dict:
         all_active, all_held = validate_hold_inventory(
             client, folder, HOLD_FOLDER, inventory_existing, EXPECTED_TAGGED_DRAFTS,
         )
+        if hold_revision:
+            checkpoint = REVISION_CHECKPOINTS[offset]
+            if (len(all_active) != checkpoint["active_before"]
+                    or len(all_held) != checkpoint["held_before"]):
+                raise RuntimeError("three_revision_mailbox_baseline_changed")
         held_ids = {item["lead_id"] for item in all_held}
         # Preserve original 1173 lead slots even during interrupted COPY/EXPUNGE.
         stable_inventory = sorted(
@@ -335,6 +367,8 @@ def run(offset: int, *, write: bool, cleanup: bool = False) -> dict:
                 counters["already_correct"] += 1
                 continue
             counters["ready_to_rewrite"] += 1
+            if hold_revision:
+                to_hold[lead] = "revision"
             if not write:
                 continue
 
@@ -377,6 +411,8 @@ def run(offset: int, *, write: bool, cleanup: bool = False) -> dict:
         )) != len(window):
             raise RuntimeError("batch_accounting_incomplete")
         if cleanup:
+            expected_revision = (_verify_revision_evidence(
+                offset, window, counters, to_hold) if hold_revision else None)
             for lead in sorted(to_hold):
                 item = index[lead]
                 snapshot = snapshots.get(lead)
@@ -397,6 +433,11 @@ def run(offset: int, *, write: bool, cleanup: bool = False) -> dict:
             )
             counters["active_after"] = len(active_after)
             counters["archived_total_after"] = len(held_after)
+            if expected_revision is not None and (
+                counters["archived_for_recovery"] != expected_revision["ready_to_rewrite"]
+                or len(active_after) != expected_revision["active_after"]
+                or len(held_after) != expected_revision["held_after"]):
+                raise RuntimeError("three_revision_final_inventory_mismatch")
         return {
             "status": "green",
             "mode": "cleanup" if cleanup else ("rewrite" if write else "review"),
@@ -419,11 +460,14 @@ def run(offset: int, *, write: bool, cleanup: bool = False) -> dict:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--offset", type=int, required=True)
-    parser.add_argument("--mode", choices=("review", "rewrite", "cleanup"), required=True)
+    parser.add_argument("--mode", choices=("review", "rewrite", "cleanup",
+                                           "hold_revision"), required=True)
     args = parser.parse_args()
     try:
         with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
-            result = run(args.offset, write=args.mode == "rewrite", cleanup=args.mode == "cleanup")
+            result = run(args.offset, write=args.mode == "rewrite",
+                         cleanup=args.mode in ("cleanup", "hold_revision"),
+                         hold_revision=args.mode == "hold_revision")
     except Exception as exc:
         # Fail closed: never publish provider exception messages, URLs, email
         # addresses, contact IDs, copies, source evidence or stack frames.
