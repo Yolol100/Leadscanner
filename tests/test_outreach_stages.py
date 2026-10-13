@@ -101,9 +101,8 @@ class OutreachStagesTests(unittest.TestCase):
         }
         self.assertEqual(detect_language(row, ambiguous), "nl")
         selected = select_one_reason(row)
-        self.assertEqual(selected["outreach_status"], "hold")
-        self.assertEqual(selected["outreach_hold_reason"],
-                         "fewer_than_three_distinct_verified_improvements")
+        self.assertEqual(selected["outreach_status"], "ready")
+        self.assertEqual(selected["language"], "nl")
 
     def test_cross_domain_context_cannot_override_unknown_language(self):
         from outreach_stages import detect_language
@@ -331,7 +330,7 @@ class OutreachStagesTests(unittest.TestCase):
         result = generate_mails(choose_value_actions(select_reasons({"candidates": [candidate]})))
         row = result["candidates"][0]
         self.assertEqual(row["mail_status"], "ready_for_human_review")
-        self.assertGreaterEqual(len(row["selected_findings"]), 4)
+        self.assertEqual(len(row["selected_findings"]), 3)
         for item in row["selected_findings"]:
             self.assertIn(finding_excerpt(item), row["body"])
         self.assertEqual(row["body"].count("?"), 1)
@@ -352,7 +351,7 @@ class OutreachStagesTests(unittest.TestCase):
         )
         reasons = validate_mail(candidate, "idee voor afspraakroute", body)
         self.assertIn("unsupported_or_robotic_marketing_claim", reasons)
-        self.assertIn("requires_three_to_six_sourced_improvements", reasons)
+        self.assertIn("requires_two_to_three_sourced_improvements", reasons)
         self.assertIn("value_action_missing_from_body", reasons)
 
     def test_only_first_party_evidence_can_drive_mail(self):
