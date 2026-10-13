@@ -527,19 +527,22 @@ def body_for(candidate: dict) -> str:
     if language == "nl":
         return (
             f"{greeting_nl}\n\n"
-            f"Op jullie website viel me dit detail op: {observation}\n\n"
-            f"Als je wilt, kan ik {action} maken. Dat is vrijblijvend.\n\n"
-            "Zal ik dat voorbeeld per mail sturen?\n\n"
-            "Geen interesse, laat het gerust weten; dan stop ik.\n\n"
-            "Groet,\nAndrew Baeten"
+            f"Ik bekeek jullie website en las: {observation}\n\n"
+            f"Een concreet idee hierbij is {action}. "
+            "Dat is een voorstel, geen oordeel over hoe jullie website nu werkt.\n\n"
+            "Zou je een korte schets hiervan willen zien?\n\n"
+            "Als dit niet relevant is, laat het gerust weten. "
+            "Dan neem ik geen contact meer op.\n\n"
+            "Met vriendelijke groeten,\nAndrew Baeten"
         )
     return (
         f"{greeting_en}\n\n"
-        f"I noticed one detail on your website: {observation}\n\n"
-        f"If useful, I can prepare {action} with no obligation.\n\n"
-        "Would you like me to email it to you?\n\n"
-        "If it isn't relevant, just reply 'no' and I'll stop.\n\n"
-        "Best,\nAndrew Baeten"
+        f"I looked at your website and read: {observation}\n\n"
+        f"One specific idea is {action}. "
+        "It is a suggestion, not a claim that something is broken.\n\n"
+        "Would a short sketch be useful?\n\n"
+        "If this isn't relevant, let me know and I won't contact you again.\n\n"
+        "Kind regards,\nAndrew Baeten"
     )
 
 def review_findings(findings: object, domain: object) -> list[dict]:
