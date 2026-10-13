@@ -16,7 +16,9 @@ from urllib.parse import urlparse
 from cold_stages import normalize_domain
 
 MAX_CANDIDATES = 100
-MAX_BODY_WORDS = 155
+MAX_BODY_WORDS = 320
+MIN_MAIL_IMPROVEMENTS = 3
+MAX_MAIL_IMPROVEMENTS = 6
 MAX_SUBJECT_WORDS = 8
 MAX_DRAFT_HIGHLIGHTS = 6  # Include every verified finding, never pad weak evidence.
 
@@ -144,6 +146,73 @@ SUBJECTS = {
 }
 
 
+# Proposals, not claims of existing defects: an official-site observation must
+# accompany each proposal. When fewer than 3 independent source-backed routes
+# exist, the company stays on hold. Never pad with page titles or generic copy.
+IMPROVEMENT_IDEAS = {
+    "appointment": {
+        "nl": ("Afspraken", "de keuze voor het soort afspraak en de vervolgstappen direct bij het formulier uitleggen"),
+        "en": ("Appointments", "explain appointment types and the next steps alongside the form"),
+    },
+    "quote_request": {
+        "nl": ("Offerte aanvragen", "de benodigde informatie en de volgende stap al bij de aanvraag tonen"),
+        "en": ("Quote requests", "show required details and next steps by the request form"),
+    },
+    "reservation": {
+        "nl": ("Reserveren", "keuze van tijdstip, groepsgrootte en bevestiging bij de reserveeractie verduidelijken"),
+        "en": ("Reservations", "clarify times, party size and confirmation next to the reservation action"),
+    },
+    "ordering": {
+        "nl": ("Bestellen", "bezorging en afhalen eerder als duidelijke keuzestappen tonen"),
+        "en": ("Ordering", "make delivery and collection clearer as separate steps"),
+    },
+    "delivery": {
+        "nl": ("Bezorging en afhalen", "bezorgmogelijkheden en afhaalafspraken in één overzicht tonen"),
+        "en": ("Delivery and collection", "put delivery and collection options in one clear overview"),
+    },
+    "returns": {
+        "nl": ("Retourneren", "de retourstappen en bijbehorende voorwaarden kort bij elkaar zetten"),
+        "en": ("Returns", "bring the return steps and conditions into a concise overview"),
+    },
+    "product_information": {
+        "nl": ("Productinformatie", "belangrijkste productverschillen direct vergelijkbaar maken"),
+        "en": ("Product information", "make the key differences between products easy to compare"),
+    },
+    "support": {
+        "nl": ("Veelgestelde vragen", "vragen per onderwerp bundelen met duidelijke vervolglinks"),
+        "en": ("Help and FAQs", "group questions by topic with clear next links"),
+    },
+    "contact": {
+        "nl": ("Contact", "de contactkeuzes en de gewenste vervolgstap op één plek tonen"),
+        "en": ("Contact", "present contact options and the next step together"),
+    },
+    "services": {
+        "nl": ("Diensten", "een kort keuzeoverzicht toevoegen dat bezoekers naar de juiste dienst leidt"),
+        "en": ("Services", "add a short choice guide that leads visitors to the right service"),
+    },
+    "portfolio": {
+        "nl": ("Projecten", "de voorbeelden per soort project makkelijker vindbaar maken"),
+        "en": ("Projects", "make examples easier to find by project type"),
+    },
+    "navigation": {
+        "nl": ("Navigatie", "de meest gebruikte zoek- en filterroutes bij elkaar presenteren"),
+        "en": ("Navigation", "present the main search and filtering options together"),
+    },
+}
+
+
+def looks_like_page_title(text: str) -> bool:
+    """Page titles/breadcrumbs are not researched UX findings."""
+    observed = re.sub(r"\s+", " ", _text(text)).strip()
+    parts = re.split(r"\s+[-–—|]\s+", observed)
+    return (
+        len(parts) >= 2
+        and len(observed.split()) <= 17
+        and all(len(part.split()) <= 7 for part in parts)
+        and not re.search(r"[.!?]", observed)
+    )
+
+
 def _text(value: object) -> str:
     return str(value or "").strip()
 
@@ -206,6 +275,8 @@ def evidence_is_usable(item: dict) -> bool:
     text = re.sub(r"\s+", " ", _text(item.get("text"))).strip()
     words = text.split()
     if not 6 <= len(words) <= 40:
+        return False
+    if looks_like_page_title(text):
         return False
     low = normalize_text(text)
     if any(term in low for term in BLOCKED_EVIDENCE_TERMS):
@@ -318,7 +389,7 @@ def select_one_reason(candidate: dict) -> dict:
         score, category = -entry[0], entry[3]["signal_type"]
         # Repeating one website journey is not six distinct opportunities.
         # Do not pad strong observations with unrelated, weak copy.
-        if category_counts.get(category, 0) >= 2:
+        if category_counts.get(category, 0) >= 1:
             continue
         if category == "other" and other_count >= 1:
             continue
@@ -347,6 +418,11 @@ def select_one_reason(candidate: dict) -> dict:
             "source_type": "official_site",
             "page_type": _text(item.get("page_type")) or "detail",
         })
+    result["selected_findings"] = findings
+    eligible_categories = [f["category"] for f in findings if f["category"] in IMPROVEMENT_IDEAS]
+    if len(eligible_categories) < MIN_MAIL_IMPROVEMENTS:
+        result["outreach_hold_reason"] = "fewer_than_three_distinct_verified_improvements"
+        return result
     top = findings[0]
     result.update({
         "outreach_status": "ready",
@@ -376,12 +452,13 @@ def select_reasons(payload: dict) -> dict:
         "candidates": results,
         "handoff": {
             "next": "value_first_action",
-            "rule": "exactly_one_first_party_reason_or_hold",
+            "rule": "three_to_six_distinct_first_party_improvements_or_hold",
         },
     }
 
 
 def value_action_for(candidate: dict) -> dict:
+    """Prepare three to six distinct, traceable improvement ideas or hold."""
     result = dict(candidate)
     result.update({
         "value_action_status": "hold",
@@ -391,33 +468,47 @@ def value_action_for(candidate: dict) -> dict:
     })
     if candidate.get("outreach_status") != "ready":
         return result
-
     language = _text(candidate.get("language"))
     if language not in {"nl", "en"}:
         result["value_action_hold_reason"] = "language_not_verified"
         return result
-    findings = candidate.get("selected_findings") or []
-    signal = _text(candidate.get("signal_type"))
-    match = next((entry for entry in ALL_SIGNALS if entry[0] == signal), None)
-    labels = match[3] if match else OTHER_LABELS
-    if len(findings) > 1:
-        action = ("een korte voorbeeldschets voor de belangrijkste bezoekersroutes"
-                  if language == "nl" else "a short example of the main visitor journeys")
-    elif language == "nl":
-        action = f"een korte voorbeeldvariant voor de {labels['nl']}"
-    else:
-        label = labels["en"]
-        article = "an" if label[:1].lower() in "aeiou" else "a"
-        action = f"{article} short example for the {label}"
-
+    domain = normalize_domain(candidate.get("official_domain"))
+    selected = []
+    seen_categories = set()
+    for raw in candidate.get("selected_findings") or []:
+        if not isinstance(raw, dict):
+            continue
+        category = _text(raw.get("category"))
+        idea = IMPROVEMENT_IDEAS.get(category, {}).get(language)
+        if (
+            not idea or category in seen_categories
+            or raw.get("source_type") != "official_site"
+            or not domain or normalize_domain(raw.get("source_url")) != domain
+            or not _text(raw.get("observation")) or looks_like_page_title(_text(raw.get("observation")))
+        ):
+            continue
+        selected.append({
+            **raw, "topic_label": idea[0], "suggested_improvement": idea[1],
+        })
+        seen_categories.add(category)
+    if not MIN_MAIL_IMPROVEMENTS <= len(selected) <= MAX_MAIL_IMPROVEMENTS:
+        result["value_action_hold_reason"] = "fewer_than_three_distinct_verified_improvements"
+        return result
+    action = (
+        "een nieuwe voorbeeldopzet van een van deze onderdelen"
+        if language == "nl"
+        else "a redesigned example of one of these sections"
+    )
     result.update({
+        "selected_findings": selected,
         "value_action_status": "proposed",
         "value_action_type": "website_example",
         "value_first_action": action,
-        "value_action_evidence_url": _text(candidate.get("verified_observation_source_url")),
+        "value_action_evidence_url": selected[0]["source_url"],
         "value_action_hold_reason": None,
     })
     return result
+
 
 def choose_value_actions(payload: dict) -> dict:
     candidates = payload.get("candidates") or []
