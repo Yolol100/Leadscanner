@@ -12,6 +12,8 @@ from email.parser import BytesParser
 from email.utils import formatdate, make_msgid
 
 from draft_queue_readonly import load_draft
+from dedupe_preflight import match_candidate
+from registry_readonly import load_suppressions
 
 DRAFT_HEADER = "X-Webactueel-Draft-ID"
 
@@ -170,6 +172,19 @@ def save_draft(client, folder: str, row: dict[str, str]) -> str:
 
 def create_from_queue(draft_id: str) -> str:
     row = load_draft(draft_id)
+    # Recheck all historical contacts, bounces and opt-outs immediately before
+    # even creating a draft. This internal safety gate is not a fifth step.
+    try:
+        registry = load_suppressions()
+        matched = match_candidate({
+            "name_hint": row["company"],
+            "website_hint": row["source_url"],
+            "email": row["email"],
+        }, registry)
+    except Exception:
+        raise RuntimeError("registry_unavailable_before_draft") from None
+    if matched is not None:
+        raise RuntimeError("historically_suppressed_before_draft")
     client = connect_imap()
     try:
         folder = find_drafts_folder(client)
