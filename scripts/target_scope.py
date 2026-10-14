@@ -63,6 +63,14 @@ ALLOWED_REQUEST_KEYWORDS = {
     "zwemschool","personal trainer","fotograaf","dierenarts","hondentrimsalon","trimsalon",
     "dierenpension","hondenpension","kinderopvang","makelaar","tandarts","fysiotherapie",
     "fysiotherapeut","chiropractor","osteopaat","podotherapeut",
+    # Cultuur, educatie, dieren, uitvaart, evenementen, verhuur en recreatie
+    "muziekschool","muziekles","kunstschool","tekenles","bijles","huiswerkbegeleiding",
+    "hondentrainer","hondenuitlaatservice","dierenoppas","uitvaartverzorger","uitvaartonderneming",
+    "begrafenisondernemer","crematorium","feestlocatie","trouwlocatie","partycentrum","zaalverhuur",
+    "feestverhuur","partyverhuur","tentenverhuur","springkussenverhuur","gereedschapverhuur",
+    "machineverhuur","aanhangwagenverhuur","fietsverhuur","autoverhuur","camperverhuur","caravanverhuur",
+    "escape room","escaperoom","bowling","klimhal","trampolinepark","indoor speeltuin","paintball",
+    "kartbaan","midgetgolf",
 }
 
 # Overture taxonomy/name terms used when the macro "vakbedrijven" is requested.
@@ -97,6 +105,12 @@ PROFILE_CATEGORY_TERMS = tuple(sorted({
     "childcare","daycare","nursery","real estate agent","real estate agency","dentist",
     "dental clinic","dental practice","physical therapy","physical therapist","physiotherapy",
     "physiotherapist","chiropractor","osteopath","podiatrist",
+    "music school","art school","tutoring service","dog trainer","dog walker","pet sitter",
+    "funeral home","funeral service","crematorium","event venue","wedding venue","banquet hall",
+    "party equipment rental service","tent rental service","tool rental service","equipment rental service",
+    "trailer rental service","bicycle rental service","car rental agency","recreational vehicle rental agency",
+    "escape room center","bowling alley","rock climbing gym","trampoline park","indoor playground",
+    "paintball center","go kart track","miniature golf course",
 }))
 
 REQUEST_CATEGORY_ALIASES = {
@@ -165,6 +179,23 @@ REQUEST_CATEGORY_ALIASES = {
     "makelaar": ("real estate agent","real estate agency"), "tandarts": ("dentist","dental clinic"),
     "fysiotherapie": ("physical therapy","physical therapist","physiotherapy","physiotherapist"), "fysiotherapeut": ("physical therapist","physiotherapist","physical therapy","physiotherapy"),
     "chiropractor": ("chiropractor",), "osteopaat": ("osteopath",), "podotherapeut": ("podiatrist",),
+    "muziekschool": ("music school",), "muziekles": ("music school",), "kunstschool": ("art school",),
+    "tekenles": ("art school",), "bijles": ("tutoring service",), "huiswerkbegeleiding": ("tutoring service",),
+    "hondentrainer": ("dog trainer",), "hondenuitlaatservice": ("dog walker",), "dierenoppas": ("pet sitter",),
+    "uitvaartverzorger": ("funeral home","funeral service"), "uitvaartonderneming": ("funeral home","funeral service"),
+    "begrafenisondernemer": ("funeral home","funeral service"), "crematorium": ("crematorium",),
+    "feestlocatie": ("event venue","banquet hall"), "trouwlocatie": ("wedding venue","event venue"),
+    "partycentrum": ("banquet hall","event venue"), "zaalverhuur": ("event venue","banquet hall"),
+    "feestverhuur": ("party equipment rental service",), "partyverhuur": ("party equipment rental service",),
+    "tentenverhuur": ("tent rental service","party equipment rental service"),
+    "springkussenverhuur": ("party equipment rental service",), "gereedschapverhuur": ("tool rental service",),
+    "machineverhuur": ("equipment rental service",), "aanhangwagenverhuur": ("trailer rental service",),
+    "fietsverhuur": ("bicycle rental service",), "autoverhuur": ("car rental agency",),
+    "camperverhuur": ("recreational vehicle rental agency",), "caravanverhuur": ("recreational vehicle rental agency",),
+    "escape room": ("escape room center",), "escaperoom": ("escape room center",),
+    "bowling": ("bowling alley",), "klimhal": ("rock climbing gym",), "trampolinepark": ("trampoline park",),
+    "indoor speeltuin": ("indoor playground",), "paintball": ("paintball center",),
+    "kartbaan": ("go kart track",), "midgetgolf": ("miniature golf course",),
 }
 
 
@@ -197,16 +228,17 @@ BLOCKED_PHRASES = tuple(sorted({
     "law firm","advocatenkantoor","advocaat","notaris","legal consultancy","juridisch advies",
     "recruitment agency","recruiter","uitzendbureau","staffing agency","hr consultancy",
     "insurance broker","verzekeringsadviseur","financial advisor","financieel adviseur",
-    "investment company","vermogensbeheer","call center","callcenter",
+    "investment company","vermogensbeheer","hypotheekadviseur","mortgage advisor","bank office","bankkantoor",
+    "projectontwikkelaar","property developer","call center","callcenter",
     # Niet-lokaal/online/intermediair
     "wholesale","groothandel","import export","dropshipping","dropship","marketplace",
     "online store","online-only","e-commerce agency","ecommerce agency","business broker",
     "bemiddelingsbureau",
     # Institutioneel / overheid / gevoelige sectoren
     "government office","municipality","gemeentehuis","university","universiteit","hospital",
-    "ziekenhuis","nursing home","verpleeghuis","political organization","religious organization",
-    "charity organization","casino","gambling","adult entertainment","vape shop","cannabis store",
-    "gun store",
+    "ziekenhuis","nursing home","verpleeghuis","primary school","secondary school","basisschool","middelbare school",
+    "political organization","religious organization","charity organization","nonprofit organization","ngo",
+    "casino","gambling","adult entertainment","vape shop","cannabis store","gun store",
 }))
 
 
