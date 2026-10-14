@@ -62,3 +62,17 @@ class NewLeadsTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 run("Leiden", ["winkel"], 8, 10)
             discovery.assert_not_called()
+
+    def test_legal_form_not_inferred_from_company_hint(self):
+        old = load_registry_values([HEADERS])
+        result = select_candidates({"candidates": [
+            {"name_hint": "Fictieve Installaties BV", "website_hint": "https://example.org"},
+        ]}, old, 1)
+        self.assertEqual(result["counts"]["verified_new_leads"], 0)
+        self.assertEqual(result["counts"]["new_unverified_hints"], 1)
+        candidate = result["candidates"][0]
+        self.assertEqual(candidate["status"], "requires_official_site_verification")
+        self.assertNotIn("legal_form", candidate)
+        self.assertNotIn("email", candidate)
+        self.assertEqual(result["emails_sent"], 0)
+        self.assertEqual(result["mailbox_writes"], 0)
