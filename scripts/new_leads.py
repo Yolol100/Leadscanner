@@ -8,7 +8,7 @@ import json
 import re
 from urllib.parse import urlparse
 
-from dedupe_preflight import match_candidate, normalize_company, normalize_domain
+from dedupe_preflight import domains_match, match_candidate, normalize_company, normalize_domain
 from overture_discovery import discover
 from registry_readonly import load_suppressions
 
@@ -23,7 +23,7 @@ NATIONAL_NAMES = {"nederland", "heel nederland", "netherlands", "nl"}
 
 def safe_hint(value):
     text = str(value or "").strip()
-    if len(text) > 512:
+    if len(text) > 512 or any(ch.isspace() or ord(ch) < 32 or ord(ch) == 127 for ch in text):
         return ""
     try:
         parsed = urlparse(text)
@@ -32,7 +32,7 @@ def safe_hint(value):
         if parsed.username or parsed.password or parsed.port not in {None, 80, 443}:
             return ""
         host = parsed.hostname.lower().rstrip(".")
-        if "." not in host or host.endswith((".local", ".internal", ".localhost", ".lan", ".test", ".example")):
+        if "." not in host or host.endswith((".local", ".internal", ".localhost", ".lan", ".test", ".example", ".invalid")):
             return ""
         try:
             if not ipaddress.ip_address(host).is_global:
@@ -73,7 +73,7 @@ def select_candidates(raw, registry, limit):
             counts["previously_used"] += 1
             continue
         key = normalize_company(name)
-        if key in names or domain in domains:
+        if key in names or any(domains_match(domain, previous) for previous in domains):
             counts["duplicate"] += 1
             continue
         names.add(key)
