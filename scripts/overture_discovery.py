@@ -309,7 +309,12 @@ def _matches_keywords(properties: dict, keywords: list[str]) -> bool:
 
     for keyword in keywords:
         literal = _normalize(keyword).replace("_", " ")
-        if literal and literal in name_haystack:
+        if literal == "bouwbedrijf":
+            # Do not match the word inside land-, tuin- or akkerbouwbedrijf.
+            # Exact word boundaries preserve genuine "Bouwbedrijf X" names.
+            if re.search(r"(?<![a-z0-9])bouwbedrijf(?![a-z0-9])", name_haystack):
+                return True
+        elif literal and literal in name_haystack:
             if literal == "garage" and "parking" in taxonomy_haystack:
                 continue
             return True
