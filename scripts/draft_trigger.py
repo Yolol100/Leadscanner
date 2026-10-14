@@ -49,7 +49,7 @@ def resolve_batch_request(event_name: str, event: dict, inputs: dict) -> list[st
     else:
         raise ValueError("batch_trigger_untrusted")
     ids = [part.strip().casefold() for part in payload.split(",")]
-    if (not 2 <= len(ids) <= 50 or len(set(ids)) != len(ids) or
+    if (not 2 <= len(ids) <= 100 or len(set(ids)) != len(ids) or
             any(not re.fullmatch(r"draft-[0-9a-f]{32}", value) for value in ids)):
         raise ValueError("batch_trigger_ids_invalid")
     return ids
