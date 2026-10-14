@@ -203,6 +203,38 @@ class OvertureDiscoveryTests(unittest.TestCase):
         self.assertEqual(rows[0]["locality_hint"], "Zwolle")
         self.assertEqual(rows[0]["postcode_hint"], "8011 AA")
 
+    def test_bouwbedrijf_keyword_does_not_select_agrarian_compounds(self):
+        agricultural = [
+            ("farm-1", "Landbouwbedrijf Vanhommerig", "farm"),
+            ("farm-2", "Tuinbouwbedrijf De Haas", "food_and_beverage_store"),
+            ("farm-3", "Akkerbouwbedrijf Hogenhout", "b2b_service"),
+            ("farm-4", "Akkerbouwbedrijf van den Broek", "farm"),
+            ("farm-5", "Van Bussel Landbouwbedrijf", "farm"),
+        ]
+        items = [
+            self.feature(fid=fid, name=name, category=category,
+                         website=f"https://{fid}.example/")
+            for fid, name, category in agricultural
+        ]
+        items.extend([
+            self.feature(fid="builder-1", name="Bouwbedrijf De Vries",
+                         category="home_service", website="https://bouwdevries.example/"),
+            self.feature(fid="builder-2", name="Aannemings- en Bouwbedrijf Tollebeek",
+                         category="manufacturer", website="https://abtollebeek.example/"),
+            self.feature(fid="builder-3", name="Bouwbedrijf", category="home_service",
+                         website="https://builder.example/"),
+            self.feature(fid="builder-4", name="De Moderne Aannemer",
+                         category="construction_company", website="https://aannemer.example/"),
+        ])
+        path = self.write_geojsonseq(items)
+        try:
+            matches = read_candidates(path, keywords=["bouwbedrijf"],
+                                      max_results=30, require_website=True)
+        finally:
+            path.unlink(missing_ok=True)
+        self.assertEqual({row["overture_id"] for row in matches},
+                         {"builder-1", "builder-2", "builder-3", "builder-4"})
+
     def test_closed_and_no_website_candidates_can_be_removed(self):
         path = self.write_geojsonseq(
             [
