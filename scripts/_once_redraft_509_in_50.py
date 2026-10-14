@@ -340,6 +340,11 @@ def _run_window(offset, *, write=False):
         targets = [x for x in cohort if x["lead_id"] in active_ids]
         if write and len(targets) != len(cohort):
             raise RuntimeError("batch_replay_or_external_mailbox_change")
+        if write:
+            # Long external website research must not keep the IMAP session open.
+            # Reconnect and revalidate exact original Draft identities afterward.
+            client.logout()
+            client = None
         sources, history, ordinary = _source_context()
         decisions = _research_window(targets, sources, history, ordinary)
         counts = Counter({"checked": len(targets)})
@@ -350,6 +355,17 @@ def _run_window(offset, *, write=False):
                     "active": len(active), "held": len(held),
                     "all_sources_researched": True, "mailbox_writes": False,
                     "emails_sent": 0, "created_new_leads": 0}
+        client = connect_imap()
+        fresh_drafts, fresh_active, _fresh_held, fresh_cohort = _eligible_window(
+            client, offset=offset
+        )
+        if (fresh_drafts != drafts
+                or [x["lead_id"] for x in fresh_cohort] !=
+                   [x["lead_id"] for x in cohort]
+                or not {x["lead_id"] for x in targets}.issubset(
+                    {x["lead_id"] for x in fresh_active}
+                )):
+            raise RuntimeError("batch_original_identity_changed_during_research")
         require_uidplus(client, "existing-only 50 Draft redraft")
         # No recovery-folder creation or move for unqualified active Drafts.
         if normalize_email(os.getenv("OUTREACH_SENDER_EMAIL") or SENDER) != SENDER:
@@ -406,7 +422,8 @@ def _run_window(offset, *, write=False):
                 "emails_sent": 0, "new_leads": 0,
                 "drafts_created_additional": 0, "reversible": True}
     finally:
-        client.logout()
+        if client is not None:
+            client.logout()
 
 
 def _preview(offset, count):

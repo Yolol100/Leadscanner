@@ -341,6 +341,64 @@ class Existing509RedraftTests(unittest.TestCase):
             ):
                 mod._research_window([target], {}, {}, [])
 
+    def test_writer_reconnects_after_website_research_without_old_imap_session(self):
+        from unittest.mock import Mock
+        first = Mock()
+        second = Mock()
+        targets = [row(1)]
+        all_active = [row(i) for i in range(1, 510)]
+        all_held = [row(i) for i in range(510, 1174)]
+
+        def research(window, *_):
+            first.logout.assert_called_once()
+            second.logout.assert_not_called()
+            self.assertEqual(window, targets)
+            return {targets[0]["lead_id"]: ("hold", "site_unverified", None)}
+
+        with patch.object(mod, "connect_imap", side_effect=[first, second]) as connect, \
+             patch.object(mod, "_eligible_window",
+                          return_value=("Drafts", all_active, all_held, targets)) as inventory, \
+             patch.object(mod, "_source_context", return_value=({}, {}, [])), \
+             patch.object(mod, "_research_window", side_effect=research), \
+             patch.object(mod, "_same_backup", return_value=False), \
+             patch.object(mod, "require_uidplus"), \
+             patch.object(mod, "validate_hold_inventory",
+                          return_value=(all_active, all_held)), \
+             patch.object(mod, "_backup_inventory", return_value=targets), \
+             patch.object(mod, "create_drafts") as writer:
+            report = mod._run_window(0, write=True)
+        self.assertEqual(connect.call_count, 2)
+        self.assertEqual(inventory.call_count, 2)
+        first.logout.assert_called_once()
+        second.logout.assert_called_once()
+        writer.assert_not_called()
+        self.assertEqual(report["counts"]["hold_concurrent_or_user_edit"], 1)
+
+    def test_writer_rejects_target_identity_shift_after_research(self):
+        from unittest.mock import Mock
+        first = Mock()
+        second = Mock()
+        all_active = [row(i) for i in range(1, 510)]
+        all_held = [row(i) for i in range(510, 1174)]
+        with patch.object(mod, "connect_imap", side_effect=[first, second]), \
+             patch.object(mod, "_eligible_window", side_effect=[
+                 ("Drafts", all_active, all_held, [row(1)]),
+                 ("Drafts", all_active, all_held, [row(2)]),
+             ]), \
+             patch.object(mod, "_source_context", return_value=({}, {}, [])), \
+             patch.object(mod, "_research_window", return_value={
+                 row(1)["lead_id"]: ("hold", "site_unverified", None)}), \
+             patch.object(mod, "require_uidplus") as uidplus, \
+             patch.object(mod, "create_drafts") as writer:
+            with self.assertRaisesRegex(
+                RuntimeError, "batch_original_identity_changed_during_research"
+            ):
+                mod._run_window(0, write=True)
+        uidplus.assert_not_called()
+        writer.assert_not_called()
+        first.logout.assert_called_once()
+        second.logout.assert_called_once()
+
     def test_backup_only_launch_is_isolated_from_all_rewrite_jobs(self):
         workflow = (pathlib.Path(__file__).resolve().parents[1] /
                     ".github/workflows/once-myhost-509-redraft50.yml").read_text()
