@@ -139,7 +139,15 @@ def _parse_registry(fieldnames: object, records) -> list[dict]:
     for row_number, row in enumerate(records, start=2):
         if not isinstance(row, dict):
             raise ValueError("registry_invalid_row")
-        if _text(row.get("exclude_from_new_leads")).casefold() not in TRUE_VALUES:
+        # Explicit prior contact states are permanent suppressions even if a
+        # stale exclusion flag was accidentally cleared.
+        status = _text(row.get("status")).casefold().replace("-", "_").replace(" ", "_")
+        historical_contact = status in {
+            "concept", "draft", "review_draft", "sent", "replied", "reply",
+            "bounce", "bounced", "opt_out", "optout", "unsubscribed",
+            "suppressed", "do_not_contact",
+        }
+        if not historical_contact and _text(row.get("exclude_from_new_leads")).casefold() not in TRUE_VALUES:
             continue
         identity = candidate_identity({
             "company": row.get("company"),
