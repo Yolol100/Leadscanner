@@ -60,7 +60,7 @@ class NewLeadsTests(unittest.TestCase):
     def test_missing_registry_fails_before_discovery(self):
         with patch("new_leads.load_suppressions", side_effect=RuntimeError()),              patch("new_leads.discover") as discovery:
             with self.assertRaises(RuntimeError):
-                run("Leiden", ["winkel"], 8, 10)
+                run("Leiden", ["bakkerij"], 8, 10)
             discovery.assert_not_called()
 
     def test_legal_form_not_inferred_from_company_hint(self):
