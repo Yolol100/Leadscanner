@@ -186,6 +186,23 @@ class OvertureDiscoveryTests(unittest.TestCase):
         self.assertNotIn("social.example", serialized)
         self.assertEqual(rows[0]["identity_status"], "needs_leads_verification")
 
+    def test_country_locality_and_postcode_are_source_hints(self):
+        item = self.feature(fid="nl-shop", name="Studio Knip",
+                            category="hair_salon",
+                            website="https://studioknip.nl/")
+        item["properties"]["addresses"] = [{
+            "country": "NL", "locality": "Zwolle", "postcode": "8011 AA",
+        }]
+        path = self.write_geojsonseq([item])
+        try:
+            rows = read_candidates(path, keywords=["kapsalon"],
+                                   max_results=5, require_website=True)
+        finally:
+            path.unlink(missing_ok=True)
+        self.assertEqual(rows[0]["country_hint"], "NL")
+        self.assertEqual(rows[0]["locality_hint"], "Zwolle")
+        self.assertEqual(rows[0]["postcode_hint"], "8011 AA")
+
     def test_closed_and_no_website_candidates_can_be_removed(self):
         path = self.write_geojsonseq(
             [
