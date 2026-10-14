@@ -400,9 +400,16 @@ def read_candidates(
             except (TypeError, ValueError):
                 confidence_value = None
 
+            addresses = properties.get("addresses")
+            primary_address = next(
+                (v for v in addresses if isinstance(v, dict)), {}
+            ) if isinstance(addresses, list) else {}
             candidates.append(
                 {
                     "overture_id": str(feature.get("id") or properties.get("id") or "").strip(),
+                    "country_hint": str(primary_address.get("country") or "").strip().upper(),
+                    "locality_hint": str(primary_address.get("locality") or "").strip(),
+                    "postcode_hint": str(primary_address.get("postcode") or "").strip(),
                     "name_hint": _primary_name(properties),
                     "category_hint": _category_hint(properties),
                     "website_hint": website,
