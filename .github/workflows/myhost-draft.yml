@@ -9,7 +9,7 @@ on:
         required: false
         type: string
       draft_ids:
-        description: Maximaal 50 komma-gescheiden opaque draft-ID's, nooit prospectdata
+        description: Maximaal 100 komma-gescheiden opaque draft-ID's, nooit prospectdata
         required: false
         type: string
 permissions:
@@ -27,7 +27,7 @@ jobs:
         github.event.comment.author_association == 'MEMBER' ||
         github.event.comment.author_association == 'COLLABORATOR'))
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 40
     concurrency:
       group: leadscanner-myhost-draft
       cancel-in-progress: false
