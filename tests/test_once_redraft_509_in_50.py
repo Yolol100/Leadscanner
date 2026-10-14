@@ -346,11 +346,11 @@ class Existing509RedraftTests(unittest.TestCase):
                     ".github/workflows/once-myhost-509-redraft50.yml").read_text()
         import re
         sections = {}
-        for match in re.finditer(r"(?m)^  ([a-z][a-z_0-9]*):\\n", workflow):
+        for match in re.finditer(r"(?m)^  ([a-z][a-z_0-9]*):$", workflow):
             name = match.group(1)
             start = match.start()
             tail = workflow[match.end():]
-            later = re.search(r"(?m)^  [a-z][a-z_0-9]*:\\n", tail)
+            later = re.search(r"(?m)^  [a-z][a-z_0-9]*:$", tail)
             sections[name] = workflow[start:match.end() + later.start()
                                       if later else len(workflow)]
         gated = {name for name, value in sections.items()
