@@ -10,7 +10,8 @@ jobs:
       github.ref == 'refs/heads/main' &&
       github.run_attempt == 1 &&
       (startsWith(github.event.head_commit.message, 'PREVIEW509_SITE_AUDIT_ONLY:') ||
-       startsWith(github.event.head_commit.message, 'APPROVED509_REDRAFT_ALL:'))
+       startsWith(github.event.head_commit.message, 'APPROVED509_REDRAFT_ALL:') ||
+       startsWith(github.event.head_commit.message, 'BACKUP509_ORIGINALS_ONLY:'))
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -66,7 +67,10 @@ jobs:
 
   backup:
     needs: unit_tests
-    if: "startsWith(github.event.head_commit.message, 'APPROVED509_REDRAFT_ALL:')"
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (startsWith(github.event.head_commit.message, 'BACKUP509_ORIGINALS_ONLY:') ||
+       startsWith(github.event.head_commit.message, 'APPROVED509_REDRAFT_ALL:'))
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     concurrency:
@@ -99,8 +103,59 @@ jobs:
           set -euo pipefail
           python3 scripts/_once_redraft_509_in_50.py --mode backup
 
-  batch_0:
+  verify_originals:
     needs: backup
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (startsWith(github.event.head_commit.message, 'BACKUP509_ORIGINALS_ONLY:') ||
+       startsWith(github.event.head_commit.message, 'APPROVED509_REDRAFT_ALL:'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    concurrency:
+      group: leadscanner-mijnhost-drafts
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - run: python3 -m pip install --disable-pip-version-check -r requirements-cold.txt 'google-auth>=2,<3'
+      - name: Independently read back all original Draft bytes after backup
+        env:
+          PYTHONPATH: scripts
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
+        run: |
+          set -euo pipefail
+          report="$(python3 scripts/_once_redraft_509_in_50.py --mode inspect-backup)"
+          printf '%s\n' "$report"
+          REPORT_JSON="$report" python3 - <<'PY'
+          import json
+          import os
+          raw = os.environ.get("REPORT_JSON", "")
+          if not raw.startswith("MYHOST_REDRAFT50=green "):
+              raise SystemExit("backup_readback_failed")
+          try:
+              data = json.loads(raw.split("=green ", 1)[1])
+          except ValueError:
+              raise SystemExit("backup_report_invalid")
+          if not (data.get("complete") is True
+                  and data.get("backup_count") == 509
+                  and data.get("missing_backup_count") == 0
+                  and data.get("all_copies_identical") is True
+                  and data.get("mailbox_writes") is False
+                  and data.get("emails_sent") == 0):
+              raise SystemExit("backup_readback_incomplete")
+          PY
+
+  batch_0:
+    needs: verify_originals
     if: "startsWith(github.event.head_commit.message, 'APPROVED509_REDRAFT_ALL:')"
     runs-on: ubuntu-24.04
     timeout-minutes: 240
