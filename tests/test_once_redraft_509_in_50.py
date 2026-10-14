@@ -182,24 +182,24 @@ class Existing509RedraftTests(unittest.TestCase):
 
     def test_exactly_two_verified_issues_can_be_preview_ready(self):
         target = row(1)
-        body = ("1. Eerste bewezen probleem.\\n"
-                "   Verbeteridee: herstel de interne link.\\n"
-                "2. Tweede bewezen probleem.\\n"
+        body = ("1. Eerste bewezen probleem.\n"
+                "   Verbeteridee: herstel de interne link.\n"
+                "2. Tweede bewezen probleem.\n"
                 "   Verbeteridee: voeg een toegankelijk label toe.")
         with patch.object(mod, "source_hint", return_value=(
-                "https://firm1.nl", "firm1", "")), \\
+                "https://firm1.nl", "firm1", "")), \
              patch.object(mod, "verify_candidates", return_value={
                  "candidates": [{"lead_id": target["lead_id"],
                                  "ready_for_research": True}]
-             }), \\
+             }), \
              patch.object(mod, "research_candidates", return_value={
                  "candidates": [{"lead_id": target["lead_id"],
                                  "research_status": "ready",
                                  "contact_status": "verified_official_site",
                                  "public_business_email": target["recipient"]}]
-             }), \\
+             }), \
              patch.object(mod, "rewrite_copy", return_value=(
-                 "2 technische aandachtspunten", body)), \\
+                 "2 technische aandachtspunten", body)), \
              patch.object(mod, "build_message", return_value=(
                  target["lead_id"], object())):
             decisions = mod._research_window([target], {}, {}, [])
@@ -220,10 +220,10 @@ class Existing509RedraftTests(unittest.TestCase):
             return {entry["lead_id"]: ("hold", "site_unverified", None)
                     for entry in cohort}
 
-        with patch.object(mod, "connect_imap", return_value=client), \\
+        with patch.object(mod, "connect_imap", return_value=client), \
              patch.object(mod, "_open_inventory",
-                          return_value=("Drafts", active, held)), \\
-             patch.object(mod, "_source_context", return_value=({}, {}, [])), \\
+                          return_value=("Drafts", active, held)), \
+             patch.object(mod, "_source_context", return_value=({}, {}, [])), \
              patch.object(mod, "_research_window", side_effect=website_scan):
             result = mod._preview(0, 200)
         client.logout.assert_called_once()
@@ -239,10 +239,10 @@ class Existing509RedraftTests(unittest.TestCase):
 
     def test_preview_categorizes_source_failure_without_private_details(self):
         client = type("Fake", (), {"logout": lambda self: None})()
-        with patch.object(mod, "connect_imap", return_value=client), \\
+        with patch.object(mod, "connect_imap", return_value=client), \
              patch.object(mod, "_open_inventory",
                           return_value=("Drafts", [row(i) for i in range(1, 510)],
-                                        [row(i) for i in range(510, 1174)])), \\
+                                        [row(i) for i in range(510, 1174)])), \
              patch.object(mod, "_source_context",
                           side_effect=RuntimeError("private provider trace")):
             with self.assertRaisesRegex(
