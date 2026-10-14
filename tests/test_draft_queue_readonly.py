@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import draft_queue_readonly as q
 
@@ -21,7 +21,8 @@ class DraftQueueTests(unittest.TestCase):
         response = Mock(status_code=200)
         response.json.return_value = {"values": self.row()}
         session.get.return_value = response
-        row = q.load_draft("draft-0123456789abcdef0123456789abcdef", session)
+        with patch("draft_queue_readonly.is_public_http_url", return_value=True):
+            row = q.load_draft("draft-0123456789abcdef0123456789abcdef", session)
         self.assertEqual(row["email"], "info@voorbeeld.nl")
         session.post.assert_not_called()
         session.delete.assert_not_called()
