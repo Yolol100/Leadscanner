@@ -17,6 +17,8 @@ class TargetScopeTests(unittest.TestCase):
             "hovenier", "schoonmaakbedrijf", "garage", "fietsenmaker", "kapsalon",
             "schoonheidssalon", "restaurant", "bakkerij", "verhuisbedrijf",
             "rijschool", "sportschool", "dierenarts", "tandarts", "fysiotherapie",
+            "uitvaartverzorger", "muziekschool", "huiswerkbegeleiding", "hondentrainer",
+            "feestlocatie", "tentenverhuur", "autoverhuur", "escape room", "klimhal",
         ]
         for keyword in allowed:
             with self.subTest(keyword=keyword):
@@ -33,7 +35,8 @@ class TargetScopeTests(unittest.TestCase):
             "marketingbureau", "webdesign", "seo bureau", "softwarebedrijf",
             "it consultancy", "ai bureau", "management consultancy", "boekhouder",
             "advocatenkantoor", "recruitment agency", "uitzendbureau",
-            "verzekeringsadviseur", "dropshipping", "groothandel",
+            "verzekeringsadviseur", "hypotheekadviseur", "projectontwikkelaar",
+            "dropshipping", "groothandel", "basisschool",
         ]
         for keyword in blocked:
             with self.subTest(keyword=keyword):
