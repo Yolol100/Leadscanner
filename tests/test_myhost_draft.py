@@ -46,6 +46,28 @@ class MyHostDraftTests(unittest.TestCase):
     def test_detects_drafts_folder(self):
         self.assertEqual(d.find_drafts_folder(FakeIMAP()), "Drafts")
 
+    def test_list_accepts_unquoted_mailbox_atom_after_hierarchy_delimiter(self):
+        class UnquotedIMAP(FakeIMAP):
+            def list(self):
+                return "OK", [rb'(\HasNoChildren \Drafts) "." INBOX.Drafts']
+        self.assertEqual(d.find_drafts_folder(UnquotedIMAP()), "INBOX.Drafts")
+
+    def test_list_accepts_quoted_mailbox_after_hierarchy_delimiter(self):
+        class QuotedIMAP(FakeIMAP):
+            def list(self):
+                return "OK", [rb'(\HasNoChildren \Drafts) "." "INBOX.Drafts"']
+        self.assertEqual(d.find_drafts_folder(QuotedIMAP()), "INBOX.Drafts")
+
+    def test_list_rejects_ambiguous_special_use_drafts_folders(self):
+        class AmbiguousIMAP(FakeIMAP):
+            def list(self):
+                return "OK", [
+                    rb'(\HasNoChildren \Drafts) "." INBOX.Drafts',
+                    rb'(\HasNoChildren \Drafts) "." Other.Drafts',
+                ]
+        with self.assertRaisesRegex(RuntimeError, "drafts_folder_missing_or_ambiguous"):
+            d.find_drafts_folder(AmbiguousIMAP())
+
     def test_creates_and_reads_back_without_smtp(self):
         client=FakeIMAP()
         with patch("myhost_draft.time.sleep", return_value=None):
