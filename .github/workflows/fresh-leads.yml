@@ -1,0 +1,68 @@
+name: Fresh Leads — alleen anonieme bedrijfshints
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      region:
+        description: Plaats of regio in Nederland
+        required: true
+        type: string
+      keywords:
+        description: Branches, komma-gescheiden
+        required: true
+        type: string
+      radius_km:
+        description: Zoekstraal in km (0.5-30)
+        default: '8'
+        required: true
+        type: string
+      limit:
+        description: Maximaal 100 kandidaten
+        default: '30'
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - run: python3 -m pip install -r requirements.txt
+      - name: Fresh-only tests and syntax
+        env:
+          PYTHONPATH: scripts
+        run: |
+          python3 -m compileall -q scripts
+          python3 -m unittest discover -s tests -p 'test_*.py' -q
+  discover:
+    needs: test
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - run: python3 -m pip install -r requirements.txt
+      - name: Read historical exclusions first and print counts only
+        env:
+          PYTHONPATH: scripts
+          LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON || secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          REGION: ${{ inputs.region }}
+          KEYWORDS: ${{ inputs.keywords }}
+          RADIUS: ${{ inputs.radius_km }}
+          LIMIT: ${{ inputs.limit }}
+        run: |
+          python3 scripts/new_leads.py --region "$REGION" --keywords "$KEYWORDS" --radius-km "$RADIUS" --limit "$LIMIT" --summary-only
