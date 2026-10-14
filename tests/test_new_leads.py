@@ -33,11 +33,11 @@ class NewLeadsTests(unittest.TestCase):
         ]])
         with patch("new_leads.load_suppressions", return_value=known), \
              patch("new_leads.discover", return_value={"candidates": []}) as discover:
-            run("Leiden", ["winkel"], 8, 20)
+            run("Leiden", ["bakkerij"], 8, 20)
         self.assertEqual(discover.call_args.kwargs["max_results"], 100)
         with patch("new_leads.load_suppressions", return_value=known), \
              patch("new_leads.discover", return_value={"candidates": []}) as discover:
-            run("Leiden", ["winkel"], 8, 100)
+            run("Leiden", ["bakkerij"], 8, 100)
         self.assertEqual(discover.call_args.kwargs["max_results"], 500)
 
     def test_overture_email_and_id_hints_are_suppressed(self):
