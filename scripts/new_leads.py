@@ -92,12 +92,26 @@ def discover_sampled_netherlands(keywords, radius, scan_limit):
     """Sample every province using a bounded Overture region. No complete-NL claim."""
     per_region = min(70, max(25, (scan_limit + len(NATIONAL_HUBS) - 1) // len(NATIONAL_HUBS)))
     groups = []
-    for centre in NATIONAL_HUBS:
-        response = discover(region=centre, bbox=None, radius_km=radius,
-                            keywords=keywords, max_results=per_region,
-                            require_website=True, probe_websites=False)
+    for index, centre in enumerate(NATIONAL_HUBS, start=1):
+        try:
+            response = discover(region=centre, bbox=None, radius_km=radius,
+                                keywords=keywords, max_results=per_region,
+                                require_website=True, probe_websites=False)
+        except Exception as exc:
+            # Only fixed diagnostic codes and a numeric region index reach
+            # public GitHub Actions. Never print an exception's source text.
+            description = str(exc)
+            if "PDOK could not resolve region" in description:
+                code = "pdok_no_match"
+            elif "overturemaps download failed" in description:
+                code = "overture_download"
+            elif type(exc).__name__ in {"Timeout", "ConnectionError", "HTTPError"}:
+                code = "pdok_transport"
+            else:
+                code = "source_unavailable"
+            raise RuntimeError(f"national_region_{index:02d}_{code}") from None
         if not isinstance(response, dict) or not isinstance(response.get("candidates"), list):
-            raise RuntimeError("national_region_discovery_invalid")
+            raise RuntimeError(f"national_region_{index:02d}_invalid_payload")
         groups.append(response["candidates"])
     # Round-robin rather than global confidence sorting: geographic diversity.
     hints = [item for group in zip_longest(*groups) for item in group if item is not None]
@@ -139,8 +153,14 @@ def main():
                           "coverage": result["coverage"],
                           "identities_exposed": False, "emails_sent": 0}, sort_keys=True))
         return 0
-    except Exception:
-        print('{"status":"red","reason":"discovery_or_registry_unavailable","emails_sent":0}')
+    except Exception as exc:
+        reason = str(exc)
+        if not re.fullmatch(
+            r"national_region_(0[1-9]|1[0-2])_(pdok_no_match|pdok_transport|overture_download|source_unavailable|invalid_payload)",
+            reason,
+        ):
+            reason = "discovery_or_registry_unavailable"
+        print(json.dumps({"status": "red", "reason": reason, "emails_sent": 0}))
         return 1
 
 
