@@ -180,6 +180,119 @@ class Existing509RedraftTests(unittest.TestCase):
         self.assertEqual(result[target["lead_id"]][:2],
                          ("hold", "insufficient_two_to_three_verified_issues"))
 
+    def test_exactly_two_verified_issues_can_be_preview_ready(self):
+        target = row(1)
+        body = ("1. Eerste bewezen probleem.\n"
+                "   Verbeteridee: herstel de interne link.\n"
+                "2. Tweede bewezen probleem.\n"
+                "   Verbeteridee: voeg een toegankelijk label toe.")
+        with patch.object(mod, "source_hint", return_value=(
+                "https://firm1.nl", "firm1", "")), \
+             patch.object(mod, "verify_candidates", return_value={
+                 "candidates": [{"lead_id": target["lead_id"],
+                                 "ready_for_research": True}]
+             }), \
+             patch.object(mod, "research_candidates", return_value={
+                 "candidates": [{"lead_id": target["lead_id"],
+                                 "research_status": "ready",
+                                 "contact_status": "verified_official_site",
+                                 "public_business_email": target["recipient"]}]
+             }), \
+             patch.object(mod, "rewrite_copy", return_value=(
+                 "2 technische aandachtspunten", body)), \
+             patch.object(mod, "build_message", return_value=(
+                 target["lead_id"], object())):
+            decisions = mod._research_window([target], {}, {}, [])
+        self.assertEqual(decisions[target["lead_id"]][:2],
+                         ("rewrite", "source_supported"))
+
+    def test_preview_disconnects_imap_before_external_research(self):
+        from unittest.mock import Mock
+        client = Mock()
+        disconnected = {"value": False}
+        client.logout.side_effect = lambda: disconnected.update(value=True)
+        active = [row(i) for i in range(1, 510)]
+        held = [row(i) for i in range(510, 1174)]
+
+        def website_scan(cohort, *_):
+            self.assertTrue(disconnected["value"])
+            self.assertEqual(len(cohort), 200)
+            return {entry["lead_id"]: ("hold", "site_unverified", None)
+                    for entry in cohort}
+
+        with patch.object(mod, "connect_imap", return_value=client), \
+             patch.object(mod, "_open_inventory",
+                          return_value=("Drafts", active, held)), \
+             patch.object(mod, "_source_context", return_value=({}, {}, [])), \
+             patch.object(mod, "_research_window", side_effect=website_scan):
+            result = mod._preview(0, 200)
+        client.logout.assert_called_once()
+        self.assertEqual(result["checked"], 200)
+        self.assertEqual(result["counts"]["site_unverified"], 200)
+        self.assertFalse(result["mailbox_writes"])
+
+    def test_preview_invalid_offset_rejected_without_imap(self):
+        with patch.object(mod, "connect_imap") as connection:
+            with self.assertRaisesRegex(RuntimeError, "invalid_readonly_preview"):
+                mod._preview(100, 200)
+        connection.assert_not_called()
+
+    def test_preview_categorizes_source_failure_without_private_details(self):
+        client = type("Fake", (), {"logout": lambda self: None})()
+        with patch.object(mod, "connect_imap", return_value=client), \
+             patch.object(mod, "_open_inventory",
+                          return_value=("Drafts", [row(i) for i in range(1, 510)],
+                                        [row(i) for i in range(510, 1174)])), \
+             patch.object(mod, "_source_context",
+                          side_effect=RuntimeError("private provider trace")):
+            with self.assertRaisesRegex(
+                RuntimeError, "^preview_source_context_failed$"
+            ):
+                mod._preview(0, 200)
+
+    def test_readonly_backup_reports_partial_without_copy_or_mutation(self):
+        from unittest.mock import Mock
+        client = Mock()
+        first_two = [row(1), row(2)]
+        full_active = [row(i) for i in range(1, 510)]
+        full_held = [row(i) for i in range(510, 1174)]
+        with patch.object(mod, "connect_imap", return_value=client), \
+             patch.object(mod, "_open_inventory",
+                          return_value=("Drafts", full_active, full_held)), \
+             patch.object(mod, "_find_backup_folder") as folder, \
+             patch.object(mod, "_backup_inventory",
+                          return_value=first_two), \
+             patch.object(mod, "_one_uid", return_value=b"17"), \
+             patch.object(mod, "select_folder"), \
+             patch.object(mod, "_raw_uid", return_value=b"same-original"):
+            result = mod._readonly_backup_status()
+        self.assertFalse(result["complete"])
+        self.assertEqual(result["backup_count"], 2)
+        self.assertEqual(result["missing_backup_count"], 507)
+        self.assertFalse(result["mailbox_writes"])
+        self.assertEqual(result["emails_sent"], 0)
+        self.assertEqual(folder.call_args.kwargs["create"], False)
+        client.uid.assert_not_called()
+        client.logout.assert_called_once()
+
+    def test_readonly_backup_detects_modified_original_and_stops(self):
+        from unittest.mock import Mock
+        client = Mock()
+        with patch.object(mod, "connect_imap", return_value=client), \
+             patch.object(mod, "_open_inventory",
+                          return_value=("Drafts", [row(i) for i in range(1, 510)],
+                                        [row(i) for i in range(510, 1174)])), \
+             patch.object(mod, "_find_backup_folder"), \
+             patch.object(mod, "_backup_inventory", return_value=[row(1)]), \
+             patch.object(mod, "_one_uid", return_value=b"17"), \
+             patch.object(mod, "select_folder"), \
+             patch.object(mod, "_raw_uid", side_effect=[
+                 b"current-version", b"previous-version"]):
+            with self.assertRaisesRegex(RuntimeError, "backup_audit_raw_mismatch"):
+                mod._readonly_backup_status()
+        client.uid.assert_not_called()
+        client.logout.assert_called_once()
+
     def test_unqualified_drafts_stay_active_without_move(self):
         class FakeIMAP:
             def logout(self):
