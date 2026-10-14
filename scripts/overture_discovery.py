@@ -310,9 +310,14 @@ def _matches_keywords(properties: dict, keywords: list[str]) -> bool:
     for keyword in keywords:
         literal = _normalize(keyword).replace("_", " ")
         if literal == "bouwbedrijf":
-            # Do not match the word inside land-, tuin- or akkerbouwbedrijf.
-            # Exact word boundaries preserve genuine "Bouwbedrijf X" names.
-            if re.search(r"(?<![a-z0-9])bouwbedrijf(?![a-z0-9])", name_haystack):
+            # Keep agricultural compounds out, but retain explicit construction
+            # specialties such as afbouw, staalbouw, steigerbouw and wegenbouw.
+            # Entire word boundaries are required for each accepted noun.
+            if re.search(
+                r"(?<![a-z0-9])(?:bouwbedrijf|afbouwbedrijf|staalbouwbedrijf|"
+                r"steigerbouwbedrijf|wegenbouwbedrijf)(?![a-z0-9])",
+                name_haystack,
+            ):
                 return True
         elif literal and literal in name_haystack:
             if literal == "garage" and "parking" in taxonomy_haystack:

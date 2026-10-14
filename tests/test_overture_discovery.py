@@ -210,6 +210,7 @@ class OvertureDiscoveryTests(unittest.TestCase):
             ("farm-3", "Akkerbouwbedrijf Hogenhout", "b2b_service"),
             ("farm-4", "Akkerbouwbedrijf van den Broek", "farm"),
             ("farm-5", "Van Bussel Landbouwbedrijf", "farm"),
+            ("farm-6", "Bosbouwbedrijf De Oude Eik", "home_service"),
         ]
         items = [
             self.feature(fid=fid, name=name, category=category,
@@ -225,6 +226,14 @@ class OvertureDiscoveryTests(unittest.TestCase):
                          website="https://builder.example/"),
             self.feature(fid="builder-4", name="De Moderne Aannemer",
                          category="construction_company", website="https://aannemer.example/"),
+            self.feature(fid="builder-5", name="Timmer- en Afbouwbedrijf Van Dijk",
+                         category="manufacturer", website="https://afbouw.example/"),
+            self.feature(fid="builder-6", name="Staalbouwbedrijf Kamphof",
+                         category="manufacturer", website="https://staalbouw.example/"),
+            self.feature(fid="builder-7", name="Schilders en Steigerbouwbedrijf S.",
+                         category="home_service", website="https://steigerbouw.example/"),
+            self.feature(fid="builder-8", name="Wegenbouwbedrijf De Wilde",
+                         category="home_service", website="https://wegenbouw.example/"),
         ])
         path = self.write_geojsonseq(items)
         try:
@@ -233,7 +242,8 @@ class OvertureDiscoveryTests(unittest.TestCase):
         finally:
             path.unlink(missing_ok=True)
         self.assertEqual({row["overture_id"] for row in matches},
-                         {"builder-1", "builder-2", "builder-3", "builder-4"})
+                         {"builder-1", "builder-2", "builder-3", "builder-4",
+                          "builder-5", "builder-6", "builder-7", "builder-8"})
 
     def test_closed_and_no_website_candidates_can_be_removed(self):
         path = self.write_geojsonseq(
