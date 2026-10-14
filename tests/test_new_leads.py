@@ -27,6 +27,19 @@ class NewLeadsTests(unittest.TestCase):
         self.assertEqual(r["counts"]["new_unverified_hints"], 1)
         self.assertEqual(r["counts"]["verified_new_leads"], 0)
 
+    def test_oversamples_before_deduplication(self):
+        known = load_registry_values([HEADERS, [
+            "Known", "https://known.nl", "known.nl", "", "sent", "", "", "", "", "TRUE",
+        ]])
+        with patch("new_leads.load_suppressions", return_value=known), \
+             patch("new_leads.discover", return_value={"candidates": []}) as discover:
+            run("Leiden", ["winkel"], 8, 20)
+        self.assertEqual(discover.call_args.kwargs["max_results"], 100)
+        with patch("new_leads.load_suppressions", return_value=known), \
+             patch("new_leads.discover", return_value={"candidates": []}) as discover:
+            run("Leiden", ["winkel"], 8, 100)
+        self.assertEqual(discover.call_args.kwargs["max_results"], 500)
+
     def test_missing_registry_fails_before_discovery(self):
         with patch("new_leads.load_suppressions", side_effect=RuntimeError()),              patch("new_leads.discover") as discovery:
             with self.assertRaises(RuntimeError):
