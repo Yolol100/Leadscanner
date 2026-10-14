@@ -16,3 +16,11 @@ Alleen **nieuwe bedrijfshints vinden** met Overture Maps/PDOK en controleren teg
 
 Gebruik GitHub Actions **Fresh Leads** handmatig voor een regio/branche. Bij `region=Nederland` doorzoekt de workflow twaalf regionale centra verspreid over alle provincies (een **landelijke steekproef**, geen volledige landelijke dekking). Controleer eerst de live preflight. 
 Bij gebruik via een geautoriseerde ChatGPT GitHub-connector zonder `workflow_dispatch` ondersteunen twee expliciete, gecontroleerde commit-markerstarts dezelfde veilige route op `main`: `LEADS_PREFLIGHT_ONLY:` en `LEADS_DISCOVERY_ONLY: <regio>|<branches>|<limiet>`. Discovery blijft strikt alleen-lezen en resultaten in openbare Actions bevatten uitsluitend aantallen. Geen SMTP, geen mijn.host, geen automatische drafts of verzending. Deze repo activeert geen eerdere Leads-richtlijnen. Reclame-e-mail vereist afzonderlijke beoordeling van toestemming en de toepasselijke regels.
+
+## Vierstappenroute van de Leads Skill
+
+De volledige Webactueel first-touch-flow is: (1) nieuwe bedrijven vinden, (2) hoogstens een openbaar algemeen zakelijk e-mailadres vanaf de officiele bedrijfswebsite ophalen en publicatiedoel controleren, (3) prive een korte mail opstellen, (4) handmatige beoordeling. Deze publieke repository voert alleen bedrijfshint-discovery en verplichte historische deduplicatie uit. Een bedrijfshint is geen geverifieerde lead.
+
+Bewaar geen bedrijfsnamen, e-mailadressen, bron-URL's of mailteksten in publieke GitHub logs, commits of artifacts. Een publiek info@-adres is nooit automatisch verzendtoestemming. Review is niet send-ready; uitgesloten of afgemelde contacten blijven geblokkeerd. De Leads Skill controleert een geldige wettelijke basis afzonderlijk. Geen automatische verzending, mailboxconcepten of opvolgcampagnes toevoegen.
+
+De eerste mail vereist geen 3-6 websiteproblemen, analyses, scores, prijsregels of zes verkoopbullets. Deeper specialistische analyse volgt pas na interesse. De bestaande veilige preflight, historische registry, secret vault, landelijke steekproef en test-suite blijven intact. Herstel geen legacy campagnes of templates.
