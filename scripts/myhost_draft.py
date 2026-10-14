@@ -11,8 +11,8 @@ from email.message import EmailMessage
 from email.parser import BytesParser
 from email.utils import formatdate, make_msgid
 
-from draft_queue_readonly import load_draft
-from dedupe_preflight import match_candidate
+from draft_queue_readonly import load_draft, load_drafts
+from dedupe_preflight import match_candidate, normalize_company, normalize_domain, domains_match
 from registry_readonly import load_suppressions
 
 DRAFT_HEADER = "X-Webactueel-Draft-ID"
@@ -194,3 +194,50 @@ def create_from_queue(draft_id: str) -> str:
             client.logout()
         except Exception:
             pass
+
+def create_batch_from_queue(draft_ids: list[str]) -> dict[str, int]:
+    """Up to 50 drafts, one Sheets read, registry read, IMAP login and folder."""
+    rows = load_drafts(draft_ids)
+    try:
+        registry = load_suppressions()
+        company_seen: set[str] = set()
+        domain_seen: set[str] = set()
+        email_seen: set[str] = set()
+        for row in rows:
+            ident = {
+                "name_hint": row["company"],
+                "website_hint": row["source_url"],
+                "email": row["email"],
+            }
+            if match_candidate(ident, registry) is not None:
+                raise RuntimeError("historically_suppressed_before_draft")
+            name = normalize_company(row["company"])
+            domain = normalize_domain(row["source_url"])
+            email = row["email"].casefold()
+            if (name in company_seen or email in email_seen or
+                    any(domains_match(domain, item) for item in domain_seen)):
+                raise RuntimeError("duplicate_business_in_draft_batch")
+            company_seen.add(name)
+            domain_seen.add(domain)
+            email_seen.add(email)
+    except Exception:
+        raise RuntimeError("batch_preflight_unavailable_or_suppressed") from None
+
+    client = connect_imap()
+    created = existing = 0
+    try:
+        folder = find_drafts_folder(client)
+        for row in rows:
+            outcome = save_draft(client, folder, row)
+            if outcome == "created":
+                created += 1
+            elif outcome == "existing":
+                existing += 1
+            else:
+                raise RuntimeError("batch_draft_outcome_invalid")
+    finally:
+        try:
+            client.logout()
+        except Exception:
+            pass
+    return {"total": len(rows), "created": created, "existing": existing}
