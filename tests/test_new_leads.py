@@ -64,7 +64,10 @@ class NewLeadsTests(unittest.TestCase):
             discovery.assert_not_called()
 
     def test_legal_form_not_inferred_from_company_hint(self):
-        old = load_registry_values([HEADERS])
+        old = load_registry_values([HEADERS, [
+            "Known Test", "https://known.example.org", "known.example.org",
+            "info@known.example.org", "sent", "", "", "", "", "TRUE",
+        ]])
         result = select_candidates({"candidates": [
             {"name_hint": "Fictieve Installaties BV", "website_hint": "https://example.org"},
         ]}, old, 1)
