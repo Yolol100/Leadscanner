@@ -134,7 +134,7 @@ jobs:
         run: |
           set -euo pipefail
           report="$(python3 scripts/_once_redraft_509_in_50.py --mode inspect-backup)"
-          printf '%s\\n' "$report"
+          printf '%s\n' "$report"
           REPORT_JSON="$report" python3 - <<'PY'
           import json
           import os
