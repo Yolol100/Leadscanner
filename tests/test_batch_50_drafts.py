@@ -41,11 +41,11 @@ class BatchOnlyTests(unittest.TestCase):
     def test_50_drafts_share_one_registry_and_imap_login(self):
         data = rows(50)
         client = Mock()
-        with patch("myhost_draft.load_drafts", return_value=data) as fetch, \\
-             patch("myhost_draft.load_suppressions", return_value=[]) as registry, \\
-             patch("myhost_draft.match_candidate", return_value=None), \\
-             patch("myhost_draft.connect_imap", return_value=client) as connect, \\
-             patch("myhost_draft.find_drafts_folder", return_value="Drafts"), \\
+        with patch("myhost_draft.load_drafts", return_value=data) as fetch, \
+             patch("myhost_draft.load_suppressions", return_value=[]) as registry, \
+             patch("myhost_draft.match_candidate", return_value=None), \
+             patch("myhost_draft.connect_imap", return_value=client) as connect, \
+             patch("myhost_draft.find_drafts_folder", return_value="Drafts"), \
              patch("myhost_draft.save_draft", return_value="created") as saved:
             result = create_batch_from_queue([row["draft_id"] for row in data])
         self.assertEqual(result, {"total": 50, "created": 50, "existing": 0})
@@ -56,9 +56,9 @@ class BatchOnlyTests(unittest.TestCase):
         client.logout.assert_called_once()
 
     def test_batch_rejects_already_contacted_before_mailbox_login(self):
-        with patch("myhost_draft.load_drafts", return_value=rows(3)), \\
-             patch("myhost_draft.load_suppressions", return_value=[{"status": "opt_out"}]), \\
-             patch("myhost_draft.match_candidate", return_value={"registry_status": "opt_out"}), \\
+        with patch("myhost_draft.load_drafts", return_value=rows(3)), \
+             patch("myhost_draft.load_suppressions", return_value=[{"status": "opt_out"}]), \
+             patch("myhost_draft.match_candidate", return_value={"registry_status": "opt_out"}), \
              patch("myhost_draft.connect_imap") as imap:
             with self.assertRaises(RuntimeError):
                 create_batch_from_queue(["draft-" + f"{i:032x}" for i in (1, 2, 3)])
@@ -67,17 +67,17 @@ class BatchOnlyTests(unittest.TestCase):
     def test_batch_rejects_second_same_company(self):
         data = rows(2)
         data[1]["company"] = data[0]["company"]
-        with patch("myhost_draft.load_drafts", return_value=data), \\
-             patch("myhost_draft.load_suppressions", return_value=[]), \\
-             patch("myhost_draft.match_candidate", return_value=None), \\
+        with patch("myhost_draft.load_drafts", return_value=data), \
+             patch("myhost_draft.load_suppressions", return_value=[]), \
+             patch("myhost_draft.match_candidate", return_value=None), \
              patch("myhost_draft.connect_imap") as imap:
             with self.assertRaises(RuntimeError):
                 create_batch_from_queue([row["draft_id"] for row in data])
             imap.assert_not_called()
 
     def test_batch_rejects_broken_registry(self):
-        with patch("myhost_draft.load_drafts", return_value=rows(2)), \\
-             patch("myhost_draft.load_suppressions", side_effect=RuntimeError("offline")), \\
+        with patch("myhost_draft.load_drafts", return_value=rows(2)), \
+             patch("myhost_draft.load_suppressions", side_effect=RuntimeError("offline")), \
              patch("myhost_draft.connect_imap") as imap:
             with self.assertRaises(RuntimeError):
                 create_batch_from_queue(["draft-" + f"{i:032x}" for i in (1, 2)])
