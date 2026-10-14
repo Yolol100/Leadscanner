@@ -355,16 +355,16 @@ class Existing509RedraftTests(unittest.TestCase):
             self.assertEqual(window, targets)
             return {targets[0]["lead_id"]: ("hold", "site_unverified", None)}
 
-        with patch.object(mod, "connect_imap", side_effect=[first, second]) as connect, \\
+        with patch.object(mod, "connect_imap", side_effect=[first, second]) as connect, \
              patch.object(mod, "_eligible_window",
-                          return_value=("Drafts", all_active, all_held, targets)) as inventory, \\
-             patch.object(mod, "_source_context", return_value=({}, {}, [])), \\
-             patch.object(mod, "_research_window", side_effect=research), \\
-             patch.object(mod, "_same_backup", return_value=False), \\
-             patch.object(mod, "require_uidplus"), \\
+                          return_value=("Drafts", all_active, all_held, targets)) as inventory, \
+             patch.object(mod, "_source_context", return_value=({}, {}, [])), \
+             patch.object(mod, "_research_window", side_effect=research), \
+             patch.object(mod, "_same_backup", return_value=False), \
+             patch.object(mod, "require_uidplus"), \
              patch.object(mod, "validate_hold_inventory",
-                          return_value=(all_active, all_held)), \\
-             patch.object(mod, "_backup_inventory", return_value=targets), \\
+                          return_value=(all_active, all_held)), \
+             patch.object(mod, "_backup_inventory", return_value=targets), \
              patch.object(mod, "create_drafts") as writer:
             report = mod._run_window(0, write=True)
         self.assertEqual(connect.call_count, 2)
@@ -380,15 +380,15 @@ class Existing509RedraftTests(unittest.TestCase):
         second = Mock()
         all_active = [row(i) for i in range(1, 510)]
         all_held = [row(i) for i in range(510, 1174)]
-        with patch.object(mod, "connect_imap", side_effect=[first, second]), \\
+        with patch.object(mod, "connect_imap", side_effect=[first, second]), \
              patch.object(mod, "_eligible_window", side_effect=[
                  ("Drafts", all_active, all_held, [row(1)]),
                  ("Drafts", all_active, all_held, [row(2)]),
-             ]), \\
-             patch.object(mod, "_source_context", return_value=({}, {}, [])), \\
+             ]), \
+             patch.object(mod, "_source_context", return_value=({}, {}, [])), \
              patch.object(mod, "_research_window", return_value={
-                 row(1)["lead_id"]: ("hold", "site_unverified", None)}), \\
-             patch.object(mod, "require_uidplus") as uidplus, \\
+                 row(1)["lead_id"]: ("hold", "site_unverified", None)}), \
+             patch.object(mod, "require_uidplus") as uidplus, \
              patch.object(mod, "create_drafts") as writer:
             with self.assertRaisesRegex(
                 RuntimeError, "batch_original_identity_changed_during_research"
