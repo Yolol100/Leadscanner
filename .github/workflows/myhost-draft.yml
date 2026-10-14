@@ -5,8 +5,12 @@ on:
   workflow_dispatch:
     inputs:
       draft_id:
-        description: Alleen het opaque draft-ID, nooit prospectdata
-        required: true
+        description: Een opaque draft-ID (laat leeg bij batch)
+        required: false
+        type: string
+      draft_ids:
+        description: Maximaal 50 komma-gescheiden opaque draft-ID's, nooit prospectdata
+        required: false
         type: string
 permissions:
   contents: read
@@ -17,12 +21,13 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'issue_comment' &&
        github.event.issue.number == 1659 &&
-       startsWith(github.event.comment.body, 'LEADS_DRAFT_ONLY:') &&
+       (startsWith(github.event.comment.body, 'LEADS_DRAFT_ONLY:') ||
+        startsWith(github.event.comment.body, 'LEADS_DRAFT_BATCH_ONLY:')) &&
        (github.event.comment.author_association == 'OWNER' ||
         github.event.comment.author_association == 'MEMBER' ||
         github.event.comment.author_association == 'COLLABORATOR'))
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 25
     concurrency:
       group: leadscanner-myhost-draft
       cancel-in-progress: false
@@ -52,4 +57,5 @@ jobs:
           OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
           OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
           DRAFT_ID: ${{ inputs.draft_id }}
+          DRAFT_IDS: ${{ inputs.draft_ids }}
         run: python3 scripts/draft_trigger.py

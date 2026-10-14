@@ -109,23 +109,35 @@ def _validate_row(row: dict[str, str]) -> dict[str, str]:
     }
 
 
-def load_draft(draft_id: str, session=None) -> dict[str, str]:
-    draft_id = _text(draft_id).casefold()
-    if not DRAFT_ID_RE.fullmatch(draft_id):
-        raise RuntimeError("draft_id_invalid")
+def load_drafts(draft_ids: list[str], session=None) -> list[dict[str, str]]:
+    """Fetch up to 50 exact private queue entries with ONE authorized Sheets read."""
+    if not isinstance(draft_ids, list) or not 1 <= len(draft_ids) <= 50:
+        raise RuntimeError("draft_batch_size_invalid")
+    ids = [_text(item).casefold() for item in draft_ids]
+    if (any(not DRAFT_ID_RE.fullmatch(item) for item in ids)
+            or len(set(ids)) != len(ids)):
+        raise RuntimeError("draft_batch_ids_invalid")
     session = session if session is not None else authorized_session()
     values = read_values(session)
     if not values or values[0] != HEADERS:
         raise RuntimeError("draft_queue_headers_invalid")
-
-    matches = []
+    wanted = set(ids)
+    matches: dict[str, dict[str, str]] = {}
     for raw in values[1:]:
         if not isinstance(raw, list) or len(raw) > len(HEADERS):
             raise RuntimeError("draft_queue_row_shape_invalid")
         padded = [str(value or "") for value in raw] + [""] * (len(HEADERS) - len(raw))
         row = dict(zip(HEADERS, padded))
-        if _text(row.get("draft_id")).casefold() == draft_id:
-            matches.append(_validate_row(row))
-    if len(matches) != 1:
+        key = _text(row.get("draft_id")).casefold()
+        if key not in wanted:
+            continue
+        if key in matches:
+            raise RuntimeError("draft_queue_id_missing_or_duplicate")
+        matches[key] = _validate_row(row)
+    if len(matches) != len(ids):
         raise RuntimeError("draft_queue_id_missing_or_duplicate")
-    return matches[0]
+    return [matches[key] for key in ids]
+
+
+def load_draft(draft_id: str, session=None) -> dict[str, str]:
+    return load_drafts([draft_id], session)[0]
