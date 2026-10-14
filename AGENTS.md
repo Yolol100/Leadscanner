@@ -1,10 +1,9 @@
-# Fresh Leadscanner contract
+# Leadscanner — scope en veiligheid
 
-Purpose: read-only, fresh business hint discovery. The installed reset `leads` Skill is the owner; `webactueel-workflow` controls cross-source routing.
+Deze publieke repository levert **alleen ongeverifieerde bedrijfshints** via Overture Maps/PDOK en controleert ze tegen het volledige bestaande historische uitsluitingsregister.
 
-- Preserve the live Google Dedupe Registry, previous drafts, suppressions, 1128 HistoricalHmacV2 identities, and independent private key vault outside GitHub.
-- Verify all retained suppression state before every discovery run; fail closed on missing data.
-- Do not add any SMTP, IMAP, draft creation, campaign, followup, historical redraft or legacy policy workflow.
-- Treat Overture/PDOK data only as unverified hints; no verified-prospect claims without independent official-site evidence.
-- Public GitHub CI displays counts only. No prospect names, contact details, URLs, vault values or candidate artifacts.
-- Work through tested branches and PRs; never weaken deduplication, privacy, or access controls.
+- **Fail closed:** ontbrekende of onvolledige live uitsluitingen (eerdere contacten, bounces, afmeldingen, HistoricalHmacV2 of sleutelkluis) stoppen discovery.
+- **Alleen tellingen openbaar:** geen namen, domeinen, adressen, e-mails, bron-URL's, concepten, secrets of contactrecords in GitHub commits, logs of artifacts.
+- **Geen mailsysteem:** geen IMAP, SMTP, DraftQueue, autoresponder, leadscore, websiteaudit, campagne of opvolgbericht.
+- De Leads Skill verifieert rechtsvorm, officieel contactadres, publicatiedoel, wettelijke contactbasis en menselijke review **buiten GitHub**. Openbare `info@` is geen toestemming.
+- Werk met een geteste branch/PR; laat de historische registry, privématerialen en bestaande rollbackgeschiedenis ongemoeid.
