@@ -196,7 +196,7 @@ def create_from_queue(draft_id: str) -> str:
             pass
 
 def create_batch_from_queue(draft_ids: list[str]) -> dict[str, int]:
-    """Up to 50 drafts, one Sheets read, registry read, IMAP login and folder."""
+    """Up to 100 drafts, one Sheets read, registry read, IMAP login and folder."""
     rows = load_drafts(draft_ids)
     try:
         registry = load_suppressions()
