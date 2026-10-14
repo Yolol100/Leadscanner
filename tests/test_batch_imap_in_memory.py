@@ -8,7 +8,7 @@ from unittest.mock import patch
 import myhost_draft as draft
 
 
-def make_rows():
+def make_rows(count=50):
     return [{
         "draft_id": "draft-" + format(index, "032x"),
         "company": "Fictief Hoveniersbedrijf " + str(index),
@@ -16,7 +16,7 @@ def make_rows():
         "source_url": "https://fictief-" + str(index) + ".nl/contact",
         "subject": "Vraag over Fictief Hoveniersbedrijf " + str(index),
         "body": "Goedendag,\n\nKorte fictieve testmail.\n\nWebactueel",
-    } for index in range(1, 51)]
+    } for index in range(1, count + 1)]
 
 
 class InMemoryIMAP:
@@ -79,6 +79,20 @@ class BatchIMAPSimulation(unittest.TestCase):
             len({BytesParser(policy=policy.default).parsebytes(raw)[draft.DRAFT_HEADER]
                  for raw, _ in client.messages}), 50)
         print("BATCH50_IMAP_SIM=green appended=50 readback=50 sent=0 elapsed_s={:.3f}".format(seconds))
+
+    def test_100_individual_drafts_exact_imap_readback(self):
+        rows = make_rows(100)
+        client = InMemoryIMAP()
+        with patch("myhost_draft.load_drafts", return_value=rows), \
+             patch("myhost_draft.load_suppressions", return_value=[]), \
+             patch("myhost_draft.connect_imap", return_value=client), \
+             patch("myhost_draft.time.sleep", return_value=None):
+            outcome = draft.create_batch_from_queue([row["draft_id"] for row in rows])
+        self.assertEqual(outcome, {"total": 100, "created": 100, "existing": 0})
+        self.assertEqual(client.append_attempts, 100)
+        self.assertEqual(len(client.messages), 100)
+        self.assertEqual(client.logout_count, 1)
+        print("BATCH100_IMAP_SIM=green appended=100 readback=100 sent=0")
 
     def test_retry_after_partial_failure_is_idempotent(self):
         rows = make_rows()
