@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 from dedupe_preflight import domains_match, match_candidate, normalize_company, normalize_domain
 from overture_discovery import discover
 from registry_readonly import load_suppressions
+from target_scope import validate_requested_keywords
 
 
 # Geographic sampling across all twelve provinces; NOT exhaustive NL coverage.
@@ -124,6 +125,7 @@ def run(region, keywords, radius, limit):
             and all(2 <= len(x) <= 64 for x in keywords)
             and .5 <= radius <= 30 and 1 <= limit <= 100):
         raise ValueError("invalid_inputs")
+    validate_requested_keywords(keywords)
     with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
         registry = load_suppressions()
         # Discover more hints than requested: previously contacted businesses

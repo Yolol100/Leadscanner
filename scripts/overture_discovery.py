@@ -15,6 +15,7 @@ from urllib.parse import urljoin, urlparse
 
 import requests
 
+from target_scope import is_blocked_place, is_profile_keyword, profile_category_terms, requested_category_terms
 from url_safety import is_public_http_url
 
 PDOK_FREE_URL = "https://api.pdok.nl/bzk/locatieserver/search/v3_1/free"
@@ -287,6 +288,11 @@ def _taxonomy_core(properties: dict) -> list[str]:
 
 def _category_terms(keyword: str) -> tuple[str, ...]:
     normalized = _normalize(keyword).replace("_", " ")
+    if is_profile_keyword(normalized):
+        return profile_category_terms()
+    scoped = requested_category_terms(normalized)
+    if scoped:
+        return scoped
     aliases = DUTCH_OVERTURE_CATEGORY_ALIASES.get(normalized)
     if aliases:
         return tuple(_normalize(value).replace("_", " ") for value in aliases)
@@ -306,6 +312,8 @@ def _matches_keywords(properties: dict, keywords: list[str]) -> bool:
 
     name_haystack = _normalize(_primary_name(properties) or "").replace("_", " ")
     taxonomy_haystack = _normalize(" ".join(_taxonomy_core(properties))).replace("_", " ")
+    if is_blocked_place(name_haystack, taxonomy_haystack):
+        return False
 
     for keyword in keywords:
         literal = _normalize(keyword).replace("_", " ")

@@ -578,5 +578,49 @@ class OvertureDiscoveryTests(unittest.TestCase):
 
 
 
+    def test_vakbedrijven_profile_matches_multiple_local_service_categories(self):
+        items = [
+            self.feature(fid="roof", name="Van Dijk", category="roofing_contractor", website="https://roof.example/"),
+            self.feature(fid="barber", name="Knip", category="barber_shop", website="https://barber.example/"),
+            self.feature(fid="mover", name="Sterk", category="moving_company", website="https://mover.example/"),
+            self.feature(fid="vet", name="Dierenzorg", category="veterinary_clinic", website="https://vet.example/"),
+        ]
+        path = self.write_geojsonseq(items)
+        try:
+            rows = read_candidates(path, keywords=["vakbedrijven"], max_results=20, require_website=True)
+        finally:
+            path.unlink(missing_ok=True)
+        self.assertEqual({row["overture_id"] for row in rows}, {"roof", "barber", "mover", "vet"})
+
+    def test_vakbedrijven_profile_excludes_digital_agencies_and_consultants(self):
+        items = [
+            self.feature(fid="web", name="Dakdekker Digital", category="web_design_agency", website="https://web.example/"),
+            self.feature(fid="marketing", name="Bouw Marketing Bureau", category="marketing_agency", website="https://marketing.example/"),
+            self.feature(fid="software", name="Lokaal Softwarebedrijf", category="software_company", website="https://software.example/"),
+            self.feature(fid="plumber", name="De Waterman", category="plumber", website="https://plumber.example/"),
+        ]
+        path = self.write_geojsonseq(items)
+        try:
+            rows = read_candidates(path, keywords=["vakbedrijven"], max_results=20, require_website=True)
+        finally:
+            path.unlink(missing_ok=True)
+        self.assertEqual([row["overture_id"] for row in rows], ["plumber"])
+
+    def test_specific_dutch_trade_alias_matches_english_taxonomy(self):
+        item = self.feature(fid="roofer", name="Jansen", category="home_service",
+                            website="https://jansen.example/")
+        item["properties"]["taxonomy"] = {
+            "primary": "roofing_contractor",
+            "hierarchy": ["home_service", "roofing_contractor"],
+            "alternates": [],
+        }
+        path = self.write_geojsonseq([item])
+        try:
+            rows = read_candidates(path, keywords=["dakdekker"], max_results=10, require_website=True)
+        finally:
+            path.unlink(missing_ok=True)
+        self.assertEqual([row["overture_id"] for row in rows], ["roofer"])
+
+
 if __name__ == "__main__":
     unittest.main()
