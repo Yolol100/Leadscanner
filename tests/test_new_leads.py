@@ -40,6 +40,23 @@ class NewLeadsTests(unittest.TestCase):
             run("Leiden", ["winkel"], 8, 100)
         self.assertEqual(discover.call_args.kwargs["max_results"], 500)
 
+    def test_overture_email_and_id_hints_are_suppressed(self):
+        from dedupe_preflight import match_candidate
+        old = load_registry_values([HEADERS, [
+            "Historical", "https://old.nl", "old.nl", "person@historical.nl",
+            "sent", "", "old-id", "", "", "TRUE",
+        ]])
+        result = select_candidates({"candidates": [
+            {"name_hint": "Different", "website_hint": "https://different.nl",
+             "discovery_email_candidates": [{"email": "person@historical.nl"}]},
+            {"name_hint": "Different Two", "website_hint": "https://other.nl",
+             "overture_id": "old-id"},
+            {"name_hint": "Fresh", "website_hint": "https://fresh.nl"},
+        ]}, old, 10)
+        self.assertEqual(result["counts"]["previously_used"], 2)
+        self.assertEqual(result["counts"]["new_unverified_hints"], 1)
+        self.assertEqual(result["candidates"][0]["company"], "Fresh")
+
     def test_missing_registry_fails_before_discovery(self):
         with patch("new_leads.load_suppressions", side_effect=RuntimeError()),              patch("new_leads.discover") as discovery:
             with self.assertRaises(RuntimeError):

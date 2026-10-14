@@ -5,6 +5,14 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
+      execution_mode:
+        description: Controleer eerst alleen het uitsluitingsregister
+        type: choice
+        required: true
+        default: preflight
+        options:
+          - preflight
+          - discover
       region:
         description: Plaats of regio in Nederland
         required: true
@@ -43,9 +51,40 @@ jobs:
         run: |
           python3 -m compileall -q scripts
           python3 -m unittest discover -s tests -p 'test_*.py' -q
+  preflight:
+    needs: test
+    if: github.event_name == 'workflow_dispatch' && inputs.execution_mode == 'preflight' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - run: python3 -m pip install -r requirements.txt
+      - name: Verify complete live suppression with anonymous summary
+        env:
+          PYTHONPATH: scripts
+          LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON || secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          python3 - <<'PY'
+          import sys
+          from registry_readonly import load_suppressions
+          try:
+              rows = load_suppressions()
+              if len(rows) < 2:
+                  raise RuntimeError("incomplete")
+              print("FRESH_LEADS_PREFLIGHT=green")
+          except Exception:
+              print("FRESH_LEADS_PREFLIGHT=red")
+              sys.exit(1)
+          PY
+
   discover:
     needs: test
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' && inputs.execution_mode == 'discover' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:

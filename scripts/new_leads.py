@@ -55,7 +55,11 @@ def select_candidates(raw, registry, limit):
         if not name or len(name) > 160 or not domain:
             counts["invalid"] += 1
             continue
-        ident = {"name_hint": name, "website_hint": url}
+        ident = {"name_hint": name, "website_hint": url,
+                 "lead_id": row.get("overture_id"),
+                 "emails": [item.get("email", "") for item in
+                            (row.get("discovery_email_candidates") or [])
+                            if isinstance(item, dict)]}
         if match_candidate(ident, registry):
             counts["previously_used"] += 1
             continue
