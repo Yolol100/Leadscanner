@@ -204,7 +204,7 @@ class DispatchScenarios(unittest.TestCase):
         request = resolve_request("push", {"head_commit": {
             "message": "LEADS_DISCOVERY_ONLY: Leiden|schoonmaak,installatie|10"
         }}, {})
-        self.assertEqual(request, ("Leiden", "schoonmaak,installatie", "10", "25"))
+        self.assertEqual(request, ("Leiden", "schoonmaak,installatie", "10", "25.0"))
 
     def test_invalid_push_markers_do_not_trigger(self):
         bad = ("", "LEADS_PREFLIGHT_ONLY:", "LEADS_DISCOVERY_ONLY: Amsterdam|horeca|0",
@@ -220,7 +220,7 @@ class DispatchScenarios(unittest.TestCase):
                     # Only the FIRST line of a commit message is an authorized marker;
                     # later commit-body content is deliberately ignored by this parser.
                     self.assertEqual(resolve_request("push", {"head_commit": {"message": v}}, {}),
-                                     ("Leiden", "zorg", "1", "25"))
+                                     ("Leiden", "zorg", "1", "25.0"))
                 else:
                     with self.assertRaises(ValueError):
                         resolve_request("push", {"head_commit": {"message": v}}, {})
