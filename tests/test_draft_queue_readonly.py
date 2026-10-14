@@ -66,5 +66,26 @@ class DraftQueueTests(unittest.TestCase):
             q.load_draft("draft-0123456789abcdef0123456789abcdef", session)
 
 
+    def test_curly_placeholders_are_rejected_in_subject_and_body(self):
+        for field in ("subject", "body"):
+            for placeholder in ("{{bedrijfsnaam}}", "{{branche_meervoud}}", "{{voornaam}}", "{{"):
+                with self.subTest(field=field, placeholder=placeholder):
+                    row = dict(zip(q.HEADERS, self.row()[1]))
+                    row[field] = placeholder + " voorbeeld"
+                    with patch("draft_queue_readonly.is_public_http_url", return_value=True):
+                        with self.assertRaisesRegex(RuntimeError, "draft_queue_unfilled_placeholder"):
+                            q._validate_row(row)
+
+    def test_body_limit_is_110_words_including_opt_out(self):
+        row = dict(zip(q.HEADERS, self.row()[1]))
+        row["body"] = "woord " * 110
+        with patch("draft_queue_readonly.is_public_http_url", return_value=True):
+            self.assertEqual(len(q._validate_row(row)["body"].split()), 110)
+        row["body"] += "extra"
+        with patch("draft_queue_readonly.is_public_http_url", return_value=True):
+            with self.assertRaisesRegex(RuntimeError, "draft_queue_body_word_limit_exceeded"):
+                q._validate_row(row)
+
+
 if __name__ == "__main__":
     unittest.main()
