@@ -163,7 +163,7 @@ REQUEST_CATEGORY_ALIASES = {
     "hondentrimsalon": ("pet groomer",), "trimsalon": ("pet groomer",), "dierenpension": ("pet boarding service","kennel"),
     "hondenpension": ("pet boarding service","kennel"), "kinderopvang": ("childcare","daycare","nursery"),
     "makelaar": ("real estate agent","real estate agency"), "tandarts": ("dentist","dental clinic"),
-    "fysiotherapie": ("physical therapy","physiotherapy"), "fysiotherapeut": ("physical therapist","physiotherapist"),
+    "fysiotherapie": ("physical therapy","physical therapist","physiotherapy","physiotherapist"), "fysiotherapeut": ("physical therapist","physiotherapist","physical therapy","physiotherapy"),
     "chiropractor": ("chiropractor",), "osteopaat": ("osteopath",), "podotherapeut": ("podiatrist",),
 }
 
