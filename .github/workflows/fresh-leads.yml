@@ -93,6 +93,9 @@ jobs:
        (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'LEADS_DISCOVERY_ONLY:')))
     runs-on: ubuntu-24.04
     timeout-minutes: 90
+    concurrency:
+      group: leads-private-candidates
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -101,7 +104,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: python3 -m pip install -r requirements.txt
-      - name: Read historical exclusions first and print counts only
+      - name: Discover and transfer to private Leads sheet; log counts only
         env:
           PYTHONPATH: scripts
           LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON || secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}

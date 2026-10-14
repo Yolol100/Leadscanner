@@ -59,7 +59,7 @@ def main() -> int:
         subprocess.run([sys.executable, "scripts/new_leads.py",
                         "--region", request[0], "--keywords", request[1],
                         "--limit", request[2], "--radius-km", request[3],
-                        "--summary-only"], check=True)
+                        "--summary-only", "--private-handoff"], check=True)
         return 0
     except Exception:
         print("FRESH_LEADS_REQUEST=red details_suppressed")

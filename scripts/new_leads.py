@@ -147,13 +147,19 @@ def main():
     p.add_argument("--radius-km", type=float, default=8)
     p.add_argument("--limit", type=int, default=30)
     p.add_argument("--summary-only", action="store_true")
+    p.add_argument("--private-handoff", action="store_true", help="Store hints only in authorized private Sheet")
     args = p.parse_args()
     try:
         result = run(args.region.strip(), [x.strip() for x in re.split("[,;]", args.keywords) if x.strip()],
                      args.radius_km, args.limit)
+        transferred = None
+        if args.private_handoff:
+            from private_candidate_handoff import store_candidates
+            transferred = store_candidates(result["candidates"])
         print(json.dumps({"status": "green", "counts": result["counts"],
                           "coverage": result["coverage"],
-                          "identities_exposed": False, "emails_sent": 0}, sort_keys=True))
+                          "identities_exposed": False, "emails_sent": 0,
+                          "private_handoff_stored": transferred}, sort_keys=True))
         return 0
     except Exception as exc:
         reason = str(exc)

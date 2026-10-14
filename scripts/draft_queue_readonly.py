@@ -110,8 +110,8 @@ def _validate_row(row: dict[str, str]) -> dict[str, str]:
 
 
 def load_drafts(draft_ids: list[str], session=None) -> list[dict[str, str]]:
-    """Fetch up to 50 exact private queue entries with ONE authorized Sheets read."""
-    if not isinstance(draft_ids, list) or not 1 <= len(draft_ids) <= 50:
+    """Fetch up to 100 exact private queue entries with ONE authorized Sheets read."""
+    if not isinstance(draft_ids, list) or not 1 <= len(draft_ids) <= 100:
         raise RuntimeError("draft_batch_size_invalid")
     ids = [_text(item).casefold() for item in draft_ids]
     if (any(not DRAFT_ID_RE.fullmatch(item) for item in ids)
