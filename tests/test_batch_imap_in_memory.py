@@ -112,5 +112,58 @@ class BatchIMAPSimulation(unittest.TestCase):
         self.assertEqual(client.logout_count, 2)
 
 
+    def test_six_rendered_queue_entries_to_imap_drafts(self):
+        """Six fictional rendered handoffs: private queue -> registry -> IMAP readback."""
+        from unittest.mock import Mock
+        import draft_queue_readonly as queue
+        from email import policy
+        from email.parser import BytesParser
+
+        subjects = (
+            "offertes & avonduren Fictief Schildersbedrijf",
+            "rust in de zaak & online agenda",
+            "online reserveringen & zichtbaarheid",
+            "telefoondrukte & spoedvragen",
+            "duidelijke informatie over Fictief Dienstbedrijf",
+            "servicevragen & online contact",
+        )
+        queue_rows = [list(queue.HEADERS)]
+        draft_ids = []
+        opt_out = "Liever geen e-mails meer? Antwoord met 'nee', dan laat ik het hierbij."
+        for i, subject in enumerate(subjects, start=1):
+            draft_id = "draft-" + f"{i:032x}"
+            draft_ids.append(draft_id)
+            name = "Hoi Ria," if i == 5 else "Goedendag,"
+            email = "ria@fictief-dienstbedrijf.nl" if i == 5 else f"info@fictief-bedrijf-{i}.nl"
+            body = name + "\\n\\nEen fictieve, volledig ingevulde testmail.\\n\\n" + opt_out + "\\n\\nGroet,\\nAndrew"
+            queue_rows.append([
+                draft_id, "2026-10-15T12:00:00+02:00", f"Fictief Bedrijf {i}",
+                email, f"https://fictief-bedrijf-{i}.nl/contact", subject, body,
+            ])
+        response = Mock(status_code=200)
+        response.json.return_value = {"values": queue_rows}
+        session = Mock()
+        session.get.return_value = response
+        client = InMemoryIMAP()
+        with patch("draft_queue_readonly.authorized_session", return_value=session), \\
+             patch("myhost_draft.load_suppressions", return_value=[]), \\
+             patch("myhost_draft.connect_imap", return_value=client), \\
+             patch("myhost_draft.time.sleep", return_value=None):
+            outcome = draft.create_batch_from_queue(draft_ids)
+        self.assertEqual(outcome, {"total": 6, "created": 6, "existing": 0})
+        self.assertEqual(session.get.call_count, 1)
+        self.assertEqual(client.append_attempts, 6)
+        self.assertEqual(client.logout_count, 1)
+        for i, (raw, flags) in enumerate(client.messages):
+            msg = BytesParser(policy=policy.default).parsebytes(raw)
+            self.assertEqual(flags, b"\\\\Draft")
+            self.assertEqual(msg["Subject"], subjects[i])
+            self.assertIn(opt_out, msg.get_content())
+            self.assertTrue(msg.get_content().rstrip().endswith("Andrew"))
+            self.assertNotIn("{{", msg.get_content())
+            self.assertLessEqual(len(msg.get_content().split()), 110)
+        print("SIX_CLUSTER_HANDOFF_SIM=green queue=6 imap_readback=6 sent=0")
+
+
 if __name__ == "__main__":
     unittest.main()
