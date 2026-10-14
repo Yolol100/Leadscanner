@@ -261,6 +261,49 @@ def _backup_all():
         client.logout()
 
 
+def _readonly_backup_status():
+    """Verify existing saved originals without creating or replacing anything.
+
+    Anonymous result only. Partial backups must NOT enable the writer.
+    """
+    try:
+        client = connect_imap()
+    except Exception as exc:
+        raise RuntimeError("backup_audit_imap_connect_failed") from exc
+    try:
+        drafts, active, held = _open_inventory(client, strict_initial=True)
+        try:
+            _find_backup_folder(client, drafts, create=False)
+        except Exception as exc:
+            raise RuntimeError("backup_audit_folder_unavailable") from exc
+        backup = _backup_inventory(client, expected=None)
+        ids = {item["lead_id"] for item in backup}
+        if not ids.issubset({item["lead_id"] for item in active}):
+            raise RuntimeError("backup_audit_unknown_draft_identity")
+        for item in backup:
+            lead = item["lead_id"]
+            original_uid = _one_uid(client, drafts, lead, require_draft=True)
+            saved_uid = _one_uid(client, BACKUP_FOLDER, lead)
+            if original_uid is None or saved_uid is None:
+                raise RuntimeError("backup_audit_missing_original")
+            select_folder(client, drafts, readonly=True)
+            original_raw = _raw_uid(client, original_uid)
+            select_folder(client, BACKUP_FOLDER, readonly=True)
+            if original_raw != _raw_uid(client, saved_uid):
+                raise RuntimeError("backup_audit_raw_mismatch")
+        return {"mode": "inspect-backup", "active": len(active),
+                "held": len(held), "backup_count": len(backup),
+                "missing_backup_count": TOTAL_ACTIVE - len(backup),
+                "all_copies_identical": True,
+                "complete": len(backup) == TOTAL_ACTIVE,
+                "mailbox_writes": False, "emails_sent": 0}
+    finally:
+        try:
+            client.logout()
+        except Exception:
+            pass
+
+
 def _eligible_window(client, *, offset):
     drafts, active, held = _open_inventory(client)
     _find_backup_folder(client, drafts)
@@ -418,7 +461,7 @@ def _preview(offset, count):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=("preview", "backup", "rewrite"), required=True)
+    parser.add_argument("--mode", choices=("preview", "inspect-backup", "backup", "rewrite"), required=True)
     parser.add_argument("--offset", type=int, default=0)
     parser.add_argument("--count", type=int, default=STEP,
                         help="Read-only websites per cohort: 50, 100, 150, or 200")
@@ -435,6 +478,8 @@ def main():
         with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
             if args.mode == "backup":
                 result = _backup_all()
+            elif args.mode == "inspect-backup":
+                result = _readonly_backup_status()
             elif args.mode == "preview":
                 result = _preview(args.offset, args.count)
             else:
@@ -455,6 +500,11 @@ def main():
             "preview_mailbox_inventory_failed",
             "preview_source_context_failed",
             "preview_research_decision_failed",
+            "backup_audit_imap_connect_failed",
+            "backup_audit_folder_unavailable",
+            "backup_audit_unknown_draft_identity",
+            "backup_audit_missing_original",
+            "backup_audit_raw_mismatch",
         }:
             code = "unexpected_failure"
         print("MYHOST_REDRAFT50=red stage=" + args.mode
