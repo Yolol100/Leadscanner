@@ -341,6 +341,32 @@ class Existing509RedraftTests(unittest.TestCase):
             ):
                 mod._research_window([target], {}, {}, [])
 
+    def test_backup_only_launch_is_isolated_from_all_rewrite_jobs(self):
+        workflow = (pathlib.Path(__file__).resolve().parents[1] /
+                    ".github/workflows/once-myhost-509-redraft50.yml").read_text()
+        import re
+        sections = {}
+        for match in re.finditer(r"(?m)^  ([a-z][a-z_0-9]*):\\n", workflow):
+            name = match.group(1)
+            start = match.start()
+            tail = workflow[match.end():]
+            later = re.search(r"(?m)^  [a-z][a-z_0-9]*:\\n", tail)
+            sections[name] = workflow[start:match.end() + later.start()
+                                      if later else len(workflow)]
+        gated = {name for name, value in sections.items()
+                 if "BACKUP509_ORIGINALS_ONLY:" in value}
+        self.assertEqual(gated, {"unit_tests", "backup", "verify_originals"})
+        self.assertIn("needs: unit_tests", sections["backup"])
+        self.assertIn("needs: backup", sections["verify_originals"])
+        self.assertIn("needs: verify_originals", sections["batch_0"])
+        self.assertIn("--mode backup", sections["backup"])
+        self.assertIn("--mode inspect-backup", sections["verify_originals"])
+        self.assertIn("backup_readback_incomplete", sections["verify_originals"])
+        for name in ("preview",) + tuple(f"batch_{x}" for x in range(11)):
+            self.assertNotIn("BACKUP509_ORIGINALS_ONLY:", sections[name])
+            if name.startswith("batch_"):
+                self.assertIn("APPROVED509_REDRAFT_ALL:", sections[name])
+
     def test_no_sending_and_no_new_lead_ids_in_one_off(self):
         src = (pathlib.Path(__file__).resolve().parents[1] /
                "scripts/_once_redraft_509_in_50.py").read_text()
