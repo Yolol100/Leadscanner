@@ -169,7 +169,10 @@ REQUEST_CATEGORY_ALIASES = {
 
 
 def requested_category_terms(keyword: str) -> tuple[str, ...]:
-    return tuple(normalize(x) for x in REQUEST_CATEGORY_ALIASES.get(normalize(keyword), ()))
+    wanted = normalize(keyword)
+    aliases = next((values for key, values in REQUEST_CATEGORY_ALIASES.items()
+                    if normalize(key) == wanted), ())
+    return tuple(normalize(x) for x in aliases)
 
 
 # Explicit poor-fit sectors. These are blocked even if a name contains a positive
