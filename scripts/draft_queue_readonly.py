@@ -12,6 +12,24 @@ DRAFT_QUEUE_ID = "1AOsEsxkG2He6SOlD92BZpmY2DAj3716Fp953oqgy1jk"
 DRAFT_QUEUE_TAB = "DraftQueue"
 HEADERS = ["draft_id", "created_at", "company", "email", "source_url", "subject", "body"]
 DRAFT_ID_RE = re.compile(r"^draft-[0-9a-f]{32}$")
+EMAIL_LOCAL_RE = re.compile(r"^[a-z0-9._%+\-]+$", re.I)
+EMAIL_LABEL_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$", re.I)
+UNFILLED_PLACEHOLDER_RE = re.compile(r"\[[^\[\]\n]{1,64}\]")
+
+
+def valid_general_email(value: str) -> bool:
+    """Basic ASCII general mailbox format; the official site remains the authority."""
+    if not 3 <= len(value) <= 254 or value.count("@") != 1:
+        return False
+    local, host = value.split("@")
+    if (not 1 <= len(local) <= 64 or local.startswith(".") or local.endswith(".")
+            or ".." in local or not EMAIL_LOCAL_RE.fullmatch(local)):
+        return False
+    labels = host.split(".")
+    if (len(labels) < 2 or len(host) > 253 or not 2 <= len(labels[-1]) <= 63
+            or not all(EMAIL_LABEL_RE.fullmatch(label) for label in labels)):
+        return False
+    return labels[-1].isalpha() or labels[-1].startswith("xn--")
 
 
 def _text(value: object) -> str:
@@ -68,12 +86,7 @@ def _validate_row(row: dict[str, str]) -> dict[str, str]:
         raise RuntimeError("draft_queue_id_invalid")
     if not company or len(company) > 160 or any(ord(ch) < 32 for ch in company):
         raise RuntimeError("draft_queue_company_invalid")
-    if (
-        not email
-        or len(email) > 254
-        or email.count("@") != 1
-        or any(ch.isspace() or ord(ch) < 32 for ch in email)
-    ):
+    if not valid_general_email(email):
         raise RuntimeError("draft_queue_email_invalid")
     if not is_public_http_url(source_url):
         raise RuntimeError("draft_queue_source_url_invalid")
@@ -81,6 +94,9 @@ def _validate_row(row: dict[str, str]) -> dict[str, str]:
         raise RuntimeError("draft_queue_subject_invalid")
     if not body or len(body) > 6000 or "\x00" in body:
         raise RuntimeError("draft_queue_body_invalid")
+
+    if UNFILLED_PLACEHOLDER_RE.search(subject + "\n" + body):
+        raise RuntimeError("draft_queue_unfilled_placeholder")
 
     return {
         "draft_id": draft_id,
