@@ -162,7 +162,7 @@ class SuppressionScenarios(unittest.TestCase):
         with patch("new_leads.load_suppressions", side_effect=RuntimeError("no registry")), \
              patch("new_leads.discover") as fetch:
             with self.assertRaises(RuntimeError):
-                run("Leiden", ["web"], 8, 5)
+                run("Leiden", ["bakkerij"], 8, 5)
             fetch.assert_not_called()
 
 class OutputPrivacyScenarios(unittest.TestCase):
