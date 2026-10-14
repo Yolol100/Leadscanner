@@ -250,6 +250,49 @@ class Existing509RedraftTests(unittest.TestCase):
             ):
                 mod._preview(0, 200)
 
+    def test_readonly_backup_reports_partial_without_copy_or_mutation(self):
+        from unittest.mock import Mock
+        client = Mock()
+        first_two = [row(1), row(2)]
+        full_active = [row(i) for i in range(1, 510)]
+        full_held = [row(i) for i in range(510, 1174)]
+        with patch.object(mod, "connect_imap", return_value=client), \
+             patch.object(mod, "_open_inventory",
+                          return_value=("Drafts", full_active, full_held)), \
+             patch.object(mod, "_find_backup_folder") as folder, \
+             patch.object(mod, "_backup_inventory",
+                          return_value=first_two), \
+             patch.object(mod, "_one_uid", return_value=b"17"), \
+             patch.object(mod, "select_folder"), \
+             patch.object(mod, "_raw_uid", return_value=b"same-original"):
+            result = mod._readonly_backup_status()
+        self.assertFalse(result["complete"])
+        self.assertEqual(result["backup_count"], 2)
+        self.assertEqual(result["missing_backup_count"], 507)
+        self.assertFalse(result["mailbox_writes"])
+        self.assertEqual(result["emails_sent"], 0)
+        self.assertEqual(folder.call_args.kwargs["create"], False)
+        client.uid.assert_not_called()
+        client.logout.assert_called_once()
+
+    def test_readonly_backup_detects_modified_original_and_stops(self):
+        from unittest.mock import Mock
+        client = Mock()
+        with patch.object(mod, "connect_imap", return_value=client), \
+             patch.object(mod, "_open_inventory",
+                          return_value=("Drafts", [row(i) for i in range(1, 510)],
+                                        [row(i) for i in range(510, 1174)])), \
+             patch.object(mod, "_find_backup_folder"), \
+             patch.object(mod, "_backup_inventory", return_value=[row(1)]), \
+             patch.object(mod, "_one_uid", return_value=b"17"), \
+             patch.object(mod, "select_folder"), \
+             patch.object(mod, "_raw_uid", side_effect=[
+                 b"current-version", b"previous-version"]):
+            with self.assertRaisesRegex(RuntimeError, "backup_audit_raw_mismatch"):
+                mod._readonly_backup_status()
+        client.uid.assert_not_called()
+        client.logout.assert_called_once()
+
     def test_unqualified_drafts_stay_active_without_move(self):
         class FakeIMAP:
             def logout(self):
