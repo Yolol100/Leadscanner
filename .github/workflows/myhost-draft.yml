@@ -39,7 +39,6 @@ jobs:
           PYTHONPATH: scripts
         run: |
           python3 -m unittest discover -s tests -p 'test_draft_*.py' -q
-          python3 -m unittest tests.test_myhost_draft -q || true
       - name: Save exactly one Mijn.Host draft and read it back
         env:
           PYTHONPATH: scripts
