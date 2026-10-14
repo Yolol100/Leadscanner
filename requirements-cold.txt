@@ -1,3 +1,0 @@
-requests>=2,<3
-overturemaps==1.0.2
-google-auth>=2,<3
