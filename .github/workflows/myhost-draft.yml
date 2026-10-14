@@ -1,0 +1,56 @@
+name: Mijn.Host Draft — alleen concept
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      draft_id:
+        description: Alleen het opaque draft-ID, nooit prospectdata
+        required: true
+        type: string
+permissions:
+  contents: read
+  issues: read
+jobs:
+  draft:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.number == 1659 &&
+       startsWith(github.event.comment.body, 'LEADS_DRAFT_ONLY:') &&
+       (github.event.comment.author_association == 'OWNER' ||
+        github.event.comment.author_association == 'MEMBER' ||
+        github.event.comment.author_association == 'COLLABORATOR'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    concurrency:
+      group: leadscanner-myhost-draft
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - run: python3 -m pip install -r requirements.txt
+      - name: Draft-only synthetic tests
+        env:
+          PYTHONPATH: scripts
+        run: |
+          python3 -m unittest discover -s tests -p 'test_draft_*.py' -q
+          python3 -m unittest tests.test_myhost_draft -q || true
+      - name: Save exactly one Mijn.Host draft and read it back
+        env:
+          PYTHONPATH: scripts
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON }}
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME || 'Andrew Baeten' }}
+          OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
+          OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
+          DRAFT_ID: ${{ inputs.draft_id }}
+        run: python3 scripts/draft_trigger.py
