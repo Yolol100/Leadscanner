@@ -10,7 +10,8 @@ jobs:
       github.ref == 'refs/heads/main' &&
       github.run_attempt == 1 &&
       (startsWith(github.event.head_commit.message, 'PREVIEW509_SITE_AUDIT_ONLY:') ||
-       startsWith(github.event.head_commit.message, 'APPROVED509_REDRAFT_ALL:'))
+       startsWith(github.event.head_commit.message, 'APPROVED509_REDRAFT_ALL:') ||
+       startsWith(github.event.head_commit.message, 'BACKUP509_ORIGINALS_ONLY:'))
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -66,7 +67,10 @@ jobs:
 
   backup:
     needs: unit_tests
-    if: "startsWith(github.event.head_commit.message, 'APPROVED509_REDRAFT_ALL:')"
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (startsWith(github.event.head_commit.message, 'BACKUP509_ORIGINALS_ONLY:') ||
+       startsWith(github.event.head_commit.message, 'APPROVED509_REDRAFT_ALL:'))
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     concurrency:
