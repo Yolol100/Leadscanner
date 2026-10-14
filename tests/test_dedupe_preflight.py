@@ -90,6 +90,16 @@ class DedupePreflightTests(unittest.TestCase):
         self.assertEqual(result["kept_count"], 1)
         self.assertEqual(result["kept"][0]["company"], "Nieuwe Firma")
 
+    def test_previously_contacted_always_excluded_even_with_false_flag(self):
+        for state in ("concept", "review_draft", "sent", "replied", "bounce", "opt_out"):
+            rows = load_registry_values([HEADERS, [
+                "Previous", "https://previous.nl", "previous.nl",
+                "contact@previous.nl", state, "", "", "", "", "FALSE",
+            ]])
+            from dedupe_preflight import match_candidate
+            self.assertIsNotNone(match_candidate(
+                {"website_hint": "https://previous.nl"}, rows))
+
     def test_false_registry_rows_do_not_exclude(self):
         rows = [[
             "Acme",
