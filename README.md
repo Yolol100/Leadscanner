@@ -24,3 +24,7 @@ De volledige Webactueel first-touch-flow is: (1) nieuwe bedrijven vinden, (2) ho
 Bewaar geen bedrijfsnamen, e-mailadressen, bron-URL's of mailteksten in publieke GitHub logs, commits of artifacts. Een publiek info@-adres is nooit automatisch verzendtoestemming. Review is niet send-ready; uitgesloten of afgemelde contacten blijven geblokkeerd. De Leads Skill controleert een geldige wettelijke basis afzonderlijk. Geen automatische verzending, mailboxconcepten of opvolgcampagnes toevoegen.
 
 De eerste mail vereist geen 3-6 websiteproblemen, analyses, scores, prijsregels of zes verkoopbullets. Deeper specialistische analyse volgt pas na interesse. De bestaande veilige preflight, historische registry, secret vault, landelijke steekproef en test-suite blijven intact. Herstel geen legacy campagnes of templates.
+
+### Doelgroep- en acceptatiegrens
+
+De Leads Skill selecteert downstream uitsluitend onafhankelijk geverifieerde Nederlandse rechtspersonen (zoals BV/NV) voor deze ICP. Een naam die op BV eindigt, een Overture-/PDOK-record of een gepubliceerde info@ bewijst geen rechtsvorm en zeker geen verzendgrond. Deze publieke repo blijft alleen hints leveren en dedupliceren. Echte registraties, zakelijke contactadressen, contactbasis, menselijke conceptreview en ieder besluit tot handmatige verzending blijven buiten GitHub.
