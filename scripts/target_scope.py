@@ -314,7 +314,11 @@ def validate_requested_keywords(keywords: list[str]) -> list[str]:
 
 
 def profile_category_terms() -> tuple[str, ...]:
-    return tuple(normalize(x) for x in PROFILE_CATEGORY_TERMS)
+    # Build the broad search from the same exact aliases as individual trades.
+    # Avoid a second, drifting category list for the default vakbedrijven search.
+    categories = set(PROFILE_CATEGORY_TERMS)
+    categories.update(alias for group in REQUEST_CATEGORY_ALIASES.values() for alias in group)
+    return tuple(sorted({normalize(category) for category in categories}))
 
 
 def is_blocked_place(*values: object) -> bool:
