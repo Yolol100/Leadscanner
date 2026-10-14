@@ -80,8 +80,11 @@ def run(region, keywords, radius, limit):
         raise ValueError("invalid_inputs")
     with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
         registry = load_suppressions()
+        # Discover more hints than requested: previously contacted businesses
+        # and duplicates must not exhaust the new-lead shortlist prematurely.
+        scan_limit = min(5000, max(100, limit * 5))
         raw = discover(region=region, bbox=None, radius_km=radius,
-                       keywords=keywords, max_results=limit,
+                       keywords=keywords, max_results=scan_limit,
                        require_website=True, probe_websites=False)
     return select_candidates(raw, registry, limit)
 
