@@ -25,6 +25,23 @@ class TargetScopeTests(unittest.TestCase):
                 self.assertTrue(is_allowed_requested_keyword(keyword))
                 self.assertEqual(validate_requested_keywords([keyword]), [keyword])
 
+    def test_default_profile_covers_every_specific_trade_alias(self):
+        from target_scope import REQUEST_CATEGORY_ALIASES, profile_category_terms, normalize
+        expected = {normalize(alias)
+                    for aliases in REQUEST_CATEGORY_ALIASES.values() for alias in aliases}
+        actual = set(profile_category_terms())
+        self.assertFalse(expected - actual)
+
+    def test_default_profile_matches_missing_rare_trade(self):
+        from overture_discovery import _matches_keywords
+        fixtures = ("thatching_contractor", "building_cleaning_service",
+                    "recreational_vehicle_repair_service", "holiday_accommodation")
+        for category in fixtures:
+            with self.subTest(category=category):
+                props = {"names": {"primary": "Neutraal Lokaal Bedrijf"},
+                         "basic_category": category}
+                self.assertTrue(_matches_keywords(props, ["vakbedrijven"]))
+
     def test_profile_macro_is_allowed(self):
         for keyword in ("vakbedrijven", "lokale vakbedrijven", "lokale bedrijven"):
             with self.subTest(keyword=keyword):
