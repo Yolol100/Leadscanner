@@ -14,7 +14,7 @@ HEADERS = ["draft_id", "created_at", "company", "email", "source_url", "subject"
 DRAFT_ID_RE = re.compile(r"^draft-[0-9a-f]{32}$")
 EMAIL_LOCAL_RE = re.compile(r"^[a-z0-9._%+\-]+$", re.I)
 EMAIL_LABEL_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$", re.I)
-UNFILLED_PLACEHOLDER_RE = re.compile(r"\[[^\[\]\n]{1,64}\]")
+UNFILLED_PLACEHOLDER_RE = re.compile(r"\[[^\[\]\n]{1,64}\]|\{\{|\}\}")
 
 
 def valid_general_email(value: str) -> bool:
@@ -97,6 +97,8 @@ def _validate_row(row: dict[str, str]) -> dict[str, str]:
 
     if UNFILLED_PLACEHOLDER_RE.search(subject + "\n" + body):
         raise RuntimeError("draft_queue_unfilled_placeholder")
+    if len(body.split()) > 110:
+        raise RuntimeError("draft_queue_body_word_limit_exceeded")
 
     return {
         "draft_id": draft_id,
