@@ -1,21 +1,24 @@
-# Leadscanner — nieuwe bedrijfshints
+# Leadscanner — vier stappen, twee technische taken
 
-Deze **publieke** repo zoekt met Overture Maps/PDOK naar Nederlandse bedrijfshints en verwijdert historische dubbelen. Een hint is **geen geverifieerde lead**. Er worden geen e-mails gezocht, opgeslagen, opgesteld of verzonden in GitHub.
+De **menselijke workflow** is precies:
 
-## Uitvoering
+1. **Bedrijf zoeken** — alleen passende Nederlandse lokale vakbedrijven.
+2. **E-mailadres zoeken** — maximaal één exact gepubliceerd algemeen zakelijk adres van de officiële bedrijfswebsite.
+3. **E-mail opstellen in Mijn.Host Drafts** — één privé concept via IMAP, nooit via SMTP.
+4. **Menselijke controle** — daarna beslist alleen een mens of het bericht geschikt en rechtmatig is.
 
-1. Lees eerst het **volledige** bestaande Lead Dedupe Registry, inclusief eerdere contacten, bounces, opt-outs en de onafhankelijke HistoricalHmacV2-controle. Ontbreekt iets? **Stop**.
-2. Zoek bedrijfshints via de handmatige GitHub Actions-workflow **Fresh Leads** (regio, branche, limiet). `Nederland` betekent 12 regionale steekproeven, **geen** landelijke dekking.
-3. Filter historische matches en nieuwe dubbelen. Publieke logs en artifacts bevatten **alleen tellingen**, nooit bedrijfsnamen, domeinen, e-mailadressen, concepten of geheimen.
+## Wat deze publieke repo doet
 
-Voor een geautoriseerde ChatGPT GitHub-connector zonder `workflow_dispatch` zijn uitsluitend de bestaande gecontroleerde commit-markers beschikbaar: `LEADS_PREFLIGHT_ONLY:` of `LEADS_DISCOVERY_ONLY: <regio>|<branches>|<limiet>`.
+- **Discovery + dedupe:** Overture/PDOK levert bedrijfshints. Het volledige historische Lead Dedupe Registry blokkeert eerdere contacten, bounces, afmeldingen en dubbelen. Openbare logs tonen alleen tellingen.
+- **Doelgroepfilter:** standaardprofiel `vakbedrijven` omvat lokale bouw/installatie, tuin, schoonmaak, auto/fiets, reparatie, persoonlijke verzorging, horeca, lokale retail en vergelijkbare afspraak-/offertebedrijven. Digitale/marketing/SEO/web/IT/software/consultancy en andere poor-fit sectoren zijn geblokkeerd.
+- **Mijn.Host Draft-only:** de mailinhoud staat in een **privé** Draft Queue. GitHub ontvangt alleen een willekeurig `draft-<32hex>` ID. De workflow schrijft via IMAP `APPEND` met `\Draft` naar de echte Drafts-map en leest hetzelfde concept exact terug. Er bestaat in deze route **geen SMTP-send**.
 
-## Overdracht aan de Leads Skill
+Issue #1659 is uitsluitend de opaque trigger voor Drafts. Zet daar nooit bedrijf, e-mailadres, onderwerp of mailtekst in.
 
-De **vier stappen** blijven: **bedrijf vinden → op officiële website één algemeen contactadres en het doel ervan verifiëren → privé een kort concept maken → handmatig beoordelen**. De Skill verifieert daarnaast rechtsvorm (bij voorkeur BV/NV, **niet** afleiden uit de bedrijfsnaam), actuele registeruitsluiting en aantoonbare wettelijke contactbasis. Een openbaar `info@`-adres is **geen toestemming**. Bij twijfel is een concept **niet verzendklaar**. Alleen een mens beslist later afzonderlijk over een rechtmatig bericht.
+## Wat niet terugkomt
 
-**Niet terugbrengen:** website-audits, 3–6 problemen, scores, CRM-exports, SMTP/IMAP, mailboxconcepten, automatische follow-ups, tracking of legacy campagnes. Geen nieuwe persoonsgegevens in publieke commits.
+Geen website-audits, problemenlijsten, leadscores, A/B-campagnes, CRM/outreach queues, sender-readiness, inbox-placement, tracking, automatische follow-ups of automatische verzending. Ook geen verplichte BV/NV-filter: een passende lokale eenmanszaak of vof mag binnen de doelgroep vallen.
 
-Het bestaande uitsluitingsregister, de privé-HMAC-sleutelkluis, externe herstelkopieën en de rollbackgeschiedenis blijven **ongewijzigd**. Geen wijzigingen aan broncode of uitsluitingsgegevens bij documentatie-opschoning.
+De historische uitsluitingen en HMAC-beveiliging blijven behouden. Een openbaar e-mailadres is geen automatische toestemming om commerciële mail te sturen; de menselijke controle blijft de laatste stap.
 
 Wetgeving: [Telecommunicatiewet art. 11.7](https://wetten.overheid.nl/BWBR0009950/2026-07-01) en [ACM spamregels](https://www.acm.nl/nl/verkoop-aan-consumenten/reclame-en-verleiden/spam-voorkomen-uw-reclame).
