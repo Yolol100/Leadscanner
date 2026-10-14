@@ -1,24 +1,16 @@
-# Leadscanner — vier stappen, twee technische taken
+# Leadscanner — vier stappen
 
-De **menselijke workflow** is precies:
+1. **Bedrijf zoeken:** Nederlandse lokale vakbedrijven, geen marketing/web/IT/consultancy.
+2. **E-mail zoeken:** één exact gepubliceerd algemeen adres op de officiële bedrijfswebsite.
+3. **Mijn.Host-concept maken:** korte vaste mail; via IMAP naar Drafts, met readback.
+4. **Menselijke controle:** de gebruiker beslist zelf of hij ooit verzendt.
 
-1. **Bedrijf zoeken** — alleen passende Nederlandse lokale vakbedrijven.
-2. **E-mailadres zoeken** — maximaal één exact gepubliceerd algemeen zakelijk adres van de officiële bedrijfswebsite.
-3. **E-mail opstellen in Mijn.Host Drafts** — één privé concept via IMAP, nooit via SMTP.
-4. **Menselijke controle** — daarna beslist alleen een mens of het bericht geschikt en rechtmatig is.
+Techniek: Overture/PDOK levert hints, het historische uitsluitingsregister blokkeert dubbelen en eerdere contacten. Een prospect is pas geschikt na officiële website- en e-mailverificatie. De privé Google Draft Queue bewaart tekst en ontvangers; **GitHub krijgt uitsluitend willekeurige draft-ID's**. Eén geautoriseerde trigger ondersteunt één ID of een batch van maximaal 50 ID's. Batch hergebruikt één Sheets-read, één register-read en één IMAP-verbinding. Elke mail wordt individueel teruggelezen en blijft concept. Geen SMTP, verzending, tracking, follow-up, campagnes, websitescans of scores.
 
-## Wat deze publieke repo doet
+Trigger via issue #1659:
+- `LEADS_DRAFT_ONLY: draft-<32hex>`
+- `LEADS_DRAFT_BATCH_ONLY: draft-<32hex>,draft-<32hex>,...` (2–50 verschillende ID's)
 
-- **Discovery + dedupe:** Overture/PDOK levert bedrijfshints. Het volledige historische Lead Dedupe Registry blokkeert eerdere contacten, bounces, afmeldingen en dubbelen. Openbare logs tonen alleen tellingen.
-- **Doelgroepfilter:** standaardprofiel `vakbedrijven` omvat lokale bouw/installatie, tuin, schoonmaak, auto/fiets, reparatie, persoonlijke verzorging, horeca, lokale retail en vergelijkbare afspraak-/offertebedrijven. Digitale/marketing/SEO/web/IT/software/consultancy en andere poor-fit sectoren zijn geblokkeerd.
-- **Mijn.Host Draft-only:** de mailinhoud staat in een **privé** Draft Queue. GitHub ontvangt alleen een willekeurig `draft-<32hex>` ID. De workflow schrijft via IMAP `APPEND` met `\Draft` naar de echte Drafts-map en leest hetzelfde concept exact terug. Er bestaat in deze route **geen SMTP-send**.
+De privacy- en broncontrole blijft verplicht; openbare logs bevatten uitsluitend aantallen. Een gepubliceerd adres is geen automatische toestemming voor commerciële verzending.
 
-Issue #1659 is uitsluitend de opaque trigger voor Drafts. Zet daar nooit bedrijf, e-mailadres, onderwerp of mailtekst in.
-
-## Wat niet terugkomt
-
-Geen website-audits, problemenlijsten, leadscores, A/B-campagnes, CRM/outreach queues, sender-readiness, inbox-placement, tracking, automatische follow-ups of automatische verzending. Ook geen verplichte BV/NV-filter: een passende lokale eenmanszaak of vof mag binnen de doelgroep vallen.
-
-De historische uitsluitingen en HMAC-beveiliging blijven behouden. Een openbaar e-mailadres is geen automatische toestemming om commerciële mail te sturen; de menselijke controle blijft de laatste stap.
-
-Wetgeving: [Telecommunicatiewet art. 11.7](https://wetten.overheid.nl/BWBR0009950/2026-07-01) en [ACM spamregels](https://www.acm.nl/nl/verkoop-aan-consumenten/reclame-en-verleiden/spam-voorkomen-uw-reclame).
+Bronnen: [Telecommunicatiewet art. 11.7](https://wetten.overheid.nl/BWBR0009950) en [ACM](https://www.acm.nl/nl/telecom/zakelijk-abonnement-voor-bellen-en-internet/spam).
