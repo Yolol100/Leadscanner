@@ -112,3 +112,27 @@ jobs:
           LIMIT: ${{ inputs.limit }}
         run: |
           python3 scripts/trigger_request.py
+
+  private_review:
+    needs: test
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      startsWith(github.event.head_commit.message, 'LEADS_ENCRYPTED_REVIEW_ONLY:')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - run: python3 -m pip install -r requirements.txt
+      - name: Encrypt 30 deduplicated candidate identities (no public plaintext)
+        env:
+          PYTHONPATH: scripts
+          LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON || secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python3 scripts/private_review_export.py
