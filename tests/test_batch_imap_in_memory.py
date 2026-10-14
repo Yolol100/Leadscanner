@@ -146,6 +146,7 @@ class BatchIMAPSimulation(unittest.TestCase):
         session.get.return_value = response
         client = InMemoryIMAP()
         with patch("draft_queue_readonly.authorized_session", return_value=session), \
+             patch("draft_queue_readonly.is_public_http_url", return_value=True), \
              patch("myhost_draft.load_suppressions", return_value=[]), \
              patch("myhost_draft.connect_imap", return_value=client), \
              patch("myhost_draft.time.sleep", return_value=None):
