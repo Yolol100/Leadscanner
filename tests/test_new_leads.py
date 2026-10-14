@@ -65,8 +65,8 @@ class NewLeadsTests(unittest.TestCase):
 
     def test_legal_form_not_inferred_from_company_hint(self):
         old = load_registry_values([HEADERS, [
-            "Known Test", "https://known.example.org", "known.example.org",
-            "info@known.example.org", "sent", "", "", "", "", "TRUE",
+            "Known Test", "https://known.example.net", "known.example.net",
+            "info@known.example.net", "sent", "", "", "", "", "TRUE",
         ]])
         result = select_candidates({"candidates": [
             {"name_hint": "Fictieve Installaties BV", "website_hint": "https://example.org"},
