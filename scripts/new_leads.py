@@ -2,6 +2,7 @@
 import argparse
 from contextlib import redirect_stdout, redirect_stderr
 from io import StringIO
+from itertools import zip_longest
 import ipaddress
 import json
 import re
@@ -10,6 +11,14 @@ from urllib.parse import urlparse
 from dedupe_preflight import match_candidate, normalize_company, normalize_domain
 from overture_discovery import discover
 from registry_readonly import load_suppressions
+
+
+# Geographic sampling across all twelve provinces; NOT exhaustive NL coverage.
+NATIONAL_HUBS = (
+    "Groningen", "Leeuwarden", "Assen", "Zwolle", "Lelystad", "Arnhem",
+    "Utrecht", "Haarlem", "Den Haag", "Middelburg", "Eindhoven", "Maastricht",
+)
+NATIONAL_NAMES = {"nederland", "heel nederland", "netherlands", "nl"}
 
 
 def safe_hint(value):
@@ -74,7 +83,26 @@ def select_candidates(raw, registry, limit):
         if len(kept) >= limit:
             break
     counts["new_unverified_hints"] = len(kept)
-    return {"counts": counts, "candidates": kept, "emails_sent": 0, "mailbox_writes": 0}
+    counts["regions_scanned"] = int(raw.get("regions_scanned", 1))
+    return {"counts": counts, "candidates": kept, "emails_sent": 0, "mailbox_writes": 0,
+            "coverage": raw.get("coverage", "regional_sample")}
+
+
+def discover_sampled_netherlands(keywords, radius, scan_limit):
+    """Sample every province using a bounded Overture region. No complete-NL claim."""
+    per_region = min(70, max(25, (scan_limit + len(NATIONAL_HUBS) - 1) // len(NATIONAL_HUBS)))
+    groups = []
+    for centre in NATIONAL_HUBS:
+        response = discover(region=centre, bbox=None, radius_km=radius,
+                            keywords=keywords, max_results=per_region,
+                            require_website=True, probe_websites=False)
+        if not isinstance(response, dict) or not isinstance(response.get("candidates"), list):
+            raise RuntimeError("national_region_discovery_invalid")
+        groups.append(response["candidates"])
+    # Round-robin rather than global confidence sorting: geographic diversity.
+    hints = [item for group in zip_longest(*groups) for item in group if item is not None]
+    return {"candidates": hints, "regions_scanned": len(NATIONAL_HUBS),
+            "coverage": "12_regional_centre_samples_not_exhaustive"}
 
 
 def run(region, keywords, radius, limit):
@@ -87,9 +115,12 @@ def run(region, keywords, radius, limit):
         # Discover more hints than requested: previously contacted businesses
         # and duplicates must not exhaust the new-lead shortlist prematurely.
         scan_limit = min(5000, max(100, limit * 5))
-        raw = discover(region=region, bbox=None, radius_km=radius,
-                       keywords=keywords, max_results=scan_limit,
-                       require_website=True, probe_websites=False)
+        if region.casefold() in NATIONAL_NAMES:
+            raw = discover_sampled_netherlands(keywords, radius, scan_limit)
+        else:
+            raw = discover(region=region, bbox=None, radius_km=radius,
+                           keywords=keywords, max_results=scan_limit,
+                           require_website=True, probe_websites=False)
     return select_candidates(raw, registry, limit)
 
 
@@ -105,6 +136,7 @@ def main():
         result = run(args.region.strip(), [x.strip() for x in re.split("[,;]", args.keywords) if x.strip()],
                      args.radius_km, args.limit)
         print(json.dumps({"status": "green", "counts": result["counts"],
+                          "coverage": result["coverage"],
                           "identities_exposed": False, "emails_sent": 0}, sort_keys=True))
         return 0
     except Exception:
