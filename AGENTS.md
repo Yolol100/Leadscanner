@@ -1,9 +1,8 @@
-# Leadscanner — scope en veiligheid
+# Leadscanner — actieve grenzen
 
-Deze publieke repository levert **alleen ongeverifieerde bedrijfshints** via Overture Maps/PDOK en controleert ze tegen het volledige bestaande historische uitsluitingsregister.
-
-- **Fail closed:** ontbrekende of onvolledige live uitsluitingen (eerdere contacten, bounces, afmeldingen, HistoricalHmacV2 of sleutelkluis) stoppen discovery.
-- **Alleen tellingen openbaar:** geen namen, domeinen, adressen, e-mails, bron-URL's, concepten, secrets of contactrecords in GitHub commits, logs of artifacts.
-- **Geen mailsysteem:** geen IMAP, SMTP, DraftQueue, autoresponder, leadscore, websiteaudit, campagne of opvolgbericht.
-- De Leads Skill verifieert rechtsvorm, officieel contactadres, publicatiedoel, wettelijke contactbasis en menselijke review **buiten GitHub**. Openbare `info@` is geen toestemming.
-- Werk met een geteste branch/PR; laat de historische registry, privématerialen en bestaande rollbackgeschiedenis ongemoeid.
+- Zoek alleen lokale vakbedrijven uit het `vakbedrijven`-profiel; digitale/marketing/web/IT/software/consultancy en andere blocklist-sectoren zijn uitgesloten.
+- Lees vóór discovery het volledige historische uitsluitingsregister. Ontbreekt of conflicteert dit: stop.
+- Publieke GitHub-output bevat alleen anonieme tellingen en opaque draft-ID's; nooit prospectidentiteiten, e-mailadressen of mailtekst.
+- De enige mailboxactie is **Mijn.Host IMAP Drafts**: één privé queue-row lezen, `\Draft` opslaan, exact teruglezen. **Geen SMTP, send, follow-up, tracking of campagne.**
+- Een mens controleert het concept na opslag. De repo neemt nooit een verzendbesluit.
+- Verwijder of omzeil historische dedupe, bounces, opt-outs en HMAC-beveiliging nooit.
