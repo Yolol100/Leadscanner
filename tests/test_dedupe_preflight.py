@@ -106,7 +106,7 @@ class DedupePreflightTests(unittest.TestCase):
             "https://acme.nl",
             "acme.nl",
             "info@acme.nl",
-            "concept",
+            "uncontacted",
             "",
             "lead-1",
             "",
