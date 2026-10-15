@@ -91,6 +91,9 @@ class PublicHTML(HTMLParser):
         self.texts = []
         self.links = []
         self.mailto = []
+        self.named_links = []
+        self._active_mail = None
+        self._active_text = []
         self._ignore = 0
 
     def handle_starttag(self, tag, attrs):
@@ -100,17 +103,26 @@ class PublicHTML(HTMLParser):
         if tag == "a":
             href = (attrs.get("href") or "").strip()
             if href.startswith("mailto:"):
-                self.mailto.append(unquote(href[7:].split("?")[0]).strip().lower())
+                address = unquote(href[7:].split("?")[0]).strip().lower()
+                self.mailto.append(address)
+                self._active_mail = address
+                self._active_text = []
             elif href:
                 self.links.append(href)
 
     def handle_endtag(self, tag):
+        if tag == "a" and self._active_mail:
+            self.named_links.append((self._active_mail, " ".join(self._active_text).strip()))
+            self._active_mail = None
+            self._active_text = []
         if tag in {"script", "style"} and self._ignore:
             self._ignore -= 1
 
     def handle_data(self, data):
         if not self._ignore:
             self.texts.append(data)
+            if self._active_mail:
+                self._active_text.append(data)
 
 
 def _safe_same_site(url, host):
@@ -204,6 +216,7 @@ def verify_official_site(row, *, session=requests):
     if not any(word in content for word in BRANCH_PROOF[mapping[1]]):
         return None
     candidates = list(page.mailto)
+    named_links = list(page.named_links)
     candidates.extend(x.lower() for x in re.findall(
         r"(?<![a-z0-9._%+-])[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,63}", 
         " ".join(page.texts), re.I))
@@ -224,21 +237,35 @@ def verify_official_site(row, *, session=requests):
             sub = PublicHTML()
             sub.feed(inner)
             candidates.extend(sub.mailto)
+            named_links.extend(sub.named_links)
             candidates.extend(x.lower() for x in re.findall(
                 r"(?<![a-z0-9._%+-])[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,63}",
                 " ".join(sub.texts), re.I))
             contact_source = dest
     published = sorted({x for x in candidates if MAIL_RE.fullmatch(x)})
     general = [x for x in published if x.split("@")[0] in GENERAL]
-    # Named addresses require pairing to a verified person; deliberately
-    # reject inferred name/address combinations rather than fabricate a greeting.
-    if not general:
-        return None
-    chosen = next((x for x in general if x.startswith("info@")), general[0])
+    # Only a direct mailto link explicitly naming an owner/contact person
+    # proves the link between that person and the published address.
+    first = None
+    chosen = None
+    for email, label in named_links:
+        if not MAIL_RE.fullmatch(email) or not re.search(
+                r"\b(eigenaar|directeur|contactpersoon|owner)\b", label, re.I):
+            continue
+        person = re.match(r"^([A-ZÀ-ÿ][a-zà-ÿ-]{2,})\s+"
+                          r"(?:[a-z]{1,3}\s+)?[A-ZÀ-ÿ][A-Za-zÀ-ÿ'-]{2,}", label)
+        if person:
+            first, chosen = person.group(1), email
+            break
+    if chosen is None:
+        if not general:
+            return None
+        chosen = next((x for x in general if x.startswith("info@")), general[0])
+    greeting = f"Hoi {first}," if first else ("Hoi," if mapping[0] >= 5 else "Goedendag,")
     return {
         "company": name, "website": url, "email": chosen,
         "source_url": contact_source, "cluster": mapping[0],
         "branche_meervoud": mapping[1],
-        "greeting": "Hoi," if mapping[0] >= 5 else "Goedendag,",
+        "greeting": greeting,
         "status": "verified_website_and_email",
     }
