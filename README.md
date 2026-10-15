@@ -14,3 +14,10 @@
 - `LEADS_DRAFT_BATCH_ONLY: draft-<32hex>,draft-<32hex>,...` (2–100 ID's)
 
 Een gepubliceerd adres bewijst geen recht op ongevraagde commerciële e-mail. Controleer [Telecommunicatiewet art. 11.7](https://wetten.overheid.nl/BWBR0009950) en [ACM](https://www.acm.nl/nl/telecom/zakelijk-abonnement-voor-bellen-en-internet/spam).
+
+
+## Sneller bedrijfsonderzoek (optioneel)
+
+Gebruik **geen aparte Google-zoekopdracht per bekende bedrijfswebsite**. `fresh-leads.yml` vindt kandidaten al met Overture/PDOK en controleert de officiële website met een begrensde parallelle HTTP-verifier. Na die verificatie kan `.github/workflows/fast-website-evidence.yml` maximaal 100 bestaande privé-leads tegelijk voorzien van broncitaten en hints over reeds genoemde sitefuncties. Het resultaat wordt uitsluitend teruggelezen uit `WebsiteEvidence` in het bestaande privé Sheet; hergebruik gecontroleerde records tot 24 uur. Onzekerheden of een afwijkend e-maildomein blijven handmatig te controleren.
+
+De automatische mail-/IMAP-route verandert niet. De oude 450-taakscripts blijven bestaan zolang de afzonderlijke 450-chat actief is. Zie [opschoningsbesluit en gebruik](docs/leadscanner-cleanup-and-speed.md). De apart bestaande `browser-search`-repository is alleen een optionele zoekhulp, geen officiële bedrijfsverificatie.
