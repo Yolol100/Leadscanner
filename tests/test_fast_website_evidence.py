@@ -265,6 +265,38 @@ class FastOfficialEvidenceTests(unittest.TestCase):
                                         expected_email="info@voorbeeld.nl")
         self.assertNotIn("_captured_pages", got)
 
+    def test_scheduled_discovery_caps_requests_and_keeps_empty_approved(self):
+        import verified_fill
+        result = {"approved": [], "complete": False,
+                  "counts": {"sites_checked": 240, "approved": 0},
+                  "timings": {"total_s": 0.01},
+                  "emails_sent": 0, "mailbox_writes": 0}
+        from contextlib import redirect_stdout
+        from io import StringIO
+        with patch.dict("os.environ", {"GITHUB_EVENT_NAME": "schedule",
+                                       "REGION": "Nederland", "KEYWORDS": "vakbedrijven",
+                                       "RADIUS": "25"}), \
+             patch.object(verified_fill, "fill_verified", return_value=result) as discover, \
+             patch("approved_handoff.store_approved") as store, \
+             redirect_stdout(StringIO()) as output:
+            code = verified_fill.main()
+        self.assertEqual(code, 2)  # honest PARTIAL is never called complete
+        self.assertEqual(discover.call_args.kwargs["max_site_checks"], 240)
+        store.assert_not_called()
+        self.assertEqual(json.loads(output.getvalue())["approved_stored_privately"], 0)
+
+    def test_scheduled_automation_never_invokes_mailbox_transport(self):
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[1]
+        fast = (root / ".github/workflows/fast-website-evidence.yml").read_text()
+        new = (root / ".github/workflows/fresh-leads.yml").read_text()
+        self.assertIn("github.event_name == 'schedule'", fast)
+        self.assertIn("github.event_name == 'schedule'", new)
+        self.assertIn("LEADS_EVIDENCE_ONCE:", fast)
+        self.assertIn("LEAD_REGISTRY_SERVICE_ACCOUNT_JSON", fast)
+        self.assertNotIn("OUTREACH_MAIL_PASSWORD", fast + new)
+        self.assertNotIn("smtp", fast.lower() + new.lower())
+
     def test_final_readback_mismatch_blocks(self):
         client=Mock()
         client.post.return_value.status_code=200
