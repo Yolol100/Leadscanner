@@ -40,7 +40,8 @@ jobs:
         with:
           python-version: '3.12'
           cache: 'pip'
-      - run: python3 -m pip install -r requirements.txt
+          cache-dependency-path: requirements-draft.txt
+      - run: python3 -m pip install -r requirements-draft.txt
       - name: Draft-only synthetic tests
         env:
           PYTHONPATH: scripts
