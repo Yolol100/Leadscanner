@@ -51,6 +51,14 @@ DETAILS = {
     "garages": ("apk", "camperonderhoud", "bandenwissel"),
     "schilders": ("houtrotherstel", "kleuradvies", "restauratie"),
     "stukadoors": ("cinewall", "spuitwerk", "buitenstucwerk"),
+    # Do not infer a generic sales angle from a branch label. These are
+    # concrete, independently confirmable offers on the official website.
+    "logiesbedrijven": ("familiekamer", "fietsverhuur", "vergaderruimte",
+                        "ontbijtbuffet", "huisdieren toegestaan"),
+    "horecazaken": ("high tea", "brunch", "borrelplank", "live muziek",
+                    "catering"),
+    "sportscholen": ("personal training", "groepsles", "proefles", "pilates",
+                    "bootcamp"),
 }
 FEATURE_MENTIONS = {
     "booking": ("online boeken", "boek een afspraak", "afspraak maken", "boekingssysteem"),
