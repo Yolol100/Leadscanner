@@ -56,3 +56,23 @@ Vóór merge: sluit de concept-PR; `main` en alle bestaande private sheets blijv
 **Persoonlijke copy en Mijn.Host:** de automatische onderzoeksroute vult de feitenbron voor latere conceptvoorbereiding. De afzonderlijke Leads-tekstkwaliteit/IMAP-Drafts-flow behoudt de bron-, dedupe-, afmeld-, menselijke/legal-review- en issue-autorisatiepoorten uit de actieve Leads Skill. Deze wijziging **activeert niet** autonoom concepten opslaan in de mailbox, en wijzigt geen van de 450 bestaande mails. Volledig autonome inhoudelijke mailcreatie vergt een apart geautoriseerd bewijs- en kwaliteitscontract; het zou onjuist zijn deze stap als reeds volledig geautomatiseerd te melden.
 
 **Rollback:** schakel eerst beide schema-triggers uit of revert de geverifieerde squash-commit. De oorspronkelijke `Approved`, `Review450`, `LeadHistory`, Draft Queue en Mijn.Host worden niet verwijderd. Eventueel al geregistreerde historische suppressies niet resetten of opschonen. Een fout in één bewijsbatch mag geen ongeverifieerde bron als succes markeren.
+
+## Automatische eerste concepten voor uitsluitend NIEUWE leads
+
+Na de geplande maandag-run volgt in `fresh-leads.yml` de afzonderlijke `auto_first_drafts`-job. Er is geen menselijke startknop meer nodig voor nieuwe, aantoonbaar geschikte leads. Het normale klantenproces blijft: bedrijf vinden → officieel zakelijk e-mailadres → concept in Mijn.Host Drafts → menselijke eindcontrole. **Verzenden gebeurt nooit automatisch.**
+
+Harde selectie in `scripts/auto_draft_new.py`:
+
+- Alleen records uit het huidige `GITHUB_RUN_ID` in het privé `Approved`-snapshot, met `verified_website_and_email` en exact bijbehorende `LeadHistory`; geen herverwerking van de bestaande 57 of de historische 450
+- Alleen `WebsiteEvidence` met `verified_with_detail`, overeenkomende bron-/identiteitshash, minder dan 24 uur oude officiële bronpassage, bevestigde branche en direct gekoppeld zakelijk adres op hetzelfde domein
+- Alleen concrete diensttermen uit de expliciet onderhouden branchelijst. Een algemene branchevermelding of tekst met ontkenning wordt geblokkeerd. Niets wordt afgeleid uit afwezigheid van een knop/functie
+- Maximaal **25 nieuwe eerste concepten per geplande run** (veiligheidslimiet tijdens uitrol); zes vaste branchegerichte invalshoeken met één echte observatie, één bescheiden inhoudelijk voorbeeld, één CTA, verplichte afmelding en korte Andrew-afsluiting. Geen verzonnen resultaten, overname van bestaande boekingsfuncties of auto-marketing-score
+- Historische HMAC-suppressie én bestaande privé Draft Queue verhinderen dubbele adressen, bedrijven en domeinen. De canonieke historische `LeadHistory` wordt niet opgeschoond of gereset
+- Nieuwe `AutoDraftState` is een **technisch idempotentie-tabblad** in de bestaande privé Draft Queue, geen CRM of kennisbank. Toevoegen van DraftQueue-rijen en bijbehorende willekeurige opaque IDs gebeurt in één Sheets-transactie, gevolgd door exacte readback
+- Het bestaande `myhost_draft.create_batch_from_queue` gebruikt één IMAP-sessie en controleert per concept de `\\Draft`-flag en exacte inhoud. Bij herhaalde workflow-run worden bestaande IDs hergebruikt; **geen SMTP, verzending, nieuwsbrieven, tracking of follow-up**
+
+De vorige 450-mailchat en alle bestaande mailboxconcepten vallen expliciet buiten scope. De tekst is een eerste concept, **geen 10/10-garantie**; afzonderlijke menselijke redactie, toestemming, doelgroep- en wettelijke beoordeling blijven vereist. Bij onvoldoende uniek bronbewijs volgt geen automatisch concept. Alleen geanonimiseerde aantallen mogen in GitHub-logs verschijnen.
+
+**Runtimebewijs:** de afzonderlijke onderzoeksfunctie controleerde op 15 oktober 2026 57 officiële websites in 26,95 seconden: 46 geslaagde broncontroles, 11 handmatige controles; 10 specifieke dienstvermeldingen. De geplande nieuwe-conceptenworkflow is synthetisch getest, maar een daadwerkelijke geplande IMAP-run is nog niet uitgevoerd. Groene CI bewijst géén succesvolle echte toekomstige mailboxopslag.
+
+**Herstel:** GitHub Actions → `fresh-leads.yml` uitschakelen of revert van de merge schakelt zowel wekelijkse nieuwe-leadverzameling als nieuwe automatische Drafts uit. Schakel desgewenst alleen `auto_first_drafts` uit via een rollback-commit om onderzoek te behouden. Oude `Review450` en Mijn.Host-gegevens nooit wissen. Handmatige IMAP-/kwaliteitscontrole blijft eindpoort.

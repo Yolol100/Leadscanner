@@ -30,3 +30,5 @@ De automatische mail-/IMAP-route verandert niet. De oude 450-taakscripts blijven
 - **Maandag–vrijdag 07:17 UTC:** dezelfde privébron wordt met een 24-uurscache opnieuw gecontroleerd wanneer verouderd. Bronpassages en functie-vermeldingen zijn hints, geen bewezen ontbrekende features.
 - **Geen automatisch verzenden of aanpassen van de 450-mails**. Het maken van commerciële tekst/Mijn.Host-concepten behoudt de bestaande geautoriseerde Draft Queue en menselijke eindcontrole.
 - GitHub meldt alleen aantallen en webcontrole-latentie, geen prospectgegevens. Zie [precieze veiligheids- en terugvalvoorwaarden](docs/leadscanner-cleanup-and-speed.md).
+
+**Automatische nieuwe concepten:** de wekelijkse zoekrun maakt alleen voor nieuwe, officieel bevestigde bedrijven met een specifieke, bruikbare dienstvermelding maximaal 25 eerste concepten in de privé Mijn.Host Drafts aan. De nieuwe private `AutoDraftState` maakt opnieuw proberen idempotent; de bestaande 450 blijven onaangetast. De tekst vraagt altijd menselijke inhoudelijke én wettelijke eindcontrole; geen automatische verzending. Details en rollback: `docs/leadscanner-cleanup-and-speed.md`.
