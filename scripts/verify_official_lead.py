@@ -220,7 +220,7 @@ def verify_official_site(row, *, session=requests):
     candidates.extend(x.lower() for x in re.findall(
         r"(?<![a-z0-9._%+-])[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,63}", 
         " ".join(page.texts), re.I))
-    contact_source = url
+    source_by_email = {email: url for email in candidates}
     # Only a linked, same-domain contact/about page, never a generic site crawl.
     links = []
     for href in page.links:
@@ -236,12 +236,13 @@ def verify_official_site(row, *, session=requests):
         if inner is not None:
             sub = PublicHTML()
             sub.feed(inner)
-            candidates.extend(sub.mailto)
-            named_links.extend(sub.named_links)
-            candidates.extend(x.lower() for x in re.findall(
+            discovered = list(sub.mailto)
+            discovered.extend(x.lower() for x in re.findall(
                 r"(?<![a-z0-9._%+-])[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,63}",
                 " ".join(sub.texts), re.I))
-            contact_source = dest
+            candidates.extend(discovered)
+            named_links.extend(sub.named_links)
+            source_by_email.update({email: dest for email in discovered})
     published = sorted({x for x in candidates if MAIL_RE.fullmatch(x)})
     general = [x for x in published if x.split("@")[0] in GENERAL]
     # Only a direct mailto link explicitly naming an owner/contact person
@@ -264,7 +265,7 @@ def verify_official_site(row, *, session=requests):
     greeting = f"Hoi {first}," if first else ("Hoi," if mapping[0] >= 5 else "Goedendag,")
     return {
         "company": name, "website": url, "email": chosen,
-        "source_url": contact_source, "cluster": mapping[0],
+        "source_url": source_by_email[chosen], "cluster": mapping[0],
         "branche_meervoud": mapping[1],
         "greeting": greeting,
         "status": "verified_website_and_email",
