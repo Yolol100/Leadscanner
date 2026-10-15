@@ -8,7 +8,7 @@ jobs:
   final_copy:
     if: github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'LEADS_FINALIZE450_ONLY:')
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 25
     concurrency:
       group: leads-private-candidates
       cancel-in-progress: false
@@ -29,9 +29,11 @@ jobs:
         run: |
           python3 -m compileall -q scripts
           python3 -m unittest discover -s tests -p 'test_review450*.py' -q
-      - name: Final private copy pass - only for a complete 450 table
+      - name: Final private source-scope and copy pass - exact 450 only
         env:
           PYTHONPATH: scripts
           REVIEW450_PHASE: final_copy
           LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON || secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-        run: python3 scripts/review450_finalcopy.py
+        run: |
+          python3 scripts/review450_supplement.py
+          python3 scripts/review450_finalcopy.py
