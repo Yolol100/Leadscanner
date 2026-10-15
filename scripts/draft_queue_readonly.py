@@ -15,6 +15,14 @@ DRAFT_ID_RE = re.compile(r"^draft-[0-9a-f]{32}$")
 EMAIL_LOCAL_RE = re.compile(r"^[a-z0-9._%+\-]+$", re.I)
 EMAIL_LABEL_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$", re.I)
 UNFILLED_PLACEHOLDER_RE = re.compile(r"\[[^\[\]\n]{1,64}\]|\{\{|\}\}")
+# Only known, candidate-local validation failures may be skipped in a batch.
+# Missing IDs, duplicate IDs, malformed sheet data and system faults remain fatal.
+SKIPPABLE_ROW_ERRORS = frozenset({
+    "draft_queue_company_invalid", "draft_queue_email_invalid",
+    "draft_queue_source_url_invalid", "draft_queue_subject_invalid",
+    "draft_queue_body_invalid", "draft_queue_unfilled_placeholder",
+    "draft_queue_body_word_limit_exceeded",
+})
 
 
 def valid_general_email(value: str) -> bool:
@@ -111,8 +119,8 @@ def _validate_row(row: dict[str, str]) -> dict[str, str]:
     }
 
 
-def load_drafts(draft_ids: list[str], session=None) -> list[dict[str, str]]:
-    """Fetch up to 100 exact private queue entries with ONE authorized Sheets read."""
+def load_drafts(draft_ids: list[str], session=None, *, skip_invalid: bool = False) -> list[dict[str, str]]:
+    """Fetch up to 100 exact IDs once; optionally skip candidate-local bad fields."""
     if not isinstance(draft_ids, list) or not 1 <= len(draft_ids) <= 100:
         raise RuntimeError("draft_batch_size_invalid")
     ids = [_text(item).casefold() for item in draft_ids]
@@ -125,6 +133,7 @@ def load_drafts(draft_ids: list[str], session=None) -> list[dict[str, str]]:
         raise RuntimeError("draft_queue_headers_invalid")
     wanted = set(ids)
     matches: dict[str, dict[str, str]] = {}
+    seen: set[str] = set()
     for raw in values[1:]:
         if not isinstance(raw, list) or len(raw) > len(HEADERS):
             raise RuntimeError("draft_queue_row_shape_invalid")
@@ -133,12 +142,18 @@ def load_drafts(draft_ids: list[str], session=None) -> list[dict[str, str]]:
         key = _text(row.get("draft_id")).casefold()
         if key not in wanted:
             continue
-        if key in matches:
+        if key in seen:
             raise RuntimeError("draft_queue_id_missing_or_duplicate")
-        matches[key] = _validate_row(row)
-    if len(matches) != len(ids):
+        seen.add(key)
+        try:
+            matches[key] = _validate_row(row)
+        except RuntimeError as exc:
+            if not skip_invalid or str(exc) not in SKIPPABLE_ROW_ERRORS:
+                raise
+            # A rejected candidate never reaches the mailbox.
+    if len(seen) != len(ids):
         raise RuntimeError("draft_queue_id_missing_or_duplicate")
-    return [matches[key] for key in ids]
+    return [matches[key] for key in ids if key in matches]
 
 
 def load_draft(draft_id: str, session=None) -> dict[str, str]:
