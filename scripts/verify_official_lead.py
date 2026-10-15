@@ -37,28 +37,38 @@ CATEGORIES = {
     "bakery": (3, "bakkerijen"), "butcher": (3, "slagerijen"),
     "hotel": (3, "logiesbedrijven"), "bicycle store": (3, "fietsenwinkels"),
     "auto repair": (4, "garages"), "car repair": (4, "garages"),
-    "vehicle repair": (4, "garages"), "towing service": (4, "sleepdiensten"),
+    "vehicle repair": (4, "garages"), "towing service": (4, "pechhulpbedrijven"),
     "veterinarian": (5, "dierenartsen"), "veterinary clinic": (5, "dierenartsen"),
     "physical therapy": (5, "fysiotherapiepraktijken"),
     "physiotherapist": (5, "fysiotherapiepraktijken"),
-    "pet sitter": (5, "dierenoppassers"), "funeral home": (5, "uitvaartondernemers"),
+    "pet sitter": (5, "dierenoppassers"), "funeral home": (5, "uitvaartbedrijven"),
     "bicycle repair": (6, "reparatiebedrijven"), "appliance repair service": (6, "reparatiebedrijven"),
     "electronics repair shop": (6, "reparatiebedrijven"),
-    "laundromat": (6, "wasserijen"), "dry cleaner": (6, "stomerijen"),
+    "laundromat": (6, "wasserijen"), "dry cleaner": (6, "wasserijen"),
 }
 GENERAL = ("info", "contact")
 # Require proof of the actual service on the official site, not an Overture label alone.
-ACTIVITY_PROOF = {
-    1: ("schilder", "hovenier", "loodgiet", "elektricien", "dakdek",
-        "timmer", "stukadoor", "schoonmaak", "glasbewassing", "boomverzorg",
-        "bouwbedrijf", "aannemer", "tegelzet"),
-    2: ("kapper", "kapsalon", "barber", "beauty", "schoonheid", "nagel",
-        "rijschool", "fitness", "sport", "gym"),
-    3: ("bloemist", "bloemen", "restaurant", "horeca", "cafe", "bakker",
-        "slager", "hotel", "fietsenwinkel"),
-    4: ("autogarage", "garage", "autoreparatie", "pechhulp", "sleepdienst"),
-    5: ("dierenarts", "veterinair", "fysiotherap", "dierenoppas", "uitvaart"),
-    6: ("fietsreparatie", "reparatie", "witgoed", "wasserij", "stomerij"),
+BRANCH_PROOF = {
+    "schilders": ("schilder",), "hoveniers": ("hovenier", "tuinaanleg", "tuinonderhoud"),
+    "loodgieters": ("loodgieter",), "elektriciens": ("elektricien",),
+    "timmerbedrijven": ("timmer",), "dakdekkers": ("dakdek",),
+    "stukadoors": ("stukadoor",), "tegelzetters": ("tegelzet",),
+    "aannemers": ("aannemer", "bouwbedrijf"), "glazenwassers": ("glazenwass",),
+    "schoonmaakbedrijven": ("schoonmaak",), "boomverzorgers": ("boomverzorg",),
+    "kappers": ("kapper", "kapsalon", "barber"), "schoonheidssalons": ("schoonheid", "beauty", "nagel"),
+    "rijscholen": ("rijschool",), "sportscholen": ("sportschool", "fitness", "gym"),
+    "bloemisten": ("bloemist", "bloemen"), "restaurants": ("restaurant",),
+    "horecazaken": ("horeca", "cafe", "lunchroom"), "bakkerijen": ("bakker",),
+    "slagerijen": ("slager",), "logiesbedrijven": ("hotel", "overnacht", "logies"),
+    "fietsenwinkels": ("fietsenwinkel", "fietsverkoop", "tweewieler"),
+    "garages": ("autogarage", "garage", "autoreparatie"),
+    "pechhulpbedrijven": ("pechhulp", "sleepdienst"),
+    "dierenartsen": ("dierenarts", "dierenkliniek", "veterinair"),
+    "fysiotherapiepraktijken": ("fysiotherap",),
+    "dierenoppassers": ("dierenoppas", "petsitter"),
+    "uitvaartbedrijven": ("uitvaart",),
+    "reparatiebedrijven": ("reparatie", "fietsherstel", "witgoed", "elektronica"),
+    "wasserijen": ("wasserij", "stomerij"),
 }
 MAIL_RE = re.compile(r"^[a-z0-9._%+\-]{1,64}@[a-z0-9.-]+\.[a-z]{2,63}$", re.I)
 NAME_TERMS = {"bedrijf", "bedrijven", "bv", "b.v.", "vof", "van", "de", "het", "en", "the", "groep"}
@@ -191,7 +201,7 @@ def verify_official_site(row, *, session=requests):
         return None
     if is_blocked_place(norm(name), norm(row.get("category_hint"))):
         return None
-    if not any(word in content for word in ACTIVITY_PROOF[mapping[0]]):
+    if not any(word in content for word in BRANCH_PROOF[mapping[1]]):
         return None
     candidates = list(page.mailto)
     candidates.extend(x.lower() for x in re.findall(
