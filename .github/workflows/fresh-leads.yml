@@ -1,5 +1,8 @@
 name: Fresh Leads — alleen anonieme bedrijfshints
 on:
+  schedule:
+    # Bounded weekly official-site discovery, never an email sender.
+    - cron: '23 6 * * 1'
   push:
     branches: [main]
   pull_request:
@@ -39,7 +42,7 @@ permissions:
 jobs:
   test:
     # PR/push CI validates production code. Avoid repeating the full suite on every manual lookup.
-    if: github.event_name != 'workflow_dispatch'
+    if: github.event_name != 'workflow_dispatch' && github.event_name != 'schedule'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -63,7 +66,7 @@ jobs:
     if: >-
       always() && !cancelled() &&
       (needs.test.result == 'success' ||
-       (github.event_name == 'workflow_dispatch' && needs.test.result == 'skipped')) &&
+       ((github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') && needs.test.result == 'skipped')) &&
       github.ref == 'refs/heads/main' &&
       ((github.event_name == 'workflow_dispatch' && inputs.execution_mode == 'preflight') ||
        (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'LEADS_PREFLIGHT_ONLY:')))
@@ -103,9 +106,10 @@ jobs:
     if: >-
       always() && !cancelled() &&
       (needs.test.result == 'success' ||
-       (github.event_name == 'workflow_dispatch' && needs.test.result == 'skipped')) &&
+       ((github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') && needs.test.result == 'skipped')) &&
       github.ref == 'refs/heads/main' &&
-      ((github.event_name == 'workflow_dispatch' && contains(fromJSON('["discover","fill_100"]'), inputs.execution_mode)) ||
+      ((github.event_name == 'schedule') ||
+       (github.event_name == 'workflow_dispatch' && contains(fromJSON('["discover","fill_100"]'), inputs.execution_mode)) ||
        (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'LEADS_DISCOVERY_ONLY:')))
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -128,10 +132,10 @@ jobs:
         env:
           PYTHONPATH: scripts
           LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON || secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-          EXECUTION_MODE: ${{ inputs.execution_mode }}
-          REGION: ${{ inputs.region }}
-          KEYWORDS: ${{ inputs.keywords }}
-          RADIUS: ${{ inputs.radius_km }}
+          EXECUTION_MODE: ${{ github.event_name == 'schedule' && 'fill_100' || inputs.execution_mode }}
+          REGION: ${{ github.event_name == 'schedule' && 'Nederland' || inputs.region }}
+          KEYWORDS: ${{ github.event_name == 'schedule' && 'vakbedrijven' || inputs.keywords }}
+          RADIUS: ${{ github.event_name == 'schedule' && '25' || inputs.radius_km }}
           LIMIT: ${{ inputs.limit }}
         run: |
           if [ "$EXECUTION_MODE" = "fill_100" ]; then
