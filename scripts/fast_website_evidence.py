@@ -177,11 +177,21 @@ def _has(text, phrase):
 
 
 def _excerpt(text, phrase):
-    match = re.search(re.escape(phrase), text, re.I)
-    if not match:
-        # Accents or casing may differ in the normalization-aware matcher.
-        return ""
-    return re.sub(r"\s+", " ", text[max(0, match.start()-35):match.end()+85]).strip()[:150]
+    """Return the supported literal mention, never the first denied mention.
+
+    _has() may skip a negative first occurrence and accept a later positive
+    one. The extracted quote must follow that same decision, not re-search
+    from the beginning and accidentally save the negated sentence.
+    """
+    pattern = r"\b" + re.escape(phrase) + r"[a-zA-ZÀ-ÿ]*\b"
+    for match in re.finditer(pattern, text, re.I):
+        before = norm(text[max(0, match.start()-90):match.start()])
+        if re.search(r"\b(geen|niet|no|not)\b(?:\s+\w+){0,3}\s*$", before):
+            continue
+        last_boundary = max(text.rfind(mark, 0, match.start()) for mark in ".?!\n")
+        start = max(last_boundary + 1, match.start()-35)
+        return re.sub(r"\s+", " ", text[start:match.end()+85]).strip()[:150]
+    return ""
 
 
 def _mentions(pages, words, limit):
