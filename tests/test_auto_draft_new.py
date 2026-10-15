@@ -336,6 +336,39 @@ class AutomaticDraftSafetyTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "source_shape_invalid"):
             a._read(session, a.DRAFT_QUEUE_ID, "AutoDraftState!A:E")
 
+    def test_live_candidate_quality_audit_is_read_only_and_anonymous(self):
+        row = approved()
+        site = fact()
+        approved_rows = [list(a.APPROVED_HEADERS),
+                         [row[h] for h in a.APPROVED_HEADERS]]
+        evidence_rows = [list(a.EVIDENCE_HEADERS),
+                         [str(site.get(h, "")) for h in a.EVIDENCE_HEADERS]]
+        conn = Mock()
+        with patch.object(a, "_read", side_effect=[
+                  approved_rows, evidence_rows]) as reads, \
+             patch.object(a, "create_batch_from_queue") as mailbox:
+            result = a.audit_existing_sources(conn=conn)
+        self.assertEqual(result["status"], "read_only_proof_audit")
+        self.assertEqual(result["approved_source_rows"], 1)
+        self.assertEqual(result["content_candidates_before_dedupe"], 1)
+        self.assertEqual(result["sent"], 0)
+        self.assertEqual(result["mailbox_writes"], 0)
+        self.assertEqual(reads.call_count, 2)
+        conn.post.assert_not_called()
+        mailbox.assert_not_called()
+        self.assertNotIn("Hovenier", str(result))
+        self.assertNotIn("@", str(result))
+
+    def test_read_only_quality_audit_marks_no_unsupported_candidates(self):
+        row = approved()
+        content = [list(a.APPROVED_HEADERS),
+                   [row[h] for h in a.APPROVED_HEADERS]]
+        with patch.object(a, "_read", side_effect=[
+                  content, [list(a.EVIDENCE_HEADERS)]]):
+            result = a.audit_existing_sources(conn=Mock())
+        self.assertEqual(result["content_candidates_before_dedupe"], 0)
+        self.assertEqual(result["skipped_for_evidence_or_copy"], 1)
+
     def test_live_preflight_only_initializes_private_state_metadata(self):
         client = Mock()
         client.post.return_value.status_code = 200
