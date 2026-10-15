@@ -51,6 +51,21 @@ class ScheduleHealthTests(unittest.TestCase):
                                     "discover", now, [run()],
                                     lambda _: ok_jobs())["status"], "ok")
 
+    def test_green_discovery_without_drafts_job_is_not_success(self):
+        now = datetime(2026, 10, 19, 14, tzinfo=UTC)
+        jobs = [{"name": "discover", "status": "completed",
+                 "conclusion": "success"}]
+        missing = h.evaluate("fresh-leads.yml", (0,), 6, 23,
+                             ("discover", "auto_first_drafts"), now,
+                             [run()], lambda _: jobs)
+        self.assertEqual(missing["status"], "required_job_not_successful")
+        jobs.append({"name": "auto_first_drafts", "status": "completed",
+                     "conclusion": "success"})
+        complete = h.evaluate("fresh-leads.yml", (0,), 6, 23,
+                              ("discover", "auto_first_drafts"), now,
+                              [run()], lambda _: jobs)
+        self.assertEqual(complete["status"], "ok")
+
     def test_concluded_failure_is_never_accepted_as_green(self):
         now = datetime(2026, 10, 19, 14, tzinfo=UTC)
         got = h.evaluate("fresh-leads.yml", (0,), 6, 23, "discover", now,
