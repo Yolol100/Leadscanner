@@ -7,6 +7,8 @@
 
 **Beveiliging:** Overture/PDOK levert uitsluitend onverifieerde bedrijfshints via het privé Candidates-blad. Historische dedupe, bounces en opt-outs blokkeren contact. GitHub bevat uitsluitend anonieme aantallen en willekeurige draft-ID's; nooit bedrijfs- of e-mailgegevens. Geen SMTP, websitescan, score, CRM, tracking, campagne of follow-up. Tot 100 unieke concepten per batch; één Sheets-read, register-read en IMAP-sessie, met readback per concept.
 
+**Snelste veilige bulkroute:** start de bestaande GitHub Actions-workflow `Fresh Leads` met `execution_mode=discover` (tot 100 **onbevestigde** bedrijfshints per run in het privé Candidates-blad). Verifieer per bedrijf de officiële website, branche en het daar gepubliceerde zakelijke adres, en toets daarna de **volledige** historische uitsluitingslijst inclusief HMAC vóór het schrijven naar de privé Draft Queue. Vul de selectie zo nodig vanuit een volgende discovery-run aan tot 50 **echt geverifieerde** bedrijven. Trigger vervolgens bij voorkeur **één** `LEADS_DRAFT_BATCH_ONLY` met 2–100 unieke, anonieme IDs en wacht op `MYHOST_DRAFT=green`. Een ongeldige of uitgesloten kandidaat kan nog steeds de volledige batch veilig blokkeren; herstel dan alleen de getroffen privé-queue-items en probeer dezelfde IDs opnieuw (idempotent), nooit uitsluitingen omzeilen. De GitHub-wachtrij behoudt nu wachtende runs, maar losse overlappende triggers blijven onnodig traag. Geen verzending.
+
 **Geautoriseerde trigger:** GitHub-issue [#1659](https://github.com/Yolol100/Leadscanner/issues/1659), uitsluitend:
 - `LEADS_DRAFT_ONLY: draft-<32hex>`
 - `LEADS_DRAFT_BATCH_ONLY: draft-<32hex>,draft-<32hex>,...` (2–100 ID's)
