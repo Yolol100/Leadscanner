@@ -346,9 +346,24 @@ def scheduled_draft_run(run_id, *, conn=None, mailbox=create_batch_from_queue,
         raise RuntimeError("autodraft_state_duplicate_or_invalid")
     # Idempotent resume: only known auto IDs are replayed after an IMAP fault.
     if previous:
-        all_ids = {r["draft_id"] for r in queue_rows}
-        if not set(ids).issubset(all_ids):
+        queue_by_id = {r["draft_id"]: r for r in queue_rows}
+        if len(queue_by_id) != len(queue_rows) or not set(ids).issubset(queue_by_id):
             raise RuntimeError("autodraft_queued_ids_missing")
+        source_by_identity = {_identity(r): r for r in approved}
+        if len(source_by_identity) != len(approved):
+            raise RuntimeError("autodraft_duplicate_current_identity")
+        for saved in previous:
+            source = source_by_identity.get(saved["identity_sha256"])
+            row = queue_by_id[saved["draft_id"]]
+            if (source is None or
+                saved["quality_status"] != "source_verified_human_review_required" or
+                saved["source_sha256"] != evidence_digest([
+                    source["company"], source["website"], source["email"],
+                    source["branche_meervoud"]]) or
+                row["company"] != source["company"] or
+                row["email"].casefold() != source["email"].casefold() or
+                row["source_url"] != source["source_url"]):
+                raise RuntimeError("autodraft_resume_provenance_mismatch")
         mailbox_result = mailbox(ids) if ids else {}
         return {"status": "resumed", "prepared": len(ids),
                 "stored": mailbox_result.get("created", 0) +
