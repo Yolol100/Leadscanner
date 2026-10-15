@@ -24,10 +24,16 @@ class ScheduleHealthTests(unittest.TestCase):
         out = h.check_all(now, api=Mock(side_effect=AssertionError("No API")))
         self.assertEqual([x["status"] for x in out], ["not_due", "not_due"])
 
-    def test_weekend_does_not_require_an_unplanned_run(self):
+    def test_weekend_never_invents_an_extra_run(self):
+        # On a weekend the last REQUIRED weekday is Friday; it remains
+        # eligible for health checks even though no new run is expected.
         now = datetime(2026, 10, 18, 18, tzinfo=UTC)
-        out = h.check_all(now, api=Mock(side_effect=AssertionError("No API")))
-        self.assertEqual([x["status"] for x in out], ["not_due", "not_due"])
+        def api(path):
+            if "/jobs?" in path:
+                return {"jobs": ok_jobs("research")}
+            return {"workflow_runs": [run(day="2026-10-16T07:22:00Z")]}
+        out = h.check_all(now, api=api)
+        self.assertEqual([x["status"] for x in out], ["not_due", "ok"])
 
     def test_missing_monday_discovery_is_detected_after_grace(self):
         now = datetime(2026, 10, 19, 14, tzinfo=UTC)
