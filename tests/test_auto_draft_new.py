@@ -110,7 +110,9 @@ class AutomaticDraftSafetyTests(unittest.TestCase):
     def test_private_state_replay_calls_existing_imap_readback_no_append(self):
         state = {"auto_run_id": "777", "draft_id": "draft-" + "1"*32,
                  "identity_sha256": a._identity(approved()),
-                 "source_sha256": "abc",
+                 "source_sha256": e._digest([
+                    approved()["company"], approved()["website"],
+                    approved()["email"], approved()["branche_meervoud"]]),
                  "quality_status": "source_verified_human_review_required"}
         existing = queue_row()
         state_raw = [a.STATE_HEADERS, [state[h] for h in a.STATE_HEADERS]]
@@ -127,10 +129,29 @@ class AutomaticDraftSafetyTests(unittest.TestCase):
         mail.assert_called_once_with([state["draft_id"]])
         new_write.assert_not_called()
 
+    def test_tampered_resume_cannot_open_wrong_mailbox_draft(self):
+        state = {"auto_run_id": "777", "draft_id": "draft-" + "1"*32,
+                 "identity_sha256": "unrelated-identity",
+                 "source_sha256": "tampered",
+                 "quality_status": "source_verified_human_review_required"}
+        data = [a.STATE_HEADERS, [state[h] for h in a.STATE_HEADERS]]
+        q = queue_row()
+        queue = [a.DRAFT_HEADERS, [q[h] for h in a.DRAFT_HEADERS]]
+        mailbox = Mock()
+        with patch.object(a, "_load_latest", return_value=(
+                    [approved()], evidence(), [["snapshot"]])), \
+             patch.object(a, "_state_id", return_value=(1,2)), \
+             patch.object(a, "_read", side_effect=[queue,data]):
+            with self.assertRaisesRegex(RuntimeError, "resume_provenance_mismatch"):
+                a.scheduled_draft_run("777", conn=Mock(), mailbox=mailbox)
+        mailbox.assert_not_called()
+
     def test_missing_queue_id_blocks_resume(self):
         state = {"auto_run_id": "777", "draft_id": "draft-" + "1"*32,
                  "identity_sha256": a._identity(approved()),
-                 "source_sha256": "abc",
+                 "source_sha256": e._digest([
+                    approved()["company"], approved()["website"],
+                    approved()["email"], approved()["branche_meervoud"]]),
                  "quality_status": "source_verified_human_review_required"}
         state_raw = [a.STATE_HEADERS, [state[h] for h in a.STATE_HEADERS]]
         with patch.object(a, "_load_latest", return_value=(
