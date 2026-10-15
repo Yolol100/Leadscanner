@@ -1,27 +1,23 @@
-name: Mijn.Host 450 - explicit replacement
+name: Mijn.Host 450 - read-only inventory (install disabled)
 on:
   push:
     branches: [main]
   workflow_dispatch:
     inputs:
-      phase:
-        description: Read-only inventory or approved replacement
-        type: choice
-        required: true
-        options: [inspect, install]
       confirmation:
-        description: Exact user-authorized task identity
+        description: Read-only historical inventory identity
         type: string
         required: true
 permissions:
   contents: read
 jobs:
   mailbox:
+    # Intentionally no install trigger. A separate human-approved security review
+    # is required before any mailbox replacement can ever be re-enabled.
     if: >-
       github.ref == 'refs/heads/main' &&
       ((github.event_name == 'push' &&
-        (startsWith(github.event.head_commit.message, 'LEADS_INSPECT450_ONLY:') ||
-         startsWith(github.event.head_commit.message, 'LEADS_INSTALL450_ONLY:'))) ||
+        startsWith(github.event.head_commit.message, 'LEADS_INSPECT450_ONLY:')) ||
        (github.event_name == 'workflow_dispatch' && inputs.confirmation == 'review450-20261015'))
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -45,11 +41,11 @@ jobs:
         run: |
           python3 -m compileall -q scripts
           python3 -m unittest discover -s tests -p 'test_*.py' -q
-      - name: Only the explicitly authorized task phase
+      - name: Read-only 450 inventory; replacement remains disabled
         env:
           PYTHONPATH: scripts
           MAILBOX450_TASK: review450-20261015
-          MAILBOX450_PHASE: ${{ github.event_name == 'push' && (startsWith(github.event.head_commit.message, 'LEADS_INSTALL450_ONLY:') && 'install' || 'inspect') || inputs.phase }}
+          MAILBOX450_PHASE: inspect
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON }}
           OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
