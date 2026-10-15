@@ -251,26 +251,30 @@ def inspect_verified(record, official, pages):
 
 def inspect(record):
     """One HTTP verification pass, reusing already-parsed official text."""
-    reverse = {}
-    for category, (_, branch) in CATEGORIES.items():
-        reverse.setdefault(branch, category)
-    category = reverse.get(record["branch"])
-    if not category:
-        result = _initial_result(record)
-        result["reason"] = "unsupported_branch"
-        return result
-    hint = {"name_hint": record["company"], "website_hint": record["website"],
-            "category_hint": category, "country_hint": "NL"}
+    started = time.monotonic()
+    result = _initial_result(record)
     try:
-        with requests.Session() as session:
-            official = verify_official_site(hint, session=session,
-                        expected_email=record["email"], collect_evidence=True)
-        return inspect_verified(record, official,
+        reverse = {}
+        for category, (_, branch) in CATEGORIES.items():
+            reverse.setdefault(branch, category)
+        category = reverse.get(record["branch"])
+        if not category:
+            result["reason"] = "unsupported_branch"
+        else:
+            hint = {"name_hint": record["company"], "website_hint": record["website"],
+                    "category_hint": category, "country_hint": "NL"}
+            with requests.Session() as session:
+                official = verify_official_site(
+                    hint, session=session, expected_email=record["email"],
+                    collect_evidence=True)
+            result = inspect_verified(record, official,
                      official.get("_captured_pages", []) if official else [])
     except Exception:
         result = _initial_result(record)
         result["reason"] = "bounded_official_site_request_failed"
-        return result
+    result["_check_duration_ms"] = round(
+        (time.monotonic() - started) * 1000)
+    return result
 
 
 def _cache_id(conn):
@@ -353,11 +357,18 @@ def run(source, batch=1, *, conn=None, worker=inspect, force=False):
         raise RuntimeError("evidence_source_changed_during_scan")
     if checked:
         _persist(conn, tab_id, existing, checked)
+    durations = sorted(
+        x["_check_duration_ms"] for x in checked
+        if isinstance(x.get("_check_duration_ms"), int)
+        and 0 <= x["_check_duration_ms"] <= 3600000)
+    n = len(durations)
     return {
         "requested": len(candidates), "website_checks": len(checked),
         "reused_recent": len(reused),
         "verified": sum(x["status"].startswith("verified_") for x in checked) + len(reused),
         "needs_manual_check": sum(not x["status"].startswith("verified_") for x in checked),
+        "duration_p50_ms": durations[(n - 1) // 2] if n else None,
+        "duration_p95_ms": durations[max(0, (n * 95 + 99) // 100 - 1)] if n else None,
         "seconds": round(time.monotonic() - start, 2),
         "mailbox_writes": 0, "emails_sent": 0,
     }
