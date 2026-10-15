@@ -12,15 +12,15 @@ class CopyQuality(unittest.TestCase):
             "draft_id":"draft-"+"a"*32,
             "created_at":"2026-10-15T17:00:00+00:00",
             "company":"Testrestaurant Voorbeeld",
-            "email":"info@voorbeeld.invalid",
-            "source_url":"https://voorbeeld.invalid/contact/",
+            "email":"info@voorbeeld.nl",
+            "source_url":"https://voorbeeld.nl/contact/",
             "subject":"Lunch bij Testrestaurant Voorbeeld",
             "body":"Goedendag,\n\nJullie website noemt lunch.\n\nIk kan een voorbeeld maken.\n\n"
                   "Mag ik een kort voorbeeld sturen?\n\n"+b.OPT+"\n\nGroet,\nAndrew",
-            "website":"https://voorbeeld.invalid/",
+            "website":"https://voorbeeld.nl/",
             "cluster":"3",
             "branch":"restaurants",
-            "evidence_url":"https://voorbeeld.invalid/",
+            "evidence_url":"https://voorbeeld.nl/",
             "evidence":"Letterlijke dienstterm: restaurant; Nederlandse postcode op de officiele site bevestigd.",
             "origin":"reverified",
             "qa_status":"verified_website_email_copy",
@@ -31,7 +31,7 @@ class CopyQuality(unittest.TestCase):
     def test_source_specific_two_features(self):
         row=self.row()
         features,rank=c.topics_from_verified_pages(row,[
-            ("https://voorbeeld.invalid/","Restaurant: Onze rijsttafels, afhalen en sushi staan op het menu.")])
+            ("https://voorbeeld.nl/","Restaurant: Onze rijsttafels, afhalen en sushi staan op het menu.")])
         self.assertEqual(features[:2],["rijsttafels","sushi"])
         self.assertEqual(rank,2)
 
@@ -64,8 +64,8 @@ class CopyQuality(unittest.TestCase):
         row["origin"]="review50_reverified_v3"
         qa=["1",row["draft_id"]]+[""]*11+["INHOUDELIJK_BIJNA_GOED_DETAILCHECK_NODIG"]+[""]*2
         qa[4]="8.6"
-        with patch.object(c,"capture_official",return_value=([("https://voorbeeld.invalid/","lunch")],
-                                                              "https://voorbeeld.invalid/",
+        with patch.object(c,"capture_official",return_value=([("https://voorbeeld.nl/","lunch")],
+                                                              "https://voorbeeld.nl/",
                                                               "BRON_EN_ADRES_BEVESTIGD")):
             result=c.evaluate(1,row,qa)
         self.assertEqual(result[9],row["body"])
@@ -73,7 +73,7 @@ class CopyQuality(unittest.TestCase):
 
     def test_safe_domain_root_only_no_third_party_redirect(self):
         urls=c.candidate_urls(self.row())
-        self.assertTrue(all("voorbeeld.invalid" in u for u in urls))
+        self.assertTrue(all("voorbeeld.nl" in u for u in urls))
         self.assertLessEqual(len(urls),3)
 
     def test_all_five_phase_boundaries(self):
