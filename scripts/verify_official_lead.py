@@ -195,15 +195,25 @@ def _robots_policy(base_url, session):
     if not _safe_same_site(robots_url, host):
         return None
     try:
-        response = session.get(robots_url, timeout=TIMEOUT,
+        # Stream and bound robots.txt before materializing it in memory.
+        # Unbounded response.content could download a huge malicious file.
+        response = session.get(robots_url, timeout=TIMEOUT, stream=True,
                                headers={"User-Agent": AGENT}, allow_redirects=False)
-        if response.status_code == 404:
-            return True
-        if response.status_code != 200 or len(response.content) > 100_000:
-            return None
-        parser = RobotFileParser()
-        parser.parse(response.text.splitlines())
-        return parser
+        try:
+            if response.status_code == 404:
+                return True
+            if response.status_code != 200:
+                return None
+            raw = bytearray()
+            for chunk in response.iter_content(chunk_size=16384):
+                raw.extend(chunk)
+                if len(raw) > 100_000:
+                    return None
+            parser = RobotFileParser()
+            parser.parse(raw.decode("utf-8", errors="replace").splitlines())
+            return parser
+        finally:
+            response.close()
     except requests.RequestException:
         return None
 
