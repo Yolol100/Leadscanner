@@ -108,13 +108,13 @@ class AutomaticDraftSafetyTests(unittest.TestCase):
         self.assertIsNone(a._eligible(approved(), {f["record_key"]: f}))
 
     def test_private_state_replay_calls_existing_imap_readback_no_append(self):
+        existing = queue_row()
         state = {"auto_run_id": "777", "draft_id": "draft-" + "1"*32,
                  "identity_sha256": a._identity(approved()),
                  "source_sha256": e._digest([
                     approved()["company"], approved()["website"],
                     approved()["email"], approved()["branche_meervoud"]]),
-                 "quality_status": "source_verified_human_review_required"}
-        existing = queue_row()
+                 "quality_status": a.DRAFT_STATUS_PREFIX + a._copy_digest(existing)}
         state_raw = [a.STATE_HEADERS, [state[h] for h in a.STATE_HEADERS]]
         q_raw = [a.DRAFT_HEADERS, [existing[h] for h in a.DRAFT_HEADERS]]
         mail = Mock(return_value={"created": 0, "existing": 1})
@@ -128,6 +128,82 @@ class AutomaticDraftSafetyTests(unittest.TestCase):
         self.assertEqual(result["stored"], 1)
         mail.assert_called_once_with([state["draft_id"]])
         new_write.assert_not_called()
+
+    def test_http_official_business_is_not_automatically_excluded(self):
+        row = approved()
+        row["website"] = "http://voorbeeld.nl/"
+        row["source_url"] = "http://voorbeeld.nl/contact"
+        source = fact()
+        source.update(website=row["website"], email_source_url=row["source_url"],
+                      source_sha256=e._digest([
+                          row["company"], row["website"], row["email"],
+                          row["branche_meervoud"]]))
+        source["record_key"] = "Approved:" + e._digest([
+            row["company"], row["website"], row["email"]])[:24]
+        source["facts_json"] = json.dumps([{
+            "term": "tuinontwerp", "excerpt": "Wij bieden tuinontwerp",
+            "source_url": "http://voorbeeld.nl/"}])
+        self.assertIsNotNone(a._eligible(row, {source["record_key"]: source}))
+        self.assertEqual(a._host("https://user:secret@voorbeeld.nl/"), "")
+        self.assertEqual(a._host("file:///etc/passwd"), "")
+        self.assertEqual(a._host("http://voorbeeld.nl:8080/"), "")
+
+    def test_new_eligible_offers_are_branch_specific_not_generic(self):
+        cases = [
+            ("logiesbedrijven", "3", "familiekamer"),
+            ("horecazaken", "3", "brunch"),
+            ("sportscholen", "2", "proefles"),
+            ("fietsenwinkels", "3", "elektrische fiets"),
+        ]
+        for branch, cluster, term in cases:
+            with self.subTest(branch=branch):
+                row = approved()
+                row["branche_meervoud"], row["cluster"] = branch, cluster
+                row["company"] = "Amstel Voorbeeld"
+                record = fact()
+                record.update(company=row["company"], branch=branch,
+                              source_sha256=e._digest([
+                                row["company"], row["website"],
+                                row["email"], branch]),
+                              facts_json=json.dumps([{
+                                "term": term, "excerpt": "Wij bieden " + term,
+                                "source_url": row["website"]}]))
+                record["record_key"] = "Approved:" + e._digest([
+                    row["company"], row["website"], row["email"]])[:24]
+                generated = a._eligible(row, {record["record_key"]: record})
+                self.assertIsNotNone(generated)
+                self.assertIn(term, generated[0])
+                self.assertLessEqual(len(generated[1].split()), 110)
+
+    def test_wrong_industry_fact_cannot_be_reused_even_with_valid_source_hash(self):
+        row = approved()
+        item = fact()
+        item["facts_json"] = json.dumps([{
+            "term": "familiekamer", "excerpt": "Wij hebben een familiekamer",
+            "source_url": row["website"]}])
+        self.assertIsNone(a._eligible(row, {item["record_key"]: item}))
+
+    def test_tampered_existing_draft_copy_blocks_resume_before_imap(self):
+        original = queue_row()
+        state = {
+            "auto_run_id": "777", "draft_id": original["draft_id"],
+            "identity_sha256": a._identity(approved()),
+            "source_sha256": e._digest([
+                approved()["company"], approved()["website"],
+                approved()["email"], approved()["branche_meervoud"]]),
+            "quality_status": a.DRAFT_STATUS_PREFIX + a._copy_digest(original),
+        }
+        tampered = dict(original, body=original["body"] + " Ongecontroleerde claim.")
+        state_raw = [a.STATE_HEADERS, [state[h] for h in a.STATE_HEADERS]]
+        q_raw = [a.DRAFT_HEADERS, [tampered[h] for h in a.DRAFT_HEADERS]]
+        mailbox = Mock()
+        with patch.object(a, "_load_latest", return_value=(
+                     [approved()], evidence(), [["snapshot"]])), \
+             patch.object(a, "_state_id", return_value=(1, 2)), \
+             patch.object(a, "_read", side_effect=[q_raw, state_raw]):
+            with self.assertRaisesRegex(RuntimeError, "resume_provenance_mismatch"):
+                a.scheduled_draft_run("777", conn=Mock(), mailbox=mailbox)
+        mailbox.assert_not_called()
 
     def test_tampered_resume_cannot_open_wrong_mailbox_draft(self):
         state = {"auto_run_id": "777", "draft_id": "draft-" + "1"*32,
@@ -259,6 +335,39 @@ class AutomaticDraftSafetyTests(unittest.TestCase):
         session.get.return_value.json.return_value = {"values": "not-an-array"}
         with self.assertRaisesRegex(RuntimeError, "source_shape_invalid"):
             a._read(session, a.DRAFT_QUEUE_ID, "AutoDraftState!A:E")
+
+    def test_live_candidate_quality_audit_is_read_only_and_anonymous(self):
+        row = approved()
+        site = fact()
+        approved_rows = [list(a.APPROVED_HEADERS),
+                         [row[h] for h in a.APPROVED_HEADERS]]
+        evidence_rows = [list(a.EVIDENCE_HEADERS),
+                         [str(site.get(h, "")) for h in a.EVIDENCE_HEADERS]]
+        conn = Mock()
+        with patch.object(a, "_read", side_effect=[
+                  approved_rows, evidence_rows]) as reads, \
+             patch.object(a, "create_batch_from_queue") as mailbox:
+            result = a.audit_existing_sources(conn=conn)
+        self.assertEqual(result["status"], "read_only_proof_audit")
+        self.assertEqual(result["approved_source_rows"], 1)
+        self.assertEqual(result["content_candidates_before_dedupe"], 1)
+        self.assertEqual(result["sent"], 0)
+        self.assertEqual(result["mailbox_writes"], 0)
+        self.assertEqual(reads.call_count, 2)
+        conn.post.assert_not_called()
+        mailbox.assert_not_called()
+        self.assertNotIn("Hovenier", str(result))
+        self.assertNotIn("@", str(result))
+
+    def test_read_only_quality_audit_marks_no_unsupported_candidates(self):
+        row = approved()
+        content = [list(a.APPROVED_HEADERS),
+                   [row[h] for h in a.APPROVED_HEADERS]]
+        with patch.object(a, "_read", side_effect=[
+                  content, [list(a.EVIDENCE_HEADERS)]]):
+            result = a.audit_existing_sources(conn=Mock())
+        self.assertEqual(result["content_candidates_before_dedupe"], 0)
+        self.assertEqual(result["skipped_for_evidence_or_copy"], 1)
 
     def test_live_preflight_only_initializes_private_state_metadata(self):
         client = Mock()
