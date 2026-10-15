@@ -152,6 +152,13 @@ def fill_verified(region, keywords, radius_km, *, target=100,
             "emails_sent": 0, "mailbox_writes": 0}
 
 
+def _verify_with_one_pass_evidence(row):
+    """Keep parsed official text only for the private, successful first pass."""
+    import requests
+    with requests.Session() as session:
+        return verify_official_site(row, session=session, collect_evidence=True)
+
+
 def main():
     try:
         region = os.getenv("REGION", "Nederland").strip() or "Nederland"
@@ -159,12 +166,17 @@ def main():
                  if x.strip()]
         radius = float(os.getenv("RADIUS", "25"))
         with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
-            result = fill_verified(region, words, radius, target=100)
+            result = fill_verified(region, words, radius, target=100,
+                                   verifier=_verify_with_one_pass_evidence)
             from approved_handoff import store_approved
             saved = store_approved(result["approved"])
+            # Reuse the original verified pages; zero extra site requests.
+            from fast_website_evidence import store_preverified_approved
+            extra = store_preverified_approved(result["approved"])
         print(json.dumps({
             "status": "complete" if result["complete"] else "partial",
             "target": 100, "approved_stored_privately": saved,
+            "one_pass_evidence": extra,
             "counts": result["counts"], "timings": result["timings"], "emails_sent": 0,
             "mailbox_writes": 0, "public_identities": 0,
         }, sort_keys=True))
