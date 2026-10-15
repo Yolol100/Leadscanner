@@ -27,6 +27,7 @@ from fast_website_evidence import (
 from private_candidate_handoff import authorized_writer
 from registry_readonly import load_suppressions
 from myhost_draft import create_batch_from_queue
+from verify_official_lead import CATEGORIES
 
 MAX_DRAFTS = 25  # Controlled rollout; never 450
 AUTO_TAB = "AutoDraftState"
@@ -176,18 +177,34 @@ def _compose(row, fact):
         subject = f"Korte vraag over {term}"
     # One confirmed observation, one small illustrative proposal, one CTA.
     # Do not imply the site is broken or a booking function is missing.
+    # One of the six original industry angles, personalized only with facts
+    # already confirmed on the official site. No non-existent feature claims.
+    angles = {
+        "1": f"een heldere uitleg over {guidance}, passend bij jullie huidige aanvraagroute",
+        "2": f"praktische informatie over {guidance}, naast jullie huidige afsprakenroute",
+        "3": f"een mobiel leesbaar overzicht over {guidance}, passend bij de huidige contact- of bestelroute",
+        "4": f"een korte toelichting over {guidance}, zodat bezoekers gericht contact kunnen opnemen",
+        "5": f"een rustig en begrijpelijk overzicht over {guidance}, naast de bestaande persoonlijke contactroute",
+        "6": f"een helder voorbeeld over {guidance}, aansluitend op jullie bestaande contactmogelijkheden",
+    }
+    angle = angles.get(row.get("cluster"))
+    if not angle:
+        return None
     body = (f"{greeting}\n\n"
             f"Jullie noemen {term} op de website.\n\n"
-            f"Ik dacht aan een kort en helder voorbeeld over {guidance}, "
-            "aansluitend op de contactmogelijkheden die jullie al hebben. "
-            "Zo kan een klant zich vooraf beter oriënteren, zonder iets "
-            "aan jullie bestaande werkwijze te veranderen.\n\n"
+            f"Ik kan een kort voorbeeld maken met {angle}. "
+            "Dat is een aanvulling op wat jullie al aanbieden, niet een "
+            "vervanging van jullie bestaande werkwijze.\n\n"
             "Mag ik zo'n voorbeeld sturen?\n\n"
             f"{OPT_OUT}\n\nGroet,\nAndrew")
     return subject, body
 
 
 def _eligible(row, evidence):
+    matching_clusters = {str(cluster) for cluster, label in CATEGORIES.values()
+                         if label == row.get("branche_meervoud")}
+    if row.get("cluster") not in matching_clusters:
+        return None
     if (row.get("status") != "verified_website_and_email" or
             not valid_general_email(row.get("email", "")) or
             not _host(row.get("website", "")) or
