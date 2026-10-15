@@ -223,6 +223,34 @@ class AutomaticDraftSafetyTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "readback"):
                 a._write_atomic(client, 1, 2, old_q, [], [queue_row()], [state])
 
+    def test_live_preflight_only_initializes_private_state_metadata(self):
+        client = Mock()
+        client.post.return_value.status_code = 200
+        with patch.object(a, "_state_id", return_value=(12,13)), \
+             patch.object(a, "_read", side_effect=[
+                [a.APPROVED_HEADERS], [a.DRAFT_HEADERS], [],
+                [a.STATE_HEADERS]]) as reads, \
+             patch.object(a, "create_batch_from_queue") as imap:
+            result = a.private_preflight(conn=client)
+        self.assertEqual(result["status"], "private_state_ready")
+        self.assertEqual(result["mailbox_writes"], 0)
+        self.assertEqual(result["review450_rows_touched"], 0)
+        self.assertEqual(reads.call_count, 4)
+        self.assertEqual(client.post.call_count, 1)
+        tx = client.post.call_args.kwargs["json"]["requests"]
+        self.assertEqual(len(tx), 1)
+        self.assertIn("updateCells", tx[0])
+        imap.assert_not_called()
+
+    def test_preflight_fails_on_unexpected_existing_state(self):
+        with patch.object(a, "_state_id", return_value=(12,13)), \
+             patch.object(a, "_read", side_effect=[
+                [a.APPROVED_HEADERS], [a.DRAFT_HEADERS], [["wrong"]]]), \
+             patch.object(a, "create_batch_from_queue") as imap:
+            with self.assertRaisesRegex(RuntimeError, "headers_changed"):
+                a.private_preflight(conn=Mock())
+        imap.assert_not_called()
+
     def test_schedule_is_bound_to_main_and_no_smtp(self):
         path = Path(__file__).resolve().parents[1] / ".github/workflows/fresh-leads.yml"
         workflow = path.read_text()
