@@ -81,6 +81,17 @@ class FastOfficialEvidenceTests(unittest.TestCase):
         self.assertFalse(q._has("Wij serveren geen veganistische gerechten", "veganistische"))
         self.assertTrue(q._has("Groepsmenu en afhaalservice", "groepsmenu"))
 
+    def test_quote_never_uses_negated_occurrence_when_later_supported(self):
+        """The evidence quote must identify the *affirmative* match, not a denied one."""
+        text = ("Wij bieden geen groepsmenu. "
+                "Meer informatie staat op onze website. "
+                "Ook ontvangen we aanvragen via telefoon en e-mail. "
+                "Voor grotere groepen verzorgen we een groepsmenu op aanvraag.")
+        found = q._mentions([("https://voorbeeld.nl/aanbod", text)], ("groepsmenu",), 1)
+        self.assertEqual(len(found), 1)
+        self.assertIn("groepsmenu op aanvraag", found[0]["excerpt"])
+        self.assertNotIn("geen groepsmenu", found[0]["excerpt"])
+
     def test_previously_existing_functions_are_only_mentions(self):
         class CaptureFake:
             pages = [("https://voorbeeld.nl/", "Hovenier Amstel 5211 AB "
