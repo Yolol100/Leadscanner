@@ -19,6 +19,58 @@ COLS = ("run_id", "company", "website", "email", "source_url",
 STATUS = "verified_website_and_email"
 MAX = 100
 
+HISTORY_TAB = "LeadHistory"
+HISTORY_COLS = ("first_seen_run", "company", "website", "email",
+                "source_url", "status", "draft_id", "recorded_at")
+
+
+def _read_history(conn, base):
+    response = conn.get(base + "/values/" + quote("LeadHistory!A1:H10000", safe=""), timeout=20)
+    if response.status_code != 200:
+        raise RuntimeError("lead_history_read_failed")
+    history = response.json().get("values")
+    if not isinstance(history, list) or not history or history[0] != list(HISTORY_COLS):
+        raise RuntimeError("lead_history_headers_invalid")
+    return history
+
+
+def _remember_approved(conn, base, expected):
+    # Before replacing Approved, keep each verified identity across every future run.
+    # Only the active private sheet holds identities; never log row contents.
+    history = _read_history(conn, base)
+    from dedupe_preflight import candidate_identity, domains_match
+    seen = [candidate_identity({"company": r[1], "website": r[2],
+                                "email": r[3], "official_url": r[4]})
+            for r in history[1:] if len(r) >= 6 and r[1] and r[3] and r[4]]
+    additions = []
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+    for row in expected[1:]:
+        candidate = candidate_identity({"company": row[1], "website": row[2],
+                                        "email": row[3], "official_url": row[4]})
+        duplicate = any((candidate["company"] == prior["company"] or
+                         bool(candidate["emails"] & prior["emails"]) or
+                         any(domains_match(a, b) for a in candidate["domains"]
+                             for b in prior["domains"])) for prior in seen)
+        if duplicate:
+            raise RuntimeError("lead_history_already_recorded")
+        seen.append(candidate)
+        additions.append([row[0], row[1], row[2], row[3], row[4],
+                          "verified_lead", "", now])
+    if not additions:
+        return 0
+    body = {"values": additions, "majorDimension": "ROWS"}
+    resp = conn.post(base + "/values/" + quote("LeadHistory!A:H", safe="") + ":append",
+                     params={"valueInputOption": "RAW", "insertDataOption": "INSERT_ROWS"},
+                     json=body, timeout=30)
+    if resp.status_code != 200:
+        raise RuntimeError("lead_history_append_failed")
+    actual = _read_history(conn, base)
+    if actual != history + additions:
+        raise RuntimeError("lead_history_append_readback_failed")
+    return len(additions)
+
+
 
 def values(approved, run_id):
     if not isinstance(approved, list) or len(approved) > MAX:
@@ -58,6 +110,8 @@ def store_approved(approved, *, run_id=None, session=None):
     base = "https://sheets.googleapis.com/v4/spreadsheets/" + SHEET_ID
     conn = session if session is not None else authorized_writer()
     try:
+        # Failure to persist the new identities blocks claiming completed handoff.
+        _remember_approved(conn, base, expected)
         response = conn.post(base + ":batchUpdate", json={"requests": [{
             "updateCells": {
                 "range": {"sheetId": TAB_ID, "startRowIndex": 0,
