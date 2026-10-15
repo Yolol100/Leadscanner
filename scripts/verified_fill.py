@@ -17,7 +17,7 @@ from requests.exceptions import RequestException
 from dedupe_preflight import domains_match, match_candidate, normalize_company, normalize_domain
 from new_leads import NATIONAL_HUBS, NATIONAL_NAMES, safe_hint
 from overture_discovery import discover
-from registry_readonly import load_suppressions
+from registry_readonly import load_discovery_suppressions
 from target_scope import validate_requested_keywords
 from verify_official_lead import category, verify_official_site
 
@@ -29,7 +29,7 @@ CHUNK = 24
 
 def fill_verified(region, keywords, radius_km, *, target=100,
                   discoverer=discover, verifier=verify_official_site,
-                  load_registry=load_suppressions):
+                  load_registry=load_discovery_suppressions):
     if (not isinstance(region, str) or not 2 <= len(region.strip()) <= 100
             or not isinstance(keywords, list) or not 1 <= len(keywords) <= 8
             or not 0.5 <= radius_km <= 30 or target != 100):
