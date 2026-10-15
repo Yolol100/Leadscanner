@@ -20,10 +20,10 @@ class SheetMemory:
         row = approved()
         proof = fact()
         self.data = {
-            "Approved": [a.APPROVED_HEADERS, [row[k] for k in a.APPROVED_HEADERS]],
-            "WebsiteEvidence": [a.EVIDENCE_HEADERS,
+            "Approved": [list(a.APPROVED_HEADERS), [row[k] for k in a.APPROVED_HEADERS]],
+            "WebsiteEvidence": [list(a.EVIDENCE_HEADERS),
                                 [proof.get(k, "") for k in a.EVIDENCE_HEADERS]],
-            "LeadHistory": [a.HISTORY_COLS, [
+            "LeadHistory": [list(a.HISTORY_COLS), [
                 row["run_id"], row["company"], row["website"], row["email"],
                 row["source_url"], "verified_lead", "", "2026-10-15T12:00:00Z"]],
             "DraftQueue": [a.DRAFT_HEADERS],
