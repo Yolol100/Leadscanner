@@ -363,6 +363,44 @@ def run(source, batch=1, *, conn=None, worker=inspect, force=False):
     }
 
 
+def store_preverified_approved(approved, *, conn=None):
+    """Persist facts from the *same* first verification, with zero website GETs.
+
+    Called only after store_approved has atomically saved the new Approved
+    snapshot and historical suppressions. Verifies that the snapshot is still
+    exactly the same before persisting the derived evidence. Never touches
+    Review450, DraftQueue, IMAP or public GitHub data.
+    """
+    if not isinstance(approved, list) or len(approved) > BATCH_SIZE:
+        raise ValueError("preverified_approved_invalid")
+    if not approved:
+        return {"source_rows": 0, "captured_without_refetch": 0,
+                "verified_with_detail": 0, "needs_manual_check": 0}
+    conn = conn if conn is not None else authorized_writer()
+    records, checksum = _input(conn, "Approved", 1)
+    if len(records) != len(approved):
+        raise RuntimeError("preverified_approved_snapshot_count_changed")
+    results = []
+    for record, actual in zip(records, approved):
+        if not isinstance(actual, dict) or not isinstance(actual.get("_captured_pages"), list):
+            raise RuntimeError("preverified_official_pages_missing")
+        if (record["company"] != actual.get("company") or
+                record["website"] != actual.get("website") or
+                record["email"] != actual.get("email") or
+                record["branch"] != actual.get("branche_meervoud")):
+            raise RuntimeError("preverified_approved_snapshot_mismatch")
+        results.append(inspect_verified(record, actual, actual["_captured_pages"]))
+    if _input(conn, "Approved", 1)[1] != checksum:
+        raise RuntimeError("preverified_approved_changed_during_review")
+    tab_id, created = _cache_id(conn)
+    existing = {} if created else _cache(conn)
+    _persist(conn, tab_id, existing, results)
+    return {"source_rows": len(results),
+            "captured_without_refetch": len(results),
+            "verified_with_detail": sum(r["status"] == "verified_with_detail" for r in results),
+            "needs_manual_check": sum(r["status"] == "needs_manual_check" for r in results)}
+
+
 def main():
     parser = argparse.ArgumentParser(description="Private parallel official-site evidence, no mail")
     parser.add_argument("--source", choices=tuple(SOURCES), required=True)
