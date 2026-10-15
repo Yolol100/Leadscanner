@@ -87,15 +87,22 @@ def run(conn,batch):
     for n,row in enumerate(revised,start+1):
         if row[0]!=str(n) or row[1]!=original[n-1]["draft_id"] or len(row)!=16:
             raise RuntimeError("revision_identity_mismatch")
-    usable=sum(r[12].startswith("BRON_EN_ADRES_BEVESTIGD") for r in revised)
-    blocked=len(revised)-usable
+    confirmed=sum(r[12].startswith("BRON_EN_ADRES_BEVESTIGD") or
+                  r[12]=="BESTAANDE_STERKE_TEKST_BEHOUDEN" for r in revised)
+    blocked=sum(r[12]=="BRON_OF_ADRES_NIET_BEVESTIGD" for r in revised)
     edited=sum("VOORSTEL_" in r[12] for r in revised)
     preserved=sum(r[12]=="BESTAANDE_STERKE_TEKST_BEHOUDEN" for r in revised)
-    mean=(sum(float(r[13]) for r in revised if r[9])/(usable or 1))
+    ready=sum(bool(r[9]) for r in revised)
+    missing=len(revised)-ready
+    mean=(sum(float(r[13]) for r in revised if r[9])/(ready or 1))
+    if mean>10 or confirmed+blocked!=len(revised):
+        raise RuntimeError("improvement_quality_counts_invalid")
     summary=[
-        str(batch)+"/5",str(start+1)+"-"+str(end),"OPGESLAGEN_MET_CONTROLEPUNTEN",
-        str(len(revised)),str(usable),str(blocked),str(edited),str(preserved),
-        "%.2f"%mean,SOURCE_DIGEST,os.getenv("GITHUB_RUN_ID",""),b.now()
+        str(batch)+"/5",str(start+1)+"-"+str(end),
+        "OPGESLAGEN_MET_"+str(missing)+"_OPEN_CONTROLEPUNTEN",
+        str(len(revised)),str(confirmed),str(blocked),str(edited),str(preserved),
+        "%.2f"%mean,SOURCE_DIGEST,os.getenv("GITHUB_RUN_ID",""),
+        str(missing)+" mails nog niet klaar; gecontroleerd op "+b.now()
     ]
     # Before *private* updates source must still be the exact approved version.
     if original!=b.load_rows(conn) or prior!=_rowvalues(conn,"QA450PerMail","A2:P451"):
@@ -117,7 +124,8 @@ def run(conn,batch):
     if (_rowvalues(conn,NEW_TAB,"A"+str(start+2)+":P"+str(end+1))!=revised or
             _rowvalues(conn,STATUS_TAB,"A"+str(batch+1)+":L"+str(batch+1))!=[summary]):
         raise RuntimeError("private_improvement_readback_failed")
-    return {"batch":batch,"checked":len(revised),"verified":usable,"needs_source":blocked,
+    return {"batch":batch,"checked":len(revised),"verified":confirmed,"needs_source":blocked,
+            "pending":missing,"ready":ready,
             "proposed":edited,"preserved":preserved,"mean":round(mean,2)}
 
 
@@ -126,7 +134,8 @@ SAFE=frozenset({
 "audit_identity_mismatch","improvement_sheet_headers_wrong","improvement_state_headers_wrong",
 "previous_batch_not_completed","batch_already_processed","proposals_already_exist",
 "batch_count_invalid","revision_identity_mismatch","source_changed_during_copy_revision",
-"private_improvement_readback_failed","batch_index_invalid"
+"private_improvement_readback_failed","batch_index_invalid",
+"improvement_quality_counts_invalid"
 })
 
 
@@ -140,7 +149,7 @@ def main():
             from private_candidate_handoff import authorized_writer
             result=run(authorized_writer(),batch)
         print("IMPROVE450=partial batch={batch} checked={checked} verified={verified} "
-              "needs_source={needs_source} proposed={proposed} preserved={preserved} "
+              "needs_source={needs_source} ready={ready} pending={pending} proposed={proposed} preserved={preserved} "
               "indicative_mean={mean:.2f} sent=0 mailbox_writes=0".format(**result))
         return 0
     except Exception as exc:
