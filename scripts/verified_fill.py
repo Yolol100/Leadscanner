@@ -12,6 +12,7 @@ import json
 import os
 import re
 import time
+from requests.exceptions import RequestException
 
 from dedupe_preflight import domains_match, match_candidate, normalize_company, normalize_domain
 from new_leads import NATIONAL_HUBS, NATIONAL_NAMES, safe_hint
@@ -45,86 +46,99 @@ def fill_verified(region, keywords, radius_km, *, target=100,
     counts = {"source_hints": 0, "sites_checked": 0, "previously_used": 0,
               "duplicates": 0, "unverified": 0, "source_errors": 0,
               "regions_scanned": 0}
-    for centre in regions:
-        if len(approved) == target or counts["sites_checked"] >= MAX_SITE_CHECKS:
-            break
+    # One worker pool across regions, not a new six-thread pool per 24 websites.
+    def inspect_one(row):
         try:
-            scan_start = time.monotonic()
-            with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
-                result = discoverer(
-                    region=centre, bbox=None, radius_km=radius_km,
-                    keywords=keywords, max_results=MAX_PER_REGION,
-                    require_website=True, probe_websites=False,
-                )
-            discovery_seconds += time.monotonic() - scan_start
-        except Exception:
-            counts["source_errors"] += 1
-            continue
-        if not isinstance(result, dict) or not isinstance(result.get("candidates"), list):
-            raise RuntimeError("verified_fill_discovery_shape_invalid")
-        counts["regions_scanned"] += 1
-        hints = result["candidates"][:MAX_PER_REGION]
-        counts["source_hints"] += len(hints)
-        possible = []
-        for row in hints:
-            if not isinstance(row, dict):
-                counts["unverified"] += 1
-                continue
-            website = safe_hint(row.get("website_hint"))
-            name = str(row.get("name_hint") or "").strip()
-            domain = normalize_domain(website) if website else ""
-            if not website or not name or len(name) > 160 or not domain or not category(row):
-                counts["unverified"] += 1
-                continue
-            # Never query the same site repeatedly, even across Overture regions.
-            if domain in seen_sites:
-                counts["duplicates"] += 1
-                continue
-            seen_sites.add(domain)
-            if match_candidate({"name_hint": name, "website_hint": website,
-                                "lead_id": row.get("overture_id"),
-                                "emails": [c.get("email", "") for c in
-                                           (row.get("discovery_email_candidates") or [])
-                                           if isinstance(c, dict)]}, registry):
-                counts["previously_used"] += 1
-                continue
-            possible.append(row)
+            return verifier(row)
+        except (RequestException, ValueError, UnicodeError):
+            # Malformed/unreachable individual websites are NOT system failures.
+            return None
 
-        # Small chunks cap in-flight requests; stop at exactly 100 results.
-        for index in range(0, len(possible), CHUNK):
-            remaining_budget = MAX_SITE_CHECKS - counts["sites_checked"]
-            if len(approved) >= target or remaining_budget <= 0:
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        for centre in regions:
+            if len(approved) == target or counts["sites_checked"] >= MAX_SITE_CHECKS:
                 break
-            block = possible[index:index + min(CHUNK, remaining_budget)]
-            verify_start = time.monotonic()
-            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                verified = list(executor.map(verifier, block))
-            verification_seconds += time.monotonic() - verify_start
-            counts["sites_checked"] += len(block)
-            for candidate in verified:
-                if len(approved) >= target:
-                    break
-                if candidate is None:
+            try:
+                scan_start = time.monotonic()
+                with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+                    result = discoverer(
+                        region=centre, bbox=None, radius_km=radius_km,
+                        keywords=keywords, max_results=MAX_PER_REGION,
+                        require_website=True, probe_websites=False,
+                    )
+                discovery_seconds += time.monotonic() - scan_start
+            except Exception:
+                counts["source_errors"] += 1
+                continue
+            if not isinstance(result, dict) or not isinstance(result.get("candidates"), list):
+                raise RuntimeError("verified_fill_discovery_shape_invalid")
+            counts["regions_scanned"] += 1
+            hints = result["candidates"][:MAX_PER_REGION]
+            counts["source_hints"] += len(hints)
+            possible = []
+            for row in hints:
+                if not isinstance(row, dict):
                     counts["unverified"] += 1
                     continue
-                name = normalize_company(candidate["company"])
-                domain = normalize_domain(candidate["website"])
-                email = candidate["email"].casefold()
-                # Check email against historical HMAC/ordinary registry again:
-                # Overture's email candidates are NEVER contact authority.
-                if match_candidate({"name_hint": candidate["company"],
-                                    "website_hint": candidate["website"],
-                                    "email": email}, registry):
-                    counts["previously_used"] += 1
+                website = safe_hint(row.get("website_hint"))
+                name = str(row.get("name_hint") or "").strip()
+                domain = normalize_domain(website) if website else ""
+                if not website or not name or len(name) > 160 or not domain or not category(row):
+                    counts["unverified"] += 1
                     continue
-                if (name in seen_names or email in seen_emails or
-                        any(domains_match(domain, prev) for prev in seen_domains)):
+                # Never query the same site repeatedly, even across Overture regions.
+                if domain in seen_sites:
                     counts["duplicates"] += 1
                     continue
-                seen_names.add(name)
-                seen_domains.add(domain)
-                seen_emails.add(email)
-                approved.append(candidate)
+                seen_sites.add(domain)
+                if match_candidate({"name_hint": name, "website_hint": website,
+                                    "lead_id": row.get("overture_id"),
+                                    "emails": [c.get("email", "") for c in
+                                               (row.get("discovery_email_candidates") or [])
+                                               if isinstance(c, dict)]}, registry):
+                    counts["previously_used"] += 1
+                    continue
+                possible.append(row)
+
+            # Small chunks cap in-flight requests; stop at exactly 100 results.
+            index = 0
+            while index < len(possible):
+                remaining_budget = MAX_SITE_CHECKS - counts["sites_checked"]
+                remaining_target = target - len(approved)
+                if remaining_target <= 0 or remaining_budget <= 0:
+                    break
+                # Near the target, do not check 24 more sites just to add one.
+                batch_size = min(CHUNK, remaining_budget, max(1, remaining_target * 2))
+                block = possible[index:index + batch_size]
+                index += len(block)
+                verify_start = time.monotonic()
+                verified = list(executor.map(inspect_one, block))
+                verification_seconds += time.monotonic() - verify_start
+                counts["sites_checked"] += len(block)
+                for candidate in verified:
+                    if len(approved) >= target:
+                        break
+                    if candidate is None:
+                        counts["unverified"] += 1
+                        continue
+                    name = normalize_company(candidate["company"])
+                    domain = normalize_domain(candidate["website"])
+                    email = candidate["email"].casefold()
+                    # Check email against historical HMAC/ordinary registry again:
+                    # Overture's email candidates are NEVER contact authority.
+                    if match_candidate({"name_hint": candidate["company"],
+                                        "website_hint": candidate["website"],
+                                        "email": email}, registry):
+                        counts["previously_used"] += 1
+                        continue
+                    if (name in seen_names or email in seen_emails or
+                            any(domains_match(domain, prev) for prev in seen_domains)):
+                        counts["duplicates"] += 1
+                        continue
+                    seen_names.add(name)
+                    seen_domains.add(domain)
+                    seen_emails.add(email)
+                    approved.append(candidate)
 
     # Exhausted is a factual PARTIAL, never a false claim of 100 verified.
     if counts["regions_scanned"] == 0:
