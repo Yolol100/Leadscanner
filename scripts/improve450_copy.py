@@ -187,9 +187,11 @@ def rewrite(row, qa_row, topics, distinctiveness):
         offer = "Ik kan een mobiel overzicht schetsen van de diensten en hoe klanten hun vraag bij jullie neerleggen."
     # A conditional proposal, not an assertion that the website is deficient.
     idea = ("beide onderdelen" if right else left)
-    question = "Zal ik een kort voorbeeld voor " + idea + " uitwerken?"
+    question = "Zal ik een korte voorbeeldopzet rond " + idea + " voor " + row["company"] + " maken?"
     subject = (left[:1].upper() + left[1:] + (" en " + right if right else "") +
                " bij " + row["company"])
+    if len(subject) > 160:
+        subject = row["subject"]
     # Do not include the user's expressly excluded introductory sentence.
     content = "\n\n".join([greeting, hook, offer, question, base.OPT, "Groet,\nAndrew"])
     updated = copy.deepcopy(row)
