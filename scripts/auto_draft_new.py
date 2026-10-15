@@ -449,6 +449,38 @@ def scheduled_draft_run(run_id, *, conn=None, mailbox=create_batch_from_queue,
             "skipped": len(prepared) - stored, "sent": 0}
 
 
+def audit_existing_sources(*, conn=None):
+    """Read-only, anonymous quality canary; does not write or open IMAP.
+
+    Deliberately does not check the current run id: this is an offline review
+    of existing Approved proof, never a permission to create old drafts.
+    """
+    conn = conn if conn is not None else authorized_writer()
+    approved = _parse_table(
+        _read(conn, SOURCE_SHEET_ID, "Approved!A1:I101"), APPROVED_HEADERS)
+    evidence_rows = _parse_table(
+        _read(conn, SOURCE_SHEET_ID, "WebsiteEvidence!A1:N1000"),
+        EVIDENCE_HEADERS)
+    evidence = {}
+    for item in evidence_rows:
+        if item["record_key"] in evidence:
+            raise RuntimeError("autodraft_duplicate_private_evidence")
+        evidence[item["record_key"]] = item
+    usable = [row for row in approved if _eligible(row, evidence)]
+    verified_details = sum(
+        item["source_tab"] == "Approved" and
+        item["status"] == "verified_with_detail"
+        for item in evidence_rows)
+    return {"status": "read_only_proof_audit",
+            "approved_source_rows": len(approved),
+            "verified_detail_cache_records": verified_details,
+            "content_candidates_before_dedupe": len(usable),
+            "http_content_candidates": sum(
+                row["website"].startswith("http://") for row in usable),
+            "skipped_for_evidence_or_copy": len(approved) - len(usable),
+            "mailbox_writes": 0, "sent": 0}
+
+
 def private_preflight(*, conn=None):
     """One-time authorized *metadata-only* live probe; never connects to IMAP.
 
@@ -482,6 +514,8 @@ def main():
         import sys
         if sys.argv[1:] == ["--preflight"]:
             result = private_preflight()
+        elif sys.argv[1:] == ["--audit-existing"]:
+            result = audit_existing_sources()
         elif not sys.argv[1:]:
             result = scheduled_draft_run(os.getenv("GITHUB_RUN_ID", ""))
         else:
