@@ -25,11 +25,13 @@ class InMemoryIMAP:
         self.fail_at = None
         self.append_attempts = 0
         self.logout_count = 0
+        self.select_count = 0
 
     def list(self):
         return "OK", [b'(\\HasNoChildren \\Drafts) "/" "Drafts"']
 
     def select(self, folder, readonly=True):
+        self.select_count += 1
         if not readonly or folder != '"Drafts"':
             raise AssertionError("Unexpected folder or unsafe write select")
         return "OK", [str(len(self.messages)).encode()]
@@ -74,6 +76,7 @@ class BatchIMAPSimulation(unittest.TestCase):
         self.assertEqual(outcome, {"total": 50, "created": 50, "existing": 0})
         self.assertEqual(len(client.messages), 50)
         self.assertEqual(client.append_attempts, 50)
+        self.assertEqual(client.select_count, 1)
         self.assertEqual(client.logout_count, 1)
         self.assertEqual(
             len({BytesParser(policy=policy.default).parsebytes(raw)[draft.DRAFT_HEADER]
@@ -90,6 +93,7 @@ class BatchIMAPSimulation(unittest.TestCase):
             outcome = draft.create_batch_from_queue([row["draft_id"] for row in rows])
         self.assertEqual(outcome, {"total": 100, "created": 100, "existing": 0})
         self.assertEqual(client.append_attempts, 100)
+        self.assertEqual(client.select_count, 1)
         self.assertEqual(len(client.messages), 100)
         self.assertEqual(client.logout_count, 1)
         print("BATCH100_IMAP_SIM=green appended=100 readback=100 sent=0")
