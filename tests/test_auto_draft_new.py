@@ -108,13 +108,13 @@ class AutomaticDraftSafetyTests(unittest.TestCase):
         self.assertIsNone(a._eligible(approved(), {f["record_key"]: f}))
 
     def test_private_state_replay_calls_existing_imap_readback_no_append(self):
+        existing = queue_row()
         state = {"auto_run_id": "777", "draft_id": "draft-" + "1"*32,
                  "identity_sha256": a._identity(approved()),
                  "source_sha256": e._digest([
                     approved()["company"], approved()["website"],
                     approved()["email"], approved()["branche_meervoud"]]),
-                 "quality_status": a.DRAFT_STATUS_PREFIX + a._copy_digest(queue_row())}
-        existing = queue_row()
+                 "quality_status": a.DRAFT_STATUS_PREFIX + a._copy_digest(existing)}
         state_raw = [a.STATE_HEADERS, [state[h] for h in a.STATE_HEADERS]]
         q_raw = [a.DRAFT_HEADERS, [existing[h] for h in a.DRAFT_HEADERS]]
         mail = Mock(return_value={"created": 0, "existing": 1})
