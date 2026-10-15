@@ -13,14 +13,14 @@ import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import requests
 
 from approved_handoff import COLS as APPROVED_COLUMNS
 from private_candidate_handoff import SHEET_ID, authorized_writer
-from verify_official_lead import (BRANCH_PROOF, CATEGORIES, MAX_BYTES,
-                                  PublicHTML, norm, verify_official_site)
+from verify_official_lead import (BRANCH_PROOF, CATEGORIES, norm,
+                                  verify_official_site)
 
 REVIEW_COLUMNS = (
     "draft_id", "created_at", "company", "email", "source_url", "subject",
@@ -131,38 +131,6 @@ def _input(conn, source, batch):
     return extracted, _digest(raw)
 
 
-class Capture:
-    """One connection-pooled session PER worker, never shared across threads."""
-    def __init__(self):
-        self.session = requests.Session()
-        self.pages = []
-
-    def get(self, url, **kwargs):
-        response = self.session.get(url, **kwargs)
-        if kwargs.get("stream") and response.status_code == 200:
-            original = response.iter_content
-            owner = self
-
-            def capture(*args, **kw):
-                saved = bytearray()
-                complete = True
-                for chunk in original(*args, **kw):
-                    if len(saved) + len(chunk) <= MAX_BYTES:
-                        saved.extend(chunk)
-                    else:
-                        complete = False
-                    yield chunk
-                if complete and b"<" in saved:
-                    parsed = PublicHTML()
-                    parsed.feed(saved.decode("utf-8", errors="replace"))
-                    owner.pages.append((url, " ".join(parsed.texts)))
-            response.iter_content = capture
-        return response
-
-    def close(self):
-        self.session.close()
-
-
 def _has(text, phrase):
     text, phrase = norm(text), norm(phrase)
     if not phrase:
@@ -208,60 +176,101 @@ def _mentions(pages, words, limit):
     return out
 
 
-def inspect(record):
-    """No unverified website fact ever receives a confirmed status."""
-    reverse = {}
-    for category, (_, branch) in CATEGORIES.items():
-        reverse.setdefault(branch, category)
-    category = reverse.get(record["branch"])
-    result = dict(record, checked_at=_utc_now(), email_source_url="",
-                  facts_json="[]", feature_mentions_json="[]",
-                  status="needs_manual_check", reason="official_source_unconfirmed")
-    if not category:
-        result["reason"] = "unsupported_branch"
+def _initial_result(record):
+    return dict(record, checked_at=_utc_now(), email_source_url="",
+                facts_json="[]", feature_mentions_json="[]",
+                status="needs_manual_check", reason="official_source_unconfirmed")
+
+
+def inspect_verified(record, official, pages):
+    """Classify facts from verified pages without a second network request.
+
+    The official business/email check must already have been performed by
+    verify_official_site. A missing or mismatching proof is fail-closed.
+    """
+    result = _initial_result(record)
+    if not isinstance(official, dict) or not isinstance(pages, list):
+        result["reason"] = "official_company_or_email_not_confirmed"
         return result
-    hint = {"name_hint": record["company"], "website_hint": record["website"],
-            "category_hint": category, "country_hint": "NL"}
-    cap = Capture()
+    if (official.get("email", "").casefold() != record["email"].casefold() or
+            official.get("branche_meervoud") != record["branch"]):
+        result["reason"] = "official_identity_email_or_branch_mismatch"
+        return result
+    safe_pages = []
+    site = urlsplit(record["website"])
+    if site.scheme not in ("https", "http") or not site.hostname:
+        result["reason"] = "website_url_invalid"
+        return result
+    for page in pages[:2]:
+        if not isinstance(page, (list, tuple)) or len(page) != 2:
+            continue
+        page_url, page_text = page
+        url = urlsplit(str(page_url))
+        if (url.scheme not in ("https", "http") or
+                not url.hostname or
+                url.hostname.removeprefix("www.").casefold() !=
+                site.hostname.removeprefix("www.").casefold()):
+            continue
+        safe_pages.append((str(page_url), str(page_text)[:750000]))
+    if not safe_pages:
+        result["reason"] = "source_pages_not_captured"
+        return result
+    if not ZIP_NL.search(" ".join(text for _, text in safe_pages)):
+        result["reason"] = "dutch_locality_not_confirmed"
+        return result
     try:
-        official = verify_official_site(hint, session=cap,
-                                        expected_email=record["email"])
-        if not official or official["email"].casefold() != record["email"].casefold():
-            result["reason"] = "official_company_or_email_not_confirmed"
-            return result
-        if official["branche_meervoud"] != record["branch"]:
-            result["reason"] = "branch_mismatch"
-            return result
-        if not ZIP_NL.search(" ".join(page for _, page in cap.pages)):
-            result["reason"] = "dutch_locality_not_confirmed"
-            return result
         terms = DETAILS.get(record["branch"], ())
-        facts = _mentions(cap.pages, terms, 2)
-        # An industry word is proof of general activity only, not a unique hook.
-        activity = _mentions(cap.pages, BRANCH_PROOF[record["branch"]], 1)
+        facts = _mentions(safe_pages, terms, 2)
+        activity = _mentions(safe_pages, BRANCH_PROOF[record["branch"]], 1)
         if not activity:
             result["reason"] = "activity_not_confirmed"
             return result
         features = []
         for label, words in FEATURE_MENTIONS.items():
-            for finding in _mentions(cap.pages, words, 1):
+            for finding in _mentions(safe_pages, words, 1):
                 features.append({**finding, "feature": label,
                                  "certainty": "text_mention_only"})
-        result["email_source_url"] = official["source_url"]
-        result["facts_json"] = json.dumps(facts, ensure_ascii=False, separators=(",", ":"))
-        result["feature_mentions_json"] = json.dumps(features[:6], ensure_ascii=False, separators=(",", ":"))
+        result["email_source_url"] = str(official.get("source_url", ""))
+        result["facts_json"] = json.dumps(facts, ensure_ascii=False,
+                                           separators=(",", ":"))
+        result["feature_mentions_json"] = json.dumps(features[:6],
+                                                      ensure_ascii=False,
+                                                      separators=(",", ":"))
         result["status"] = "verified_with_detail" if facts else "verified_activity_only"
         result["reason"] = "official_email_and_local_activity_confirmed"
-        if record["email"].rsplit("@", 1)[-1].removeprefix("www.") != \
-                record["website"].split("/")[2].removeprefix("www.").split(":")[0]:
+        email_domain = record["email"].rsplit("@", 1)[-1].lower()
+        host = site.hostname.removeprefix("www.").casefold()
+        if email_domain != host:
             result["status"] = "needs_manual_check"
             result["reason"] = "cross_domain_email_needs_independent_association"
         return result
+    except (ValueError, TypeError, KeyError, re.error):
+        result["reason"] = "source_text_processing_failed"
+        return result
+
+
+def inspect(record):
+    """One HTTP verification pass, reusing already-parsed official text."""
+    reverse = {}
+    for category, (_, branch) in CATEGORIES.items():
+        reverse.setdefault(branch, category)
+    category = reverse.get(record["branch"])
+    if not category:
+        result = _initial_result(record)
+        result["reason"] = "unsupported_branch"
+        return result
+    hint = {"name_hint": record["company"], "website_hint": record["website"],
+            "category_hint": category, "country_hint": "NL"}
+    try:
+        with requests.Session() as session:
+            official = verify_official_site(hint, session=session,
+                        expected_email=record["email"], collect_evidence=True)
+        return inspect_verified(record, official,
+                     official.get("_captured_pages", []) if official else [])
     except Exception:
+        result = _initial_result(record)
         result["reason"] = "bounded_official_site_request_failed"
         return result
-    finally:
-        cap.close()
 
 
 def _cache_id(conn):
