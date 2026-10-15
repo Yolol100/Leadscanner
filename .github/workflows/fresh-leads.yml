@@ -13,17 +13,20 @@ on:
         options:
           - preflight
           - discover
+          - fill_100
       region:
         description: Plaats of regio in Nederland
         required: true
+        default: Nederland
         type: string
       keywords:
         description: Branches, komma-gescheiden
         required: true
+        default: vakbedrijven
         type: string
       radius_km:
         description: Zoekstraal in km (0.5-30)
-        default: '8'
+        default: '25'
         required: true
         type: string
       limit:
@@ -93,7 +96,7 @@ jobs:
     needs: test
     if: >-
       github.ref == 'refs/heads/main' &&
-      ((github.event_name == 'workflow_dispatch' && inputs.execution_mode == 'discover') ||
+      ((github.event_name == 'workflow_dispatch' && contains(fromJSON('["discover","fill_100"]'), inputs.execution_mode)) ||
        (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'LEADS_DISCOVERY_ONLY:')))
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -121,4 +124,8 @@ jobs:
           RADIUS: ${{ inputs.radius_km }}
           LIMIT: ${{ inputs.limit }}
         run: |
-          python3 scripts/trigger_request.py
+          if [ "$EXECUTION_MODE" = "fill_100" ]; then
+            python3 scripts/verified_fill.py
+          else
+            python3 scripts/trigger_request.py
+          fi
