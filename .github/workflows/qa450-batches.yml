@@ -1,0 +1,73 @@
+name: Review 450 - read-only quality by batch
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      batch:
+        description: Review batch (1-5)
+        type: choice
+        required: true
+        options: ['1','2','3','4','5']
+      confirmation:
+        description: Private task identity
+        type: string
+        required: true
+permissions:
+  contents: read
+jobs:
+  audit:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      ((github.event_name == 'workflow_dispatch' && inputs.confirmation == 'review450-20261015') ||
+       (github.event_name == 'push' &&
+        (startsWith(github.event.head_commit.message, 'LEADS_QA450_BATCH1_ONLY:') ||
+         startsWith(github.event.head_commit.message, 'LEADS_QA450_BATCH2_ONLY:') ||
+         startsWith(github.event.head_commit.message, 'LEADS_QA450_BATCH3_ONLY:') ||
+         startsWith(github.event.head_commit.message, 'LEADS_QA450_BATCH4_ONLY:') ||
+         startsWith(github.event.head_commit.message, 'LEADS_QA450_BATCH5_ONLY:'))))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    concurrency:
+      group: leadscanner-private-450-readonly-quality
+      cancel-in-progress: false
+      queue: max
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: python3 -m pip install -r requirements.txt
+      - name: Syntax and QA-contract unit tests
+        env:
+          PYTHONPATH: scripts
+        run: |
+          python3 -m compileall -q scripts
+          python3 -m unittest discover -s tests -p 'test_qa450_batch.py' -q
+      - name: Audit one authorized batch; never change the mailbox
+        env:
+          PYTHONPATH: scripts
+          QA450_TASK: review450-20261015
+          REVIEW_TRIGGER: ${{ github.event.head_commit.message }}
+          REQUESTED_BATCH: ${{ github.event_name == 'workflow_dispatch' && inputs.batch || '' }}
+          LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON || secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [ -n "$REQUESTED_BATCH" ]; then
+            QA450_BATCH="$REQUESTED_BATCH"
+          else
+            case "$REVIEW_TRIGGER" in
+              LEADS_QA450_BATCH1_ONLY:*) QA450_BATCH=1 ;;
+              LEADS_QA450_BATCH2_ONLY:*) QA450_BATCH=2 ;;
+              LEADS_QA450_BATCH3_ONLY:*) QA450_BATCH=3 ;;
+              LEADS_QA450_BATCH4_ONLY:*) QA450_BATCH=4 ;;
+              LEADS_QA450_BATCH5_ONLY:*) QA450_BATCH=5 ;;
+              *) echo "QA450=blocked unauthorized_batch sent=0"; exit 1 ;;
+            esac
+          fi
+          export QA450_BATCH
+          python3 scripts/qa450_batch.py
