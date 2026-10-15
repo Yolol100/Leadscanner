@@ -89,8 +89,10 @@ class AutoFirstDraftE2ETests(unittest.TestCase):
                  patch.object(myhost_draft.time, "sleep", return_value=None):
                 return myhost_draft.create_batch_from_queue(ids)
 
-        out = a.scheduled_draft_run("777", conn=private.client,
-                                   mailbox=write, suppressions=lambda session: [])
+        with patch.object(queue, "is_public_http_url", return_value=True):
+            out = a.scheduled_draft_run(
+                "777", conn=private.client, mailbox=write,
+                suppressions=lambda session: [])
         self.assertEqual((out["prepared"], out["stored"], out["sent"]), (1, 1, 0))
         self.assertEqual(len(private.data["DraftQueue"]), 2)
         self.assertEqual(len(private.data["AutoDraftState"]), 2)
@@ -100,8 +102,10 @@ class AutoFirstDraftE2ETests(unittest.TestCase):
         self.assertEqual(mailbox.messages[0][1], b"\\Draft")
         self.assertNotIn("Review450", private.data)
 
-        again = a.scheduled_draft_run("777", conn=private.client,
-                                      mailbox=write, suppressions=lambda session: [])
+        with patch.object(queue, "is_public_http_url", return_value=True):
+            again = a.scheduled_draft_run(
+                "777", conn=private.client, mailbox=write,
+                suppressions=lambda session: [])
         self.assertEqual(again["status"], "resumed")
         self.assertEqual(again["stored"], 1)
         self.assertEqual(mailbox.append_attempts, 1)
@@ -122,15 +126,19 @@ class AutoFirstDraftE2ETests(unittest.TestCase):
                  patch.object(myhost_draft, "connect_imap", return_value=mailbox):
                 return myhost_draft.create_batch_from_queue(ids)
 
-        with self.assertRaises(RuntimeError):
-            a.scheduled_draft_run("777", conn=private.client,
-                                  mailbox=write, suppressions=lambda session: [])
+        with patch.object(queue, "is_public_http_url", return_value=True):
+            with self.assertRaises(RuntimeError):
+                a.scheduled_draft_run(
+                    "777", conn=private.client, mailbox=write,
+                    suppressions=lambda session: [])
         self.assertEqual(private.atomic_commits, 1)
         self.assertEqual(len(private.data["DraftQueue"]), 2)
         self.assertEqual(mailbox.messages, [])
         mailbox.fail_at = None
-        resumed = a.scheduled_draft_run("777", conn=private.client,
-                                        mailbox=write, suppressions=lambda session: [])
+        with patch.object(queue, "is_public_http_url", return_value=True):
+            resumed = a.scheduled_draft_run(
+                "777", conn=private.client, mailbox=write,
+                suppressions=lambda session: [])
         self.assertEqual((resumed["stored"], resumed["sent"]), (1, 0))
         self.assertEqual(private.atomic_commits, 1)
         self.assertEqual(len(mailbox.messages), 1)
