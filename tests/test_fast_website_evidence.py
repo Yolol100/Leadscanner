@@ -327,8 +327,12 @@ class FastOfficialEvidenceTests(unittest.TestCase):
         self.assertIn("github.event_name == 'schedule'", new)
         self.assertIn("LEADS_EVIDENCE_ONCE:", fast)
         self.assertIn("LEAD_REGISTRY_SERVICE_ACCOUNT_JSON", fast)
-        self.assertNotIn("OUTREACH_MAIL_PASSWORD", fast + new)
-        self.assertNotIn("smtp", fast.lower() + new.lower())
+        self.assertNotIn("OUTREACH_MAIL_PASSWORD", fast)
+        research, drafts = new.split("  auto_first_drafts:", 1)
+        self.assertNotIn("OUTREACH_MAIL_PASSWORD", research)
+        self.assertIn("OUTREACH_MAIL_PASSWORD", drafts)
+        self.assertIn("github.event_name == 'schedule'", drafts)
+        self.assertNotIn("smtp", fast.lower() + research.lower())
 
     def test_cache_retention_preserves_review450_and_current_batch(self):
         old = verified(checked_at="2025-01-01T00:00:00+00:00")
