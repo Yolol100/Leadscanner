@@ -481,6 +481,30 @@ def audit_existing_sources(*, conn=None):
             "mailbox_writes": 0, "sent": 0}
 
 
+def mailbox_readonly_preflight():
+    """Check existing Mijn.Host credential and Drafts EXAMINE, never APPEND.
+
+    IMAP EXAMINE is the read-only equivalent of SELECT; it does not fetch
+    prospect messages, set flags, delete, or send anything.
+    """
+    from myhost_draft import connect_imap, find_drafts_folder, _mailbox_arg
+    client = connect_imap()
+    try:
+        folder = find_drafts_folder(client)
+        if not folder or len(folder) > 255:
+            raise RuntimeError("imap_readonly_drafts_folder_unavailable")
+        status, _ = client.examine(_mailbox_arg(folder))
+        if status != "OK":
+            raise RuntimeError("imap_readonly_drafts_folder_unavailable")
+        return {"status": "imap_drafts_examined_readonly",
+                "mailbox_writes": 0, "sent": 0}
+    finally:
+        try:
+            client.logout()
+        except Exception:
+            pass
+
+
 def private_preflight(*, conn=None):
     """One-time authorized *metadata-only* live probe; never connects to IMAP.
 
@@ -516,6 +540,8 @@ def main():
             result = private_preflight()
         elif sys.argv[1:] == ["--audit-existing"]:
             result = audit_existing_sources()
+        elif sys.argv[1:] == ["--mailbox-preflight"]:
+            result = mailbox_readonly_preflight()
         elif not sys.argv[1:]:
             result = scheduled_draft_run(os.getenv("GITHUB_RUN_ID", ""))
         else:
@@ -538,6 +564,12 @@ def main():
             "autodraft_draft_queue_tab_missing",
             "autodraft_private_transaction_failed",
             "autodraft_exact_readback_failed",
+            "imap_configuration_missing",
+            "imap_login_failed",
+            "imap_folder_list_failed",
+            "configured_drafts_folder_not_verified",
+            "drafts_folder_missing_or_ambiguous",
+            "imap_readonly_drafts_folder_unavailable",
         })
         detail = str(exc)
         code = detail if detail in allowed else "unclassified_failure"
