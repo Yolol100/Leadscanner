@@ -81,7 +81,7 @@ def load_discovery_suppressions(session=None):
         if not isinstance(raw, list) or len(raw) > len(LEAD_HISTORY_HEADERS):
             raise RuntimeError("lead_history_invalid_row")
         if not any(str(x).strip() for x in raw):
-            continue
+            raise RuntimeError("lead_history_blank_row")
         padded = [str(x or "").strip() for x in raw] + [""] * (len(LEAD_HISTORY_HEADERS) - len(raw))
         run_id, company, website, email, source, status, draft_id, created = padded
         if (not company or not email or not source or status not in {"verified_lead", "draft_queued", "draft_saved"}):
