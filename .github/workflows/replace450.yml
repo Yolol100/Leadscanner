@@ -41,7 +41,7 @@ jobs:
         run: |
           python3 -m compileall -q scripts
           python3 -m unittest discover -s tests -p 'test_*.py' -q
-      - name: Read-only 450 inventory; replacement remains disabled
+      - name: Read-only 450 current-state audit; replacement disabled
         env:
           PYTHONPATH: scripts
           MAILBOX450_TASK: review450-20261015
@@ -55,4 +55,4 @@ jobs:
           OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME || 'Andrew Baeten' }}
           OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
           OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
-        run: python3 scripts/replace450_fast.py
+        run: python3 scripts/live_450_draft_inventory.py
