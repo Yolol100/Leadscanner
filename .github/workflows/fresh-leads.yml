@@ -17,14 +17,16 @@ on:
       region:
         description: Plaats of regio in Nederland
         required: true
+        default: Nederland
         type: string
       keywords:
         description: Branches, komma-gescheiden
         required: true
+        default: vakbedrijven
         type: string
       radius_km:
         description: Zoekstraal in km (0.5-30)
-        default: '8'
+        default: '25'
         required: true
         type: string
       limit:
