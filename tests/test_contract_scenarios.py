@@ -159,7 +159,7 @@ class SuppressionScenarios(unittest.TestCase):
                 self.assertEqual(r["candidates"], [])
 
     def test_not_accepted_if_registry_cannot_load(self):
-        with patch("new_leads.load_suppressions", side_effect=RuntimeError("no registry")), \
+        with patch("new_leads.load_discovery_suppressions", side_effect=RuntimeError("no registry")), \
              patch("new_leads.discover") as fetch:
             with self.assertRaises(RuntimeError):
                 run("Leiden", ["bakkerij"], 8, 5)

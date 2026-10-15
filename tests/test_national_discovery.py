@@ -17,7 +17,7 @@ class NationalDiscoveryTests(unittest.TestCase):
                 {"name_hint": f"Sample {idx} B", "website_hint": f"https://sample{idx}b.nl"},
             ]}
 
-        with patch("new_leads.load_suppressions", return_value=[]), \
+        with patch("new_leads.load_discovery_suppressions", return_value=[]), \
              patch("new_leads.discover", side_effect=source):
             out = new_leads.run("Nederland", ["kapsalon", "bouwbedrijf"], 25, 18)
         self.assertEqual(tuple(visited), new_leads.NATIONAL_HUBS)
@@ -31,13 +31,13 @@ class NationalDiscoveryTests(unittest.TestCase):
         self.assertEqual(out["mailbox_writes"], 0)
 
     def test_partial_region_failure_blocks_result(self):
-        with patch("new_leads.load_suppressions", return_value=[]), \
+        with patch("new_leads.load_discovery_suppressions", return_value=[]), \
              patch("new_leads.discover", side_effect=RuntimeError("down")):
             with self.assertRaisesRegex(RuntimeError, "^national_region_01_source_unavailable$"):
                 new_leads.run("Heel Nederland", ["kapsalon"], 25, 30)
 
     def test_exception_source_details_are_not_logged(self):
-        with patch("new_leads.load_suppressions", return_value=[]), \
+        with patch("new_leads.load_discovery_suppressions", return_value=[]), \
              patch("new_leads.discover", side_effect=RuntimeError("private prospect@example.test")):
             with self.assertRaises(RuntimeError) as captured:
                 new_leads.run("Nederland", ["bouwbedrijf"], 25, 30)
@@ -45,7 +45,7 @@ class NationalDiscoveryTests(unittest.TestCase):
         self.assertNotIn("prospect@example.test", str(captured.exception))
 
     def test_live_suppressions_checked_before_national_download(self):
-        with patch("new_leads.load_suppressions", side_effect=RuntimeError("no registry")), \
+        with patch("new_leads.load_discovery_suppressions", side_effect=RuntimeError("no registry")), \
              patch("new_leads.discover") as source:
             with self.assertRaises(RuntimeError):
                 new_leads.run("Nederland", ["bouwbedrijf"], 25, 30)

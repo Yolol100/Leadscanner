@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 
 from dedupe_preflight import domains_match, match_candidate, normalize_company, normalize_domain
 from overture_discovery import discover
-from registry_readonly import load_suppressions
+from registry_readonly import load_discovery_suppressions
 from target_scope import validate_requested_keywords
 
 
@@ -127,7 +127,7 @@ def run(region, keywords, radius, limit):
         raise ValueError("invalid_inputs")
     validate_requested_keywords(keywords)
     with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
-        registry = load_suppressions()
+        registry = load_discovery_suppressions()
         # Discover more hints than requested: previously contacted businesses
         # and duplicates must not exhaust the new-lead shortlist prematurely.
         scan_limit = min(5000, max(100, limit * 5))
