@@ -69,10 +69,17 @@ def main() -> int:
         if is_batch:
             draft_ids = resolve_batch_request(event_name, event, inputs)
             result = create_batch_from_queue(draft_ids)
-            if result["total"] != result["created"] + result["existing"]:
+            stored = result["created"] + result["existing"]
+            skipped = (result["skipped_invalid"] + result["skipped_suppressed"]
+                       + result["skipped_duplicate"])
+            if result["total"] != stored + skipped:
                 raise RuntimeError("batch_count_mismatch")
-            print("MYHOST_DRAFT=green stored={} new={} existing={} sent=0".format(
-                result["total"], result["created"], result["existing"]))
+            # Only anonymous counts: never reveal a company, email or draft body.
+            print("MYHOST_DRAFT=green requested={} stored={} new={} existing={} "
+                  "skipped={} invalid={} suppressed={} duplicate={} sent=0".format(
+                      result["total"], stored, result["created"], result["existing"],
+                      skipped, result["skipped_invalid"], result["skipped_suppressed"],
+                      result["skipped_duplicate"]))
         else:
             draft_id = resolve_request(event_name, event, inputs)
             result = create_from_queue(draft_id)
