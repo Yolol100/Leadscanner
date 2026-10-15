@@ -163,15 +163,16 @@ class ApprovedPrivateHandoffTests(unittest.TestCase):
                    bad_history_readback=False, write_status=200):
         history = [list(HISTORY_COLS)] + list(existing or [])
         snapshot = [list(COLS)]
+        appended = []
         calls = []
         session = Mock()
 
         def get(url, **_kwargs):
             response = Mock(status_code=200)
             if "LeadHistory" in url:
-                result = history
+                result = history + appended
                 if bad_history_readback and calls:
-                    result = history[:-1]
+                    result = result[:-1]
             elif "Approved" in url:
                 result = snapshot[:1] if bad_approved_readback else snapshot
             else:
@@ -198,7 +199,7 @@ class ApprovedPrivateHandoffTests(unittest.TestCase):
             if len(operations) > 1:
                 assert operations[1]["appendCells"]["sheetId"] == HISTORY_TAB_ID
                 for row in operations[1]["appendCells"]["rows"]:
-                    history.append([
+                    appended.append([
                         cell.get("userEnteredValue", {}).get("stringValue", "")
                         for cell in row["values"]
                     ])
@@ -219,7 +220,7 @@ class ApprovedPrivateHandoffTests(unittest.TestCase):
         self.assertEqual(len(payload["requests"]), 2)
         self.assertEqual(len(payload["requests"][0]["updateCells"]["rows"]), 101)
         self.assertEqual(len(payload["requests"][1]["appendCells"]["rows"]), 100)
-        self.assertEqual(len(history), 101)
+        self.assertEqual(len(history) + len(calls[0]['requests'][1]['appendCells']['rows']), 101)
         self.assertIn("stringValue", str(payload))
         self.assertNotIn("formulaValue", str(payload))
         self.assertEqual(values([], "1234567"), [list(COLS)])
