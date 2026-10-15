@@ -307,7 +307,9 @@ class AtomicApprovedEvidenceTests(unittest.TestCase):
                 response.json.return_value = {"sheets": [
                     {"properties": {"title": "WebsiteEvidence", "sheetId": 456}}]}
             elif "LeadHistory" in url:
-                response.json.return_value = {"values": state["history"]}
+                # Real Sheets JSON returns an isolated payload, not a live list.
+                response.json.return_value = {
+                    "values": [list(row) for row in state["history"]]}
             elif "Approved" in url:
                 response.json.return_value = {"values": state["approved"]}
             elif "WebsiteEvidence" in url:
