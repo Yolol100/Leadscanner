@@ -70,8 +70,9 @@ class MyHostDraftTests(unittest.TestCase):
 
     def test_creates_and_reads_back_without_smtp(self):
         client=FakeIMAP()
-        with patch("myhost_draft.time.sleep", return_value=None):
+        with patch("myhost_draft.time.sleep", return_value=None) as delayed:
             result=d.save_draft(client,"Drafts",ROW)
+        delayed.assert_not_called()
         self.assertEqual(result,"created")
         self.assertEqual(client.append_calls,1)
         self.assertEqual(len(client.messages),1)
