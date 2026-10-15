@@ -62,7 +62,8 @@ jobs:
       github.ref == 'refs/heads/main' &&
       (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' ||
        (github.event_name == 'push' &&
-        startsWith(github.event.head_commit.message, 'LEADS_EVIDENCE_ONCE:')))
+        (startsWith(github.event.head_commit.message, 'LEADS_EVIDENCE_ONCE:') ||
+         startsWith(github.event.head_commit.message, 'LEADS_CACHE_SMOKE:'))))
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
