@@ -455,8 +455,26 @@ def main():
         # GitHub only sees aggregate counters; zero customer identifiers/copy.
         print(json.dumps(result, ensure_ascii=True, sort_keys=True))
         return 0
-    except Exception:
-        print('{"status":"blocked","sent":0,"details":"suppressed"}')
+    except Exception as exc:
+        # Only closed internal diagnostic codes, never raw API messages,
+        # company/email/subject or untrusted exception strings in GitHub.
+        allowed = frozenset({
+            "autodraft_private_source_read_failed",
+            "autodraft_private_source_shape_invalid",
+            "autodraft_missing_private_headers",
+            "autodraft_private_headers_changed",
+            "autodraft_private_row_invalid",
+            "autodraft_state_metadata_unavailable",
+            "autodraft_state_create_failed",
+            "autodraft_preflight_header_write_failed",
+            "autodraft_draft_queue_tab_missing",
+            "autodraft_private_transaction_failed",
+            "autodraft_exact_readback_failed",
+        })
+        detail = str(exc)
+        code = detail if detail in allowed else "unclassified_failure"
+        print(json.dumps({"status": "blocked", "reason": code, "sent": 0},
+                         sort_keys=True))
         return 1
 
 
