@@ -26,8 +26,15 @@ class WorkflowSpeedContract(unittest.TestCase):
         self.assertIn("overturemaps", requirements)
         workflow = (ROOT / ".github/workflows/fresh-leads.yml").read_text()
         self.assertIn("queue: max", workflow)
-        self.assertEqual(workflow.count("cache-dependency-path: requirements.txt"), 5)
-        self.assertIn("  auto_first_drafts:", workflow)
+        # The heavy Overture dependency belongs to discovery, never the
+        # scheduled IMAP/Draft Queue jobs or the metadata-only canary.
+        self.assertEqual(workflow.count("cache-dependency-path: requirements.txt"), 3)
+        draft, preflight = workflow.split("  auto_first_drafts:", 1)[1].split(
+            "  auto_draft_preflight:", 1)
+        for job in (draft, preflight):
+            self.assertIn("pip install -r requirements-draft.txt", job)
+            self.assertIn("cache-dependency-path: requirements-draft.txt", job)
+            self.assertNotIn("pip install -r requirements.txt", job)
         self.assertIn("python3 -m unittest discover", workflow)
 
 
