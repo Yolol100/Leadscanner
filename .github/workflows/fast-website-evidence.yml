@@ -1,5 +1,7 @@
 name: Fast official website evidence - private only
 on:
+  push:
+    branches: [main]
   schedule:
     # Weekday automatic refresh of the existing private Approved snapshot.
     - cron: '17 7 * * 1-5'
@@ -56,7 +58,11 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_fast_website_evidence.py' -v
           python3 -m unittest discover -s tests -p 'test_verified_fill_100.py' -q
   research:
-    if: (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' ||
+       (github.event_name == 'push' &&
+        startsWith(github.event.head_commit.message, 'LEADS_EVIDENCE_ONCE:')))
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -75,9 +81,9 @@ jobs:
           PYTHONPATH: scripts
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON }}
-          SOURCE: ${{ github.event_name == 'schedule' && 'Approved' || inputs.source }}
-          BATCH: ${{ github.event_name == 'schedule' && '1' || inputs.batch }}
-          FORCE_RECHECK: ${{ github.event_name == 'schedule' && 'false' || inputs.force }}
+          SOURCE: ${{ github.event_name != 'workflow_dispatch' && 'Approved' || inputs.source }}
+          BATCH: ${{ github.event_name != 'workflow_dispatch' && '1' || inputs.batch }}
+          FORCE_RECHECK: ${{ github.event_name != 'workflow_dispatch' && 'false' || inputs.force }}
         run: |
           if [ "$SOURCE" = "Approved" ] && [ "$BATCH" != "1" ]; then
             echo "Invalid Approved batch" >&2
