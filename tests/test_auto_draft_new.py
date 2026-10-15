@@ -272,6 +272,26 @@ class AutomaticDraftSafetyTests(unittest.TestCase):
                 a.private_preflight(conn=Mock())
         imap.assert_not_called()
 
+    def test_only_allowlisted_private_diagnostic_codes_reach_ci(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        import sys
+        for cause,expected in [
+            ("autodraft_preflight_header_write_failed",
+             "autodraft_preflight_header_write_failed"),
+            ("PII test@example.invalid on company website",
+             "unclassified_failure"),
+        ]:
+            with self.subTest(cause=expected), patch.object(
+                  a, "private_preflight", side_effect=RuntimeError(cause)), \
+                 patch.object(sys, "argv", ["script.py","--preflight"]), \
+                 redirect_stdout(StringIO()) as capture:
+                code = a.main()
+            self.assertEqual(code, 1)
+            info = json.loads(capture.getvalue())
+            self.assertEqual(info["reason"], expected)
+            self.assertNotIn("test@example.invalid", capture.getvalue())
+
     def test_schedule_is_bound_to_main_and_no_smtp(self):
         path = Path(__file__).resolve().parents[1] / ".github/workflows/fresh-leads.yml"
         workflow = path.read_text()
