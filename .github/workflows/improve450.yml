@@ -1,0 +1,73 @@
+name: Improve 450 - only private reviewed proposals
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      batch:
+        description: Which group of 100 or final 50 to improve?
+        required: true
+        type: choice
+        options: ['1', '2', '3', '4', '5']
+      confirmation:
+        description: Exact approved task identifier
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  improve:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      ((github.event_name == 'workflow_dispatch' && inputs.confirmation == 'review450-20261015') ||
+      (github.event_name == 'push' &&
+       (startsWith(github.event.head_commit.message, 'LEADS_IMPROVE450_BATCH1_ONLY:') ||
+        startsWith(github.event.head_commit.message, 'LEADS_IMPROVE450_BATCH2_ONLY:') ||
+        startsWith(github.event.head_commit.message, 'LEADS_IMPROVE450_BATCH3_ONLY:') ||
+        startsWith(github.event.head_commit.message, 'LEADS_IMPROVE450_BATCH4_ONLY:') ||
+        startsWith(github.event.head_commit.message, 'LEADS_IMPROVE450_BATCH5_ONLY:'))))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    concurrency:
+      group: leadscanner-private-450-improvement
+      cancel-in-progress: false
+      queue: max
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: python3 -m pip install -r requirements.txt
+      - name: Test closed-source handling and stage boundaries
+        env:
+          PYTHONPATH: scripts
+        run: |
+          python3 -m compileall -q scripts
+          python3 -m unittest discover -s tests -p 'test_improve450_copy.py' -q
+      - name: Generate proposals only in private Drive; no IMAP access
+        env:
+          PYTHONPATH: scripts
+          IMPROVE450_TASK: review450-20261015
+          COMMIT_TRIGGER: ${{ github.event.head_commit.message }}
+          SELECTED_BATCH: ${{ github.event_name == 'workflow_dispatch' && inputs.batch || '' }}
+          LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON || secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [ -n "$SELECTED_BATCH" ]; then
+            IMPROVE450_BATCH="$SELECTED_BATCH"
+          else
+            case "$COMMIT_TRIGGER" in
+              LEADS_IMPROVE450_BATCH1_ONLY:*) IMPROVE450_BATCH=1 ;;
+              LEADS_IMPROVE450_BATCH2_ONLY:*) IMPROVE450_BATCH=2 ;;
+              LEADS_IMPROVE450_BATCH3_ONLY:*) IMPROVE450_BATCH=3 ;;
+              LEADS_IMPROVE450_BATCH4_ONLY:*) IMPROVE450_BATCH=4 ;;
+              LEADS_IMPROVE450_BATCH5_ONLY:*) IMPROVE450_BATCH=5 ;;
+              *) echo "IMPROVE450=blocked unauthorized_phase sent=0 mailbox_writes=0"; exit 1 ;;
+            esac
+          fi
+          export IMPROVE450_BATCH
+          python3 scripts/improve450_runner.py
