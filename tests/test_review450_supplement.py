@@ -73,6 +73,8 @@ class SupplementTests(unittest.TestCase):
         with patch.object(b,"load_rows",side_effect=[current,current,expected]), \
              patch.object(b,"read",side_effect=read), \
              patch.object(s,"private_exclusions",return_value=set()), \
+             patch.object(s,"load_checkpoint",return_value=([],0,0)), \
+             patch.object(s,"save_checkpoint"), \
              patch("registry_readonly.load_suppressions",return_value=[]), \
              patch("registry_readonly.load_discovery_suppressions",return_value=[]), \
              patch("review450_strict.inspect",return_value=new) as inspect, \
