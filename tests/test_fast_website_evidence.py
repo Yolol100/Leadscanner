@@ -179,6 +179,10 @@ class FastOfficialEvidenceTests(unittest.TestCase):
         self.assertEqual(r["emails_sent"],0)
         self.assertEqual(r["mailbox_writes"],0)
 
+    def test_interrupted_new_sheet_resumes_without_trusting_empty_data(self):
+        with patch.object(q, "_read", return_value=[]):
+            self.assertEqual(q._cache(Mock()), {})
+
     def test_final_readback_mismatch_blocks(self):
         client=Mock()
         client.post.return_value.status_code=200
