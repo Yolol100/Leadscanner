@@ -87,7 +87,13 @@ def _read(conn, spreadsheet, a1):
     response = conn.get(url, timeout=30)
     if response.status_code != 200:
         raise RuntimeError("autodraft_private_source_read_failed")
-    rows = response.json().get("values")
+    payload = response.json()
+    if not isinstance(payload, dict):
+        raise RuntimeError("autodraft_private_source_shape_invalid")
+    # Google Sheets omits the 'values' field for an empty tab or range.
+    # A 200 response without values is empty, not malformed. Required
+    # Approved/DraftQueue headers are separately checked in _parse_table.
+    rows = payload.get("values", [])
     if not isinstance(rows, list):
         raise RuntimeError("autodraft_private_source_shape_invalid")
     return rows
