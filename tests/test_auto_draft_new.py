@@ -76,6 +76,11 @@ class AutomaticDraftSafetyTests(unittest.TestCase):
                 f = fact(); f["status"] = status
                 self.assertIsNone(a._eligible(approved(), {f["record_key"]: f}))
 
+    def test_wrong_cluster_for_verified_branch_is_blocked(self):
+        r = approved()
+        r["cluster"] = "3"  # Hoveniers are cluster 1, not restaurant sales.
+        self.assertIsNone(a._eligible(r, evidence()))
+
     def test_cross_domain_email_is_excluded(self):
         r = approved(); r["email"] = "info@ander.nl"
         self.assertIsNone(a._eligible(r, evidence()))
