@@ -1,0 +1,62 @@
+name: Mijn.Host 450 - explicit replacement
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: Read-only inventory or approved replacement
+        type: choice
+        required: true
+        options: [inspect, install]
+      confirmation:
+        description: Exact user-authorized task identity
+        type: string
+        required: true
+permissions:
+  contents: read
+jobs:
+  mailbox:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      ((github.event_name == 'push' &&
+        (startsWith(github.event.head_commit.message, 'LEADS_INSPECT450_ONLY:') ||
+         startsWith(github.event.head_commit.message, 'LEADS_INSTALL450_ONLY:'))) ||
+       (github.event_name == 'workflow_dispatch' && inputs.confirmation == 'review450-20261015'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    concurrency:
+      group: leadscanner-myhost-draft
+      cancel-in-progress: false
+      queue: max
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: python3 -m pip install -r requirements.txt
+      - name: Synthetic safety tests without credentials
+        env:
+          PYTHONPATH: scripts
+        run: |
+          python3 -m compileall -q scripts
+          python3 -m unittest discover -s tests -p 'test_*.py' -q
+      - name: Only the explicitly authorized task phase
+        env:
+          PYTHONPATH: scripts
+          MAILBOX450_TASK: review450-20261015
+          MAILBOX450_PHASE: ${{ github.event_name == 'push' && (startsWith(github.event.head_commit.message, 'LEADS_INSTALL450_ONLY:') && 'install' || 'inspect') || inputs.phase }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON }}
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME || 'Andrew Baeten' }}
+          OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
+          OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
+        run: python3 scripts/replace450.py
