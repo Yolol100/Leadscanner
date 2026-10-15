@@ -265,6 +265,16 @@ class FastOfficialEvidenceTests(unittest.TestCase):
                                         expected_email="info@voorbeeld.nl")
         self.assertNotIn("_captured_pages", got)
 
+    def test_large_robots_policy_is_bounded_before_site_fetch(self):
+        import verify_official_lead as verifier
+        malicious = FakeResponse("x" * 150000)
+        client = Mock()
+        client.get.return_value = malicious
+        with patch("verify_official_lead.is_public_http_url", return_value=True):
+            self.assertIsNone(verifier._robots_policy("https://voorbeeld.nl/", client))
+        self.assertEqual(client.get.call_count, 1)
+        self.assertTrue(client.get.call_args.kwargs["stream"])
+
     def test_evidence_captures_contact_locality_only_when_homepage_lacks_it(self):
         hint = {"name_hint": "Hovenier Amstel",
                 "website_hint": "https://voorbeeld.nl/",
