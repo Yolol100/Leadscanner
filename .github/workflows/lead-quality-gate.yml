@@ -1,0 +1,27 @@
+name: Lead quality gate - synthetic tests
+on:
+  pull_request:
+    paths:
+      - scripts/lead_quality_gate.py
+      - tests/test_lead_quality_gate.py
+      - docs/lead-quality-first-touch.md
+      - references/lead-quality-contract.md
+      - .github/workflows/lead-quality-gate.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Synthetic quality-regression suite (no private data)
+        env:
+          PYTHONPATH: scripts
+        run: python3 -m unittest discover -s tests -p 'test_lead_quality_gate.py' -v
