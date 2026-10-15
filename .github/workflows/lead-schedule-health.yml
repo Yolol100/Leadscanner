@@ -4,6 +4,8 @@ on:
     # Run after the weekly 06:23 UTC discovery and weekday 07:17 UTC research.
     - cron: '20 13 * * 1-5'
   workflow_dispatch:
+  push:
+    branches: [main]
   pull_request:
     paths:
       - scripts/schedule_health.py
@@ -29,7 +31,10 @@ jobs:
           PYTHONPATH: scripts
         run: python3 -m unittest discover -s tests -p 'test_schedule_health.py' -v
   health:
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'LEADS_SCHEDULE_HEALTH_ONLY:')))
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
