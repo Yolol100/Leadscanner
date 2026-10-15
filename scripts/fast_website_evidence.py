@@ -274,7 +274,11 @@ def _cache_id(conn):
 
 def _cache(conn):
     raw = _read(conn, TAB + "!A1:N1000")
-    if not raw or raw[0] != list(COLUMNS):
+    # A run interrupted just after addSheet may leave a genuinely empty tab.
+    # Retrying is safe: recheck every source before the first actual write.
+    if not raw:
+        return {}
+    if raw[0] != list(COLUMNS):
         raise RuntimeError("evidence_cache_header_invalid")
     result = {}
     for line in raw[1:]:
