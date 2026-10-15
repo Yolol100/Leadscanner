@@ -30,11 +30,15 @@ class MemoryMailbox:
         self.supported=True
         self.saves=0
         self.fail_at=None
+        self.id_index={}
         for i in range(count):
-            msg=build_message({"draft_id":"draft-"+format(i+1000,"032x"),
+            draft_id="draft-"+format(i+1000,"032x")
+            msg=build_message({"draft_id":draft_id,
                  "email":"info@old-{}.example.org".format(i),"subject":"Old fictional review",
                  "body":"Goedendag,\n\nFictieve oorspronkelijke inhoud.\n\nGroet,\nAndrew"})
-            self.messages[str(i+1)]=(msg.as_bytes(),{b"\\DRAFT"})
+            uid=str(i+1)
+            self.messages[uid]=(msg.as_bytes(),{b"\\DRAFT"})
+            self.id_index[draft_id]=uid
         self.next_uid=100
 
     def capability(self):
@@ -75,12 +79,15 @@ class MemoryMailbox:
         self.saves+=1
         if self.fail_at==self.saves:
             raise RuntimeError("imap_append_failed")
-        for raw,flags in self.messages.values():
-            msg=BytesParser(policy=policy.default).parsebytes(raw)
-            if msg.get("X-Webactueel-Draft-ID")==row["draft_id"]:
-                return "existing"
+        # Only the synthetic server's ID lookup is indexed. Production content
+        # verification below still parses every message and checks all fields.
+        uid=self.id_index.get(row["draft_id"])
+        if uid in self.messages:
+            return "existing"
         self.next_uid+=1
-        self.messages[str(self.next_uid)]=(build_message(row).as_bytes(),{b"\\DRAFT"})
+        uid=str(self.next_uid)
+        self.messages[uid]=(build_message(row).as_bytes(),{b"\\DRAFT"})
+        self.id_index[row["draft_id"]]=uid
         return "created"
 
 
@@ -121,7 +128,6 @@ class ReplacementTests(unittest.TestCase):
         self.assertTrue(all(u not in m.messages for u in plan))
         self.assertEqual(len(r.verify_new(r.scan(m),self.rows)),450)
         self.assertEqual(progress.call_args.args,("completed",450,3))
-        # Retry with the same plan/IDs is idempotent; no new duplicate messages.
         with patch("myhost_draft.save_draft",side_effect=m.save):
             result2=r.replace(m,"Drafts","7",plan,self.rows,recheck=Mock(),progress=Mock())
         self.assertEqual(result2["stored"],450)
