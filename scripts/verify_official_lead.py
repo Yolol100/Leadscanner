@@ -208,7 +208,7 @@ def _robots_policy(base_url, session):
         return None
 
 
-def verify_official_site(row, *, session=requests):
+def verify_official_site(row, *, session=requests, expected_email=None):
     """Return a conservatively verified company+published email or None."""
     from new_leads import safe_hint
     from target_scope import is_blocked_place
@@ -245,6 +245,21 @@ def verify_official_site(row, *, session=requests):
         r"(?<![a-z0-9._%+-])[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,63}", 
         " ".join(page.texts), re.I))
     source_by_email = {email: url for email in candidates}
+    # Reverification-only fast path: the exact previously selected email is
+    # already visibly published on this official homepage. Reuse the captured
+    # homepage instead of needlessly loading the same site's contact page.
+    # New discovery calls keep the original named-owner-first search unchanged.
+    expected = str(expected_email or "").strip().casefold()
+    if expected and not MAIL_RE.fullmatch(expected):
+        return None
+    if expected and expected in candidates:
+        return {
+            "company": name, "website": url, "email": expected,
+            "source_url": url, "cluster": mapping[0],
+            "branche_meervoud": mapping[1],
+            "greeting": "Hoi," if mapping[0] >= 5 else "Goedendag,",
+            "status": "verified_website_and_email",
+        }
     # Only a linked, same-domain contact/about page, never a generic site crawl.
     links = []
     for href in page.links:
@@ -283,6 +298,12 @@ def verify_official_site(row, *, session=requests):
         if person:
             first, chosen = person.group(1), email
             break
+    if expected:
+        if expected not in published:
+            return None
+        # Exact-address rechecks must not silently substitute a different
+        # address that is also on the official contact page.
+        chosen, first = expected, None
     if chosen is None:
         if not general:
             return None
