@@ -1,0 +1,165 @@
+"""No-network acceptance for automatic refill to 100 verified leads.
+
+The verifier is always mocked in refill tests: no real business contact data.
+"""
+import unittest
+from unittest.mock import Mock, patch
+
+from approved_handoff import COLS, store_approved, values
+from verify_official_lead import category, verify_official_site
+from verified_fill import fill_verified, MAX_SITE_CHECKS, MAX_WORKERS
+
+
+def hint(i):
+    return {"overture_id": f"test-{i}", "name_hint": f"Fictief Kapsalon {i}",
+            "website_hint": f"https://fictief-{i}.nl/",
+            "category_hint": "hair salon"}
+
+
+def approved(row):
+    name = row["name_hint"]
+    domain = row["website_hint"].split("/")[2]
+    return {"company": name, "website": row["website_hint"],
+            "email": f"info@{domain}", "source_url": row["website_hint"],
+            "cluster": 2, "branche_meervoud": "kappers",
+            "greeting": "Goedendag,", "status": "verified_website_and_email"}
+
+
+class FakeResponse:
+    def __init__(self, text="", status=200, content_type="text/html"):
+        self.status_code = status
+        self.headers = {"Content-Type": content_type}
+        self.content = text.encode()
+        self.text = text
+
+    def iter_content(self, chunk_size):
+        yield self.content
+
+    def close(self):
+        pass
+
+
+class WebsiteProofTests(unittest.TestCase):
+    def test_belongs_to_official_site_and_email_is_published(self):
+        site = hint(1)
+        site["name_hint"] = "Schildersbedrijf Amstel"
+        site["category_hint"] = "painter"
+        html = ('<html><title>Schildersbedrijf Amstel</title><h1>Amstel</h1>'
+                '<a href="/contact/">Contact</a></html>')
+        contact = '<html><a href="mailto:info@fictief-1.nl">info@fictief-1.nl</a></html>'
+        session = Mock()
+        def get(url, **kw):
+            if url.endswith("/robots.txt"):
+                return FakeResponse(status=404)
+            return FakeResponse(contact if "/contact/" in url else html)
+        session.get.side_effect = get
+        with patch("verify_official_lead.is_public_http_url", return_value=True):
+            v = verify_official_site(site, session=session)
+        self.assertEqual(v["email"], "info@fictief-1.nl")
+        self.assertEqual(v["cluster"], 1)
+        self.assertEqual(v["source_url"], "https://fictief-1.nl/contact/")
+        self.assertEqual(v["greeting"], "Goedendag,")
+
+    def test_no_published_email_or_wrong_company_never_approved(self):
+        site = hint(2)
+        session = Mock()
+        session.get.side_effect = lambda url, **kw: (
+            FakeResponse(status=404) if url.endswith("robots.txt")
+            else FakeResponse("<html><h1>Ander Bedrijf</h1></html>"))
+        with patch("verify_official_lead.is_public_http_url", return_value=True):
+            self.assertIsNone(verify_official_site(site, session=session))
+        self.assertIsNone(category({"category_hint": "software agency"}))
+
+
+class RefillTests(unittest.TestCase):
+    def test_continues_searching_until_exactly_100_not_100_hints(self):
+        calls = []
+        def discoverer(**kwargs):
+            calls.append(kwargs["region"])
+            # First region has 70 website hints, next 90. Do not query a third.
+            offset, number = (0, 70) if len(calls) == 1 else (70, 90)
+            return {"candidates": [hint(i) for i in range(offset, offset + number)]}
+        def verifier(row):
+            # Reject 20% of candidates after visiting the official site.
+            return None if int(row["overture_id"].split("-")[1]) % 5 == 0 else approved(row)
+        result = fill_verified("Nederland", ["vakbedrijven"], 25,
+                               discoverer=discoverer, verifier=verifier,
+                               load_registry=lambda: [])
+        self.assertEqual(result["counts"]["approved"], 100)
+        self.assertEqual(len(result["approved"]), 100)
+        self.assertTrue(result["complete"])
+        self.assertGreater(result["counts"]["sites_checked"], 100)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(result["emails_sent"], 0)
+
+    def test_historically_suppressed_company_is_skipped_before_web_requests(self):
+        items = [hint(i) for i in range(1, 102)]
+        def matcher(identity, registry):
+            return {"reason": "opt_out"} if identity["name_hint"] == "Fictief Kapsalon 2" else None
+        with patch("verified_fill.match_candidate", side_effect=matcher):
+            r = fill_verified("Delft", ["vakbedrijven"], 8,
+                discoverer=lambda **k: {"candidates": items},
+                verifier=lambda row: approved(row), load_registry=lambda: ["complete"])
+        self.assertEqual(r["counts"]["previously_used"], 1)
+        self.assertTrue(r["complete"])
+        self.assertFalse(any(x["company"] == "Fictief Kapsalon 2" for x in r["approved"]))
+
+    def test_bounded_shortfall_is_reported_honestly_not_faked(self):
+        r = fill_verified("Delft", ["vakbedrijven"], 8,
+            discoverer=lambda **k: {"candidates": [hint(i) for i in range(10)]},
+            verifier=lambda row: None, load_registry=lambda: [])
+        self.assertFalse(r["complete"])
+        self.assertEqual(r["counts"]["approved"], 0)
+        self.assertEqual(r["counts"]["sites_checked"], 10)
+        self.assertLessEqual(r["counts"]["sites_checked"], MAX_SITE_CHECKS)
+        self.assertLessEqual(MAX_WORKERS, 8)
+
+    def test_registry_unavailable_stops_before_discovery(self):
+        discoverer = Mock()
+        def fail():
+            raise RuntimeError("HMAC state unavailable")
+        with self.assertRaisesRegex(RuntimeError, "HMAC"):
+            fill_verified("Delft", ["vakbedrijven"], 8,
+                discoverer=discoverer, load_registry=fail)
+        discoverer.assert_not_called()
+
+    def test_unavailable_sources_not_reported_complete(self):
+        with self.assertRaisesRegex(RuntimeError, "source_unavailable"):
+            fill_verified("Delft", ["vakbedrijven"], 8,
+                discoverer=Mock(side_effect=RuntimeError("down")),
+                load_registry=lambda: [])
+
+
+class ApprovedPrivateHandoffTests(unittest.TestCase):
+    def test_one_write_exact_private_readback_and_clear_stale_rows(self):
+        data = [approved(hint(i)) for i in range(100)]
+        expected = values(data, "1234567")
+        session = Mock()
+        session.post.return_value.status_code = 200
+        session.get.return_value.status_code = 200
+        session.get.return_value.json.return_value = {"values": expected}
+        result = store_approved(data, run_id="1234567", session=session)
+        self.assertEqual(result, 100)
+        session.post.assert_called_once()
+        session.get.assert_called_once()
+        payload = session.post.call_args.kwargs["json"]
+        self.assertEqual(len(payload["requests"][0]["updateCells"]["rows"]), 101)
+        self.assertIn("stringValue", str(payload))
+        self.assertNotIn("formulaValue", str(payload))
+        self.assertEqual(values([], "1234567"), [list(COLS)])
+
+    def test_incomplete_readback_and_unverified_status_fail(self):
+        data = [approved(hint(1))]
+        session = Mock()
+        session.post.return_value.status_code = 200
+        session.get.return_value.status_code = 200
+        session.get.return_value.json.return_value = {"values": [list(COLS)]}
+        with self.assertRaisesRegex(RuntimeError, "approved_handoff_unverified"):
+            store_approved(data, run_id="1234567", session=session)
+        data[0]["status"] = "unverified"
+        with self.assertRaisesRegex(RuntimeError, "approved_handoff_invalid_row"):
+            values(data, "1234567")
+
+
+if __name__ == "__main__":
+    unittest.main()
