@@ -70,7 +70,7 @@ class TargetScopeTests(unittest.TestCase):
         self.assertFalse(is_blocked_place("Loodgietersbedrijf De Waterman", "plumber"))
 
     def test_run_rejects_blocked_target_before_registry_or_discovery(self):
-        with patch("new_leads.load_suppressions") as registry, patch("new_leads.discover") as discovery:
+        with patch("new_leads.load_discovery_suppressions") as registry, patch("new_leads.discover") as discovery:
             with self.assertRaises(ValueError):
                 run("Leiden", ["marketingbureau"], 8, 10)
             registry.assert_not_called()
