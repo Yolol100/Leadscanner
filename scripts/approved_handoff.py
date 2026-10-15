@@ -115,7 +115,7 @@ def values(approved, run_id):
     return rows
 
 
-def store_approved(approved, *, run_id=None, session=None):
+def store_approved(approved, *, run_id=None, session=None, evidence_rows=None):
     rid = str(run_id or os.getenv("GITHUB_RUN_ID") or "")
     expected = values(approved, rid)
     padded = expected + [[""] * len(COLS) for _ in range(MAX + 1 - len(expected))]
@@ -126,8 +126,31 @@ def store_approved(approved, *, run_id=None, session=None):
     try:
         history = _read_history(conn, base)
         additions = _history_additions(history, expected)
-        # The snapshot replacement and permanent history append must commit
-        # together. Sheets batchUpdate is atomic: no partial two-write state.
+        if evidence_rows is not None:
+            from fast_website_evidence import (COLUMNS as EVIDENCE_COLUMNS,
+                _cache as read_evidence_cache, _read as read_evidence_values,
+                plan_atomic_evidence_write)
+            if (not isinstance(evidence_rows, list) or
+                    len(evidence_rows) != len(approved)):
+                raise RuntimeError("evidence_atomic_count_invalid")
+            for line, record in zip(expected[1:], evidence_rows):
+                from fast_website_evidence import _digest
+                if (record.get("record_key") != "Approved:" +
+                        _digest([line[1], line[2], line[3]])[:24] or
+                        record.get("source_sha256") != _digest([
+                            line[1], line[2], line[3], line[6]]) or
+                        record.get("company") != line[1] or
+                        record.get("website") != line[2] or
+                        record.get("email") != line[3] or
+                        record.get("branch") != line[6] or
+                        record.get("source_tab") != "Approved"):
+                    raise RuntimeError("evidence_atomic_identity_mismatch")
+            evidence_request, evidence_expected, evidence_baseline = (
+                plan_atomic_evidence_write(conn, evidence_rows))
+            if read_evidence_cache(conn) != evidence_baseline and evidence_baseline:
+                raise RuntimeError("evidence_atomic_cache_changed")
+        # The snapshot, permanent history and official fact cache must commit
+        # together. A failed Sheets batchUpdate commits NONE of these rows.
         requests = [{
             "updateCells": {
                 "range": {"sheetId": TAB_ID, "startRowIndex": 0,
@@ -143,6 +166,8 @@ def store_approved(approved, *, run_id=None, session=None):
                                      for x in item]} for item in additions],
                 "fields": "userEnteredValue"
             }})
+        if evidence_rows is not None:
+            requests.append(evidence_request)
         response = conn.post(base + ":batchUpdate",
                              json={"requests": requests}, timeout=30)
         if response.status_code != 200:
@@ -153,6 +178,10 @@ def store_approved(approved, *, run_id=None, session=None):
         actual = _read_history(conn, base)
         if actual != history + additions:
             raise RuntimeError("lead_history_readback_failed")
+        if evidence_rows is not None:
+            if read_evidence_values(conn, "WebsiteEvidence!A1:N" +
+                                    str(len(evidence_expected))) != evidence_expected:
+                raise RuntimeError("evidence_atomic_readback_failed")
         return len(approved)
     except Exception:
         raise RuntimeError("approved_handoff_unverified") from None

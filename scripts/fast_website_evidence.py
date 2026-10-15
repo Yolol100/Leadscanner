@@ -415,6 +415,80 @@ def run(source, batch=1, *, conn=None, worker=inspect, force=False):
     }
 
 
+def _prepare_preverified_records(records, approved):
+    """Derive official-site facts from the SAME trusted verification pass."""
+    if (not isinstance(approved, list) or len(records) != len(approved)
+            or not approved or len(approved) > BATCH_SIZE):
+        raise RuntimeError("preverified_approved_invalid")
+    output = []
+    for record, actual in zip(records, approved):
+        if (not isinstance(actual, dict) or
+                not isinstance(actual.get("_captured_pages"), list) or
+                not actual["_captured_pages"]):
+            raise RuntimeError("preverified_official_pages_missing")
+        if (record["company"] != actual.get("company") or
+                record["website"] != actual.get("website") or
+                record["email"] != actual.get("email") or
+                record["branch"] != actual.get("branche_meervoud") or
+                record["source_sha256"] != _digest([
+                    record["company"], record["website"],
+                    record["email"], record["branch"]])):
+            raise RuntimeError("preverified_approved_snapshot_mismatch")
+        output.append(inspect_verified(record, actual, actual["_captured_pages"]))
+    return output
+
+
+def prepare_new_approved_evidence(approved, expected_rows):
+    """Build facts before saving an Approved snapshot; no network or writes."""
+    if (not isinstance(expected_rows, list) or not expected_rows or
+            expected_rows[0] != list(APPROVED_COLUMNS) or
+            len(expected_rows) != len(approved) + 1):
+        raise RuntimeError("preverified_expected_approved_invalid")
+    records = []
+    for number, line in enumerate(expected_rows[1:], start=2):
+        if (len(line) != len(APPROVED_COLUMNS) or
+                line[8] != "verified_website_and_email"):
+            raise RuntimeError("preverified_expected_approved_invalid")
+        _, company, website, email, _, _, branch, _, _ = line
+        records.append({
+            "record_key": "Approved:" + _digest([company, website, email])[:24],
+            "source_tab": "Approved", "source_row": str(number),
+            "source_sha256": _digest([company, website, email, branch]),
+            "company": company, "website": website, "email": email,
+            "branch": branch,
+        })
+    return _prepare_preverified_records(records, approved)
+
+
+def plan_atomic_evidence_write(conn, results):
+    """Prepare one updateCells for the Approved+History+Evidence transaction.
+
+    A missing evidence tab is created EMPTY before any lead/history commit.
+    A Sheets batchUpdate combining this request and the other two is atomic.
+    """
+    if (not isinstance(results, list) or not results or
+            len(results) > BATCH_SIZE or
+            len({r.get("record_key") for r in results}) != len(results) or
+            any(r.get("source_tab") != "Approved" for r in results)):
+        raise RuntimeError("evidence_atomic_input_invalid")
+    tab_id, created = _cache_id(conn)
+    existing = {} if created else _cache(conn)
+    merged = _cache_rows_after_retention(existing, results)
+    expected = [list(COLUMNS)] + [
+        [str(r.get(k, "")) for k in COLUMNS] for r in merged.values()]
+    length = max(len(expected), len(existing) + 1)
+    padded = expected + [[""] * len(COLUMNS) for _ in range(length-len(expected))]
+    rows = [{"values": [
+        {"userEnteredValue": {"stringValue": item}} if item else {}
+        for item in row]} for row in padded]
+    request = {"updateCells": {
+        "range": {"sheetId": tab_id, "startRowIndex": 0,
+                  "endRowIndex": length, "startColumnIndex": 0,
+                  "endColumnIndex": len(COLUMNS)},
+        "rows": rows, "fields": "userEnteredValue"}}
+    return request, expected, existing
+
+
 def store_preverified_approved(approved, *, conn=None):
     """Persist facts from the *same* first verification, with zero website GETs.
 
@@ -432,16 +506,7 @@ def store_preverified_approved(approved, *, conn=None):
     records, checksum = _input(conn, "Approved", 1)
     if len(records) != len(approved):
         raise RuntimeError("preverified_approved_snapshot_count_changed")
-    results = []
-    for record, actual in zip(records, approved):
-        if not isinstance(actual, dict) or not isinstance(actual.get("_captured_pages"), list):
-            raise RuntimeError("preverified_official_pages_missing")
-        if (record["company"] != actual.get("company") or
-                record["website"] != actual.get("website") or
-                record["email"] != actual.get("email") or
-                record["branch"] != actual.get("branche_meervoud")):
-            raise RuntimeError("preverified_approved_snapshot_mismatch")
-        results.append(inspect_verified(record, actual, actual["_captured_pages"]))
+    results = _prepare_preverified_records(records, approved)
     if _input(conn, "Approved", 1)[1] != checksum:
         raise RuntimeError("preverified_approved_changed_during_review")
     tab_id, created = _cache_id(conn)

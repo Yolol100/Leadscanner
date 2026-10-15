@@ -178,11 +178,25 @@ def main():
             extra = {"source_rows": 0, "captured_without_refetch": 0,
                      "verified_with_detail": 0, "needs_manual_check": 0}
             if result["approved"]:
-                from approved_handoff import store_approved
-                saved = store_approved(result["approved"])
-                # The original official pages are never fetched twice.
-                from fast_website_evidence import store_preverified_approved
-                extra = store_preverified_approved(result["approved"])
+                from approved_handoff import store_approved, values as approved_values
+                from fast_website_evidence import prepare_new_approved_evidence
+                # Derive all evidence from the original verified website pages
+                # BEFORE the lead enters permanent suppression/history.
+                # On failure, NONE of the three private tables is committed.
+                approved_snapshot = approved_values(
+                    result["approved"], os.getenv("GITHUB_RUN_ID", ""))
+                fact_rows = prepare_new_approved_evidence(
+                    result["approved"], approved_snapshot)
+                saved = store_approved(result["approved"],
+                                       evidence_rows=fact_rows)
+                extra = {
+                    "source_rows": len(fact_rows),
+                    "captured_without_refetch": len(fact_rows),
+                    "verified_with_detail": sum(
+                        row["status"] == "verified_with_detail" for row in fact_rows),
+                    "needs_manual_check": sum(
+                        row["status"] == "needs_manual_check" for row in fact_rows),
+                }
         print(json.dumps({
             "status": "complete" if result["complete"] else "partial",
             "target": 100, "approved_stored_privately": saved,

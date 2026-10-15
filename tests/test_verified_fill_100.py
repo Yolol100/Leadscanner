@@ -274,5 +274,135 @@ class ApprovedPrivateHandoffTests(unittest.TestCase):
         session.post.assert_not_called()
 
 
+class AtomicApprovedEvidenceTests(unittest.TestCase):
+    """Failure injection at the cross-table transaction boundary (no network)."""
+
+    @staticmethod
+    def verified_with_pages():
+        row = approved(hint(1))
+        row["_captured_pages"] = [(
+            row["website"],
+            "Fictief Kapsalon 1 5211 AB wij zijn een kapsalon met balayage.")]
+        return row
+
+    @staticmethod
+    def private_sheet(*, status=200, omit_evidence_after_write=False):
+        from fast_website_evidence import COLUMNS
+        headers = [list(HISTORY_COLS)]
+        state = {
+            "approved": [list(COLS)],
+            "history": headers[:],
+            "evidence": [],
+            "commits": 0,
+        }
+        session = Mock()
+
+        def values_of(cells):
+            return [[value.get("userEnteredValue", {}).get("stringValue", "")
+                     for value in row["values"]] for row in cells]
+
+        def get(url, **kwargs):
+            response = Mock(status_code=200)
+            if "?fields=sheets(properties(" in url:
+                response.json.return_value = {"sheets": [
+                    {"properties": {"title": "WebsiteEvidence", "sheetId": 456}}]}
+            elif "LeadHistory" in url:
+                # Real Sheets JSON returns an isolated payload, not a live list.
+                response.json.return_value = {
+                    "values": [list(row) for row in state["history"]]}
+            elif "Approved" in url:
+                response.json.return_value = {"values": state["approved"]}
+            elif "WebsiteEvidence" in url:
+                if omit_evidence_after_write and state["commits"]:
+                    response.json.return_value = {"values": [list(COLUMNS)]}
+                elif state["evidence"]:
+                    response.json.return_value = {"values": state["evidence"]}
+                else:
+                    # Real Sheets API returns HTTP 200 with no 'values' on blank.
+                    response.json.return_value = {"range": "WebsiteEvidence!A1:N"}
+            else:
+                raise AssertionError("unexpected API read shape")
+            return response
+
+        def post(url, **kwargs):
+            body = kwargs["json"]
+            assert url.endswith(":batchUpdate")
+            response = Mock(status_code=status)
+            if status != 200:
+                return response
+            operations = body["requests"]
+            assert len(operations) == 3
+            assert "updateCells" in operations[0]
+            assert "appendCells" in operations[1]
+            assert "updateCells" in operations[2]
+            state["approved"] = values_of(operations[0]["updateCells"]["rows"])
+            while state["approved"] and not any(state["approved"][-1]):
+                state["approved"].pop()
+            state["history"] += values_of(operations[1]["appendCells"]["rows"])
+            state["evidence"] = values_of(operations[2]["updateCells"]["rows"])
+            while state["evidence"] and not any(state["evidence"][-1]):
+                state["evidence"].pop()
+            state["commits"] += 1
+            return response
+
+        session.get.side_effect = get
+        session.post.side_effect = post
+        return session, state
+
+    def test_complete_one_pass_bundle_is_one_transaction_with_exact_readback(self):
+        from fast_website_evidence import prepare_new_approved_evidence
+        row = self.verified_with_pages()
+        expected = values([row], "777")
+        facts = prepare_new_approved_evidence([row], expected)
+        self.assertEqual(len(facts), 1)
+        self.assertEqual(facts[0]["source_tab"], "Approved")
+        client, state = self.private_sheet()
+        self.assertEqual(store_approved([row], run_id="777", session=client,
+                                        evidence_rows=facts), 1)
+        self.assertEqual(state["commits"], 1)
+        self.assertEqual(state["approved"], expected)
+        self.assertEqual(len(state["history"]), 2)
+        self.assertEqual(len(state["evidence"]), 2)
+        client.post.assert_called_once()
+
+    def test_evidence_failure_rolls_back_approved_and_history_together(self):
+        from fast_website_evidence import prepare_new_approved_evidence
+        row = self.verified_with_pages()
+        facts = prepare_new_approved_evidence([row], values([row], "777"))
+        client, state = self.private_sheet(status=500)
+        with self.assertRaisesRegex(RuntimeError, "approved_handoff_unverified"):
+            store_approved([row], run_id="777", session=client,
+                           evidence_rows=facts)
+        self.assertEqual(state["commits"], 0)
+        self.assertEqual(state["approved"], [list(COLS)])
+        self.assertEqual(state["history"], [list(HISTORY_COLS)])
+        self.assertEqual(state["evidence"], [])
+        # A safe retry with the same inputs can then commit all tables.
+        client, state = self.private_sheet()
+        self.assertEqual(store_approved([row], run_id="777", session=client,
+                                        evidence_rows=facts), 1)
+        self.assertEqual(state["commits"], 1)
+
+    def test_atomic_readback_failure_blocks_automatic_draft_path(self):
+        from fast_website_evidence import prepare_new_approved_evidence
+        row = self.verified_with_pages()
+        facts = prepare_new_approved_evidence([row], values([row], "777"))
+        client, state = self.private_sheet(omit_evidence_after_write=True)
+        with self.assertRaisesRegex(RuntimeError, "approved_handoff_unverified"):
+            store_approved([row], run_id="777", session=client,
+                           evidence_rows=facts)
+        # The commit happened but its readback cannot be trusted.
+        # A later draft runner MUST reject evidence that is absent or stale.
+        self.assertEqual(state["commits"], 1)
+        self.assertEqual(len(state["history"]), 2)
+
+    def test_reject_missing_original_proof_before_lead_enters_history(self):
+        from fast_website_evidence import prepare_new_approved_evidence
+        row = self.verified_with_pages()
+        del row["_captured_pages"]
+        with self.assertRaisesRegex(RuntimeError, "preverified_official_pages_missing"):
+            prepare_new_approved_evidence([row], values([row], "777"))
+
+
 if __name__ == "__main__":
     unittest.main()
