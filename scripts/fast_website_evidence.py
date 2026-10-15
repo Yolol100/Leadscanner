@@ -93,7 +93,13 @@ def _read(conn, range_a1):
     response = conn.get(url, timeout=35)
     if response.status_code != 200:
         raise RuntimeError("private_evidence_sheet_read_failed")
-    values = response.json().get("values")
+    payload = response.json()
+    if not isinstance(payload, dict):
+        raise RuntimeError("private_evidence_sheet_shape_invalid")
+    # A valid empty Google Sheets range omits the 'values' field.
+    # Caller _input still requires all official source headers; only an
+    # interrupted or freshly created evidence-cache tab may be empty.
+    values = payload.get("values", [])
     if not isinstance(values, list):
         raise RuntimeError("private_evidence_sheet_shape_invalid")
     return values
