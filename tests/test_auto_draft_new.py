@@ -417,6 +417,43 @@ class AutomaticDraftSafetyTests(unittest.TestCase):
             self.assertEqual(info["reason"], expected)
             self.assertNotIn("test@example.invalid", capture.getvalue())
 
+    def test_mailbox_preflight_examines_only_and_never_modifies_folder(self):
+        client = Mock()
+        client.examine.return_value = ("OK", [b"0"])
+        with patch("myhost_draft.connect_imap", return_value=client), \
+             patch("myhost_draft.find_drafts_folder", return_value="Drafts"):
+            result = a.mailbox_readonly_preflight()
+        self.assertEqual(result["status"], "imap_drafts_examined_readonly")
+        self.assertEqual(result["mailbox_writes"], 0)
+        self.assertEqual(result["sent"], 0)
+        client.examine.assert_called_once_with('"Drafts"')
+        client.append.assert_not_called()
+        client.select.assert_not_called()
+        client.store.assert_not_called()
+        client.expunge.assert_not_called()
+        client.logout.assert_called_once()
+
+    def test_bad_imap_examine_blocks_without_any_mailbox_mutation(self):
+        client = Mock()
+        client.examine.return_value = ("NO", [b"permission denied"])
+        with patch("myhost_draft.connect_imap", return_value=client), \
+             patch("myhost_draft.find_drafts_folder", return_value="Drafts"):
+            with self.assertRaisesRegex(RuntimeError, "readonly_drafts_folder_unavailable"):
+                a.mailbox_readonly_preflight()
+        client.append.assert_not_called()
+        client.store.assert_not_called()
+        client.logout.assert_called_once()
+
+    def test_live_canary_secrets_are_scoped_to_read_only_check(self):
+        source = (Path(__file__).resolve().parents[1] /
+                  ".github/workflows/fresh-leads.yml").read_text()
+        preflight = source.split("  auto_draft_preflight:", 1)[1]
+        self.assertIn("scripts/auto_draft_new.py --mailbox-preflight", preflight)
+        self.assertIn("IMAP EXAMINE", preflight)
+        self.assertIn("OUTREACH_MAIL_PASSWORD", preflight)
+        self.assertNotIn("append", preflight.lower())
+        self.assertNotIn("smtp", preflight.lower())
+
     def test_schedule_is_bound_to_main_and_no_smtp(self):
         path = Path(__file__).resolve().parents[1] / ".github/workflows/fresh-leads.yml"
         workflow = path.read_text()
