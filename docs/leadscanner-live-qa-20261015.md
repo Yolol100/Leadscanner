@@ -27,3 +27,13 @@ GitHub Actions run [38814017280](https://github.com/Yolol100/Leadscanner/actions
 ## Laatste integratiecheck Mijn.Host
 
 De metadata-only Sheets-canary was eerder geslaagd: run [38812220555](https://github.com/Yolol100/Leadscanner/actions/runs/38812220555), `private_state_ready`, exact schema in privé `AutoDraftState`. Een afzonderlijke, eenmalige `LEADS_AUTODRAFT_PREFLIGHT_ONLY:`-canary controleert nu ook IMAP-aanmelding, Drafts-folderidentificatie en **EXAMINE (uitsluitend read-only)** met bestaande Mijn.Host-geheimen. Deze controle gebruikt geen APPEND, geen FLAGS-wijziging, geen SELECT met schrijfrechten en geen SMTP. De definitieve live resultaatstatus wordt pas na exacte GitHub-job-readback geclaimd. De eerste geplande echte conceptbatch blijft zonder precedent totdat hij daadwerkelijk wordt uitgevoerd en ieder concept exact is teruggelezen.
+
+## Definitieve live Mijn.Host-integratieproef
+
+De eerste metadata-plus-IMAP-proef in run 38814476249 faalde na een geslaagde Sheets-check: in Python 3.12 bestaat `IMAP4.examine()` niet. Deze afwijking is via de officiële Python-standaardbibliotheek gedocumenteerd en is hersteld naar `IMAP4.select(mailbox, readonly=True)`, dat het IMAP EXAMINE-commando gebruikt. Strikt op bestaande imaplib-methoden beperkte tests voorkomen dit voortaan.
+
+**Bewezen succes:** GitHub Actions [run 38814887783](https://github.com/Yolol100/Leadscanner/actions/runs/38814887783), main commit `507b245ab89f4d356131ca34a5b97007a23768f0`. De volledige CI (312 tests) slaagde. De aparte live job `auto_draft_preflight` slaagde, met de exact teruggelezen anonieme statussen:
+- `private_state_ready`: juiste privé-Sheets-toegang en technisch state-tabblad; 0 wijzigingen in Review450, 0 mailboxwrites, 0 verzonden
+- `imap_drafts_examined_readonly`: bestaande Mijn.Host-aanmelding, unieke Drafts-map en alleen-lezen EXAMINE geslaagd; 0 mailboxwrites, 0 verzonden
+
+Er zijn geen echte nieuwe concepten aangemaakt in deze proef. De automatische wekelijkse batch is code-/autorisatie- en read-only-IMAP-getest, maar blijft **niet** als end-to-end-productieconceptopslag bewezen totdat de eerste geplande batch daadwerkelijk concepten opslaat met per-ID exacte readback. De mens beoordeelt handmatig voor verzending; automatisch verzenden blijft uitgeschakeld.
