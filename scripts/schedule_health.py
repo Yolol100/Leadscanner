@@ -18,7 +18,7 @@ GRACE = timedelta(hours=5)
 REPO = "Yolol100/Leadscanner"
 # Name, UTC weekday (Mon=0), expected time, and required job.
 SCHEDULES = (
-    ("fresh-leads.yml", (0,), 6, 23, "discover"),
+    ("fresh-leads.yml", (0,), 6, 23, ("discover", "auto_first_drafts")),
     ("fast-website-evidence.yml", (0, 1, 2, 3, 4), 7, 17, "research"),
 )
 
@@ -57,10 +57,12 @@ def evaluate(name, days, hour, minute, required_job, now, runs, jobs_for_run):
     if latest.get("conclusion") != "success":
         return {"workflow": name, "status": "failed"}
     jobs = jobs_for_run(latest["id"])
-    if not any(j.get("name") == required_job and
-               j.get("status") == "completed" and
-               j.get("conclusion") == "success" for j in jobs):
-        return {"workflow": name, "status": "required_job_not_successful"}
+    required = (required_job,) if isinstance(required_job, str) else required_job
+    for job_name in required:
+        if not any(j.get("name") == job_name and
+                   j.get("status") == "completed" and
+                   j.get("conclusion") == "success" for j in jobs):
+            return {"workflow": name, "status": "required_job_not_successful"}
     return {"workflow": name, "status": "ok"}
 
 
