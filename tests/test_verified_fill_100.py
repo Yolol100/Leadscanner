@@ -5,7 +5,7 @@ The verifier is always mocked in refill tests: no real business contact data.
 import unittest
 from unittest.mock import Mock, patch
 
-from approved_handoff import COLS, store_approved, values
+from approved_handoff import COLS, HISTORY_COLS, HISTORY_TAB_ID, store_approved, values
 from verify_official_lead import category, verify_official_site
 from verified_fill import fill_verified, MAX_SITE_CHECKS, MAX_WORKERS
 
@@ -158,34 +158,119 @@ class RefillTests(unittest.TestCase):
 
 
 class ApprovedPrivateHandoffTests(unittest.TestCase):
-    def test_one_write_exact_private_readback_and_clear_stale_rows(self):
-        data = [approved(hint(i)) for i in range(100)]
-        expected = values(data, "1234567")
+    @staticmethod
+    def fake_sheet(*, existing=None, bad_approved_readback=False,
+                   bad_history_readback=False, write_status=200):
+        history = [list(HISTORY_COLS)] + list(existing or [])
+        snapshot = [list(COLS)]
+        calls = []
         session = Mock()
-        session.post.return_value.status_code = 200
-        session.get.return_value.status_code = 200
-        session.get.return_value.json.return_value = {"values": expected}
+
+        def get(url, **_kwargs):
+            response = Mock(status_code=200)
+            if "LeadHistory" in url:
+                result = history
+                if bad_history_readback and calls:
+                    result = history[:-1]
+            elif "Approved" in url:
+                result = snapshot[:1] if bad_approved_readback else snapshot
+            else:
+                raise AssertionError("unexpected private URL")
+            response.json.return_value = {"values": result}
+            return response
+
+        def post(url, **kwargs):
+            nonlocal snapshot
+            assert url.endswith(":batchUpdate")
+            payload = kwargs["json"]
+            calls.append(payload)
+            response = Mock(status_code=write_status)
+            if write_status != 200:
+                return response
+            operations = payload["requests"]
+            snapshot = [
+                [cell.get("userEnteredValue", {}).get("stringValue", "")
+                 for cell in row["values"]]
+                for row in operations[0]["updateCells"]["rows"]
+            ]
+            while snapshot and not any(snapshot[-1]):
+                snapshot.pop()
+            if len(operations) > 1:
+                assert operations[1]["appendCells"]["sheetId"] == HISTORY_TAB_ID
+                for row in operations[1]["appendCells"]["rows"]:
+                    history.append([
+                        cell.get("userEnteredValue", {}).get("stringValue", "")
+                        for cell in row["values"]
+                    ])
+            return response
+
+        session.get.side_effect = get
+        session.post.side_effect = post
+        return session, history, calls
+
+    def test_one_atomic_write_exact_private_readback_and_clear_stale_rows(self):
+        data = [approved(hint(i)) for i in range(100)]
+        session, history, calls = self.fake_sheet()
         result = store_approved(data, run_id="1234567", session=session)
         self.assertEqual(result, 100)
         session.post.assert_called_once()
-        session.get.assert_called_once()
-        payload = session.post.call_args.kwargs["json"]
+        self.assertEqual(session.get.call_count, 3)
+        payload = calls[0]
+        self.assertEqual(len(payload["requests"]), 2)
         self.assertEqual(len(payload["requests"][0]["updateCells"]["rows"]), 101)
+        self.assertEqual(len(payload["requests"][1]["appendCells"]["rows"]), 100)
+        self.assertEqual(len(history), 101)
         self.assertIn("stringValue", str(payload))
         self.assertNotIn("formulaValue", str(payload))
         self.assertEqual(values([], "1234567"), [list(COLS)])
 
+    def test_empty_result_clears_only_current_snapshot_not_history(self):
+        existing = ["older-run", "Fictief Bedrijf", "https://fictief.nl/",
+                    "info@fictief.nl", "https://fictief.nl/contact",
+                    "verified_lead", "", "2026-10-15T00:00:00Z"]
+        session, history, calls = self.fake_sheet(existing=[existing])
+        self.assertEqual(store_approved([], run_id="9876543", session=session), 0)
+        self.assertEqual(len(calls[0]["requests"]), 1)
+        self.assertEqual(history, [list(HISTORY_COLS), existing])
+        self.assertEqual(session.get.call_count, 3)
+
+    def test_duplicate_name_domain_or_email_blocks_before_writes(self):
+        existing = ["prior", "Fictief Kapsalon 1", "https://fictief-1.nl/",
+                    "info@fictief-1.nl", "https://fictief-1.nl/contact",
+                    "verified_lead", "", "2026-10-15T00:00:00Z"]
+        for field in ("company", "website", "email"):
+            with self.subTest(field=field):
+                item = approved(hint(5))
+                item[field] = {"company": existing[1], "website": existing[2],
+                               "email": existing[3]}[field]
+                session, _, _ = self.fake_sheet(existing=[existing])
+                with self.assertRaisesRegex(RuntimeError, "approved_handoff_unverified"):
+                    store_approved([item], run_id="1234567", session=session)
+                session.post.assert_not_called()
+
     def test_incomplete_readback_and_unverified_status_fail(self):
         data = [approved(hint(1))]
-        session = Mock()
-        session.post.return_value.status_code = 200
-        session.get.return_value.status_code = 200
-        session.get.return_value.json.return_value = {"values": [list(COLS)]}
-        with self.assertRaisesRegex(RuntimeError, "approved_handoff_unverified"):
-            store_approved(data, run_id="1234567", session=session)
+        for failure in ("approved", "history", "write"):
+            with self.subTest(failure=failure):
+                session, _, calls = self.fake_sheet(
+                    bad_approved_readback=failure == "approved",
+                    bad_history_readback=failure == "history",
+                    write_status=500 if failure == "write" else 200)
+                with self.assertRaisesRegex(RuntimeError, "approved_handoff_unverified"):
+                    store_approved(data, run_id="1234567", session=session)
+                self.assertEqual(len(calls), 1)
         data[0]["status"] = "unverified"
         with self.assertRaisesRegex(RuntimeError, "approved_handoff_invalid_row"):
             values(data, "1234567")
+
+    def test_missing_history_stops_before_any_write(self):
+        session = Mock()
+        response = Mock(status_code=200)
+        response.json.return_value = {"values": []}
+        session.get.return_value = response
+        with self.assertRaisesRegex(RuntimeError, "approved_handoff_unverified"):
+            store_approved([approved(hint(1))], run_id="1234567", session=session)
+        session.post.assert_not_called()
 
 
 if __name__ == "__main__":
