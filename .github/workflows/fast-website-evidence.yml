@@ -1,0 +1,87 @@
+name: Fast official website evidence - private only
+on:
+  pull_request:
+    paths:
+      - scripts/fast_website_evidence.py
+      - scripts/verify_official_lead.py
+      - tests/test_fast_website_evidence.py
+      - .github/workflows/fast-website-evidence.yml
+      - docs/leadscanner-cleanup-and-speed.md
+  workflow_dispatch:
+    inputs:
+      source:
+        type: choice
+        description: Privé bron: 100 Approved of de aparte historische 450
+        options: [Approved, Review450]
+        required: true
+        default: Approved
+      batch:
+        type: choice
+        description: Batch van maximaal 100; bij Approved alleen 1
+        options: ['1', '2', '3', '4', '5']
+        required: true
+        default: '1'
+      force:
+        type: boolean
+        description: Negeer verse broncache en controleer websites opnieuw
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: leadscanner-private-site-evidence
+  cancel-in-progress: false
+jobs:
+  test:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: python3 -m pip install -r requirements.txt
+      - name: Offline official-site verification and private-cache tests
+        env:
+          PYTHONPATH: scripts:tests
+        run: |
+          python3 -m compileall -q scripts
+          python3 -m unittest discover -s tests -p 'test_fast_website_evidence.py' -v
+          python3 -m unittest discover -s tests -p 'test_verified_fill_100.py' -q
+  research:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: python3 -m pip install -r requirements.txt
+      - run: python3 -m compileall -q scripts
+      - name: Check official sites; save exact evidence only to existing private Leads Sheet
+        env:
+          PYTHONPATH: scripts
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON }}
+          SOURCE: ${{ inputs.source }}
+          BATCH: ${{ inputs.batch }}
+          FORCE_RECHECK: ${{ inputs.force }}
+        run: |
+          if [ "$SOURCE" = "Approved" ] && [ "$BATCH" != "1" ]; then
+            echo "Invalid Approved batch" >&2
+            exit 2
+          fi
+          if [ "$FORCE_RECHECK" = "true" ]; then
+            python3 scripts/fast_website_evidence.py --source "$SOURCE" --batch "$BATCH" --force
+          else
+            python3 scripts/fast_website_evidence.py --source "$SOURCE" --batch "$BATCH"
+          fi
