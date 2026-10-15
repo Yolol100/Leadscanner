@@ -165,8 +165,15 @@ class Capture:
 
 def _has(text, phrase):
     text, phrase = norm(text), norm(phrase)
-    return bool(phrase) and bool(re.search(
-        r"\b" + re.escape(phrase) + r"[a-z]*\b", text))
+    if not phrase:
+        return False
+    for match in re.finditer(r"\b" + re.escape(phrase) + r"[a-z]*\b", text):
+        # Do not present explicitly denied services as offered services.
+        prefix = text[max(0, match.start() - 45):match.start()]
+        if re.search(r"\b(geen|niet|no|not)\b(?:\s+\w+){0,3}\s*$", prefix):
+            continue
+        return True
+    return False
 
 
 def _excerpt(text, phrase):
