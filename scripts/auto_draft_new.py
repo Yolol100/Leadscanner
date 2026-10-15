@@ -21,7 +21,8 @@ from draft_queue_readonly import (
     _validate_row as validate_draft, valid_general_email,
 )
 from fast_website_evidence import (
-    COLUMNS as EVIDENCE_HEADERS, SHEET_ID as SOURCE_SHEET_ID,
+    COLUMNS as EVIDENCE_HEADERS, DETAILS as RESEARCH_DETAILS,
+    SHEET_ID as SOURCE_SHEET_ID,
     _digest as evidence_digest, _fresh as fresh_evidence,
 )
 from private_candidate_handoff import authorized_writer
@@ -37,12 +38,14 @@ OPT_OUT = "Liever geen e-mails meer? Antwoord met 'nee', dan laat ik het hierbij
 SAFE_TERM = re.compile(r"^[\wÀ-ÿ][\wÀ-ÿ \-/]{2,48}$", re.UNICODE)
 RUN_ID = re.compile(r"^[0-9]{1,20}$")
 DRAFT_RE = re.compile(r"^draft-[0-9a-f]{32}$")
+DRAFT_STATUS_PREFIX = "source_verified_human_review_required:"
 
 # A factual observation + a small, relevant sample of content — NOT a claim
 # that an existing booking, webshop, FAQ or contact feature is absent.
 SERVICE_CONTEXT = {
     "proefrit": "wat klanten bij een proefrit kunnen verwachten",
     "tweedehands fietsen": "de afwegingen bij een tweedehands fiets",
+    "elektrische fiets": "de mogelijkheden van een elektrische fiets",
     "fietsverhuur": "de praktische vragen bij fietsverhuur",
     "groepsarrangement": "de voorbereiding van een groepsbezoek",
     "groepsmenu": "de mogelijkheden voor groepen",
@@ -75,6 +78,18 @@ SERVICE_CONTEXT = {
     "spuitwerk": "wat vooraf belangrijk is bij spuitwerk",
     "buitenstucwerk": "de voorbereiding van buitenstucwerk",
     "catering": "hoe klanten een cateringaanvraag kunnen voorbereiden",
+    "familiekamer": "de praktische mogelijkheden van een familiekamer",
+    "vergaderruimte": "de voorbereiding van een zakelijke bijeenkomst",
+    "ontbijtbuffet": "wat gasten bij het ontbijtbuffet kunnen verwachten",
+    "huisdieren toegestaan": "de voorzieningen voor gasten met huisdieren",
+    "brunch": "wat gasten bij een brunch kunnen verwachten",
+    "borrelplank": "de mogelijkheden voor een borrel met meerdere gasten",
+    "live muziek": "de planning en praktische informatie voor een muziekavond",
+    "personal training": "hoe een eerste training eruitziet",
+    "groepsles": "wat bezoekers tijdens de eerste groepsles kunnen verwachten",
+    "proefles": "hoe iemand een proefles kan voorbereiden",
+    "pilates": "welke pilateslessen bij bezoekers kunnen passen",
+    "bootcamp": "wat iemand bij een eerste bootcamples kan verwachten",
 }
 # Do not generate a new factual claim by automatically inflecting arbitrary
 # website text or guessing a missing website function.
@@ -108,7 +123,13 @@ def _fingerprint(record):
 def _host(url):
     try:
         p = urlsplit(str(url))
-        return (p.hostname or "").lower().removeprefix("www.") if p.scheme == "https" else ""
+        if p.scheme not in ("http", "https") or p.username or p.password:
+            return ""
+        # The source URL has already passed the official-site SSRF and
+        # identity gate; do not accidentally discard public HTTP businesses.
+        if p.port not in (None, 80, 443):
+            return ""
+        return (p.hostname or "").lower().removeprefix("www.")
     except (TypeError, ValueError):
         return ""
 
@@ -186,22 +207,21 @@ def _compose(row, fact):
     # One of the six original industry angles, personalized only with facts
     # already confirmed on the official site. No non-existent feature claims.
     angles = {
-        "1": f"een heldere uitleg over {guidance}, passend bij jullie huidige aanvraagroute",
-        "2": f"praktische informatie over {guidance}, naast jullie huidige afsprakenroute",
-        "3": f"een mobiel leesbaar overzicht over {guidance}, passend bij de huidige contact- of bestelroute",
-        "4": f"een korte toelichting over {guidance}, zodat bezoekers gericht contact kunnen opnemen",
-        "5": f"een rustig en begrijpelijk overzicht over {guidance}, naast de bestaande persoonlijke contactroute",
-        "6": f"een helder voorbeeld over {guidance}, aansluitend op jullie bestaande contactmogelijkheden",
+        "1": "met een verwijzing naar jullie bestaande aanvraagmogelijkheid",
+        "2": "aansluitend op de huidige afspraakroute",
+        "3": "aansluitend op jullie bestaande contact- of bestelroute",
+        "4": "met een duidelijke stap naar persoonlijk contact",
+        "5": "met aandacht voor de bestaande persoonlijke contactroute",
+        "6": "aansluitend op jullie bestaande contactmogelijkheden",
     }
     angle = angles.get(row.get("cluster"))
     if not angle:
         return None
     body = (f"{greeting}\n\n"
-            f"Jullie noemen {term} op de website.\n\n"
-            f"Ik kan een kort voorbeeld maken met {angle}. "
-            "Dat is een aanvulling op wat jullie al aanbieden, niet een "
-            "vervanging van jullie bestaande werkwijze.\n\n"
-            "Mag ik zo'n voorbeeld sturen?\n\n"
+            f"Ik zag {term} op jullie website staan.\n\n"
+            f"Een korte uitleg over {guidance} kan hierbij handig zijn, "
+            f"{angle}. Jullie bestaande werkwijze blijft het uitgangspunt.\n\n"
+            "Mag ik daar één kort voorbeeld van sturen?\n\n"
             f"{OPT_OUT}\n\nGroet,\nAndrew")
     return subject, body
 
@@ -242,6 +262,8 @@ def _eligible(row, evidence):
         if not isinstance(item, dict):
             continue
         term = str(item.get("term", "")).strip().lower()
+        if term not in RESEARCH_DETAILS.get(row["branche_meervoud"], ()):
+            continue
         excerpt = str(item.get("excerpt", ""))
         page = str(item.get("source_url", ""))
         if (not _host(page) == _host(row["website"]) or
@@ -292,6 +314,12 @@ def _new_row(row, subject, body):
             not body.endswith("Groet,\nAndrew"):
         raise RuntimeError("autodraft_copy_gate_failed")
     return validate_draft(record)
+
+
+def _copy_digest(row):
+    """Bind the entire saved private draft to its existing resume record."""
+    return hashlib.sha256(json.dumps([str(row.get(h, "")) for h in DRAFT_HEADERS],
+                                     ensure_ascii=True, separators=(",", ":")).encode()).hexdigest()
 
 
 def _cells(row):
@@ -362,7 +390,7 @@ def scheduled_draft_run(run_id, *, conn=None, mailbox=create_batch_from_queue,
             source = source_by_identity.get(saved["identity_sha256"])
             row = queue_by_id[saved["draft_id"]]
             if (source is None or
-                saved["quality_status"] != "source_verified_human_review_required" or
+                saved["quality_status"] != DRAFT_STATUS_PREFIX + _copy_digest(row) or
                 saved["source_sha256"] != evidence_digest([
                     source["company"], source["website"], source["email"],
                     source["branche_meervoud"]]) or
@@ -403,7 +431,7 @@ def scheduled_draft_run(run_id, *, conn=None, mailbox=create_batch_from_queue,
                               source_sha256=evidence_digest([
                                   r["company"], r["website"], r["email"],
                                   r["branche_meervoud"]]),
-                              quality_status="source_verified_human_review_required"))
+                              quality_status=DRAFT_STATUS_PREFIX + _copy_digest(draft)))
     if not prepared:
         return {"status": "no_eligible_evidence_rich_leads",
                 "prepared": 0, "stored": 0, "sent": 0}
