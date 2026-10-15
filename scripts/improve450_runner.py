@@ -102,7 +102,7 @@ def run(conn,batch):
         raise RuntimeError("source_changed_during_copy_revision")
     source_guard(conn)
     def values(r):
-        return {"values":[{"userEnteredValue":{"stringValue:str(v)}} for v in r]}
+        return {"values":[{"userEnteredValue":{"stringValue":str(v)}} for v in r]}
     req=[
         {"updateCells":{"range":{
             "sheetId":NEW_ID,"startRowIndex":start+1,"endRowIndex":end+1,
