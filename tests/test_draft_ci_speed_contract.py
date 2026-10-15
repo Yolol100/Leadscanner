@@ -26,7 +26,7 @@ class WorkflowSpeedContract(unittest.TestCase):
         self.assertIn("overturemaps", requirements)
         workflow = (ROOT / ".github/workflows/fresh-leads.yml").read_text()
         self.assertIn("queue: max", workflow)
-        self.assertEqual(workflow.count("cache-dependency-path: requirements.txt"), 4)
+        self.assertEqual(workflow.count("cache-dependency-path: requirements.txt"), 5)
         self.assertIn("  auto_first_drafts:", workflow)
         self.assertIn("python3 -m unittest discover", workflow)
 
