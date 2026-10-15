@@ -52,6 +52,22 @@ def private_exclusions(conn):
     return set(domains)
 
 
+def require_rejection_review(rejected, excluded_domains):
+    """Large rejection sets need an explicit private entry for EVERY domain.
+
+    The original threshold still blocks unreviewed large changes. A completed
+    human/source review is represented by the existing private exclusions table,
+    whose rows each require a canonical domain, nonempty reason and source URL.
+    No rejected prospect is ever accepted by this gate. Every replacement must
+    independently pass the unchanged full source and historical checks.
+    """
+    from dedupe_preflight import normalize_domain
+    if len(rejected) > 20:
+        if any(normalize_domain(row.get("website", "")) not in excluded_domains
+               for row in rejected):
+            raise RuntimeError("too_many_scope_issues_requires_review")
+
+
 def supplement(conn):
     from registry_readonly import load_suppressions, load_discovery_suppressions
     from dedupe_preflight import candidate_identity, match_candidate, normalize_domain
@@ -64,11 +80,11 @@ def supplement(conn):
     exclusions=private_exclusions(conn)
     allowed=lambda row:scope_allowed(row,exclusions)
     rows=[r for r in current if allowed(r)]
-    removed=len(current)-len(rows)
+    rejected=[r for r in current if not allowed(r)]
+    removed=len(rejected)
     if not removed:
         return {"excluded":0,"replacements":0,"prepared":450}
-    if removed>20:
-        raise RuntimeError("too_many_scope_issues_requires_review")
+    require_rejection_review(rejected, exclusions)
     historical=load_suppressions(session=conn)
     discovery_registry=load_discovery_suppressions(session=conn)
     known=[{"identity":candidate_identity(r),"status":"this_task","row_number":i+1} for i,r in enumerate(rows)]
