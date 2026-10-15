@@ -31,11 +31,11 @@ class NewLeadsTests(unittest.TestCase):
         known = load_registry_values([HEADERS, [
             "Known", "https://known.nl", "known.nl", "", "sent", "", "", "", "", "TRUE",
         ]])
-        with patch("new_leads.load_suppressions", return_value=known), \
+        with patch("new_leads.load_discovery_suppressions", return_value=known), \
              patch("new_leads.discover", return_value={"candidates": []}) as discover:
             run("Leiden", ["bakkerij"], 8, 20)
         self.assertEqual(discover.call_args.kwargs["max_results"], 100)
-        with patch("new_leads.load_suppressions", return_value=known), \
+        with patch("new_leads.load_discovery_suppressions", return_value=known), \
              patch("new_leads.discover", return_value={"candidates": []}) as discover:
             run("Leiden", ["bakkerij"], 8, 100)
         self.assertEqual(discover.call_args.kwargs["max_results"], 500)
@@ -58,7 +58,7 @@ class NewLeadsTests(unittest.TestCase):
         self.assertEqual(result["candidates"][0]["company"], "Fresh")
 
     def test_missing_registry_fails_before_discovery(self):
-        with patch("new_leads.load_suppressions", side_effect=RuntimeError()),              patch("new_leads.discover") as discovery:
+        with patch("new_leads.load_discovery_suppressions", side_effect=RuntimeError()),              patch("new_leads.discover") as discovery:
             with self.assertRaises(RuntimeError):
                 run("Leiden", ["bakkerij"], 8, 10)
             discovery.assert_not_called()
