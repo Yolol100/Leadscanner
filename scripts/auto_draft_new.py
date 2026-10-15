@@ -493,7 +493,9 @@ def mailbox_readonly_preflight():
         folder = find_drafts_folder(client)
         if not folder or len(folder) > 255:
             raise RuntimeError("imap_readonly_drafts_folder_unavailable")
-        status, _ = client.examine(_mailbox_arg(folder))
+        # Python imaplib has no public examine() method. readonly=True
+        # sends IMAP EXAMINE rather than writable SELECT (Python 3.12 API).
+        status, _ = client.select(_mailbox_arg(folder), readonly=True)
         if status != "OK":
             raise RuntimeError("imap_readonly_drafts_folder_unavailable")
         return {"status": "imap_drafts_examined_readonly",
