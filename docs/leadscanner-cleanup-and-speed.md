@@ -40,3 +40,19 @@ Bij onbetrouwbare bron: geen mail vrijgeven. Bewaar oude review-/mailboxstatus e
 ## Gecontroleerde rollback
 
 Vóór merge: sluit de concept-PR; `main` en alle bestaande private sheets blijven ongewijzigd. Na merge: schakel alleen het nieuwe workflowbestand uit of revert de exacte commits. De nieuwe tab bevat operationele evidence en is geen nieuwe canonieke kennisbank; verwijder dit tabblad niet zonder eerst de andere chat en gebruikerscontext te controleren. Oude `Approved`-/`Review450`-tabbladen en IMAP zijn expliciet buiten scope.
+
+## Upgrade 15 oktober 2026: automatisch, één websitepass en betrouwbare snelheid
+
+**Automatisch aan:** `fresh-leads.yml` verzamelt elke maandag om 06:23 UTC (07:23/08:23 in Nederland) maximaal 100 nieuwe officiële leads, met **hoogstens 240 websitecontroles** per geplande run. De bestaande volledige historische suppressie wordt vóór iedere aanvraag geladen. Een tekort wordt eerlijk als `partial` geregistreerd; zonder één geverifieerde lead blijft het vorige `Approved`-snapshot onaangetast. Geen campagne, nieuw CRM of automatische verzending.
+
+**Automatisch bronhergebruik:** `fast-website-evidence.yml` ververst maandag t/m vrijdag om 07:17 UTC (08:17/09:17 in Nederland) uitsluitend het **bestaande** `Approved`-snapshot, hergebruikt geldige bewijsrecords gedurende 24 uur, en slaat privé bronpassages op. Voor een nieuwe `fill_100`-run worden de officiële homepage en maximaal één relevante contactpagina maar **één keer** aangevraagd en meteen doorgegeven aan `WebsiteEvidence`: geen tweede crawl. Dagelijkse vervolgcontroles blijven bedoeld voor versheid, niet voor dubbel werk.
+
+**Bewijs:** `verify_official_site(..., collect_evidence=True)` geeft uitsluitend bij succesvolle originele verificatie de al geparste pagina's intern terug. `store_preverified_approved` controleert het exact teruggelezen `Approved`-snapshot voor en na de transactie. `inspect_verified` verwerkt alleen dezelfde host, exact gecontroleerde e-mail en branche en onderscheidt concrete dienstvermeldingen van functie-signalen. Nergens worden prospectnamen of mailteksten in publieke GitHub-uitvoer geplaatst.
+
+**Snelheid controleren:** bij normale rechecks rapporteert GitHub uitsluitend het aantal gecontroleerde sites, geldige cachehits, bronstatus, totale tijd en p50/p95 per website in milliseconden. Dit is werkelijke runtime-evidence zodra een live research-run plaatsvindt; synthetische Python-tests zijn geen bewijs van de snelheid van externe sites. De wekelijkse `fill_100`-rapportage bevat aparte ontdek- en verificatieduur.
+
+**Eénmalige controle direct na release:** een `main`-commit met expliciet begin `LEADS_EVIDENCE_ONCE:` mag alleen de bewijsverificatie van `Approved` activeren. Dit verstuurt geen mails en overschrijft geen `Review450`. De gewone automatische schema's zijn van deze eenmalige trigger gescheiden.
+
+**Persoonlijke copy en Mijn.Host:** de automatische onderzoeksroute vult de feitenbron voor latere conceptvoorbereiding. De afzonderlijke Leads-tekstkwaliteit/IMAP-Drafts-flow behoudt de bron-, dedupe-, afmeld-, menselijke/legal-review- en issue-autorisatiepoorten uit de actieve Leads Skill. Deze wijziging **activeert niet** autonoom concepten opslaan in de mailbox, en wijzigt geen van de 450 bestaande mails. Volledig autonome inhoudelijke mailcreatie vergt een apart geautoriseerd bewijs- en kwaliteitscontract; het zou onjuist zijn deze stap als reeds volledig geautomatiseerd te melden.
+
+**Rollback:** schakel eerst beide schema-triggers uit of revert de geverifieerde squash-commit. De oorspronkelijke `Approved`, `Review450`, `LeadHistory`, Draft Queue en Mijn.Host worden niet verwijderd. Eventueel al geregistreerde historische suppressies niet resetten of opschonen. Een fout in één bewijsbatch mag geen ongeverifieerde bron als succes markeren.

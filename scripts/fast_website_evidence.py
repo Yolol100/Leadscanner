@@ -13,14 +13,14 @@ import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import requests
 
 from approved_handoff import COLS as APPROVED_COLUMNS
 from private_candidate_handoff import SHEET_ID, authorized_writer
-from verify_official_lead import (BRANCH_PROOF, CATEGORIES, MAX_BYTES,
-                                  PublicHTML, norm, verify_official_site)
+from verify_official_lead import (BRANCH_PROOF, CATEGORIES, norm,
+                                  verify_official_site)
 
 REVIEW_COLUMNS = (
     "draft_id", "created_at", "company", "email", "source_url", "subject",
@@ -131,38 +131,6 @@ def _input(conn, source, batch):
     return extracted, _digest(raw)
 
 
-class Capture:
-    """One connection-pooled session PER worker, never shared across threads."""
-    def __init__(self):
-        self.session = requests.Session()
-        self.pages = []
-
-    def get(self, url, **kwargs):
-        response = self.session.get(url, **kwargs)
-        if kwargs.get("stream") and response.status_code == 200:
-            original = response.iter_content
-            owner = self
-
-            def capture(*args, **kw):
-                saved = bytearray()
-                complete = True
-                for chunk in original(*args, **kw):
-                    if len(saved) + len(chunk) <= MAX_BYTES:
-                        saved.extend(chunk)
-                    else:
-                        complete = False
-                    yield chunk
-                if complete and b"<" in saved:
-                    parsed = PublicHTML()
-                    parsed.feed(saved.decode("utf-8", errors="replace"))
-                    owner.pages.append((url, " ".join(parsed.texts)))
-            response.iter_content = capture
-        return response
-
-    def close(self):
-        self.session.close()
-
-
 def _has(text, phrase):
     text, phrase = norm(text), norm(phrase)
     if not phrase:
@@ -208,60 +176,105 @@ def _mentions(pages, words, limit):
     return out
 
 
-def inspect(record):
-    """No unverified website fact ever receives a confirmed status."""
-    reverse = {}
-    for category, (_, branch) in CATEGORIES.items():
-        reverse.setdefault(branch, category)
-    category = reverse.get(record["branch"])
-    result = dict(record, checked_at=_utc_now(), email_source_url="",
-                  facts_json="[]", feature_mentions_json="[]",
-                  status="needs_manual_check", reason="official_source_unconfirmed")
-    if not category:
-        result["reason"] = "unsupported_branch"
+def _initial_result(record):
+    return dict(record, checked_at=_utc_now(), email_source_url="",
+                facts_json="[]", feature_mentions_json="[]",
+                status="needs_manual_check", reason="official_source_unconfirmed")
+
+
+def inspect_verified(record, official, pages):
+    """Classify facts from verified pages without a second network request.
+
+    The official business/email check must already have been performed by
+    verify_official_site. A missing or mismatching proof is fail-closed.
+    """
+    result = _initial_result(record)
+    if not isinstance(official, dict) or not isinstance(pages, list):
+        result["reason"] = "official_company_or_email_not_confirmed"
         return result
-    hint = {"name_hint": record["company"], "website_hint": record["website"],
-            "category_hint": category, "country_hint": "NL"}
-    cap = Capture()
+    if (official.get("email", "").casefold() != record["email"].casefold() or
+            official.get("branche_meervoud") != record["branch"]):
+        result["reason"] = "official_identity_email_or_branch_mismatch"
+        return result
+    safe_pages = []
+    site = urlsplit(record["website"])
+    if site.scheme not in ("https", "http") or not site.hostname:
+        result["reason"] = "website_url_invalid"
+        return result
+    for page in pages[:2]:
+        if not isinstance(page, (list, tuple)) or len(page) != 2:
+            continue
+        page_url, page_text = page
+        url = urlsplit(str(page_url))
+        if (url.scheme not in ("https", "http") or
+                not url.hostname or
+                url.hostname.removeprefix("www.").casefold() !=
+                site.hostname.removeprefix("www.").casefold()):
+            continue
+        safe_pages.append((str(page_url), str(page_text)[:750000]))
+    if not safe_pages:
+        result["reason"] = "source_pages_not_captured"
+        return result
+    if not ZIP_NL.search(" ".join(text for _, text in safe_pages)):
+        result["reason"] = "dutch_locality_not_confirmed"
+        return result
     try:
-        official = verify_official_site(hint, session=cap,
-                                        expected_email=record["email"])
-        if not official or official["email"].casefold() != record["email"].casefold():
-            result["reason"] = "official_company_or_email_not_confirmed"
-            return result
-        if official["branche_meervoud"] != record["branch"]:
-            result["reason"] = "branch_mismatch"
-            return result
-        if not ZIP_NL.search(" ".join(page for _, page in cap.pages)):
-            result["reason"] = "dutch_locality_not_confirmed"
-            return result
         terms = DETAILS.get(record["branch"], ())
-        facts = _mentions(cap.pages, terms, 2)
-        # An industry word is proof of general activity only, not a unique hook.
-        activity = _mentions(cap.pages, BRANCH_PROOF[record["branch"]], 1)
+        facts = _mentions(safe_pages, terms, 2)
+        activity = _mentions(safe_pages, BRANCH_PROOF[record["branch"]], 1)
         if not activity:
             result["reason"] = "activity_not_confirmed"
             return result
         features = []
         for label, words in FEATURE_MENTIONS.items():
-            for finding in _mentions(cap.pages, words, 1):
+            for finding in _mentions(safe_pages, words, 1):
                 features.append({**finding, "feature": label,
                                  "certainty": "text_mention_only"})
-        result["email_source_url"] = official["source_url"]
-        result["facts_json"] = json.dumps(facts, ensure_ascii=False, separators=(",", ":"))
-        result["feature_mentions_json"] = json.dumps(features[:6], ensure_ascii=False, separators=(",", ":"))
+        result["email_source_url"] = str(official.get("source_url", ""))
+        result["facts_json"] = json.dumps(facts, ensure_ascii=False,
+                                           separators=(",", ":"))
+        result["feature_mentions_json"] = json.dumps(features[:6],
+                                                      ensure_ascii=False,
+                                                      separators=(",", ":"))
         result["status"] = "verified_with_detail" if facts else "verified_activity_only"
         result["reason"] = "official_email_and_local_activity_confirmed"
-        if record["email"].rsplit("@", 1)[-1].removeprefix("www.") != \
-                record["website"].split("/")[2].removeprefix("www.").split(":")[0]:
+        email_domain = record["email"].rsplit("@", 1)[-1].lower()
+        host = site.hostname.removeprefix("www.").casefold()
+        if email_domain != host:
             result["status"] = "needs_manual_check"
             result["reason"] = "cross_domain_email_needs_independent_association"
         return result
-    except Exception:
-        result["reason"] = "bounded_official_site_request_failed"
+    except (ValueError, TypeError, KeyError, re.error):
+        result["reason"] = "source_text_processing_failed"
         return result
-    finally:
-        cap.close()
+
+
+def inspect(record):
+    """One HTTP verification pass, reusing already-parsed official text."""
+    started = time.monotonic()
+    result = _initial_result(record)
+    try:
+        reverse = {}
+        for category, (_, branch) in CATEGORIES.items():
+            reverse.setdefault(branch, category)
+        category = reverse.get(record["branch"])
+        if not category:
+            result["reason"] = "unsupported_branch"
+        else:
+            hint = {"name_hint": record["company"], "website_hint": record["website"],
+                    "category_hint": category, "country_hint": "NL"}
+            with requests.Session() as session:
+                official = verify_official_site(
+                    hint, session=session, expected_email=record["email"],
+                    collect_evidence=True)
+            result = inspect_verified(record, official,
+                     official.get("_captured_pages", []) if official else [])
+    except Exception:
+        result = _initial_result(record)
+        result["reason"] = "bounded_official_site_request_failed"
+    result["_check_duration_ms"] = round(
+        (time.monotonic() - started) * 1000)
+    return result
 
 
 def _cache_id(conn):
@@ -301,25 +314,52 @@ def _cache(conn):
     return result
 
 
-def _persist(conn, sheet_id, existing, new):
+def _cache_rows_after_retention(existing, new):
+    """Bound cache growth without ever evicting the active batch or 450 history.
+
+    WebsiteEvidence is a reusable snapshot cache, not canonical LeadHistory.
+    Rows older than seven days from a previous Approved snapshot may expire.
+    """
     merged = dict(existing)
     merged.update({r["record_key"]: r for r in new})
+    active = {r["record_key"] for r in new}
+    now = datetime.now(timezone.utc)
+    for key, row in list(merged.items()):
+        if key in active or row.get("source_tab") != "Approved":
+            continue
+        try:
+            checked = datetime.fromisoformat(
+                str(row["checked_at"]).replace("Z", "+00:00"))
+            outdated = (checked.tzinfo is None or
+                        (now - checked).total_seconds() > 7 * 86400)
+        except (KeyError, ValueError, TypeError):
+            outdated = True
+        if outdated:
+            del merged[key]
     if len(merged) > MAX_RECORDS:
         raise RuntimeError("evidence_private_cache_full")
+    return merged
+
+
+def _persist(conn, sheet_id, existing, new):
+    merged = _cache_rows_after_retention(existing, new)
     expected = [list(COLUMNS)] + [[str(row.get(k, "")) for k in COLUMNS]
                                    for row in merged.values()]
+    # Old trailing rows must be cleared when expired evidence is pruned.
+    total = max(len(expected), len(existing) + 1)
+    padded = expected + [[""] * len(COLUMNS) for _ in range(total-len(expected))]
     cell_rows = [{"values": [
         {"userEnteredValue": {"stringValue": c}} if c else {} for c in row
-    ]} for row in expected]
+    ]} for row in padded]
     url = "https://sheets.googleapis.com/v4/spreadsheets/" + SHEET_ID
     resp = conn.post(url + ":batchUpdate", timeout=45, json={"requests": [{
         "updateCells": {"range": {"sheetId": sheet_id, "startRowIndex": 0,
-                         "endRowIndex": len(expected), "startColumnIndex": 0,
+                         "endRowIndex": total, "startColumnIndex": 0,
                          "endColumnIndex": len(COLUMNS)},
                         "rows": cell_rows, "fields": "userEnteredValue"}}]})
     if resp.status_code != 200:
         raise RuntimeError("evidence_private_write_failed")
-    if _read(conn, TAB + "!A1:N" + str(len(expected))) != expected:
+    if _read(conn, TAB + "!A1:N" + str(total)) != expected:
         raise RuntimeError("evidence_private_readback_mismatch")
 
 
@@ -344,14 +384,59 @@ def run(source, batch=1, *, conn=None, worker=inspect, force=False):
         raise RuntimeError("evidence_source_changed_during_scan")
     if checked:
         _persist(conn, tab_id, existing, checked)
+    durations = sorted(
+        x["_check_duration_ms"] for x in checked
+        if isinstance(x.get("_check_duration_ms"), int)
+        and 0 <= x["_check_duration_ms"] <= 3600000)
+    n = len(durations)
     return {
         "requested": len(candidates), "website_checks": len(checked),
         "reused_recent": len(reused),
         "verified": sum(x["status"].startswith("verified_") for x in checked) + len(reused),
         "needs_manual_check": sum(not x["status"].startswith("verified_") for x in checked),
+        "duration_p50_ms": durations[(n - 1) // 2] if n else None,
+        "duration_p95_ms": durations[max(0, (n * 95 + 99) // 100 - 1)] if n else None,
         "seconds": round(time.monotonic() - start, 2),
         "mailbox_writes": 0, "emails_sent": 0,
     }
+
+
+def store_preverified_approved(approved, *, conn=None):
+    """Persist facts from the *same* first verification, with zero website GETs.
+
+    Called only after store_approved has atomically saved the new Approved
+    snapshot and historical suppressions. Verifies that the snapshot is still
+    exactly the same before persisting the derived evidence. Never touches
+    Review450, DraftQueue, IMAP or public GitHub data.
+    """
+    if not isinstance(approved, list) or len(approved) > BATCH_SIZE:
+        raise ValueError("preverified_approved_invalid")
+    if not approved:
+        return {"source_rows": 0, "captured_without_refetch": 0,
+                "verified_with_detail": 0, "needs_manual_check": 0}
+    conn = conn if conn is not None else authorized_writer()
+    records, checksum = _input(conn, "Approved", 1)
+    if len(records) != len(approved):
+        raise RuntimeError("preverified_approved_snapshot_count_changed")
+    results = []
+    for record, actual in zip(records, approved):
+        if not isinstance(actual, dict) or not isinstance(actual.get("_captured_pages"), list):
+            raise RuntimeError("preverified_official_pages_missing")
+        if (record["company"] != actual.get("company") or
+                record["website"] != actual.get("website") or
+                record["email"] != actual.get("email") or
+                record["branch"] != actual.get("branche_meervoud")):
+            raise RuntimeError("preverified_approved_snapshot_mismatch")
+        results.append(inspect_verified(record, actual, actual["_captured_pages"]))
+    if _input(conn, "Approved", 1)[1] != checksum:
+        raise RuntimeError("preverified_approved_changed_during_review")
+    tab_id, created = _cache_id(conn)
+    existing = {} if created else _cache(conn)
+    _persist(conn, tab_id, existing, results)
+    return {"source_rows": len(results),
+            "captured_without_refetch": len(results),
+            "verified_with_detail": sum(r["status"] == "verified_with_detail" for r in results),
+            "needs_manual_check": sum(r["status"] == "needs_manual_check" for r in results)}
 
 
 def main():

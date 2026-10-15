@@ -21,3 +21,12 @@ Een gepubliceerd adres bewijst geen recht op ongevraagde commerciële e-mail. Co
 Gebruik **geen aparte Google-zoekopdracht per bekende bedrijfswebsite**. `fresh-leads.yml` vindt kandidaten al met Overture/PDOK en controleert de officiële website met een begrensde parallelle HTTP-verifier. Na die verificatie kan `.github/workflows/fast-website-evidence.yml` maximaal 100 bestaande privé-leads tegelijk voorzien van broncitaten en hints over reeds genoemde sitefuncties. Het resultaat wordt uitsluitend teruggelezen uit `WebsiteEvidence` in het bestaande privé Sheet; hergebruik gecontroleerde records tot 24 uur. Onzekerheden of een afwijkend e-maildomein blijven handmatig te controleren.
 
 De automatische mail-/IMAP-route verandert niet. De oude 450-taakscripts blijven bestaan zolang de afzonderlijke 450-chat actief is. Zie [opschoningsbesluit en gebruik](docs/leadscanner-cleanup-and-speed.md). De apart bestaande `browser-search`-repository is alleen een optionele zoekhulp, geen officiële bedrijfsverificatie.
+
+
+### Automatische éénpass-route (15 oktober 2026)
+
+- **Maandag 06:23 UTC:** bestaande `fresh-leads.yml` zoekt en verifieert maximaal 100 nieuwe bedrijven, met maximaal 240 officiële websitecontroles. De historische deduplicatie blijft verplicht.
+- **Tijdens diezelfde verificatie** wordt de reeds gelezen officiële pagina direct in het bestaande privé Sheet als `WebsiteEvidence` opgeslagen; geen tweede site-fetch.
+- **Maandag–vrijdag 07:17 UTC:** dezelfde privébron wordt met een 24-uurscache opnieuw gecontroleerd wanneer verouderd. Bronpassages en functie-vermeldingen zijn hints, geen bewezen ontbrekende features.
+- **Geen automatisch verzenden of aanpassen van de 450-mails**. Het maken van commerciële tekst/Mijn.Host-concepten behoudt de bestaande geautoriseerde Draft Queue en menselijke eindcontrole.
+- GitHub meldt alleen aantallen en webcontrole-latentie, geen prospectgegevens. Zie [precieze veiligheids- en terugvalvoorwaarden](docs/leadscanner-cleanup-and-speed.md).

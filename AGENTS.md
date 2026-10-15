@@ -13,3 +13,8 @@ Nooit prospectgegevens in publieke GitHub-inhoud. Geen CRM, audits, scores, camp
 ## Brononderzoek zonder dubbele zoekactie
 
 Als website + bedrijf al in de privé `Approved`- of `Review450`-bron staan, gebruik de optionele `fast-website-evidence.yml`-researchroute voor een nieuwe, brongebonden controle en hergebruik recent gecontroleerde records. Gebruik geen browser-search/Google als standaard voor reeds bekende officiële URL's. `WebsiteEvidence` bevat tekstvermeldingen, geen bewezen ontbreken of werking van websitefuncties. De bestaande vier stappen, historische dedupe, privacy, Mijn.Host-readback en menselijke eindcontrole blijven leidend. Verwijder tijdelijke 450-scripts pas na afsluiting van de aparte 450-taak.
+
+
+### Automatische onderzoeksroute, zonder mailautomatisering
+
+De geplande weekrun van `fresh-leads.yml` gebruikt het bestaande HMAC-/historische uitsluitingsregister vóór alle HTTP-aanvragen en maximaal 240 sitecontroles. Bij succesvolle verificatie worden de al gelezen pagina's eenmalig intern doorgegeven aan `WebsiteEvidence`; op werkdagen hergebruikt `fast-website-evidence.yml` de 24-uurscache. De route bewaart uitsluitend bronfeiten in het privé Sheet, doet geen SMTP/IMAP-writes en is geen vervanging voor de geautoriseerde Draft Queue, vierstappen-Leads-Skill of menselijke controle. De 450-mailworkflow blijft onaangetast.

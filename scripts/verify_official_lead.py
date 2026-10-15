@@ -195,20 +195,38 @@ def _robots_policy(base_url, session):
     if not _safe_same_site(robots_url, host):
         return None
     try:
-        response = session.get(robots_url, timeout=TIMEOUT,
+        # Stream and bound robots.txt before materializing it in memory.
+        # Unbounded response.content could download a huge malicious file.
+        response = session.get(robots_url, timeout=TIMEOUT, stream=True,
                                headers={"User-Agent": AGENT}, allow_redirects=False)
-        if response.status_code == 404:
-            return True
-        if response.status_code != 200 or len(response.content) > 100_000:
-            return None
-        parser = RobotFileParser()
-        parser.parse(response.text.splitlines())
-        return parser
+        try:
+            if response.status_code == 404:
+                return True
+            if response.status_code != 200:
+                return None
+            raw = bytearray()
+            for chunk in response.iter_content(chunk_size=16384):
+                raw.extend(chunk)
+                if len(raw) > 100_000:
+                    return None
+            parser = RobotFileParser()
+            parser.parse(raw.decode("utf-8", errors="replace").splitlines())
+            return parser
+        finally:
+            response.close()
     except requests.RequestException:
         return None
 
 
-def verify_official_site(row, *, session=requests, expected_email=None):
+def _with_captured_pages(payload, pages, enabled):
+    """Internal-only data: parsed official HTML used by the same successful check."""
+    if enabled:
+        payload["_captured_pages"] = pages
+    return payload
+
+
+def verify_official_site(row, *, session=requests, expected_email=None,
+                         collect_evidence=False):
     """Return a conservatively verified company+published email or None."""
     from new_leads import safe_hint
     from target_scope import is_blocked_place
@@ -228,6 +246,7 @@ def verify_official_site(row, *, session=requests, expected_email=None):
         return None
     page = PublicHTML()
     page.feed(html)
+    evidence_pages = [(url, " ".join(page.texts))] if collect_evidence else []
     content = norm(" ".join(page.texts))
     name_words = [x for x in norm(name).split()
                   if len(x) >= 3 and x not in NAME_TERMS
@@ -252,14 +271,19 @@ def verify_official_site(row, *, session=requests, expected_email=None):
     expected = str(expected_email or "").strip().casefold()
     if expected and not MAIL_RE.fullmatch(expected):
         return None
-    if expected and expected in candidates:
-        return {
+    # Evidence collection may need the official contact page for Dutch
+    # locality even if the exact email is already on the homepage.
+    # A fully sufficient homepage still takes the two-request fast path.
+    has_locality = bool(re.search(r"\b[1-9]\d{3}\s?[A-Z]{2}\b",
+                                  " ".join(page.texts)))
+    if expected and expected in candidates and (not collect_evidence or has_locality):
+        return _with_captured_pages({
             "company": name, "website": url, "email": expected,
             "source_url": url, "cluster": mapping[0],
             "branche_meervoud": mapping[1],
             "greeting": "Hoi," if mapping[0] >= 5 else "Goedendag,",
             "status": "verified_website_and_email",
-        }
+        }, evidence_pages, collect_evidence)
     # Only a linked, same-domain contact/about page, never a generic site crawl.
     links = []
     for href in page.links:
@@ -276,6 +300,8 @@ def verify_official_site(row, *, session=requests, expected_email=None):
         if inner is not None:
             sub = PublicHTML()
             sub.feed(inner)
+            if collect_evidence:
+                evidence_pages.append((dest, " ".join(sub.texts)))
             discovered = list(sub.mailto)
             discovered.extend(x.lower() for x in re.findall(
                 r"(?<![a-z0-9._%+-])[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,63}",
@@ -309,10 +335,10 @@ def verify_official_site(row, *, session=requests, expected_email=None):
             return None
         chosen = next((x for x in general if x.startswith("info@")), general[0])
     greeting = f"Hoi {first}," if first else ("Hoi," if mapping[0] >= 5 else "Goedendag,")
-    return {
+    return _with_captured_pages({
         "company": name, "website": url, "email": chosen,
         "source_url": source_by_email[chosen], "cluster": mapping[0],
         "branche_meervoud": mapping[1],
         "greeting": greeting,
         "status": "verified_website_and_email",
-    }
+    }, evidence_pages, collect_evidence)
