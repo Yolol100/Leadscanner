@@ -29,10 +29,13 @@ CHUNK = 24
 
 def fill_verified(region, keywords, radius_km, *, target=100,
                   discoverer=discover, verifier=verify_official_site,
-                  load_registry=load_discovery_suppressions):
+                  load_registry=load_discovery_suppressions,
+                  max_site_checks=MAX_SITE_CHECKS):
     if (not isinstance(region, str) or not 2 <= len(region.strip()) <= 100
             or not isinstance(keywords, list) or not 1 <= len(keywords) <= 8
-            or not 0.5 <= radius_km <= 30 or target != 100):
+            or not 0.5 <= radius_km <= 30 or target != 100
+            or not isinstance(max_site_checks, int)
+            or not 1 <= max_site_checks <= MAX_SITE_CHECKS):
         raise ValueError("verified_fill_invalid_request")
     validate_requested_keywords(keywords)
     started = time.monotonic()
@@ -56,7 +59,7 @@ def fill_verified(region, keywords, radius_km, *, target=100,
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         for centre in regions:
-            if len(approved) == target or counts["sites_checked"] >= MAX_SITE_CHECKS:
+            if len(approved) == target or counts["sites_checked"] >= max_site_checks:
                 break
             try:
                 scan_start = time.monotonic()
@@ -103,7 +106,7 @@ def fill_verified(region, keywords, radius_km, *, target=100,
             # Small chunks cap in-flight requests; stop at exactly 100 results.
             index = 0
             while index < len(possible):
-                remaining_budget = MAX_SITE_CHECKS - counts["sites_checked"]
+                remaining_budget = max_site_checks - counts["sites_checked"]
                 remaining_target = target - len(approved)
                 if remaining_target <= 0 or remaining_budget <= 0:
                     break
@@ -166,13 +169,20 @@ def main():
                  if x.strip()]
         radius = float(os.getenv("RADIUS", "25"))
         with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+            # Weekly automation is deliberately bounded; it may end PARTIAL.
+            limit = 240 if os.getenv("GITHUB_EVENT_NAME") == "schedule" else MAX_SITE_CHECKS
             result = fill_verified(region, words, radius, target=100,
-                                   verifier=_verify_with_one_pass_evidence)
-            from approved_handoff import store_approved
-            saved = store_approved(result["approved"])
-            # Reuse the original verified pages; zero extra site requests.
-            from fast_website_evidence import store_preverified_approved
-            extra = store_preverified_approved(result["approved"])
+                                   verifier=_verify_with_one_pass_evidence,
+                                   max_site_checks=limit)
+            saved = 0
+            extra = {"source_rows": 0, "captured_without_refetch": 0,
+                     "verified_with_detail": 0, "needs_manual_check": 0}
+            if result["approved"]:
+                from approved_handoff import store_approved
+                saved = store_approved(result["approved"])
+                # The original official pages are never fetched twice.
+                from fast_website_evidence import store_preverified_approved
+                extra = store_preverified_approved(result["approved"])
         print(json.dumps({
             "status": "complete" if result["complete"] else "partial",
             "target": 100, "approved_stored_privately": saved,
