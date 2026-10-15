@@ -115,8 +115,8 @@ def _matches(expected: EmailMessage, actual: EmailMessage) -> bool:
     )
 
 
-def _find_matches(client, folder: str, draft_id: str) -> list[tuple[bytes, EmailMessage, bool]]:
-    if client.select(_mailbox_arg(folder), readonly=True)[0] != "OK":
+def _find_matches(client, folder: str, draft_id: str, *, selected: bool = False) -> list[tuple[bytes, EmailMessage, bool]]:
+    if not selected and client.select(_mailbox_arg(folder), readonly=True)[0] != "OK":
         raise RuntimeError("drafts_folder_select_failed")
     status, data = client.search(None, "HEADER", DRAFT_HEADER, f'"{draft_id}"')
     if status != "OK":
@@ -142,9 +142,9 @@ def _find_matches(client, folder: str, draft_id: str) -> list[tuple[bytes, Email
     return results
 
 
-def save_draft(client, folder: str, row: dict[str, str]) -> str:
+def save_draft(client, folder: str, row: dict[str, str], *, selected: bool = False) -> str:
     expected = build_message(row)
-    existing = _find_matches(client, folder, row["draft_id"])
+    existing = _find_matches(client, folder, row["draft_id"], selected=selected)
     if len(existing) > 1:
         raise RuntimeError("duplicate_draft_id_in_mailbox")
     if existing:
@@ -157,9 +157,10 @@ def save_draft(client, folder: str, row: dict[str, str]) -> str:
     if status != "OK":
         raise RuntimeError("imap_append_failed")
 
-    for _ in range(4):
-        time.sleep(0.5)
-        found = _find_matches(client, folder, row["draft_id"])
+    for attempt in range(5):
+        if attempt:
+            time.sleep(0.5)
+        found = _find_matches(client, folder, row["draft_id"], selected=True)
         if len(found) == 1:
             _, actual, is_draft = found[0]
             if is_draft and _matches(expected, actual):
@@ -227,8 +228,10 @@ def create_batch_from_queue(draft_ids: list[str]) -> dict[str, int]:
     created = existing = 0
     try:
         folder = find_drafts_folder(client)
+        selected = False
         for row in rows:
-            outcome = save_draft(client, folder, row)
+            outcome = save_draft(client, folder, row, selected=selected)
+            selected = True
             if outcome == "created":
                 created += 1
             elif outcome == "existing":

@@ -31,6 +31,7 @@ jobs:
     concurrency:
       group: leadscanner-myhost-draft
       cancel-in-progress: false
+      queue: max
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -38,7 +39,9 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: '3.12'
-      - run: python3 -m pip install -r requirements.txt
+          cache: 'pip'
+          cache-dependency-path: requirements-draft.txt
+      - run: python3 -m pip install -r requirements-draft.txt
       - name: Draft-only synthetic tests
         env:
           PYTHONPATH: scripts
