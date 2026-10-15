@@ -47,6 +47,19 @@ CATEGORIES = {
     "laundromat": (6, "wasserijen"), "dry cleaner": (6, "stomerijen"),
 }
 GENERAL = ("info", "contact")
+# Require proof of the actual service on the official site, not an Overture label alone.
+ACTIVITY_PROOF = {
+    1: ("schilder", "hovenier", "loodgiet", "elektricien", "dakdek",
+        "timmer", "stukadoor", "schoonmaak", "glasbewassing", "boomverzorg",
+        "bouwbedrijf", "aannemer", "tegelzet"),
+    2: ("kapper", "kapsalon", "barber", "beauty", "schoonheid", "nagel",
+        "rijschool", "fitness", "sport", "gym"),
+    3: ("bloemist", "bloemen", "restaurant", "horeca", "cafe", "bakker",
+        "slager", "hotel", "fietsenwinkel"),
+    4: ("autogarage", "garage", "autoreparatie", "pechhulp", "sleepdienst"),
+    5: ("dierenarts", "veterinair", "fysiotherap", "dierenoppas", "uitvaart"),
+    6: ("fietsreparatie", "reparatie", "witgoed", "wasserij", "stomerij"),
+}
 MAIL_RE = re.compile(r"^[a-z0-9._%+\-]{1,64}@[a-z0-9.-]+\.[a-z]{2,63}$", re.I)
 NAME_TERMS = {"bedrijf", "bedrijven", "bv", "b.v.", "vof", "van", "de", "het", "en", "the", "groep"}
 
@@ -94,7 +107,7 @@ def _safe_same_site(url, host):
     if not is_public_http_url(url):
         return False
     target = urlsplit(url)
-    return target.hostname == host and target.port in (None, 80, 443)
+    return (target.hostname or "").removeprefix("www.") == host.removeprefix("www.") and target.port in (None, 80, 443)
 
 
 def _get(url, host, session):
@@ -130,25 +143,25 @@ def _get(url, host, session):
     return None
 
 
-def _robots_ok(base_url, paths, session):
-    # The robots file is read once per site. Deny if unavailable or malformed.
+def _robots_policy(base_url, session):
+    # Read once per site. Deny if unavailable or malformed.
     host = urlsplit(base_url).hostname
     url = urlsplit(base_url)
     robots_url = f"{url.scheme}://{host}/robots.txt"
     if not _safe_same_site(robots_url, host):
-        return False
+        return None
     try:
         response = session.get(robots_url, timeout=TIMEOUT,
                                headers={"User-Agent": AGENT}, allow_redirects=False)
         if response.status_code == 404:
             return True
         if response.status_code != 200 or len(response.content) > 100_000:
-            return False
+            return None
         parser = RobotFileParser()
         parser.parse(response.text.splitlines())
-        return all(parser.can_fetch(AGENT, path) for path in paths)
+        return parser
     except requests.RequestException:
-        return False
+        return None
 
 
 def verify_official_site(row, *, session=requests):
@@ -163,7 +176,8 @@ def verify_official_site(row, *, session=requests):
     host = urlsplit(url).hostname
     if not _safe_same_site(url, host):
         return None
-    if not _robots_ok(url, [url], session):
+    policy = _robots_policy(url, session)
+    if policy is None or (policy is not True and not policy.can_fetch(AGENT, url)):
         return None
     html = _get(url, host, session)
     if html is None:
@@ -177,7 +191,12 @@ def verify_official_site(row, *, session=requests):
         return None
     if is_blocked_place(norm(name), norm(row.get("category_hint"))):
         return None
+    if not any(word in content for word in ACTIVITY_PROOF[mapping[0]]):
+        return None
     candidates = list(page.mailto)
+    candidates.extend(x.lower() for x in re.findall(
+        r"(?<![a-z0-9._%+-])[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,63}", 
+        " ".join(page.texts), re.I))
     contact_source = url
     # Only a linked, same-domain contact/about page, never a generic site crawl.
     links = []
@@ -188,13 +207,16 @@ def verify_official_site(row, *, session=requests):
                 and _safe_same_site(dest, host) and dest not in links):
             links.append(dest)
     for dest in links[:1]:
-        if not _robots_ok(url, [dest], session):
+        if policy is not True and not policy.can_fetch(AGENT, dest):
             return None
         inner = _get(dest, host, session)
         if inner is not None:
             sub = PublicHTML()
             sub.feed(inner)
             candidates.extend(sub.mailto)
+            candidates.extend(x.lower() for x in re.findall(
+                r"(?<![a-z0-9._%+-])[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,63}",
+                " ".join(sub.texts), re.I))
             contact_source = dest
     published = sorted({x for x in candidates if MAIL_RE.fullmatch(x)})
     general = [x for x in published if x.split("@")[0] in GENERAL]
