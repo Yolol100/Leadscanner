@@ -93,46 +93,59 @@ class FastOfficialEvidenceTests(unittest.TestCase):
         self.assertNotIn("geen groepsmenu", found[0]["excerpt"])
 
     def test_previously_existing_functions_are_only_mentions(self):
-        class CaptureFake:
-            pages = [("https://voorbeeld.nl/", "Hovenier Amstel 5211 AB "
-                      "tuinonderhoud en tuinontwerp, online boeken en offertevragen")]
-            def close(self): pass
-        with patch.object(q, "Capture", return_value=CaptureFake()), \
-             patch.object(q, "verify_official_site", return_value={
-                 "email":"info@voorbeeld.nl", "branche_meervoud":"hoveniers",
-                 "source_url":"https://voorbeeld.nl/"}):
-            out = q.inspect(record())
+        pages = [("https://voorbeeld.nl/", "Hovenier Amstel 5211 AB "
+                  "tuinonderhoud en tuinontwerp, online boeken en offertevragen")]
+        official = {"email": "info@voorbeeld.nl", "branche_meervoud": "hoveniers",
+                    "source_url": "https://voorbeeld.nl/"}
+        out = q.inspect_verified(record(), official, pages)
         self.assertEqual(out["status"], "verified_with_detail")
         signal = json.loads(out["feature_mentions_json"])[0]
         self.assertEqual(signal["certainty"], "text_mention_only")
         self.assertIn("source_url", signal)
 
     def test_wrong_branch_or_unconfirmed_email_fails_closed(self):
-        class CaptureFake:
-            pages = [("https://voorbeeld.nl/", "Hovenier Amstel 5211 AB tuinonderhoud")]
-            def close(self): pass
-        with patch.object(q, "Capture", return_value=CaptureFake()), \
-             patch.object(q, "verify_official_site", return_value=None):
-            self.assertEqual(q.inspect(record())["status"], "needs_manual_check")
-        with patch.object(q, "Capture", return_value=CaptureFake()), \
-             patch.object(q, "verify_official_site", return_value={
-                 "email":"info@voorbeeld.nl", "branche_meervoud":"schilders",
-                 "source_url":"https://voorbeeld.nl/"}):
-            self.assertEqual(q.inspect(record())["reason"], "branch_mismatch")
+        pages = [("https://voorbeeld.nl/", "Hovenier Amstel 5211 AB tuinonderhoud")]
+        self.assertEqual(q.inspect_verified(record(), None, pages)["status"], "needs_manual_check")
+        result = q.inspect_verified(record(), {
+            "email": "info@voorbeeld.nl", "branche_meervoud": "schilders",
+            "source_url": "https://voorbeeld.nl/"}, pages)
+        self.assertEqual(result["reason"], "official_identity_email_or_branch_mismatch")
 
     def test_cross_domain_email_requires_extra_review(self):
         r = record()
         r["email"] = "info@anderbedrijf.nl"
-        class CaptureFake:
-            pages = [("https://voorbeeld.nl/", "Hovenier Amstel 5211 AB tuinonderhoud")]
-            def close(self): pass
-        with patch.object(q, "Capture", return_value=CaptureFake()), \
-             patch.object(q, "verify_official_site", return_value={
-                 "email":r["email"], "branche_meervoud":"hoveniers",
-                 "source_url":"https://voorbeeld.nl/contact"}):
-            out=q.inspect(r)
-        self.assertEqual(out["status"], "needs_manual_check")
-        self.assertEqual(out["reason"], "cross_domain_email_needs_independent_association")
+        pages = [("https://voorbeeld.nl/", "Hovenier Amstel 5211 AB tuinonderhoud")]
+        result = q.inspect_verified(r, {
+            "email": r["email"], "branche_meervoud": "hoveniers",
+            "source_url": "https://voorbeeld.nl/contact"}, pages)
+        self.assertEqual(result["status"], "needs_manual_check")
+        self.assertEqual(result["reason"], "cross_domain_email_needs_independent_association")
+
+    def test_unrelated_pages_do_not_count_as_official_proof(self):
+        result = q.inspect_verified(record(), {
+            "email": "info@voorbeeld.nl", "branche_meervoud": "hoveniers",
+            "source_url": "https://voorbeeld.nl/"}, [
+                ("https://not-voorbeeld.nl/", "Hovenier Amstel 5211 AB tuinonderhoud")])
+        self.assertEqual(result["status"], "needs_manual_check")
+        self.assertEqual(result["reason"], "source_pages_not_captured")
+
+    def test_captured_verified_site_does_not_fetch_site_twice(self):
+        hint = {"name_hint": "Schildersbedrijf Amstel",
+                "website_hint": "https://voorbeeld.nl/",
+                "category_hint": "painter"}
+        page = ('<h1>Schildersbedrijf Amstel</h1>'
+                '<p>Amstel doet schilderswerk in 5211 AB.</p>'
+                '<a href="mailto:info@voorbeeld.nl">info@voorbeeld.nl</a>')
+        session = Mock()
+        session.get.side_effect = lambda url, **kw: (
+            FakeResponse(status=404) if url.endswith("robots.txt") else FakeResponse(page))
+        with patch("verify_official_lead.is_public_http_url", return_value=True):
+            got = verify_official_site(hint, session=session,
+                            expected_email="info@voorbeeld.nl", collect_evidence=True)
+        self.assertEqual(session.get.call_count, 2)
+        self.assertEqual(len(got["_captured_pages"]), 1)
+        self.assertIn("schilderswerk", got["_captured_pages"][0][1])
+        self.assertEqual(got["email"], "info@voorbeeld.nl")
 
     def test_batch_headers_and_missing_rows_block(self):
         vals = [list(q.APPROVED_COLUMNS),
