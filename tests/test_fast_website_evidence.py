@@ -207,6 +207,64 @@ class FastOfficialEvidenceTests(unittest.TestCase):
         with patch.object(q, "_read", return_value=[]):
             self.assertEqual(q._cache(Mock()), {})
 
+    def test_one_pass_preverified_write_reuses_existing_pages_without_network(self):
+        row = record()
+        site = {"company": row["company"], "website": row["website"],
+                "email": row["email"], "branche_meervoud": row["branch"],
+                "source_url": row["website"],
+                "_captured_pages": [(row["website"],
+                    "Hovenier Amstel 5211 AB tuinonderhoud en tuinontwerp")]}
+        with patch.object(q, "_input", return_value=([row], "sha")) as read, \
+             patch.object(q, "_cache_id", return_value=(123, True)), \
+             patch.object(q, "_persist") as saved, \
+             patch.object(q.requests, "Session") as session:
+            output = q.store_preverified_approved([site], conn=Mock())
+        self.assertEqual(output["source_rows"], 1)
+        self.assertEqual(output["captured_without_refetch"], 1)
+        self.assertEqual(output["verified_with_detail"], 1)
+        self.assertEqual(read.call_count, 2)
+        session.assert_not_called()
+        self.assertEqual(saved.call_args.args[3][0]["status"], "verified_with_detail")
+
+    def test_one_pass_input_snapshot_drift_blocks_private_write(self):
+        row = record()
+        site = {"company": row["company"], "website": row["website"],
+                "email": row["email"], "branche_meervoud": row["branch"],
+                "source_url": row["website"], "_captured_pages": []}
+        with patch.object(q, "_input", side_effect=[([row], "old"),
+                                                   ([row], "modified")]), \
+             patch.object(q, "_persist") as saved:
+            with self.assertRaisesRegex(RuntimeError, "changed_during_review"):
+                q.store_preverified_approved([site], conn=Mock())
+        saved.assert_not_called()
+
+    def test_one_pass_missing_original_pages_blocks(self):
+        row = record()
+        site = {"company": row["company"], "website": row["website"],
+                "email": row["email"], "branche_meervoud": row["branch"],
+                "source_url": row["website"]}
+        with patch.object(q, "_input", return_value=([row], "sha")), \
+             patch.object(q, "_persist") as saved:
+            with self.assertRaisesRegex(RuntimeError, "pages_missing"):
+                q.store_preverified_approved([site], conn=Mock())
+        saved.assert_not_called()
+
+    def test_automatic_capture_is_off_for_legacy_verifier_users(self):
+        hint = {"name_hint": "Schildersbedrijf Amstel",
+                "website_hint": "https://voorbeeld.nl/",
+                "category_hint": "painter"}
+        html = ('<h1>Schildersbedrijf Amstel</h1>'
+                '<p>Amstel is een schildersbedrijf 5211 AB.</p>'
+                '<a href="mailto:info@voorbeeld.nl">info@voorbeeld.nl</a>')
+        client = Mock()
+        client.get.side_effect = lambda url, **kw: (
+            FakeResponse(status=404) if url.endswith("robots.txt")
+            else FakeResponse(html))
+        with patch("verify_official_lead.is_public_http_url", return_value=True):
+            got = verify_official_site(hint, session=client,
+                                        expected_email="info@voorbeeld.nl")
+        self.assertNotIn("_captured_pages", got)
+
     def test_final_readback_mismatch_blocks(self):
         client=Mock()
         client.post.return_value.status_code=200
