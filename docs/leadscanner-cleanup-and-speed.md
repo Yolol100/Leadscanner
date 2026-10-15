@@ -77,6 +77,16 @@ De vorige 450-mailchat en alle bestaande mailboxconcepten vallen expliciet buite
 
 **Herstel:** GitHub Actions → `fresh-leads.yml` uitschakelen of revert van de merge schakelt zowel wekelijkse nieuwe-leadverzameling als nieuwe automatische Drafts uit. Schakel desgewenst alleen `auto_first_drafts` uit via een rollback-commit om onderzoek te behouden. Oude `Review450` en Mijn.Host-gegevens nooit wissen. Handmatige IMAP-/kwaliteitscontrole blijft eindpoort.
 
+## Afsluiting historische 450-redactie en bronblokkades (15 oktober 2026)
+
+De redactieronde over de 450 historische Mijn.Host-concepten wordt **uitsluitend in de bestaande privé-Google Sheet** beoordeeld. De vijf tabbladen `Batch1Topkwaliteit` t/m `Batch5Topkwaliteit` zijn de primaire redactionele snapshots. `QA450Actueel` is een dynamische, alleen-afgeleide samenvoeging van die vijf tabbladen; `QA450Openstaand` toont uitsluitend rijen waarvan de redactionele status `NIET_VERSTUREN` bevat. `Verbeter450Fases` bevat de actuele aggregaten en de leeswijzer.
+
+De oudere tabbladen `QA450PerMail` en `QA450Batches` zijn **historische nulmetingen**. Gebruik hun eerdere scores en aantallen niet als actuele eindcontrole. Een correcte blokkadetelling gebruikt de gemeenschappelijke statusmarkering `NIET_VERSTUREN`, niet één exacte statusstring. Een niet-geblokkeerde mail is slechts **voor menselijke eindcontrole**: dat is geen toestemming om ongevraagde commerciële e-mail te versturen of de bestaande Mijn.Host-concepten te vervangen.
+
+Het verschil tussen de 450 oorspronkelijke `Review450`-onderwerpen/teksten en de vijf redactionele snapshots moet per origineel concept-ID worden geverifieerd. Het aantal 'nieuwe versies' mag niet worden afgeleid uit aantallen revisies in één chatronde. Bij bronfouten, onjuiste branche, stopzetting of onduidelijke identiteit blijft de betreffende mail geblokkeerd totdat de officiële bron exact is bevestigd; automatische unblock, verwijderen van opt-outs en een mailboxinstallatie zijn verboden.
+
+Dit is een documentatie-/bronrouteringscorrectie, geen nieuwe verzendmogelijkheid. De historische 450-reviewtools en het eenmalige `replace450`-pad blijven uitgeschakeld voor deze redactieronde, tenzij hiervoor later **afzonderlijk** een expliciet geautoriseerde en volledig geteste mailboxopdracht wordt gegeven. De publieke repository bevat geen prospectnamen, adressen of mailteksten.
+
 ## Harde bevindingen en hertest — 15 oktober 2026 (vervolg)
 
 De live nulmeting op de privé `Approved`-bron bevatte 57 bedrijven: 27 HTTPS en **30 legitiem officieel geverifieerde HTTP-URL's**. De conceptselectie had een onbedoelde uitsluitend-HTTPS-filter; de gedeelde bronverificateur accepteerde beide protocollen al, met publieke URL-, DNS-, robots-, identiteit- en e-mailcontroles. `auto_draft_new._host` accepteert daarom nu HTTP én HTTPS uitsluitend na de bestaande officiële bronpoorten, zonder gebruikersnaam, wachtwoord, afwijkende poort, onveilig schema of ongetoetst e-mailadres te accepteren. Deze wijziging schakelt geen beveiligingscontrole uit.
