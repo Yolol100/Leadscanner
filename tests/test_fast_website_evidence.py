@@ -229,6 +229,19 @@ class FastOfficialEvidenceTests(unittest.TestCase):
         self.assertEqual(r["emails_sent"],0)
         self.assertEqual(r["mailbox_writes"],0)
 
+    def test_google_values_get_missing_values_on_blank_cache_is_valid_empty(self):
+        # A valid 200 response on an EMPTY Google Sheet omits "values".
+        # Calling _cache via a mocked _read hides this real integration failure.
+        client = Mock()
+        client.get.return_value.status_code = 200
+        client.get.return_value.json.return_value = {
+            "range": "WebsiteEvidence!A1:N1000", "majorDimension": "ROWS"}
+        self.assertEqual(q._read(client, "WebsiteEvidence!A1:N1000"), [])
+        self.assertEqual(q._cache(client), {})
+        with patch.object(q, "_read", return_value=[]):
+            with self.assertRaisesRegex(RuntimeError, "evidence_source_headers_changed"):
+                q._input(client, "Approved", 1)
+
     def test_interrupted_new_sheet_resumes_without_trusting_empty_data(self):
         with patch.object(q, "_read", return_value=[]):
             self.assertEqual(q._cache(Mock()), {})
