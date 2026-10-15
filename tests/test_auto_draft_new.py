@@ -249,8 +249,8 @@ class AutomaticDraftSafetyTests(unittest.TestCase):
         client.post.return_value.status_code = 200
         with patch.object(a, "_state_id", return_value=(12,13)), \
              patch.object(a, "_read", side_effect=[
-                [a.APPROVED_HEADERS], [a.DRAFT_HEADERS], [],
-                [a.STATE_HEADERS]]) as reads, \
+                [list(a.APPROVED_HEADERS)], [list(a.DRAFT_HEADERS)], [],
+                [list(a.STATE_HEADERS)]]) as reads, \
              patch.object(a, "create_batch_from_queue") as imap:
             result = a.private_preflight(conn=client)
         self.assertEqual(result["status"], "private_state_ready")
@@ -266,7 +266,7 @@ class AutomaticDraftSafetyTests(unittest.TestCase):
     def test_preflight_fails_on_unexpected_existing_state(self):
         with patch.object(a, "_state_id", return_value=(12,13)), \
              patch.object(a, "_read", side_effect=[
-                [a.APPROVED_HEADERS], [a.DRAFT_HEADERS], [["wrong"]]]), \
+                [list(a.APPROVED_HEADERS)], [list(a.DRAFT_HEADERS)], [["wrong"]]]), \
              patch.object(a, "create_batch_from_queue") as imap:
             with self.assertRaisesRegex(RuntimeError, "headers_changed"):
                 a.private_preflight(conn=Mock())
