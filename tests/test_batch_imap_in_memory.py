@@ -73,7 +73,7 @@ class BatchIMAPSimulation(unittest.TestCase):
              patch("myhost_draft.time.sleep", return_value=None):
             outcome = draft.create_batch_from_queue([r["draft_id"] for r in rows])
         seconds = time.monotonic() - start
-        self.assertEqual(outcome, {"total": 50, "created": 50, "existing": 0})
+        self.assertEqual(outcome, {"total": 50, "created": 50, "existing": 0, "skipped_invalid": 0, "skipped_suppressed": 0, "skipped_duplicate": 0})
         self.assertEqual(len(client.messages), 50)
         self.assertEqual(client.append_attempts, 50)
         self.assertEqual(client.select_count, 1)
@@ -91,7 +91,7 @@ class BatchIMAPSimulation(unittest.TestCase):
              patch("myhost_draft.connect_imap", return_value=client), \
              patch("myhost_draft.time.sleep", return_value=None):
             outcome = draft.create_batch_from_queue([row["draft_id"] for row in rows])
-        self.assertEqual(outcome, {"total": 100, "created": 100, "existing": 0})
+        self.assertEqual(outcome, {"total": 100, "created": 100, "existing": 0, "skipped_invalid": 0, "skipped_suppressed": 0, "skipped_duplicate": 0})
         self.assertEqual(client.append_attempts, 100)
         self.assertEqual(client.select_count, 1)
         self.assertEqual(len(client.messages), 100)
@@ -111,7 +111,7 @@ class BatchIMAPSimulation(unittest.TestCase):
             self.assertEqual(len(client.messages), 24)
             client.fail_at = None
             outcome = draft.create_batch_from_queue([r["draft_id"] for r in rows])
-        self.assertEqual(outcome, {"total": 50, "created": 26, "existing": 24})
+        self.assertEqual(outcome, {"total": 50, "created": 26, "existing": 24, "skipped_invalid": 0, "skipped_suppressed": 0, "skipped_duplicate": 0})
         self.assertEqual(len(client.messages), 50)
         self.assertEqual(client.logout_count, 2)
 
@@ -155,7 +155,7 @@ class BatchIMAPSimulation(unittest.TestCase):
              patch("myhost_draft.connect_imap", return_value=client), \
              patch("myhost_draft.time.sleep", return_value=None):
             outcome = draft.create_batch_from_queue(draft_ids)
-        self.assertEqual(outcome, {"total": 6, "created": 6, "existing": 0})
+        self.assertEqual(outcome, {"total": 6, "created": 6, "existing": 0, "skipped_invalid": 0, "skipped_suppressed": 0, "skipped_duplicate": 0})
         self.assertEqual(session.get.call_count, 1)
         self.assertEqual(client.append_attempts, 6)
         self.assertEqual(client.logout_count, 1)

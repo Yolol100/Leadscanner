@@ -197,45 +197,64 @@ def create_from_queue(draft_id: str) -> str:
             pass
 
 def create_batch_from_queue(draft_ids: list[str]) -> dict[str, int]:
-    """Up to 100 drafts, one Sheets read, registry read, IMAP login and folder."""
-    rows = load_drafts(draft_ids)
+    """Process up to 100 IDs: reject individuals, fail closed on shared faults.
+
+    A single Sheets read and complete historical registry check happen before
+    any IMAP login. Each eligible draft still receives exact readback.
+    """
+    rows = load_drafts(draft_ids, skip_invalid=True)
+    invalid = len(draft_ids) - len(rows)
     try:
         registry = load_suppressions()
         company_seen: set[str] = set()
         domain_seen: set[str] = set()
         email_seen: set[str] = set()
+        eligible: list[dict[str, str]] = []
+        suppressed = duplicate = 0
         for row in rows:
             ident = {
                 "name_hint": row["company"],
                 "website_hint": row["source_url"],
                 "email": row["email"],
             }
+            # Registry/key-vault failures must abort the ENTIRE batch.
             if match_candidate(ident, registry) is not None:
-                raise RuntimeError("historically_suppressed_before_draft")
+                suppressed += 1
+                continue
             name = normalize_company(row["company"])
             domain = normalize_domain(row["source_url"])
             email = row["email"].casefold()
             if (name in company_seen or email in email_seen or
                     any(domains_match(domain, item) for item in domain_seen)):
-                raise RuntimeError("duplicate_business_in_draft_batch")
+                duplicate += 1
+                continue
             company_seen.add(name)
             domain_seen.add(domain)
             email_seen.add(email)
+            eligible.append(row)
     except Exception:
-        raise RuntimeError("batch_preflight_unavailable_or_suppressed") from None
+        raise RuntimeError("batch_preflight_unavailable") from None
+
+    result = {
+        "total": len(draft_ids), "created": 0, "existing": 0,
+        "skipped_invalid": invalid, "skipped_suppressed": suppressed,
+        "skipped_duplicate": duplicate,
+    }
+    if not eligible:
+        return result
 
     client = connect_imap()
-    created = existing = 0
     try:
         folder = find_drafts_folder(client)
         selected = False
-        for row in rows:
+        for row in eligible:
+            # IMAP errors/changed drafts stop the run; retries remain idempotent.
             outcome = save_draft(client, folder, row, selected=selected)
             selected = True
             if outcome == "created":
-                created += 1
+                result["created"] += 1
             elif outcome == "existing":
-                existing += 1
+                result["existing"] += 1
             else:
                 raise RuntimeError("batch_draft_outcome_invalid")
     finally:
@@ -243,4 +262,4 @@ def create_batch_from_queue(draft_ids: list[str]) -> dict[str, int]:
             client.logout()
         except Exception:
             pass
-    return {"total": len(rows), "created": created, "existing": existing}
+    return result

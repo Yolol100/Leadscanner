@@ -111,7 +111,7 @@ class HundredDraftBatchTests(unittest.TestCase):
              patch("myhost_draft.find_drafts_folder", return_value="Drafts"), \
              patch("myhost_draft.save_draft", return_value="created") as writer:
             output = create_batch_from_queue([row["draft_id"] for row in data])
-        self.assertEqual(output, {"total": 100, "created": 100, "existing": 0})
+        self.assertEqual(output, {"total": 100, "created": 100, "existing": 0, "skipped_invalid": 0, "skipped_suppressed": 0, "skipped_duplicate": 0})
         loader.assert_called_once()
         registry.assert_called_once()
         connector.assert_called_once()
