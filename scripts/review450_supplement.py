@@ -158,7 +158,7 @@ def supplement(conn):
     rejected = [r for r in current if not allowed(r)]
     needed = len(rejected)
     if not needed:
-        return {"status": "ready", "excluded": 0, "prepared": b.TARGET}
+        return {"excluded": 0, "replacements": 0, "prepared": b.TARGET}
     require_rejection_review(rejected, exclusions)
     pool, cursor, total_checked = load_checkpoint(conn, digest)
     if len(pool) > needed:
@@ -276,7 +276,7 @@ def supplement(conn):
     if b.load_rows(conn) != rows:
         raise RuntimeError("scope_replacement_readback_failed")
     save_checkpoint(conn, pool, digest, next_cursor, total_checked + checked_now, "committed")
-    return {"status": "ready", "excluded": needed, "replacements": len(pool),
+    return {"excluded": needed, "replacements": len(pool),
             "prepared": len(rows)}
 
 
@@ -322,7 +322,7 @@ def main():
         with redirect_stdout(StringIO()),redirect_stderr(StringIO()):
             from private_candidate_handoff import authorized_writer
             result=supplement(authorized_writer())
-        if result["status"] == "partial":
+        if result.get("status") == "partial":
             print("REVIEW450_SCOPE=partial verified={} missing={} checked={} next_region={} sent=0 mailbox_writes=0".format(
                   result["replacements"], result["missing"], result["checked"], result["next_region"]))
             return 2
