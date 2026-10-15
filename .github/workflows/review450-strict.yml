@@ -1,0 +1,47 @@
+name: Review 450 - NL local-business quality pass
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Exact user-authorized 450 task identity
+        type: string
+        required: true
+permissions:
+  contents: read
+jobs:
+  prepare:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      ((github.event_name == 'push' && startsWith(github.event.head_commit.message, 'LEADS_PREPARE450_STRICT:')) ||
+       (github.event_name == 'workflow_dispatch' && inputs.confirmation == 'review450-20261015'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 110
+    concurrency:
+      group: leads-private-candidates
+      # Explicit correction of this user's currently running preparation only.
+      # Previous checkpoints are atomic, privately retained, and reverified.
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: python3 -m pip install -r requirements.txt
+      - name: Recheck task-specific source, copy and persistence contracts
+        env:
+          PYTHONPATH: scripts
+        run: |
+          python3 -m compileall -q scripts
+          python3 -m unittest discover -s tests -p 'test_review450*.py' -q
+      - name: Reverify NL local businesses and write private review copy only
+        env:
+          PYTHONPATH: scripts
+          REVIEW450_PHASE: prepare_strict
+          LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON || secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python3 scripts/review450_strict.py
