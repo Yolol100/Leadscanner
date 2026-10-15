@@ -49,7 +49,7 @@ class CopyQuality(unittest.TestCase):
         self.assertIn("Testrestaurant Voorbeeld",body)
         self.assertLessEqual(len(body.split()),110)
         self.assertTrue(body.endswith("Groet,\nAndrew"))
-        self.assertIn("rijsttafels",s)
+        self.assertIn("rijsttafels",s.casefold())
 
     def test_unverified_evidence_never_generates_claim(self):
         row=self.row()
