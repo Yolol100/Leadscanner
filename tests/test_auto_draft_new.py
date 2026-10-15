@@ -244,6 +244,22 @@ class AutomaticDraftSafetyTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "readback"):
                 a._write_atomic(client, 1, 2, old_q, [], [queue_row()], [state])
 
+    def test_empty_sheet_values_response_is_valid_for_new_state_only(self):
+        session = Mock()
+        session.get.return_value.status_code = 200
+        session.get.return_value.json.return_value = {
+            "range": "AutoDraftState!A1:E1000", "majorDimension": "ROWS"}
+        self.assertEqual(a._read(session, a.DRAFT_QUEUE_ID, "AutoDraftState!A:E"), [])
+        with self.assertRaisesRegex(RuntimeError, "missing_private_headers"):
+            a._parse_table([], a.DRAFT_HEADERS)
+
+    def test_malformed_sheet_response_still_fails_closed(self):
+        session = Mock()
+        session.get.return_value.status_code = 200
+        session.get.return_value.json.return_value = {"values": "not-an-array"}
+        with self.assertRaisesRegex(RuntimeError, "source_shape_invalid"):
+            a._read(session, a.DRAFT_QUEUE_ID, "AutoDraftState!A:E")
+
     def test_live_preflight_only_initializes_private_state_metadata(self):
         client = Mock()
         client.post.return_value.status_code = 200
