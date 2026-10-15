@@ -30,7 +30,7 @@ class Replace450WorkflowGuardTests(unittest.TestCase):
         self.assertIn("github.ref == 'refs/heads/main'", self.workflow)
         self.assertIn("LEADS_INSPECT450_ONLY:", self.workflow)
         self.assertIn("review450-20261015", self.workflow)
-        self.assertIn("python3 scripts/replace450_fast.py", self.workflow)
+        self.assertIn("python3 scripts/live_450_draft_inventory.py", self.workflow)
         self.assertIn("persist-credentials: false", self.workflow)
 
 
