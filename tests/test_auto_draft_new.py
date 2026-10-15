@@ -417,29 +417,31 @@ class AutomaticDraftSafetyTests(unittest.TestCase):
             self.assertEqual(info["reason"], expected)
             self.assertNotIn("test@example.invalid", capture.getvalue())
 
-    def test_mailbox_preflight_examines_only_and_never_modifies_folder(self):
-        client = Mock()
-        client.examine.return_value = ("OK", [b"0"])
+    def test_mailbox_preflight_uses_real_imaplib_readonly_select(self):
+        # Restricted mock: an imaginary IMAP4.examine() method cannot pass.
+        client = Mock(spec=["select", "logout", "append", "store", "expunge"])
+        self.assertFalse(hasattr(client, "examine"))
+        client.select.return_value = ("OK", [b"0"])
         with patch("myhost_draft.connect_imap", return_value=client), \
              patch("myhost_draft.find_drafts_folder", return_value="Drafts"):
             result = a.mailbox_readonly_preflight()
         self.assertEqual(result["status"], "imap_drafts_examined_readonly")
         self.assertEqual(result["mailbox_writes"], 0)
         self.assertEqual(result["sent"], 0)
-        client.examine.assert_called_once_with('"Drafts"')
+        client.select.assert_called_once_with('"Drafts"', readonly=True)
         client.append.assert_not_called()
-        client.select.assert_not_called()
         client.store.assert_not_called()
         client.expunge.assert_not_called()
         client.logout.assert_called_once()
 
-    def test_bad_imap_examine_blocks_without_any_mailbox_mutation(self):
-        client = Mock()
-        client.examine.return_value = ("NO", [b"permission denied"])
+    def test_bad_readonly_select_blocks_without_any_mailbox_mutation(self):
+        client = Mock(spec=["select", "logout", "append", "store", "expunge"])
+        client.select.return_value = ("NO", [b"permission denied"])
         with patch("myhost_draft.connect_imap", return_value=client), \
              patch("myhost_draft.find_drafts_folder", return_value="Drafts"):
             with self.assertRaisesRegex(RuntimeError, "readonly_drafts_folder_unavailable"):
                 a.mailbox_readonly_preflight()
+        client.select.assert_called_once_with('"Drafts"', readonly=True)
         client.append.assert_not_called()
         client.store.assert_not_called()
         client.logout.assert_called_once()
