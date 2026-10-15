@@ -11,7 +11,7 @@ on:
     inputs:
       source:
         type: choice
-        description: Privé bron: 100 Approved of de aparte historische 450
+        description: "Privé bron: 100 Approved of de aparte historische 450"
         options: [Approved, Review450]
         required: true
         default: Approved
