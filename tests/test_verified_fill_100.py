@@ -60,6 +60,33 @@ class WebsiteProofTests(unittest.TestCase):
         self.assertEqual(v["source_url"], "https://fictief-1.nl/contact/")
         self.assertEqual(v["greeting"], "Goedendag,")
 
+    def test_named_owner_email_takes_priority_and_proves_greeting(self):
+        row = hint(3)
+        row["category_hint"] = "painter"
+        row["name_hint"] = "Schildersbedrijf Amstel"
+        html = ('<h1>Schildersbedrijf Amstel</h1>'
+                '<a href="mailto:info@fictief-3.nl">Contact</a>'
+                '<a href="mailto:piet@fictief-3.nl">Piet Jansen eigenaar</a>')
+        session = Mock()
+        session.get.side_effect = lambda url, **kw: (
+            FakeResponse(status=404) if url.endswith("robots.txt") else FakeResponse(html))
+        with patch("verify_official_lead.is_public_http_url", return_value=True):
+            found = verify_official_site(row, session=session)
+        self.assertEqual(found["email"], "piet@fictief-3.nl")
+        self.assertEqual(found["greeting"], "Hoi Piet,")
+        self.assertEqual(len(values([found], "1234567")), 2)
+
+    def test_category_from_overture_without_official_activity_is_rejected(self):
+        row = hint(4)
+        row["name_hint"] = "Amstel Service"
+        row["category_hint"] = "painter"
+        html = '<h1>Amstel Service</h1><p>Wij zijn een fietsenwinkel.</p><a href="mailto:info@fictief-4.nl">Mail</a>'
+        session = Mock()
+        session.get.side_effect = lambda url, **kw: (
+            FakeResponse(status=404) if url.endswith("robots.txt") else FakeResponse(html))
+        with patch("verify_official_lead.is_public_http_url", return_value=True):
+            self.assertIsNone(verify_official_site(row, session=session))
+
     def test_no_published_email_or_wrong_company_never_approved(self):
         site = hint(2)
         session = Mock()
