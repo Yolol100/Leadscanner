@@ -314,25 +314,52 @@ def _cache(conn):
     return result
 
 
-def _persist(conn, sheet_id, existing, new):
+def _cache_rows_after_retention(existing, new):
+    """Bound cache growth without ever evicting the active batch or 450 history.
+
+    WebsiteEvidence is a reusable snapshot cache, not canonical LeadHistory.
+    Rows older than seven days from a previous Approved snapshot may expire.
+    """
     merged = dict(existing)
     merged.update({r["record_key"]: r for r in new})
+    active = {r["record_key"] for r in new}
+    now = datetime.now(timezone.utc)
+    for key, row in list(merged.items()):
+        if key in active or row.get("source_tab") != "Approved":
+            continue
+        try:
+            checked = datetime.fromisoformat(
+                str(row["checked_at"]).replace("Z", "+00:00"))
+            outdated = (checked.tzinfo is None or
+                        (now - checked).total_seconds() > 7 * 86400)
+        except (KeyError, ValueError, TypeError):
+            outdated = True
+        if outdated:
+            del merged[key]
     if len(merged) > MAX_RECORDS:
         raise RuntimeError("evidence_private_cache_full")
+    return merged
+
+
+def _persist(conn, sheet_id, existing, new):
+    merged = _cache_rows_after_retention(existing, new)
     expected = [list(COLUMNS)] + [[str(row.get(k, "")) for k in COLUMNS]
                                    for row in merged.values()]
+    # Old trailing rows must be cleared when expired evidence is pruned.
+    total = max(len(expected), len(existing) + 1)
+    padded = expected + [[""] * len(COLUMNS) for _ in range(total-len(expected))]
     cell_rows = [{"values": [
         {"userEnteredValue": {"stringValue": c}} if c else {} for c in row
-    ]} for row in expected]
+    ]} for row in padded]
     url = "https://sheets.googleapis.com/v4/spreadsheets/" + SHEET_ID
     resp = conn.post(url + ":batchUpdate", timeout=45, json={"requests": [{
         "updateCells": {"range": {"sheetId": sheet_id, "startRowIndex": 0,
-                         "endRowIndex": len(expected), "startColumnIndex": 0,
+                         "endRowIndex": total, "startColumnIndex": 0,
                          "endColumnIndex": len(COLUMNS)},
                         "rows": cell_rows, "fields": "userEnteredValue"}}]})
     if resp.status_code != 200:
         raise RuntimeError("evidence_private_write_failed")
-    if _read(conn, TAB + "!A1:N" + str(len(expected))) != expected:
+    if _read(conn, TAB + "!A1:N" + str(total)) != expected:
         raise RuntimeError("evidence_private_readback_mismatch")
 
 
