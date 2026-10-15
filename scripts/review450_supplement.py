@@ -1,8 +1,7 @@
-"""Replace a small number of scope-rejected prospects before final editing.
+"""Replace scope-rejected prospects before final editing, without mailbox access.
 
-Prospect seeds are private and remain hints until the ordinary strict official
-site, Dutch postcode, source/email and historical suppression checks pass.
-No mailbox access, no deletion, and no approval is granted by this module.
+Seeds and exclusions remain private. Replacements require the ordinary strict
+source, Dutch postal code, contact-address and historical suppression checks.
 """
 from __future__ import annotations
 import os
@@ -16,18 +15,41 @@ import review450 as b
 import review450_strict as s
 
 HEADERS = ["name_hint","website_hint","category_hint","country_hint","postcode_hint"]
-# Broad organization-level exclusions, not a list of private prospect identities.
 ADDITIONAL_EXCLUSIONS = ("carlton", "sportbedrijf")
 
 
-def scope_allowed(row):
+def scope_allowed(row, excluded_domains=()):
     from verify_official_lead import norm
-    text=norm(str(row.get("company") or row.get("name_hint") or "")+" "+
-              str(row.get("website") or row.get("website_hint") or ""))
-    if s.chain(str(row.get("company") or row.get("name_hint") or ""),
-               str(row.get("website") or row.get("website_hint") or "")):
+    from dedupe_preflight import normalize_domain, domains_match
+    name=str(row.get("company") or row.get("name_hint") or "")
+    website=str(row.get("website") or row.get("website_hint") or "")
+    text=norm(name+" "+website)
+    domain=normalize_domain(website)
+    if s.chain(name,website) or any(token in text for token in ADDITIONAL_EXCLUSIONS):
         return False
-    return not any(token in text for token in ADDITIONAL_EXCLUSIONS)
+    if any(domains_match(domain,old) for old in excluded_domains):
+        return False
+    email=str(row.get("email") or "")
+    if email and row.get("origin")!="review50_reverified_v3":
+        if "@" not in email or not domains_match(domain,email.rsplit("@",1)[1].casefold()):
+            return False
+    return True
+
+
+def private_exclusions(conn):
+    from dedupe_preflight import normalize_domain
+    values=b.read(conn,b.SID,"Review450ScopeExclusions!A1:C40")
+    if not values or values[0]!=["domain","reason","source_url"]:
+        raise RuntimeError("private_scope_review_unavailable")
+    domains=[]
+    for row in values[1:]:
+        if len(row)!=3 or not row[1] or not row[2].startswith(("https://","http://")):
+            raise RuntimeError("private_scope_review_invalid")
+        domain=normalize_domain(row[0])
+        if not domain or "." not in domain or domain!=row[0].casefold():
+            raise RuntimeError("private_scope_domain_invalid")
+        domains.append(domain)
+    return set(domains)
 
 
 def supplement(conn):
@@ -39,7 +61,9 @@ def supplement(conn):
     before=[b.COLS]+[[r[k] for k in b.COLS] for r in current]
     if len(current)!=450 or state.get("status")!="ready_for_review" or b.digest(before)!=state.get("content_sha256"):
         raise RuntimeError("complete_unchanged_batch_required")
-    rows=[r for r in current if scope_allowed(r)]
+    exclusions=private_exclusions(conn)
+    allowed=lambda row:scope_allowed(row,exclusions)
+    rows=[r for r in current if allowed(r)]
     removed=len(current)-len(rows)
     if not removed:
         return {"excluded":0,"replacements":0,"prepared":450}
@@ -57,13 +81,13 @@ def supplement(conn):
         selected=[]
         for hint in values:
             domain=normalize_domain(hint.get("website_hint"))
-            if (not domain or domain in seen or not s.allowed_hint(hint) or not scope_allowed(hint) or
+            if (not domain or domain in seen or not s.allowed_hint(hint) or not allowed(hint) or
                     match_candidate(hint,discovery_registry) or match_candidate(hint,known)):
                 continue
             seen.add(domain);selected.append(hint)
         return selected
     def accept(row):
-        if (row and len(rows)<450 and scope_allowed(row) and not match_candidate(row,historical) and
+        if (row and len(rows)<450 and allowed(row) and not match_candidate(row,historical) and
                 not match_candidate(row,discovery_registry) and not match_candidate(row,known)):
             rows.append(row)
             known.append({"identity":candidate_identity(row),"status":"this_task","row_number":len(rows)})
@@ -91,9 +115,9 @@ def supplement(conn):
     if len(rows)!=450:
         raise RuntimeError("scope_replacements_incomplete_original_batch_unchanged")
     b.unique(rows)
-    if any(not scope_allowed(row) for row in rows):
+    if any(not allowed(row) for row in rows):
         raise RuntimeError("scope_rejection_remaining")
-    if b.load_rows(conn)!=current:
+    if b.load_rows(conn)!=current or private_exclusions(conn)!=exclusions:
         raise RuntimeError("batch_changed_during_scope_review")
     s.persist(conn,rows,"ready_for_review",int(state.get("sites_checked","0"))+checked,int(state.get("regions","0")))
     if b.load_rows(conn)!=rows:
