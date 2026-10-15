@@ -103,6 +103,32 @@ class FastOfficialEvidenceTests(unittest.TestCase):
         self.assertEqual(signal["certainty"], "text_mention_only")
         self.assertIn("source_url", signal)
 
+    def test_concrete_hotel_cafe_and_gym_services_require_official_text(self):
+        cases = [
+            ("logiesbedrijven", "hotel", "familiekamer"),
+            ("horecazaken", "cafe", "brunch"),
+            ("sportscholen", "sportschool", "proefles"),
+        ]
+        for branch, activity, detail in cases:
+            with self.subTest(branch=branch):
+                company = "Amstel Voorbeeld"
+                website = "http://voorbeeld.nl/"
+                record_data = dict(record(), company=company, website=website,
+                                   branch=branch)
+                official = {"email": record_data["email"],
+                            "branche_meervoud": branch,
+                            "source_url": website + "contact"}
+                source = [(website, f"{company} 5211 AB "
+                           f"Wij zijn een {activity} en bieden {detail}.")]
+                out = q.inspect_verified(record_data, official, source)
+                self.assertEqual(out["status"], "verified_with_detail")
+                self.assertIn(detail, json.loads(out["facts_json"])[0]["term"])
+                unsupported = [(website, f"{company} 5211 AB "
+                                f"Wij zijn een {activity}.")]
+                missed = q.inspect_verified(record_data, official, unsupported)
+                self.assertEqual(missed["status"], "verified_activity_only")
+                self.assertEqual(missed["facts_json"], "[]")
+
     def test_wrong_branch_or_unconfirmed_email_fails_closed(self):
         pages = [("https://voorbeeld.nl/", "Hovenier Amstel 5211 AB tuinonderhoud")]
         self.assertEqual(q.inspect_verified(record(), None, pages)["status"], "needs_manual_check")
