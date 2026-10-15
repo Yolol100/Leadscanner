@@ -125,6 +125,35 @@ def supplement(conn):
     return {"excluded":removed,"replacements":removed,"prepared":len(rows)}
 
 
+SAFE_REASONS = frozenset({
+    "complete_unchanged_batch_required", "private_scope_review_unavailable",
+    "private_scope_review_invalid", "private_scope_domain_invalid",
+    "too_many_scope_issues_requires_review", "supplement_hints_invalid",
+    "scope_replacements_incomplete_original_batch_unchanged", "scope_rejection_remaining",
+    "batch_changed_during_scope_review", "scope_replacement_readback_failed",
+    "private_sheet_read_failed", "private_sheet_shape_invalid", "private_sheet_write_failed",
+    "private_batch_headers_invalid", "private_batch_row_invalid", "too_many_batch_rows",
+    "duplicate_draft_id", "duplicate_business", "review_row_invalid", "review_copy_invalid",
+    "lead_history_headers_invalid", "lead_history_invalid_row", "lead_history_incomplete",
+    "lead_history_identity_missing", "lead_history_duplicate_identity", "lead_history_blank_row",
+    "draft_queue_registry_headers_invalid", "draft_queue_registry_invalid_row",
+    "draft_queue_registry_invalid_identity", "draft_queue_registry_identity_missing",
+    "historical_suppression_unavailable", "registry_read_failed", "registry_auth_invalid",
+    "batch_readback_failed", "history_readback_failed",
+})
+
+
+def safe_reason(exc):
+    """Only fixed failure codes reach public logs; never exception details."""
+    reason = str(exc)
+    if reason in SAFE_REASONS:
+        return reason
+    name = type(exc).__name__
+    if name in {"TypeError", "ValueError", "KeyError", "IndexError", "AttributeError"}:
+        return name
+    return "private_scope_or_source_or_readback"
+
+
 def main():
     if os.getenv("REVIEW450_PHASE")!="final_copy":
         print("REVIEW450_SCOPE=blocked unauthorized_phase sent=0")
@@ -135,8 +164,8 @@ def main():
             result=supplement(authorized_writer())
         print("REVIEW450_SCOPE=green excluded={} replacements={} prepared=450 sent=0 mailbox_writes=0".format(result["excluded"],result["replacements"]))
         return 0
-    except Exception:
-        print("REVIEW450_SCOPE=blocked private_scope_or_source_or_readback sent=0 mailbox_writes=0")
+    except Exception as exc:
+        print("REVIEW450_SCOPE=blocked reason={} sent=0 mailbox_writes=0".format(safe_reason(exc)))
         return 1
 
 
