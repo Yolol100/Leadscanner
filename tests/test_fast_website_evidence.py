@@ -248,6 +248,8 @@ class FastOfficialEvidenceTests(unittest.TestCase):
 
     def test_one_pass_preverified_write_reuses_existing_pages_without_network(self):
         row = record()
+        row["source_sha256"] = q._digest([
+            row["company"], row["website"], row["email"], row["branch"]])
         site = {"company": row["company"], "website": row["website"],
                 "email": row["email"], "branche_meervoud": row["branch"],
                 "source_url": row["website"],
@@ -267,9 +269,12 @@ class FastOfficialEvidenceTests(unittest.TestCase):
 
     def test_one_pass_input_snapshot_drift_blocks_private_write(self):
         row = record()
+        row["source_sha256"] = q._digest([
+            row["company"], row["website"], row["email"], row["branch"]])
         site = {"company": row["company"], "website": row["website"],
                 "email": row["email"], "branche_meervoud": row["branch"],
-                "source_url": row["website"], "_captured_pages": []}
+                "source_url": row["website"], "_captured_pages": [
+                    (row["website"], "Hovenier Amstel 5211 AB tuinontwerp")]}
         with patch.object(q, "_input", side_effect=[([row], "old"),
                                                    ([row], "modified")]), \
              patch.object(q, "_persist") as saved:
