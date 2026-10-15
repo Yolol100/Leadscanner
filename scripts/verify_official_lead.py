@@ -261,7 +261,12 @@ def verify_official_site(row, *, session=requests, expected_email=None,
     expected = str(expected_email or "").strip().casefold()
     if expected and not MAIL_RE.fullmatch(expected):
         return None
-    if expected and expected in candidates:
+    # Evidence collection may need the official contact page for Dutch
+    # locality even if the exact email is already on the homepage.
+    # A fully sufficient homepage still takes the two-request fast path.
+    has_locality = bool(re.search(r"\b[1-9]\d{3}\s?[A-Z]{2}\b",
+                                  " ".join(page.texts)))
+    if expected and expected in candidates and (not collect_evidence or has_locality):
         return _with_captured_pages({
             "company": name, "website": url, "email": expected,
             "source_url": url, "cluster": mapping[0],
