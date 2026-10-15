@@ -72,6 +72,17 @@ BRANCH_PROOF = {
 }
 MAIL_RE = re.compile(r"^[a-z0-9._%+\-]{1,64}@[a-z0-9.-]+\.[a-z]{2,63}$", re.I)
 NAME_TERMS = {"bedrijf", "bedrijven", "bv", "b.v.", "vof", "van", "de", "het", "en", "the", "groep"}
+# An industry word or city in a business hint is not distinctive identity proof.
+GENERIC_NAME_WORDS = {
+    "schildersbedrijf", "schilderwerken", "schilder", "hoveniersbedrijf", "hovenier",
+    "tuinaanleg", "bouwbedrijf", "aannemer", "dakdekker", "loodgieter",
+    "installatiebedrijf", "schoonmaakbedrijf", "schoonmaak", "glazenwasser",
+    "kapsalon", "kapper", "barber", "beautysalon", "schoonheidssalon",
+    "restaurant", "horeca", "bloemist", "bakkerij", "slagerij", "garage",
+    "autogarage", "autobedrijf", "fysiotherapie", "fysiotherapiepraktijk",
+    "dierenarts", "dierenkliniek", "reparatiebedrijf", "reparatie", "wasserij",
+    "stomerij", "rotterdam", "amsterdam", "nederland",
+}
 
 
 def norm(value):
@@ -125,11 +136,22 @@ class PublicHTML(HTMLParser):
                 self._active_text.append(data)
 
 
-def _safe_same_site(url, host):
-    if not is_public_http_url(url):
+def _same_site_shape(url, host):
+    """Cheap syntactic check for candidate links; NO network or DNS lookup."""
+    try:
+        target = urlsplit(url)
+        return (target.scheme in {"http", "https"}
+                and target.username is None and target.password is None
+                and (target.hostname or "").removeprefix("www.") ==
+                    (host or "").removeprefix("www.")
+                and target.port in (None, 80, 443))
+    except (ValueError, TypeError):
         return False
-    target = urlsplit(url)
-    return (target.hostname or "").removeprefix("www.") == host.removeprefix("www.") and target.port in (None, 80, 443)
+
+
+def _safe_same_site(url, host):
+    # DNS/public-IP safety check remains mandatory before every HTTP request.
+    return _same_site_shape(url, host) and is_public_http_url(url)
 
 
 def _get(url, host, session):
@@ -207,8 +229,10 @@ def verify_official_site(row, *, session=requests):
     page = PublicHTML()
     page.feed(html)
     content = norm(" ".join(page.texts))
-    name_words = [x for x in norm(name).split() if len(x) >= 4 and x not in NAME_TERMS]
-    # Require a distinctive official business name on the site, not just a working URL.
+    name_words = [x for x in norm(name).split()
+                  if len(x) >= 3 and x not in NAME_TERMS
+                  and x not in GENERIC_NAME_WORDS and not x.endswith("bedrijf")]
+    # A category word like "schildersbedrijf" alone cannot prove identity.
     if not name_words or not any(word in content.split() for word in name_words):
         return None
     if is_blocked_place(norm(name), norm(row.get("category_hint"))):
@@ -227,11 +251,12 @@ def verify_official_site(row, *, session=requests):
         dest = urljoin(url, href)
         slug = urlsplit(dest).path.casefold()
         if (any(term in slug for term in ("contact", "over-ons", "about"))
-                and _safe_same_site(dest, host) and dest not in links):
+                and _same_site_shape(dest, host) and dest not in links):
             links.append(dest)
+            break
     for dest in links[:1]:
         if policy is not True and not policy.can_fetch(AGENT, dest):
-            return None
+            continue  # Homepage contact may already be independently published.
         inner = _get(dest, host, session)
         if inner is not None:
             sub = PublicHTML()
