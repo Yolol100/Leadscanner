@@ -330,6 +330,31 @@ class FastOfficialEvidenceTests(unittest.TestCase):
         self.assertNotIn("OUTREACH_MAIL_PASSWORD", fast + new)
         self.assertNotIn("smtp", fast.lower() + new.lower())
 
+    def test_cache_retention_preserves_review450_and_current_batch(self):
+        old = verified(checked_at="2025-01-01T00:00:00+00:00")
+        history = dict(old, record_key="Review450:history", source_tab="Review450")
+        unused = dict(old, record_key="Approved:stale")
+        current = verified(record_key="Approved:new", source_sha256="new")
+        retained = q._cache_rows_after_retention({
+            history["record_key"]: history, unused["record_key"]: unused,
+        }, [current])
+        self.assertIn("Review450:history", retained)
+        self.assertIn("Approved:new", retained)
+        self.assertNotIn("Approved:stale", retained)
+
+    def test_expired_trailing_cache_rows_are_cleared_exactly(self):
+        old = verified(record_key="Approved:stale",
+                       checked_at="2025-01-01T00:00:00+00:00")
+        fresh = verified(record_key="Approved:new")
+        expected = [list(q.COLUMNS), [str(fresh.get(k, "")) for k in q.COLUMNS]]
+        conn = Mock()
+        conn.post.return_value.status_code = 200
+        with patch.object(q, "_read", return_value=expected) as read:
+            q._persist(conn, 345, {old["record_key"]: old}, [fresh])
+        request = conn.post.call_args.kwargs["json"]["requests"][0]["updateCells"]
+        self.assertEqual(request["range"]["endRowIndex"], 2)
+        read.assert_called_once()
+
     def test_final_readback_mismatch_blocks(self):
         client=Mock()
         client.post.return_value.status_code=200
