@@ -265,6 +265,29 @@ class FastOfficialEvidenceTests(unittest.TestCase):
                                         expected_email="info@voorbeeld.nl")
         self.assertNotIn("_captured_pages", got)
 
+    def test_evidence_captures_contact_locality_only_when_homepage_lacks_it(self):
+        hint = {"name_hint": "Hovenier Amstel",
+                "website_hint": "https://voorbeeld.nl/",
+                "category_hint": "landscaper"}
+        homepage = ('<h1>Hovenier Amstel</h1><p>tuinonderhoud en tuinontwerp</p>'
+                    '<a href="/contact">Contact</a>'
+                    '<a href="mailto:info@voorbeeld.nl">info@voorbeeld.nl</a>')
+        contact = '<h2>Hovenier Amstel</h2><p>5211 AB Den Bosch</p>'
+        client = Mock()
+        def site_get(url, **kw):
+            if url.endswith("robots.txt"):
+                return FakeResponse(status=404)
+            return FakeResponse(contact if url.endswith("/contact") else homepage)
+        client.get.side_effect = site_get
+        with patch("verify_official_lead.is_public_http_url", return_value=True):
+            official = verify_official_site(hint, session=client,
+                expected_email="info@voorbeeld.nl", collect_evidence=True)
+        self.assertEqual(client.get.call_count, 3)
+        self.assertEqual(len(official["_captured_pages"]), 2)
+        candidate = dict(record(), company="Hovenier Amstel", branch="hoveniers")
+        detail = q.inspect_verified(candidate, official, official["_captured_pages"])
+        self.assertEqual(detail["status"], "verified_with_detail")
+
     def test_scheduled_discovery_caps_requests_and_keeps_empty_approved(self):
         import verified_fill
         result = {"approved": [], "complete": False,
