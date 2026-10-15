@@ -400,9 +400,43 @@ def scheduled_draft_run(run_id, *, conn=None, mailbox=create_batch_from_queue,
             "skipped": len(prepared) - stored, "sent": 0}
 
 
+def private_preflight(*, conn=None):
+    """One-time authorized *metadata-only* live probe; never connects to IMAP.
+
+    It creates or reads only the private AutoDraftState header. No queued
+    prospect row, no historical Review450 mutation, no mailbox or send.
+    """
+    conn = conn if conn is not None else authorized_writer()
+    _parse_table(_read(conn, SOURCE_SHEET_ID, "Approved!A1:I101"), APPROVED_HEADERS)
+    _parse_table(_read(conn, DRAFT_QUEUE_ID, "DraftQueue!A:G"), DRAFT_HEADERS)
+    _, tab = _state_id(conn)
+    rows = _read(conn, DRAFT_QUEUE_ID, AUTO_TAB + "!A:E")
+    if not rows:
+        base = "https://sheets.googleapis.com/v4/spreadsheets/" + DRAFT_QUEUE_ID
+        header = {"updateCells": {
+            "range": {"sheetId": tab, "startRowIndex": 0, "endRowIndex": 1,
+                      "startColumnIndex": 0, "endColumnIndex": len(STATE_HEADERS)},
+            "rows": [_cells(STATE_HEADERS)],
+            "fields": "userEnteredValue"}}
+        resp = conn.post(base + ":batchUpdate", timeout=30,
+                         json={"requests": [header]})
+        if resp.status_code != 200:
+            raise RuntimeError("autodraft_preflight_header_write_failed")
+        rows = _read(conn, DRAFT_QUEUE_ID, AUTO_TAB + "!A:E")
+    _parse_table(rows, STATE_HEADERS)
+    return {"status": "private_state_ready",
+            "review450_rows_touched": 0, "mailbox_writes": 0, "sent": 0}
+
+
 def main():
     try:
-        result = scheduled_draft_run(os.getenv("GITHUB_RUN_ID", ""))
+        import sys
+        if sys.argv[1:] == ["--preflight"]:
+            result = private_preflight()
+        elif not sys.argv[1:]:
+            result = scheduled_draft_run(os.getenv("GITHUB_RUN_ID", ""))
+        else:
+            raise ValueError("autodraft_unknown_argument")
         # GitHub only sees aggregate counters; zero customer identifiers/copy.
         print(json.dumps(result, ensure_ascii=True, sort_keys=True))
         return 0
