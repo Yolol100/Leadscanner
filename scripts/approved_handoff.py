@@ -40,7 +40,8 @@ def values(approved, run_id):
                 or safe_hint(website) != website or safe_hint(source) != source
                 or not valid_general_email(email) or cluster not in "123456"
                 or not plural or len(plural) > 80 or
-                greeting != ("Hoi," if int(cluster) >= 5 else "Goedendag,")
+                not (greeting == ("Hoi," if int(cluster) >= 5 else "Goedendag,")
+                     or re.fullmatch(r"Hoi [A-ZÀ-ÿ][A-Za-zÀ-ÿ-]{1,40},", greeting))
                 or row.get("status") != STATUS):
             raise RuntimeError("approved_handoff_invalid_row")
         rows.append([str(run_id), name, website, email, source,
