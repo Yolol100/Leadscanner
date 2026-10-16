@@ -79,7 +79,7 @@ jobs:
       github.event_name == 'issue_comment' &&
       github.event.issue.number == 1659 &&
       github.actor == 'Yolol100' &&
-      github.event.comment.body == 'LEADS_VALUEFIRST_404_CLEAR_ALL_412_ONLY: review450-20261016'
+      github.event.comment.body == 'LEADS_VALUEFIRST_407_CLEAR_ALL_412_ONLY: review450-20261016'
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     concurrency:
@@ -101,7 +101,7 @@ jobs:
         run: |
           python3 -m unittest discover -s tests -p 'test_sync_review_openings.py' -q
           python3 -m unittest discover -s tests -p 'test_reconcile450_current.py' -q
-      - name: Append 404 verified drafts then targeted clear of 412 originals; never send
+      - name: Append 407 reviewed drafts and clear 412 originals plus stale staged copy; never send
         env:
           PYTHONPATH: scripts
           MAILBOX_VALUEFIRST_MODE: sync
