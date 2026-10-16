@@ -92,11 +92,11 @@ class DraftCopySyncTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,"unrelated_drafts_present"):
             target.classify({**source,"4":packet({**first,"draft_id":"draft-"+"c"*32},4)},expected)
 
-    def test_never_delete_held_uid_or_send(self):
+    def test_targeted_clear_never_sends_email(self):
         script=(Path(__file__).resolve().parents[1] / "scripts" /
                 "sync_review_openings.py").read_text()
-        self.assertIn('if item["eligible"]\n                    for u in staged[key]["old"]',script)
-        self.assertIn('if item["eligible"]\n                for u in again[key]["old"]',script)
+        self.assertIn('if item["eligible"] or item["hold"]\n                    for u in staged[key]["old"]',script)
+        self.assertIn('if item["eligible"] or item["hold"]\n                for u in again[key]["old"]',script)
         self.assertIn('client.uid("EXPUNGE", uid_list)',script)
         self.assertNotIn("client.expunge(", script)
         self.assertNotIn("import smtplib",script)
@@ -109,9 +109,25 @@ class DraftCopySyncTests(unittest.TestCase):
         self.assertIn("github.actor == 'Yolol100'",workflow)
         self.assertIn("github.event.issue.number == 1659",workflow)
         self.assertIn("LEADS_VALUEFIRST_404_AUDIT_ONLY:",workflow)
-        self.assertIn("LEADS_VALUEFIRST_404_SYNC_ONLY:",workflow)
+        self.assertIn("LEADS_VALUEFIRST_404_CLEAR_ALL_412_ONLY:",workflow)
         self.assertNotIn("workflow_dispatch:",workflow)
         self.assertNotIn("  schedule:",workflow)
+
+    def test_held_draft_purged_only_after_new_copy_staged(self):
+        key = "draft-" + "a"*32
+        old = {"draft_id": key, "company": "Example",
+               "email": "info@example.invalid", "source_url": "https://example.invalid",
+               "subject": "Held", "body": "Old copy"}
+        expected = {key: {"old": old, "new": old, "eligible": False, "hold": True}}
+        record = {"uid": "1", "draft_id": key, "draft_flag": True,
+                  "flags": {b"\\DRAFT"}, "sha256": "abc",
+                  "message": build_message(old)}
+        before = target.classify({"1":record}, expected)
+        target.verify_new_complete(before, expected)
+        after = target.classify({}, expected, held_cleared=True)
+        target.verify_new_complete(after, expected, held_cleared=True)
+        with self.assertRaisesRegex(RuntimeError, "held_draft_changed_or_missing"):
+            target.classify({"1":record}, expected, held_cleared=True)
 
     def test_authorization_required(self):
         with patch.dict("os.environ",{"MAILBOX_VALUEFIRST_TASK":"bad",
