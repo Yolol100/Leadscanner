@@ -353,6 +353,59 @@ class FastOfficialEvidenceTests(unittest.TestCase):
                                         expected_email="info@voorbeeld.nl")
         self.assertNotIn("_captured_pages", got)
 
+    def test_http_robots_redirect_to_same_site_https_preserves_verification(self):
+        hint = {"name_hint": "Schildersbedrijf Amstel",
+                "website_hint": "http://voorbeeld.nl/",
+                "category_hint": "painter"}
+        html = ('<h1>Schildersbedrijf Amstel</h1>'
+                '<p>Amstel is een schildersbedrijf in 5211 AB.</p>'
+                '<a href="mailto:info@voorbeeld.nl">info@voorbeeld.nl</a>')
+        client = Mock()
+
+        def site_get(url, **kw):
+            if url == "http://voorbeeld.nl/robots.txt":
+                response = FakeResponse(status=301)
+                response.headers["Location"] = "https://voorbeeld.nl/robots.txt"
+                return response
+            if url == "https://voorbeeld.nl/robots.txt":
+                return FakeResponse("User-agent: *\nDisallow:\n")
+            if url == "http://voorbeeld.nl/":
+                response = FakeResponse(status=301)
+                response.headers["Location"] = "https://voorbeeld.nl/"
+                return response
+            if url == "https://voorbeeld.nl/":
+                return FakeResponse(html)
+            raise AssertionError("unexpected request")
+
+        client.get.side_effect = site_get
+        with patch("verify_official_lead.is_public_http_url", return_value=True):
+            got = verify_official_site(hint, session=client,
+                expected_email="info@voorbeeld.nl", collect_evidence=True)
+        self.assertIsNotNone(got)
+        self.assertEqual(got["email"], "info@voorbeeld.nl")
+        self.assertEqual(client.get.call_count, 4)
+        self.assertTrue(all(not c.kwargs.get("allow_redirects") for c in client.get.call_args_list))
+
+    def test_robots_redirect_to_different_domain_is_rejected(self):
+        import verify_official_lead as verifier
+        client = Mock()
+        response = FakeResponse(status=302)
+        response.headers["Location"] = "https://anders.nl/robots.txt"
+        client.get.return_value = response
+        with patch("verify_official_lead.is_public_http_url", return_value=True):
+            self.assertIsNone(verifier._robots_policy("http://voorbeeld.nl/", client))
+        self.assertEqual(client.get.call_count, 1)
+
+    def test_robots_https_redirect_to_homepage_is_rejected(self):
+        import verify_official_lead as verifier
+        client = Mock()
+        response = FakeResponse(status=301)
+        response.headers["Location"] = "https://voorbeeld.nl/"
+        client.get.return_value = response
+        with patch("verify_official_lead.is_public_http_url", return_value=True):
+            self.assertIsNone(verifier._robots_policy("http://voorbeeld.nl/", client))
+        self.assertEqual(client.get.call_count, 1)
+
     def test_large_robots_policy_is_bounded_before_site_fetch(self):
         import verify_official_lead as verifier
         malicious = FakeResponse("x" * 150000)
