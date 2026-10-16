@@ -56,13 +56,15 @@ class OpeningSyncSafety(unittest.TestCase):
 
     def test_held_must_remain_original(self):
         a, b, c, d = self.keys
-        with self.assertRaisesRegex(RuntimeError, "held"):
+        with self.assertRaisesRegex(RuntimeError, "unrecognized"):
             s.classify({"2": self.record(b, self.new[b], 2)}, self.expected)
 
     def test_excluded_cannot_appear(self):
         d = self.keys[3]
+        items = self.complete_inventory()
+        items["5"] = self.record(d, self.old[d], 5)
         with self.assertRaisesRegex(RuntimeError, "excluded"):
-            s.classify({"4": self.record(d, self.old[d], 4)}, self.expected)
+            s.classify(items, self.expected)
 
     def test_closed_draft_absent_after_sync(self):
         a, b, c, d = self.keys
