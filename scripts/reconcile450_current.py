@@ -156,6 +156,8 @@ def reconcile():
         verify_new_complete(staged, expected)
         old_uids = {u for g in staged.values() for u in g["old"]}
         old_hash = {uid: ready[uid]["sha256"] for uid in old_uids}
+        if load_private_scope(conn) != expected:
+            raise RuntimeError("private_review_changed_before_remove")
         verify_suppressions(conn, expected)
         # Re-read all messages with a writable selection before targeted remove.
         if legacy.select(client, folder, readonly=False) != validity:
