@@ -1,5 +1,7 @@
 # Leadscanner: opschonen en sneller brononderzoek (2026-10-15)
 
+> **Status 16 oktober 2026 — archief/instructiecorrectie:** de hieronder beschreven automatische wekelijkse/werkdagelijkse cron en automatische eerste-conceptenfunctie zijn via [PR #1719](https://github.com/Yolol100/Leadscanner/pull/1719) verwijderd. De bestaande vierstappenworkflow werkt uitsluitend op aanvraag met één ChatGPT-controller en GitHub-issue #1720. Read-only: `LEADS_CHAT_V1:CHECK` en `LEADS_CHAT_V1:DRAFTS_AUDIT`. Bestaande zoek- en evidence-routes: `LEADS_CHAT_V2:<MODE>:r-<32hex>` met `HINTS_10/30/50/100`, `EVIDENCE` of `VERIFIED_100` als MODE en een stabiel ID. Geen automatische tijdschema's, geen automatisch verzenden en geen tweede uitvoeringssysteem. Alle latere vermeldingen van *automatisch aan*, *maandag-run* en *planning* in dit document zijn historische ontwerp-/testinformatie, niet operationele instructies. `Review450`, Mijn.Host, HMAC/opt-outs en Cloudflare-vacature-radar niet veranderen.
+
 ## Besluit en grens
 
 **Leadscanner** blijft de uitvoerder voor officiële bedrijfswebsites. `webactueel-workflow` blijft controller; `leads` blijft de vierstappen-specialist. Gebruik rechtstreeks de bedrijfswebsite vanuit de al bekende Overture/PDOK-hint of het privé `Approved`-tabblad. Gebruik niet standaard opnieuw Google Web Search per bedrijf.
@@ -43,9 +45,9 @@ Vóór merge: sluit de concept-PR; `main` en alle bestaande private sheets blijv
 
 ## Upgrade 15 oktober 2026: automatisch, één websitepass en betrouwbare snelheid
 
-**Automatisch aan:** `fresh-leads.yml` verzamelt elke maandag om 06:23 UTC (07:23/08:23 in Nederland) maximaal 100 nieuwe officiële leads, met **hoogstens 240 websitecontroles** per geplande run. De bestaande volledige historische suppressie wordt vóór iedere aanvraag geladen. Een tekort wordt eerlijk als `partial` geregistreerd; zonder één geverifieerde lead blijft het vorige `Approved`-snapshot onaangetast. Geen campagne, nieuw CRM of automatische verzending.
+**Historisch, nu uitgeschakeld:** `fresh-leads.yml` verzamelde elke maandag om 06:23 UTC (07:23/08:23 in Nederland) maximaal 100 nieuwe officiële leads, met **hoogstens 240 websitecontroles** per geplande run. De bestaande volledige historische suppressie wordt vóór iedere aanvraag geladen. Een tekort wordt eerlijk als `partial` geregistreerd; zonder één geverifieerde lead blijft het vorige `Approved`-snapshot onaangetast. Geen campagne, nieuw CRM of automatische verzending.
 
-**Automatisch bronhergebruik:** `fast-website-evidence.yml` ververst maandag t/m vrijdag om 07:17 UTC (08:17/09:17 in Nederland) uitsluitend het **bestaande** `Approved`-snapshot, hergebruikt geldige bewijsrecords gedurende 24 uur, en slaat privé bronpassages op. Voor een nieuwe `fill_100`-run worden de officiële homepage en maximaal één relevante contactpagina maar **één keer** aangevraagd en meteen doorgegeven aan `WebsiteEvidence`: geen tweede crawl. Dagelijkse vervolgcontroles blijven bedoeld voor versheid, niet voor dubbel werk.
+**Historisch, nu uitgeschakeld:** `fast-website-evidence.yml` ververste maandag t/m vrijdag om 07:17 UTC (08:17/09:17 in Nederland) uitsluitend het **bestaande** `Approved`-snapshot, hergebruikt geldige bewijsrecords gedurende 24 uur, en slaat privé bronpassages op. Voor een nieuwe `fill_100`-run worden de officiële homepage en maximaal één relevante contactpagina maar **één keer** aangevraagd en meteen doorgegeven aan `WebsiteEvidence`: geen tweede crawl. Dagelijkse vervolgcontroles blijven bedoeld voor versheid, niet voor dubbel werk.
 
 **Bewijs:** `verify_official_site(..., collect_evidence=True)` geeft uitsluitend bij succesvolle originele verificatie de al geparste pagina's intern terug. `store_preverified_approved` controleert het exact teruggelezen `Approved`-snapshot voor en na de transactie. `inspect_verified` verwerkt alleen dezelfde host, exact gecontroleerde e-mail en branche en onderscheidt concrete dienstvermeldingen van functie-signalen. Nergens worden prospectnamen of mailteksten in publieke GitHub-uitvoer geplaatst.
 
@@ -57,9 +59,9 @@ Vóór merge: sluit de concept-PR; `main` en alle bestaande private sheets blijv
 
 **Rollback:** schakel eerst beide schema-triggers uit of revert de geverifieerde squash-commit. De oorspronkelijke `Approved`, `Review450`, `LeadHistory`, Draft Queue en Mijn.Host worden niet verwijderd. Eventueel al geregistreerde historische suppressies niet resetten of opschonen. Een fout in één bewijsbatch mag geen ongeverifieerde bron als succes markeren.
 
-## Automatische eerste concepten voor uitsluitend NIEUWE leads
+## Historische automatische eerste concepten voor uitsluitend NIEUWE leads (nu uitgeschakeld)
 
-Na de geplande maandag-run volgt in `fresh-leads.yml` de afzonderlijke `auto_first_drafts`-job. Er is geen menselijke startknop meer nodig voor nieuwe, aantoonbaar geschikte leads. Het normale klantenproces blijft: bedrijf vinden → officieel zakelijk e-mailadres → concept in Mijn.Host Drafts → menselijke eindcontrole. **Verzenden gebeurt nooit automatisch.**
+In de oude opzet volgde na een geplande maandag-run de afzonderlijke `auto_first_drafts`-job. Deze geplande route is inmiddels verwijderd en mag niet opnieuw worden aangezet. Nieuwe concepten vereisen nu de bestaande, afzonderlijk eigenaargeautoriseerde handmatige Draft Queue/issue #1659-route met volledige uitsluitingscheck. Het normale klantenproces blijft: bedrijf vinden → officieel zakelijk e-mailadres → concept in Mijn.Host Drafts → menselijke eindcontrole. **Verzenden gebeurt nooit automatisch.**
 
 Harde selectie in `scripts/auto_draft_new.py`:
 

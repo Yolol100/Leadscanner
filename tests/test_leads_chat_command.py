@@ -1,5 +1,6 @@
 """No-network regression tests for ChatGPT on-demand Leadscanner commands."""
 import copy
+import json
 import unittest
 from unittest.mock import patch
 
@@ -16,11 +17,35 @@ def event(mode="CHECK"):
     }
 
 
+REQUEST_ID = "r-" + "a" * 32
+ALT_ID = "r-" + "b" * 32
+
+
+def versioned_event(mode="HINTS_10", request_id=REQUEST_ID, *, comment_id=500):
+    result = event(mode)
+    result["comment"]["id"] = comment_id
+    result["comment"]["body"] = f"LEADS_CHAT_V2:{mode}:{request_id}"
+    return result
+
+
+def history_row(event):
+    return copy.deepcopy(event["comment"])
+
+
 class ChatCommandTests(unittest.TestCase):
-    def test_all_explicit_modes_accepted(self):
-        for mode in sorted(command.MODES):
+    def test_read_only_legacy_modes_accepted(self):
+        for mode in sorted(command.MODES - command.REQUIRES_ID):
             with self.subTest(mode=mode):
                 self.assertEqual(command.validate(event(mode)), mode)
+
+    def test_write_modes_require_opaque_versioned_ids(self):
+        for mode in sorted(command.REQUIRES_ID):
+            with self.subTest(mode=mode):
+                with self.assertRaisesRegex(ValueError, "request_id_required"):
+                    command.validate(event(mode))
+                current = event()
+                current["comment"]["body"] = "LEADS_CHAT_V2:" + mode + ":" + REQUEST_ID
+                self.assertEqual(command.validate(current), mode)
 
     def test_reject_foreign_actor_issue_repo_and_pr(self):
         cases = [
@@ -67,7 +92,7 @@ class ChatCommandTests(unittest.TestCase):
         run.assert_not_called()
 
     def test_preflight_fails_closed_on_incomplete_register(self):
-        with patch("registry_readonly.load_suppressions", return_value=[1]):
+        with patch("registry_readonly.load_discovery_suppressions", return_value=[1]):
             with self.assertRaises(RuntimeError):
                 command.execute("CHECK")
 
@@ -122,6 +147,106 @@ class ChatCommandTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 command.execute("SEND")
             run.assert_not_called()
+
+    def test_versioned_command_schema_fails_closed(self):
+        invalid = (
+            "LEADS_CHAT_V2:HINTS_10",
+            "LEADS_CHAT_V2:HINTS_10:r-" + "G" * 32,
+            "LEADS_CHAT_V2:HINTS_10:r-" + "a" * 31,
+            "LEADS_CHAT_V2:HINTS_10:" + REQUEST_ID + ":extra",
+            "LEADS_CHAT_V2:CHECK:" + REQUEST_ID,
+            "LEADS_CHAT_V2:HINTS_10:" + REQUEST_ID + "\\nsecret",
+            "LEADS_CHAT_V2:SMTP:" + REQUEST_ID,
+        )
+        for raw in invalid:
+            with self.subTest(raw=raw):
+                test = versioned_event()
+                test["comment"]["body"] = raw
+                with self.assertRaises(ValueError):
+                    command.validate(test)
+
+    def test_identical_prior_request_is_noop(self):
+        first = versioned_event(comment_id=100)
+        retry = versioned_event(comment_id=101)
+        self.assertFalse(command.authorize_once(retry, [
+            history_row(first), history_row(retry)
+        ]))
+
+    def test_first_request_runs_and_later_independent_request_runs(self):
+        first = versioned_event(comment_id=100)
+        independent = versioned_event(request_id=ALT_ID, comment_id=101)
+        data = [history_row(first), history_row(independent)]
+        self.assertTrue(command.authorize_once(first, data))
+        self.assertTrue(command.authorize_once(independent, data))
+
+    def test_conflicting_reused_id_fails_closed(self):
+        first = versioned_event("HINTS_10", comment_id=100)
+        changed = versioned_event("HINTS_30", comment_id=101)
+        with self.assertRaisesRegex(RuntimeError, "request_id_conflict"):
+            command.authorize_once(changed, [history_row(first), history_row(changed)])
+
+    def test_missing_comment_or_changed_immutable_history_blocks(self):
+        current = versioned_event()
+        with self.assertRaisesRegex(RuntimeError, "history_current_missing"):
+            command.authorize_once(current, [])
+        bad = history_row(current)
+        bad["body"] = "LEADS_CHAT_V2:HINTS_30:" + REQUEST_ID
+        with self.assertRaisesRegex(RuntimeError, "history_current_missing"):
+            command.authorize_once(current, [bad])
+
+    def test_github_rerun_never_discover_again(self):
+        current = versioned_event()
+        self.assertFalse(command.authorize_once(current, [history_row(current)], attempt=2))
+
+    def test_missing_private_github_history_token_blocks(self):
+        with patch.dict("os.environ", {"GITHUB_TOKEN": ""}):
+            with self.assertRaisesRegex(RuntimeError, "history_token_missing"):
+                command.list_issue_comments()
+
+    def test_main_duplicate_and_rerun_skip_without_any_subprocess(self):
+        current = versioned_event()
+        previous = versioned_event(comment_id=100)
+        with patch.dict("os.environ", {
+                "GITHUB_EVENT_PATH": "/no-file-reads-in-test",
+                "GITHUB_EVENT_NAME": "issue_comment",
+                "GITHUB_RUN_ATTEMPT": "1",
+            }), patch("pathlib.Path.read_text", return_value=json.dumps(current)), \
+             patch.object(command, "list_issue_comments",
+                          return_value=[history_row(previous), history_row(current)]), \
+             patch.object(command, "execute") as executor:
+            self.assertEqual(command.main(), 0)
+            executor.assert_not_called()
+        with patch.dict("os.environ", {
+                "GITHUB_EVENT_PATH": "/no-file-reads-in-test",
+                "GITHUB_EVENT_NAME": "issue_comment",
+                "GITHUB_RUN_ATTEMPT": "2",
+            }), patch("pathlib.Path.read_text", return_value=json.dumps(current)), \
+             patch.object(command, "list_issue_comments") as history, \
+             patch.object(command, "execute") as executor:
+            self.assertEqual(command.main(), 0)
+            executor.assert_not_called()
+            history.assert_not_called()
+
+    def test_list_history_only_reads_github_rest_without_writes(self):
+        current = versioned_event()
+        response = unittest.mock.MagicMock()
+        response.status = 200
+        response.read.return_value = json.dumps([history_row(current)]).encode("utf-8")
+        handle = unittest.mock.MagicMock()
+        handle.__enter__.return_value = response
+        with patch.dict("os.environ", {"GITHUB_TOKEN": "synthetic-test-token"}), \
+             patch("urllib.request.urlopen", return_value=handle) as opener:
+            entries = command.list_issue_comments()
+        self.assertEqual(len(entries), 1)
+        opener.assert_called_once()
+        self.assertEqual(opener.call_args.kwargs["timeout"], 20)
+        self.assertIn("/issues/1720/comments", opener.call_args.args[0].full_url)
+
+    def test_github_api_failure_does_not_start_scan(self):
+        with patch.dict("os.environ", {"GITHUB_TOKEN": "synthetic-test-token"}), \
+             patch("urllib.request.urlopen", side_effect=OSError("not available")):
+            with self.assertRaisesRegex(RuntimeError, "history_unavailable"):
+                command.list_issue_comments()
 
 
 if __name__ == "__main__":
