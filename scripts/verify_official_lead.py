@@ -188,35 +188,46 @@ def _get(url, host, session):
 
 
 def _robots_policy(base_url, session):
-    # Read once per site. Deny if unavailable or malformed.
+    # Read once per site. Deny if unavailable, malformed or redirected unsafely.
     host = urlsplit(base_url).hostname
     url = urlsplit(base_url)
     robots_url = f"{url.scheme}://{host}/robots.txt"
-    if not _safe_same_site(robots_url, host):
-        return None
-    try:
-        # Stream and bound robots.txt before materializing it in memory.
-        # Unbounded response.content could download a huge malicious file.
-        response = session.get(robots_url, timeout=TIMEOUT, stream=True,
-                               headers={"User-Agent": AGENT}, allow_redirects=False)
+    # Sites with HTTP hints often redirect robots.txt to the HTTPS equivalent.
+    # Follow only same-site HTTPS robots redirects, never bypass the policy.
+    for _ in range(3):
+        if not _safe_same_site(robots_url, host):
+            return None
         try:
-            if response.status_code == 404:
-                return True
-            if response.status_code != 200:
-                return None
-            raw = bytearray()
-            for chunk in response.iter_content(chunk_size=16384):
-                raw.extend(chunk)
-                if len(raw) > 100_000:
+            response = session.get(robots_url, timeout=TIMEOUT, stream=True,
+                                   headers={"User-Agent": AGENT},
+                                   allow_redirects=False)
+            try:
+                if response.status_code in {301, 302, 303, 307, 308}:
+                    target = urljoin(robots_url, response.headers.get("Location", ""))
+                    dest = urlsplit(target)
+                    if (dest.scheme != "https" or dest.path != "/robots.txt"
+                            or dest.query or dest.fragment
+                            or not _safe_same_site(target, host)):
+                        return None
+                    robots_url = target
+                    continue
+                if response.status_code == 404:
+                    return True
+                if response.status_code != 200:
                     return None
-            parser = RobotFileParser()
-            parser.parse(raw.decode("utf-8", errors="replace").splitlines())
-            return parser
-        finally:
-            response.close()
-    except requests.RequestException:
-        return None
-
+                raw = bytearray()
+                for chunk in response.iter_content(chunk_size=16384):
+                    raw.extend(chunk)
+                    if len(raw) > 100_000:
+                        return None
+                parser = RobotFileParser()
+                parser.parse(raw.decode("utf-8", errors="replace").splitlines())
+                return parser
+            finally:
+                response.close()
+        except requests.RequestException:
+            return None
+    return None
 
 def _with_captured_pages(payload, pages, enabled):
     """Internal-only data: parsed official HTML used by the same successful check."""
