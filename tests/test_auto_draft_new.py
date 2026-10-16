@@ -61,14 +61,30 @@ class AutomaticDraftSafetyTests(unittest.TestCase):
         self.assertIsNotNone(result)
         subject, body = result
         self.assertIn("tuinontwerp", subject)
-        self.assertIn("tuinontwerp", body)
+        self.assertIn("tuinplan", body)
         self.assertIn("bestaande werkwijze", body)
+        self.assertTrue(body.split("\n\n")[1].startswith("Een korte uitleg over "))
+        self.assertNotIn("Ik zag", body)
         self.assertNotIn("Ik kwam jullie website tegen", body)
         self.assertNotIn("Ik ben Andrew van Webactueel", body)
         self.assertEqual(body.count(a.OPT_OUT), 1)
         self.assertEqual(body.split(a.OPT_OUT, 1)[0].count("?"), 1)
         self.assertLessEqual(len(body.split()), 110)
         self.assertTrue(body.endswith("Groet,\nAndrew"))
+
+    def test_all_six_review_clusters_open_with_a_useful_idea(self):
+        for cluster in ("1", "2", "3", "4", "5", "6"):
+            with self.subTest(cluster=cluster):
+                case = {**approved(), "cluster": cluster}
+                item = a._compose(case, {"term": "tuinontwerp"})
+                self.assertIsNotNone(item)
+                _, body = item
+                self.assertTrue(body.split("\n\n")[1].startswith("Een korte uitleg"))
+                self.assertNotIn("Ik zag ", body)
+                self.assertEqual(body.count(a.OPT_OUT), 1)
+                self.assertEqual(body.split(a.OPT_OUT, 1)[0].count("?"), 1)
+                self.assertLessEqual(len(body.split()), 110)
+                self.assertTrue(body.endswith("Groet,\nAndrew"))
 
     def test_unverified_or_generic_sources_never_make_drafts(self):
         for status in ("verified_activity_only", "needs_manual_check"):
