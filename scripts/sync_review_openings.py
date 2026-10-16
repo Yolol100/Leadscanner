@@ -108,6 +108,20 @@ def load_private_scope(session):
 def verify_suppressions(session, expected):
     global REGISTRY_DIAGNOSTIC_STAGE
     REGISTRY_DIAGNOSTIC_STAGE = "load"
+    # Read each source with the same service account before the full guarded read.
+    from registry_readonly import REGISTRY_ID, REGISTRY_TAB, read_values
+    from historical_v2 import VAULT_SHEET_ID, VAULT_TAB, TAB_NAME
+    for label, sid, tab in (
+        ("dedupe", REGISTRY_ID, REGISTRY_TAB),
+        ("vault", VAULT_SHEET_ID, VAULT_TAB),
+        ("historical", REGISTRY_ID, TAB_NAME),
+    ):
+        REGISTRY_DIAGNOSTIC_STAGE = label
+        try:
+            read_values(session, sid, tab)
+        except Exception:
+            raise RuntimeError("registry_" + label + "_unreadable") from None
+    REGISTRY_DIAGNOSTIC_STAGE = "load"
     suppression = load_suppressions(session=session)
     REGISTRY_DIAGNOSTIC_STAGE = "match"
     for value in expected.values():
@@ -320,7 +334,8 @@ def main():
                      "historical_v2_incomplete", "historical_v2_bad_hash_key_or_domain",
                      "historical_v2_duplicate_identity", "historical_v2_source_overflow",
                      "historical_v2_vault_unavailable_or_modified", "historical_v2_vault_key_invalid",
-                     "historical_v2_row_shape_invalid", "registry_auth_invalid"})
+                     "historical_v2_row_shape_invalid", "registry_auth_invalid", "registry_dedupe_unreadable",
+                     "registry_vault_unreadable", "registry_historical_unreadable"})
         code = code if type(exc) is RuntimeError and code in safe else "private_preflight_or_imap_failed"
         print("MYHOST_VALUEFIRST=blocked stage=" + DIAGNOSTIC_STAGE + " registry=" + REGISTRY_DIAGNOSTIC_STAGE + " reason=" + code + " sent=0")
         return 1
