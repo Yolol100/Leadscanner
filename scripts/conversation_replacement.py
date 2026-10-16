@@ -366,6 +366,60 @@ def run_remaining(event):
             "blocked": final["blocked"], "batches": len(completed), "sent": 0}
 
 
+_SAFE_REASONS = frozenset({
+    "conversation_owner_authorization_denied",
+    "conversation_source_identity_mismatch",
+    "conversation_official_evidence_identity_mismatch",
+    "conversation_official_evidence_stale",
+    "conversation_population_changed",
+    "conversation_private_sources_changed",
+    "conversation_mailbox_message_changed",
+    "conversation_duplicate_draft_id",
+    "conversation_expected_draft_missing",
+    "conversation_archive_scope_changed",
+    "conversation_original_archive_missing",
+    "conversation_batch_final_verification_failed",
+    "conversation_uidplus_required",
+    "conversation_first_batch_not_complete",
+    "archive_folder_creation_failed",
+    "archive_folder_list_failed",
+    "archive_folder_not_initialized",
+    "archive_original_conflict",
+    "archive_append_failed",
+    "archive_write_scope_or_hash_mismatch",
+    "archive_write_mime_mismatch",
+    "archive_old_bytes_not_equal",
+    "archive_independent_readback_failed",
+    "archive_duplicate_draft_id",
+    "archive_flags_invalid",
+    "draft_source_or_exclusion_unverified",
+    "draft_queue_source_url_invalid",
+    "draft_append_failed",
+    "draft_append_readback_mismatch",
+    "draft_stage_uid_scope_changed",
+    "draft_stage_readback_mismatch",
+    "draft_inventory_changed",
+    "original_draft_missing",
+    "original_draft_changed",
+    "recipient_identity_changed",
+    "private_snapshot_storage_required",
+    "private_snapshot_readback_failed",
+    "private_snapshot_sha_mismatch",
+    "targeted_uid_expunge_unsupported",
+    "targeted_delete_flag_failed",
+    "targeted_uid_expunge_failed",
+    "targeted_delete_readback_failed",
+    "uidvalidity_changed",
+    "uidvalidity_changed_before_delete",
+})
+
+
+def _safe_reason(error):
+    # Never publish exception detail unless it is one of these constants.
+    message = str(error)
+    return message if type(error) is RuntimeError and message in _SAFE_REASONS else "private_or_unclassified_error"
+
+
 def main():
     command = os.getenv("CONVERSATION_MODE", "")
     mode = command[len(PREFIX):] if command.startswith(PREFIX) else ""
@@ -379,8 +433,8 @@ def main():
         print("CONVERSATION411=green " +
               " ".join(f"{k}={v}" for k, v in result.items()))
         return 0
-    except Exception:
-        print("CONVERSATION411=blocked confidential_details_suppressed sent=0")
+    except Exception as error:
+        print("CONVERSATION411=blocked reason=" + _safe_reason(error) + " sent=0")
         return 1
 
 
