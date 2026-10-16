@@ -40,7 +40,7 @@ RUN_ID = re.compile(r"^[0-9]{1,20}$")
 DRAFT_RE = re.compile(r"^draft-[0-9a-f]{32}$")
 DRAFT_STATUS_PREFIX = "source_verified_human_review_required:"
 
-# A factual observation + a small, relevant sample of content — NOT a claim
+# A verified service guides a useful example — never narrate the recipient website or claim a missing feature.
 # that an existing booking, webshop, FAQ or contact feature is absent.
 SERVICE_CONTEXT = {
     "proefrit": "wat klanten bij een proefrit kunnen verwachten",
@@ -218,9 +218,9 @@ def _compose(row, fact):
     if not angle:
         return None
     body = (f"{greeting}\n\n"
-            f"Ik zag {term} op jullie website staan.\n\n"
-            f"Een korte uitleg over {guidance} kan hierbij handig zijn, "
-            f"{angle}. Jullie bestaande werkwijze blijft het uitgangspunt.\n\n"
+            f"Een korte uitleg over {guidance} kan geïnteresseerden helpen "
+            f"een passende vervolgstap te kiezen, {angle}. "
+            f"Jullie bestaande werkwijze blijft het uitgangspunt.\n\n"
             "Mag ik daar één kort voorbeeld van sturen?\n\n"
             f"{OPT_OUT}\n\nGroet,\nAndrew")
     return subject, body
