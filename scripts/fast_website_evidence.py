@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from urllib.parse import quote, urlsplit
 
 import requests
+from google.auth.exceptions import RefreshError
 
 from approved_handoff import COLS as APPROVED_COLUMNS
 from private_candidate_handoff import SHEET_ID, authorized_writer
@@ -551,7 +552,15 @@ def main():
     parser.add_argument("--batch", type=int, default=1)
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
-    print(json.dumps(run(args.source, args.batch, force=args.force), sort_keys=True))
+    try:
+        result = run(args.source, args.batch, force=args.force)
+    except RefreshError:
+        # Provider errors may reveal credential metadata; never print them.
+        print(json.dumps({"status": "blocked",
+                          "reason": "google_service_account_auth_failed"},
+                         sort_keys=True))
+        raise SystemExit(2) from None
+    print(json.dumps(result, sort_keys=True))
 
 
 if __name__ == "__main__":
