@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: read
+  issues: read
 
 jobs:
   test:
@@ -39,7 +40,8 @@ jobs:
       github.event.issue.number == 1720 &&
       !github.event.issue.pull_request &&
       github.event.comment.user.login == 'Yolol100' &&
-      startsWith(github.event.comment.body, 'LEADS_CHAT_V1:')
+      (startsWith(github.event.comment.body, 'LEADS_CHAT_V1:') ||
+       startsWith(github.event.comment.body, 'LEADS_CHAT_V2:'))
     runs-on: ubuntu-24.04
     timeout-minutes: 100
     concurrency:
@@ -62,6 +64,7 @@ jobs:
           PYTHONPATH: scripts
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: python3 scripts/leads_chat_command.py
       - name: Read-only Mijn.Host Drafts inventory without any mailbox writes
         if: github.event.comment.body == 'LEADS_CHAT_V1:DRAFTS_AUDIT'
@@ -69,6 +72,7 @@ jobs:
           PYTHONPATH: scripts
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON }}
+          GITHUB_TOKEN: ${{ github.token }}
           OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
           OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
           OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
