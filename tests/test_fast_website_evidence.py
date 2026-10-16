@@ -447,6 +447,50 @@ class FastOfficialEvidenceTests(unittest.TestCase):
         self.assertEqual(request["range"]["endRowIndex"], 2)
         read.assert_called_once()
 
+    def test_oauth_refresh_failure_is_anonymous_and_blocks(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        from google.auth.exceptions import RefreshError
+        captured = StringIO()
+        with patch("sys.argv", ["evidence.py", "--source", "Approved", "--force"]), \
+             patch.object(q, "run", side_effect=RefreshError(
+                 "invalid_grant client_email=example-secret@example.invalid")
+                          ) as runner, redirect_stdout(captured):
+            with self.assertRaises(SystemExit) as error:
+                q.main()
+        self.assertEqual(error.exception.code, 2)
+        runner.assert_called_once_with("Approved", 1, force=True)
+        self.assertEqual(json.loads(captured.getvalue()), {
+            "status": "blocked", "reason": "google_service_account_auth_failed"})
+        self.assertNotIn("example-secret", captured.getvalue())
+        self.assertNotIn("invalid_grant", captured.getvalue())
+
+    def test_other_source_errors_are_not_mislabeled_as_google_auth(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        captured = StringIO()
+        with patch("sys.argv", ["evidence.py", "--source", "Approved"]), \
+             patch.object(q, "run", side_effect=RuntimeError(
+                 "evidence_source_changed_during_scan")), redirect_stdout(captured):
+            with self.assertRaisesRegex(RuntimeError, "source_changed"):
+                q.main()
+        self.assertEqual(captured.getvalue(), "")
+
+    def test_healthy_evidence_cli_output_is_unchanged(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        captured = StringIO()
+        result = {"requested": 57, "website_checks": 57,
+                  "reused_recent": 0, "verified": 49,
+                  "needs_manual_check": 8, "emails_sent": 0,
+                  "mailbox_writes": 0}
+        with patch("sys.argv", ["evidence.py", "--source", "Approved"]), \
+             patch.object(q, "run", return_value=result) as runner, \
+             redirect_stdout(captured):
+            q.main()
+        runner.assert_called_once_with("Approved", 1, force=False)
+        self.assertEqual(json.loads(captured.getvalue()), result)
+
     def test_final_readback_mismatch_blocks(self):
         client=Mock()
         client.post.return_value.status_code=200
