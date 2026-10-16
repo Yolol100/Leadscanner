@@ -53,3 +53,13 @@ De bestaande historische uitsluitingen, 50 bestaande Draft Queue-rijen, 450 revi
 
 ### Restacceptatie
 **Proven in code/offline:** één gezamenlijke Sheets-opslag, hersteltoets, geen-send eerste concept + IMAP readback, monitoring-oracles. **Pas na de eerste toekomstige geplande productie-run bewezen:** echte nieuwe geverifieerde bedrijfskandidaten tot volledige Mijn.Host-conceptreadback, met correcte opt-out en menselijke vrijgave. Geen kunstmatige 10/10 of verzendclaim.
+
+### Definitieve test- en runtimeacceptatie (nieuwe release)
+
+- **Code-release:** [PR #1701](https://github.com/Yolol100/Leadscanner/pull/1701), squash commit `b3a52557feae55b66595724d713c5ab9b1e54cc1`, samen met tussentijdse, niet-geraakte historische-450-securitywijzigingen op `main`.
+- **Volledige CI op actuele main:** [run 38826768318](https://github.com/Yolol100/Leadscanner/actions/runs/38826768318), `test=success`, 337/337; alle uitvoerende discovery/draftjobs op een gewone push opzettelijk overgeslagen.
+- **Eerste live read-only watchdogcanary:** [run 38826768331](https://github.com/Yolol100/Leadscanner/actions/runs/38826768331), `health=success`, beide cronchecks terecht `not_due` (nog vóór eerste toepasselijke cron). Dit bewijst rechten/API-routing maar **niet** een gemiste-runmelding na een daadwerkelijke cron.
+- **Privé-state readback na merge:** 57 `Approved`, 57 `WebsiteEvidence`, 526 historische leads, 450 unieke `Review450`-ID's, 50 bestaande `DraftQueue`-ID's, **0** nieuwe `AutoDraftState`-records. Geen productieconceptexperiment, geen verzending en geen mutatie van historische 450.
+- **Skill:** het installatierijpe `skill.zip` is lokaal validatie-groen en bevat alle oorspronkelijke bestanden plus één optionele `automated-first-draft.md`-reference. Directe installatie in de gebruiker zijn ChatGPT Skills is niet vanuit de huidige repositoryconnector verricht; gebruiker kan ZIP in zijn Skills-instellingen uploaden.
+
+Eindstatus: **GO** voor codecorrectheid, offline integratietests, veilige read-only My.Host-auth, privébronintegriteit en geconfigureerde bewaking. **PENDING** voor echte automatische productie-APPEND/readback tijdens de eerste geplande nieuwe-leadbatch en voor installatietoestand van de bijgewerkte Skill. GitHub schedule blijft best-effort. Iedere ontvanger-/inhouds-/wettelijke controle is menselijk vóór handmatige verzending.
