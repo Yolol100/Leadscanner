@@ -135,7 +135,7 @@ def verify_suppressions(session, expected):
             raise RuntimeError("historically_suppressed_before_draft")
 
 
-def classify(inventory, expected):
+def classify(inventory, expected, *, held_cleared=False):
     """Recognize exact source or reviewed copy only; fail on external edits."""
     grouped = defaultdict(lambda: {"old": [], "new": []})
     for uid, record in inventory.items():
@@ -162,18 +162,18 @@ def classify(inventory, expected):
             raise RuntimeError("duplicate_review_draft_version")
         if item["eligible"] and not state["old"] and not state["new"]:
             raise RuntimeError("expected_review_draft_missing")
-        if item["hold"] and (len(state["old"]) != 1 or state["new"]):
+        if item["hold"] and (len(state["old"]) != (0 if held_cleared else 1) or state["new"]):
             raise RuntimeError("held_draft_changed_or_missing")
         if not item["eligible"] and not item["hold"] and (state["old"] or state["new"]):
             raise RuntimeError("excluded_draft_present")
     return grouped
 
-def verify_new_complete(groups, expected):
+def verify_new_complete(groups, expected, *, held_cleared=False):
     for key, item in expected.items():
         state = groups[key]
         if item["eligible"] and len(state["new"]) != 1:
             raise RuntimeError("new_draft_not_verified")
-        if item["hold"] and (len(state["old"]) != 1 or state["new"]):
+        if item["hold"] and (len(state["old"]) != (0 if held_cleared else 1) or state["new"]):
             raise RuntimeError("held_draft_changed")
         if not item["eligible"] and not item["hold"] and (state["old"] or state["new"]):
             raise RuntimeError("excluded_draft_not_rejected")
@@ -199,8 +199,9 @@ def audit():
         DIAGNOSTIC_STAGE = "scan"
         records = transport.scan(client)
         DIAGNOSTIC_STAGE = "classify"
-        groups = classify(records, expected)
-        if not validity or len(records) < EXPECTED_MAILBOX:
+        held_cleared = len(records) == EXPECTED_ELIGIBLE
+        groups = classify(records, expected, held_cleared=held_cleared)
+        if not validity or len(records) not in {EXPECTED_MAILBOX, EXPECTED_ELIGIBLE}:
             raise RuntimeError("audit_mailbox_inventory_invalid")
         DIAGNOSTIC_STAGE = "complete"
         return {"total": len(records), "source_copy":sum(len(g["old"]) for k,g in groups.items() if expected[k]["eligible"]),
@@ -245,8 +246,10 @@ def reconcile():
         ready = transport.scan(client)
         staged = classify(ready, expected)
         verify_new_complete(staged, expected)
-        old_uids = {u for key,item in expected.items() if item["eligible"]
+        old_uids = {u for key,item in expected.items() if item["eligible"] or item["hold"]
                     for u in staged[key]["old"]}
+        if len(old_uids) != EXPECTED_MAILBOX:
+            raise RuntimeError("old_scope_not_exact_412")
         old_hash = {uid: ready[uid]["sha256"] for uid in old_uids}
         if load_private_scope(conn) != expected:
             raise RuntimeError("private_review_changed_before_remove")
@@ -259,7 +262,7 @@ def reconcile():
             raise RuntimeError("mailbox_changed_before_remove")
         again = classify(before, expected)
         verify_new_complete(again, expected)
-        if {u for key,item in expected.items() if item["eligible"]
+        if {u for key,item in expected.items() if item["eligible"] or item["hold"]
                 for u in again[key]["old"]} != old_uids:
             raise RuntimeError("old_uid_scope_changed")
         if any(before[uid]["sha256"] != old_hash[uid] for uid in old_uids):
@@ -280,13 +283,13 @@ def reconcile():
                 raise RuntimeError("old_draft_remove_readback_failed")
             removed += len(group)
         final = transport.scan(client)
-        final_groups = classify(final, expected)
-        verify_new_complete(final_groups, expected)
-        if any(final_groups[key]["old"] for key,item in expected.items() if item["eligible"]):
+        final_groups = classify(final, expected, held_cleared=True)
+        verify_new_complete(final_groups, expected, held_cleared=True)
+        if any(final_groups[key]["old"] for key,item in expected.items() if item["eligible"] or item["hold"]):
             raise RuntimeError("stale_drafts_remain")
-        if len(final) != EXPECTED_MAILBOX:
+        if len(final) != EXPECTED_ELIGIBLE:
             raise RuntimeError("final_draft_count_invalid")
-        return {"rewritten": EXPECTED_ELIGIBLE, "held": EXPECTED_HOLD,
+        return {"rewritten": EXPECTED_ELIGIBLE, "cleared_unverified": EXPECTED_HOLD,
                 "excluded": EXPECTED_EXCLUDED, "created": created,
                 "removed": removed, "remaining": len(final)}
     finally:
