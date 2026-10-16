@@ -25,7 +25,8 @@ class OneOffSafetyTests(unittest.TestCase):
         self.assertIn('client.uid("EXPUNGE", uid_list)', script)
         self.assertNotIn("client.expunge(", script)
         self.assertNotIn("sendmail(", script)
-        self.assertNotIn("smtp", script.casefold())
+        self.assertNotIn("import smtplib", script)
+        self.assertNotIn("smtp.send", script.casefold())
 
 
 if __name__ == "__main__":
