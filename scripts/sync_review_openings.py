@@ -278,8 +278,29 @@ def main():
         print("MYHOST_VALUEFIRST=" + label + " " + " ".join(
             f"{key}={value}" for key,value in output.items()) + " sent=0")
         return 0
-    except Exception:
-        print("MYHOST_VALUEFIRST=blocked reason=private_preflight_or_imap_failed sent=0")
+    except Exception as exc:
+        # Show only fixed internal error codes, never any provider exception text.
+        safe = {
+            "private_450_scope_invalid", "private_450_row_invalid",
+            "private_450_identity_or_copy_invalid", "review_identity_or_source_changed",
+            "review_copy_incomplete", "review_score_invalid", "review_score_below_nine",
+            "review_body_invalid", "human_copy_or_gate_invalid", "hold_gate_invalid",
+            "original_exclusion_changed", "eligibility_snapshot_changed",
+            "unclassified_source_hold", "historically_suppressed_before_draft",
+            "suppression_changed_since_review", "existing_review_draft_edited_or_unrecognized",
+            "expected_review_draft_missing", "held_draft_changed_or_missing",
+            "unrelated_drafts_present_preserve_them", "excluded_draft_present",
+            "review_draft_flag_or_sender_changed", "ambiguous_draft_versions",
+            "duplicate_review_draft_version", "audit_mailbox_inventory_invalid",
+            "imap_drafts_select_failed", "imap_uid_search_failed",
+            "imap_batch_metadata_incomplete", "imap_batch_body_failed",
+            "imap_batch_readback_incomplete", "private_sheet_read_failed",
+            "private_sheet_shape_invalid", "review_row_invalid",
+            "private_batch_headers_invalid", "review_source_not_verified"
+        }
+        code = str(exc)
+        code = code if type(exc) is RuntimeError and code in safe else "private_preflight_or_imap_failed"
+        print("MYHOST_VALUEFIRST=blocked reason=" + code + " sent=0")
         return 1
 
 
