@@ -61,8 +61,10 @@ class AutomaticDraftSafetyTests(unittest.TestCase):
         self.assertIsNotNone(result)
         subject, body = result
         self.assertIn("tuinontwerp", subject)
-        self.assertIn("tuinontwerp", body)
+        self.assertIn("tuinplan", body)
         self.assertIn("bestaande werkwijze", body)
+        self.assertTrue(body.split("\n\n")[1].startswith("Een korte uitleg over "))
+        self.assertNotIn("Ik zag", body)
         self.assertNotIn("Ik kwam jullie website tegen", body)
         self.assertNotIn("Ik ben Andrew van Webactueel", body)
         self.assertEqual(body.count(a.OPT_OUT), 1)
