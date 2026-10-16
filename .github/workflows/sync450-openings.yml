@@ -82,9 +82,10 @@ jobs:
        github.event.comment.body == 'LEADS_CONVERSATIONS_V1:BATCH_3' ||
        github.event.comment.body == 'LEADS_CONVERSATIONS_V1:BATCH_4' ||
        github.event.comment.body == 'LEADS_CONVERSATIONS_V1:BATCH_5' ||
+       github.event.comment.body == 'LEADS_CONVERSATIONS_V1:BATCH_2_TO_5' ||
        github.event.comment.body == 'LEADS_CONVERSATIONS_V1:AUDIT')
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 360
     concurrency:
       group: leadscanner-myhost-draft
       cancel-in-progress: false

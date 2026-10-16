@@ -62,6 +62,16 @@ class FakeArchiveClient:
 
 
 class ConversationRegressionTests(unittest.TestCase):
+    def test_public_failure_reason_is_static_allowlist_only(self):
+        self.assertEqual(mod._safe_reason(RuntimeError("archive_append_failed")),
+                         "archive_append_failed")
+        self.assertEqual(mod._safe_reason(RuntimeError("conversation_uidplus_required")),
+                         "conversation_uidplus_required")
+        for error in (RuntimeError("archive_append_failed token=secret"),
+                      RuntimeError("account@example.nl"),
+                      KeyError(DID), ValueError("tokens")):
+            self.assertEqual(mod._safe_reason(error), "private_or_unclassified_error")
+
     def test_owner_command_requires_exact_issue_actor_and_mode(self):
         mod.authorize(event("PRECHECK"), "PRECHECK")
         mod.authorize(event("PILOT"), "PILOT")
@@ -153,6 +163,46 @@ class ConversationRegressionTests(unittest.TestCase):
         self.assertFalse(result["sent"])
         self.assertEqual(mail.call_count, 2)
         fakeconn.logout.assert_called_once()
+
+    def test_remaining_batches_are_sequential_and_end_in_separate_audit(self):
+        event = {"action": "created", "repository": {"full_name": mod.REPO},
+                 "issue": {"number": mod.ISSUE},
+                 "comment": {"body": mod.PREFIX + "BATCH_2_TO_5",
+                             "user": {"login": mod.OWNER},
+                             "author_association": "OWNER"}}
+        pre = {"total": 411, "eligible": 391, "already_new": 87,
+               "archived": 87, "sent": 0}
+        mid = {"total": 411, "eligible": 391, "already_new": 188,
+               "archived": 188, "sent": 0}
+        final = {"total": 411, "eligible": 391, "already_new": 391,
+                 "archived": 391, "blocked": 20, "sent": 0}
+        with patch.object(mod, "run", side_effect=[pre, mid, mid, mid, mid, final]) as run:
+            result = mod.run_remaining(event)
+        self.assertEqual(result["archived"], 391)
+        self.assertEqual(result["batches"], 4)
+        self.assertEqual(result["sent"], 0)
+        self.assertEqual([c.args[0] for c in run.call_args_list],
+                         ["AUDIT", "BATCH_2", "BATCH_3", "BATCH_4", "BATCH_5", "AUDIT"])
+        for call in run.call_args_list:
+            self.assertEqual(call.args[1]["comment"]["body"], mod.PREFIX + call.args[0])
+
+    def test_remaining_batches_refuse_incomplete_first_batch_and_stop_on_error(self):
+        event = {"action": "created", "repository": {"full_name": mod.REPO},
+                 "issue": {"number": mod.ISSUE},
+                 "comment": {"body": mod.PREFIX + "BATCH_2_TO_5",
+                             "user": {"login": mod.OWNER},
+                             "author_association": "OWNER"}}
+        incomplete = {"total": 411, "already_new": 86, "sent": 0}
+        with patch.object(mod, "run", return_value=incomplete) as run:
+            with self.assertRaisesRegex(RuntimeError, "first_batch_not_complete"):
+                mod.run_remaining(event)
+            self.assertEqual(run.call_count, 1)
+        pre = {"total": 411, "already_new": 87, "sent": 0}
+        with patch.object(mod, "run", side_effect=[pre, pre, RuntimeError("synthetic")]) as run:
+            with self.assertRaisesRegex(RuntimeError, "synthetic"):
+                mod.run_remaining(event)
+            self.assertEqual([c.args[0] for c in run.call_args_list],
+                             ["AUDIT", "BATCH_2", "BATCH_3"])
 
     def test_archive_exact_mime_preserved_and_separate_session(self):
         raw = build_message(ROW).as_bytes()

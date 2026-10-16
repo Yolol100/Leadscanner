@@ -29,7 +29,7 @@ ISSUE = 1659
 REPO = "Yolol100/Leadscanner"
 OWNER = "Yolol100"
 PREFIX = "LEADS_CONVERSATIONS_V1:"
-MODES = frozenset({"PRECHECK", "PILOT", "AUDIT"} |
+MODES = frozenset({"PRECHECK", "PILOT", "AUDIT", "BATCH_2_TO_5"} |
                   {f"BATCH_{i}" for i in range(1, 6)})
 TABS = tuple((f"Gespreksstijl Fase{i} 20261016", 100 if i < 5 else 50)
              for i in range(1, 6))
@@ -336,6 +336,90 @@ def run(mode, event, *, connector=connect_imap):
             "sent": 0}
 
 
+def _delegate(event, mode):
+    # Only after authenticating the single owner-issued batch-chain comment.
+    clone = dict(event)
+    clone["comment"] = dict(event["comment"], body=PREFIX + mode)
+    return clone
+
+
+def run_remaining(event):
+    authorize(event, "BATCH_2_TO_5")
+    # The previous one-at-a-time pilot + first 100 scope must be independently
+    # verified before executing any later batch.
+    preliminary = run("AUDIT", _delegate(event, "AUDIT"))
+    if preliminary["total"] != 411 or preliminary["already_new"] < 87:
+        raise RuntimeError("conversation_first_batch_not_complete")
+    completed = []
+    for number in (2, 3, 4, 5):
+        mode = "BATCH_" + str(number)
+        result = run(mode, _delegate(event, mode))
+        if result["total"] != 411 or result["sent"] != 0:
+            raise RuntimeError("conversation_batch_integrity_error")
+        completed.append(number)
+    final = run("AUDIT", _delegate(event, "AUDIT"))
+    if (final["total"] != 411 or final["already_new"] != 391
+            or final["archived"] != 391 or final["sent"] != 0):
+        raise RuntimeError("conversation_full_scope_not_verified")
+    return {"total": final["total"], "eligible": final["eligible"],
+            "already_new": final["already_new"], "archived": final["archived"],
+            "blocked": final["blocked"], "batches": len(completed), "sent": 0}
+
+
+_SAFE_REASONS = frozenset({
+    "conversation_owner_authorization_denied",
+    "conversation_source_identity_mismatch",
+    "conversation_official_evidence_identity_mismatch",
+    "conversation_official_evidence_stale",
+    "conversation_population_changed",
+    "conversation_private_sources_changed",
+    "conversation_mailbox_message_changed",
+    "conversation_duplicate_draft_id",
+    "conversation_expected_draft_missing",
+    "conversation_archive_scope_changed",
+    "conversation_original_archive_missing",
+    "conversation_batch_final_verification_failed",
+    "conversation_uidplus_required",
+    "conversation_first_batch_not_complete",
+    "archive_folder_creation_failed",
+    "archive_folder_list_failed",
+    "archive_folder_not_initialized",
+    "archive_original_conflict",
+    "archive_append_failed",
+    "archive_write_scope_or_hash_mismatch",
+    "archive_write_mime_mismatch",
+    "archive_old_bytes_not_equal",
+    "archive_independent_readback_failed",
+    "archive_duplicate_draft_id",
+    "archive_flags_invalid",
+    "draft_source_or_exclusion_unverified",
+    "draft_queue_source_url_invalid",
+    "draft_append_failed",
+    "draft_append_readback_mismatch",
+    "draft_stage_uid_scope_changed",
+    "draft_stage_readback_mismatch",
+    "draft_inventory_changed",
+    "original_draft_missing",
+    "original_draft_changed",
+    "recipient_identity_changed",
+    "private_snapshot_storage_required",
+    "private_snapshot_readback_failed",
+    "private_snapshot_sha_mismatch",
+    "targeted_uid_expunge_unsupported",
+    "targeted_delete_flag_failed",
+    "targeted_uid_expunge_failed",
+    "targeted_delete_readback_failed",
+    "uidvalidity_changed",
+    "uidvalidity_changed_before_delete",
+})
+
+
+def _safe_reason(error):
+    # Never publish exception detail unless it is one of these constants.
+    message = str(error)
+    return message if type(error) is RuntimeError and message in _SAFE_REASONS else "private_or_unclassified_error"
+
+
 def main():
     command = os.getenv("CONVERSATION_MODE", "")
     mode = command[len(PREFIX):] if command.startswith(PREFIX) else ""
@@ -345,12 +429,12 @@ def main():
         with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as f:
             event = json.load(f)
         with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
-            result = run(mode, event)
+            result = run_remaining(event) if mode == "BATCH_2_TO_5" else run(mode, event)
         print("CONVERSATION411=green " +
               " ".join(f"{k}={v}" for k, v in result.items()))
         return 0
-    except Exception:
-        print("CONVERSATION411=blocked confidential_details_suppressed sent=0")
+    except Exception as error:
+        print("CONVERSATION411=blocked reason=" + _safe_reason(error) + " sent=0")
         return 1
 
 
