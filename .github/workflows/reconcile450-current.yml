@@ -7,7 +7,10 @@ permissions:
   issues: read
 jobs:
   reconcile:
+    # Superseded by conversations PRECHECK/PILOT/BATCH with private archive.
+    # Never allow an old text sync to overwrite the new drafts.
     if: >-
+      false &&
       github.event.issue.number == 1659 &&
       github.actor == 'Yolol100' &&
       github.event.comment.body == 'LEADS_450_RECONCILE_ONLY: review450-20261016'
