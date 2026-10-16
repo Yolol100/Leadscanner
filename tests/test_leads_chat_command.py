@@ -210,9 +210,9 @@ class ChatCommandTests(unittest.TestCase):
                 "GITHUB_EVENT_PATH": "/no-file-reads-in-test",
                 "GITHUB_EVENT_NAME": "issue_comment",
                 "GITHUB_RUN_ATTEMPT": "1",
-            }), patch("pathlib.Path.read_text", return_value=json.dumps(current)), \\
+            }), patch("pathlib.Path.read_text", return_value=json.dumps(current)), \
              patch.object(command, "list_issue_comments",
-                          return_value=[history_row(previous), history_row(current)]), \\
+                          return_value=[history_row(previous), history_row(current)]), \
              patch.object(command, "execute") as executor:
             self.assertEqual(command.main(), 0)
             executor.assert_not_called()
@@ -220,8 +220,8 @@ class ChatCommandTests(unittest.TestCase):
                 "GITHUB_EVENT_PATH": "/no-file-reads-in-test",
                 "GITHUB_EVENT_NAME": "issue_comment",
                 "GITHUB_RUN_ATTEMPT": "2",
-            }), patch("pathlib.Path.read_text", return_value=json.dumps(current)), \\
-             patch.object(command, "list_issue_comments") as history, \\
+            }), patch("pathlib.Path.read_text", return_value=json.dumps(current)), \
+             patch.object(command, "list_issue_comments") as history, \
              patch.object(command, "execute") as executor:
             self.assertEqual(command.main(), 0)
             executor.assert_not_called()
@@ -235,7 +235,7 @@ class ChatCommandTests(unittest.TestCase):
         client.get.return_value = mock_response
         handle = unittest.mock.MagicMock()
         handle.__enter__.return_value = client
-        with patch.dict("os.environ", {"GITHUB_TOKEN": "synthetic-test-token"}), \\
+        with patch.dict("os.environ", {"GITHUB_TOKEN": "synthetic-test-token"}), \
              patch("requests.Session", return_value=handle):
             entries = command.list_issue_comments()
         self.assertEqual(len(entries), 1)
