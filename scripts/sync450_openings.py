@@ -161,7 +161,9 @@ def verify_ready(groups, expected):
 
 def verify_complete(groups, expected, count):
     verify_ready(groups, expected)
-    if (count != READY_COUNT + HOLD_COUNT
+    retained = sum(row["category"] in {"ready", "held"}
+                   for row in expected.values())
+    if (count != retained
             or any(groups[key]["old"] for key, row in expected.items()
                    if row["category"] in {"ready", "closed"})):
         raise RuntimeError("old_or_closed_draft_remains")
