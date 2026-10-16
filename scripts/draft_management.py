@@ -244,7 +244,7 @@ def execute(event, operation, draft_id, *, row=None, expected=None,
         if (operation == "UPDATE_DRAFT"
                 and _matches(build_message(prepared), old["message"])):
             return _independent_readback(
-                connector, folder, validity, prepared, "", "CREATE_DRAFT",
+                connector, folder, validity, prepared, uid, "UPDATE_DRAFT",
                 before, expected_total=len(before))
 
         if not imap.uidplus(client):
