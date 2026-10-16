@@ -92,16 +92,20 @@ class MemoryClient:
             keys = sorted(self.store.messages, key=int)
             return "OK", [" ".join(keys).encode("ascii")]
         if command == "FETCH":
-            uid = str(args[0])
-            if uid not in self.store.messages:
-                return "NO", []
-            raw, flags = self.store.messages[uid]
-            meta = (b"1 (UID " + uid.encode("ascii") + b" FLAGS ("
-                    + b" ".join(sorted(flags)) + b") RFC822.SIZE "
-                    + str(len(raw)).encode("ascii") + b")")
-            if "BODY.PEEK" in str(args[1]):
-                return "OK", [(meta, raw), b")"]
-            return "OK", [meta]
+            uids = str(args[0]).split(",")
+            records = []
+            for uid in uids:
+                if uid not in self.store.messages:
+                    return "NO", []
+                raw, flags = self.store.messages[uid]
+                meta = (b"1 (UID " + uid.encode("ascii") + b" FLAGS ("
+                        + b" ".join(sorted(flags)) + b") RFC822.SIZE "
+                        + str(len(raw)).encode("ascii") + b")")
+                if "BODY.PEEK" in str(args[1]):
+                    records.extend([(meta, raw), b")"])
+                else:
+                    records.append(meta)
+            return "OK", records
         if command == "STORE":
             for uid in str(args[0]).split(","):
                 raw, flags = self.store.messages[uid]
