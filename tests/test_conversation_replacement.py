@@ -140,6 +140,7 @@ class ConversationRegressionTests(unittest.TestCase):
              patch.object(mod.imap, "target_guard"), \
              patch.object(mod.imap, "uidplus", return_value=True), \
              patch.object(mod, "PrivateIMAPArchive", return_value=archive_instance), \
+             patch.object(mod, "_verify_archived_originals", return_value=1), \
              patch.object(mod.drafts, "execute", return_value=outcome) as execute:
             result = mod.run("PILOT", event(), connector=lambda: fakeconn)
         self.assertEqual(result["installed"], 1)
