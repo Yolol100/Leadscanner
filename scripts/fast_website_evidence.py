@@ -11,6 +11,7 @@ import hashlib
 import json
 import re
 import time
+import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from urllib.parse import quote, urlsplit
@@ -158,21 +159,47 @@ def _has(text, phrase):
     return False
 
 
-def _excerpt(text, phrase):
-    """Return the supported literal mention, never the first denied mention.
+def _folded_with_positions(text):
+    """Normalize like norm(), retaining offsets for truthful source excerpts."""
+    folded, positions = [], []
+    for index, char in enumerate(text):
+        for part in unicodedata.normalize("NFKD", char).casefold():
+            if unicodedata.combining(part):
+                continue
+            if ("a" <= part <= "z") or ("0" <= part <= "9"):
+                folded.append(part)
+                positions.append(index)
+            elif folded and folded[-1] != " ":
+                folded.append(" ")
+                positions.append(index)
+    if folded and folded[-1] == " ":
+        folded.pop()
+        positions.pop()
+    return "".join(folded), positions
 
-    _has() may skip a negative first occurrence and accept a later positive
-    one. The extracted quote must follow that same decision, not re-search
-    from the beginning and accidentally save the negated sentence.
+
+def _excerpt(text, phrase):
+    """Quote the affirmative source text using the same folded match as _has.
+
+    HTML may publish 'café' while BRANCH_PROOF contains 'cafe'. Matching
+    directly against the source dropped those legitimate accents. Keep an
+    original-character offset for each folded character so the quote is
+    still an exact excerpt, never manufactured or inferred.
     """
-    pattern = r"\b" + re.escape(phrase) + r"[a-zA-ZÀ-ÿ]*\b"
-    for match in re.finditer(pattern, text, re.I):
-        before = norm(text[max(0, match.start()-90):match.start()])
+    normalized, positions = _folded_with_positions(text)
+    target = norm(phrase)
+    if not target:
+        return ""
+    pattern = r"\b" + re.escape(target) + r"[a-z]*\b"
+    for match in re.finditer(pattern, normalized):
+        before = normalized[max(0, match.start() - 45):match.start()]
         if re.search(r"\b(geen|niet|no|not)\b(?:\s+\w+){0,3}\s*$", before):
             continue
-        last_boundary = max(text.rfind(mark, 0, match.start()) for mark in ".?!\n")
-        start = max(last_boundary + 1, match.start()-35)
-        return re.sub(r"\s+", " ", text[start:match.end()+85]).strip()[:150]
+        original_start = positions[match.start()]
+        original_end = positions[match.end() - 1] + 1
+        last_boundary = max(text.rfind(mark, 0, original_start) for mark in ".?!\n")
+        start = max(last_boundary + 1, original_start - 35)
+        return re.sub(r"\s+", " ", text[start:original_end + 85]).strip()[:150]
     return ""
 
 
