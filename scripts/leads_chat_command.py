@@ -17,13 +17,14 @@ ISSUE = 1720
 OWNER = "Yolol100"
 PREFIX = "LEADS_CHAT_V1:"
 PREFIX2 = "LEADS_CHAT_V2:"
-REQUIRES_ID = frozenset({"EVIDENCE", "HINTS_10", "HINTS_30", "HINTS_50", "HINTS_100", "VERIFIED_100"})
+REVIEW_MODES = frozenset(f"REVIEW_EVIDENCE_{i}" for i in range(1, 6))
+REQUIRES_ID = frozenset({"EVIDENCE", "HINTS_10", "HINTS_30", "HINTS_50", "HINTS_100", "VERIFIED_100"}) | REVIEW_MODES
 REQUEST_RE = re.compile(r"r-[0-9a-f]{32}\Z")
 MAX_COMMENT_PAGES = 20
 MODES = frozenset({
     "CHECK", "DRAFTS_AUDIT", "EVIDENCE", "HINTS_10", "HINTS_30",
     "HINTS_50", "HINTS_100", "VERIFIED_100",
-})
+}) | REVIEW_MODES
 
 
 
@@ -151,6 +152,10 @@ def execute(mode: str) -> None:
     elif mode == "EVIDENCE":
         args = ["scripts/fast_website_evidence.py",
                 "--source", "Approved", "--batch", "1", "--force"]
+    elif mode in REVIEW_MODES:
+        batch = mode.rsplit("_", 1)[1]
+        args = ["scripts/fast_website_evidence.py",
+                "--source", "Review450", "--batch", batch, "--force"]
     elif mode.startswith("HINTS_"):
         limit = mode.removeprefix("HINTS_")
         args = ["scripts/new_leads.py", "--region", "Nederland",
