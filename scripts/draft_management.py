@@ -194,7 +194,7 @@ def execute(event, operation, draft_id, *, row=None, expected=None,
         if prepared["draft_id"] != draft_id:
             raise RuntimeError("private_review_identity_mismatch")
         if (OPT_OUT not in prepared["body"]
-                or not prepared["body"].rstrip().endswith("Groet,\\nAndrew")):
+                or not prepared["body"].rstrip().endswith("Groet,\nAndrew")):
             raise RuntimeError("private_review_opt_out_or_signoff_invalid")
     if operation != "CREATE_DRAFT":
         if not isinstance(expected, dict) or not all(
