@@ -66,31 +66,31 @@ def validate(event: dict, *, event_name: str = "issue_comment") -> str:
 
 
 def list_issue_comments() -> list[dict]:
-    """Use existing GitHub API read access; incomplete history fails closed."""
+    """Read existing issue history with stdlib only; fail closed if incomplete."""
     token = os.getenv("GITHUB_TOKEN", "").strip()
     if not token:
         raise RuntimeError("command_history_token_missing")
-    import requests
-    url = f"https://api.github.com/repos/{REPO}/issues/{ISSUE}/comments"
+    from urllib.parse import urlencode
+    from urllib.request import Request, urlopen
+    endpoint = f"https://api.github.com/repos/{REPO}/issues/{ISSUE}/comments"
     result = []
     try:
-        with requests.Session() as client:
-            for page in range(1, MAX_COMMENT_PAGES + 1):
-                response = client.get(
-                    url, params={"per_page": 100, "page": page},
-                    headers={
-                        "Authorization": "Bearer " + token,
-                        "Accept": "application/vnd.github+json",
-                        "X-GitHub-Api-Version": "2022-11-28",
-                    }, timeout=20)
-                if response.status_code != 200:
+        for page in range(1, MAX_COMMENT_PAGES + 1):
+            url = endpoint + "?" + urlencode({"per_page": 100, "page": page})
+            request = Request(url, headers={
+                "Authorization": "Bearer " + token,
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            })
+            with urlopen(request, timeout=20) as response:
+                if response.status != 200:
                     raise RuntimeError("command_history_unavailable")
-                records = response.json()
-                if not isinstance(records, list) or len(records) > 100:
-                    raise RuntimeError("command_history_invalid")
-                result.extend(records)
-                if len(records) < 100:
-                    return result
+                records = json.load(response)
+            if not isinstance(records, list) or len(records) > 100:
+                raise RuntimeError("command_history_invalid")
+            result.extend(records)
+            if len(records) < 100:
+                return result
     except Exception:
         raise RuntimeError("command_history_unavailable") from None
     raise RuntimeError("command_history_too_large")
