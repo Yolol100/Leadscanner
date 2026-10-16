@@ -1,8 +1,5 @@
 name: Fresh Leads — alleen anonieme bedrijfshints
 on:
-  schedule:
-    # Bounded weekly official-site discovery, never an email sender.
-    - cron: '23 6 * * 1'
   push:
     branches: [main]
   pull_request:
