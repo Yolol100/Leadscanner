@@ -27,81 +27,86 @@ DIAGNOSTIC_STAGE = "entry"
 REGISTRY_DIAGNOSTIC_STAGE = "idle"
 DRAFT_RE = re.compile(r"draft-[a-f0-9]{32}\Z")
 CANDIDATE_STATUSES = {"VOOR_MENSELIJKE_EINDCONTROLE", "VOORSTEL_HANDMATIGE_EINDCHECK"}
-EXPECTED_ELIGIBLE = 404
-EXPECTED_HOLD = 8
+EXPECTED_ELIGIBLE = 407
+EXPECTED_HOLD = 5
 EXPECTED_EXCLUDED = 38
 EXPECTED_MAILBOX = 412
 OPT = "Liever geen e-mails meer? Antwoord met 'nee', dan laat ik het hierbij."
 
 
 def load_private_scope(session):
-    original = historical.load_rows(session)
-    current = historical.read(session, historical.SID, "QA450Actueel!A2:P451")
-    revised = historical.read(session, historical.SID, "OpeningenReview20261016!A2:Q451")
-    if len(original) != 450 or len(current) != 450 or len(revised) != 450:
-        raise RuntimeError("private_450_scope_invalid")
+    originals = historical.load_rows(session)
+    source_rows = historical.read(session, historical.SID, "QA450Actueel!A2:P451")
+    latest_rows = historical.read(session, historical.SID, "OpeningenReview20261016!A2:Q451")
+    frozen_rows = historical.read(session, historical.SID, "Backup_407_Fase8_20261016!A2:Q451")
+    prior_rows = historical.read(session, historical.SID, "Backup_404_Sync_Review_20261016!A2:Q451")
+    if (len(originals) != 450 or len(source_rows) != 450
+            or len(latest_rows) != 450 or len(prior_rows) != 450
+            or latest_rows != frozen_rows):
+        raise RuntimeError("private_review_changed_since_snapshot")
     expected = {}
-    for number, (baseline, row, raw) in enumerate(zip(original, current, revised), 1):
-        review = (raw + [""] * 17)[:17]
-        if len(row) != 16 or len(raw) > 17 or row[0] != str(number):
+    for number, (baseline, src, latest_raw, prior_raw) in enumerate(
+            zip(originals, source_rows, latest_rows, prior_rows), 1):
+        now = (latest_raw + [""]*17)[:17]
+        previous = (prior_raw + [""]*17)[:17]
+        if (len(src) != 16 or src[0] != str(number)
+                or len(latest_raw) > 17 or len(prior_raw) > 17):
             raise RuntimeError("private_450_row_invalid")
-        key = row[1]
+        key = src[1]
         if (not DRAFT_RE.fullmatch(key) or key in expected
-                or baseline["draft_id"] != key
-                or baseline["company"] != row[2]
-                or baseline["email"].casefold() != row[3].casefold()
-                or review[0] != row[0] or review[1] != key
-                or review[2] != row[2] or review[4] != row[8]
-                or not row[5] or not row[6] or OPT not in row[6]
-                or len(row[6].split()) > 110
-                or not row[8].startswith(("https://", "http://"))):
+                or baseline["draft_id"] != key or baseline["company"] != src[2]
+                or baseline["email"].casefold() != src[3].casefold()
+                or baseline["subject"] != src[4]
+                or any(q[0] != src[0] or q[1] != key or
+                       q[2] != src[2] or q[4] != src[8]
+                       for q in (now, previous))
+                or not src[8].startswith(("https://","http://"))
+                or OPT not in src[6] or len(src[6].split()) > 110):
             raise RuntimeError("private_450_identity_or_copy_invalid")
-        old = {"draft_id":key, "company":row[2], "email":row[3],
-               "source_url":row[8], "subject":row[5], "body":row[6]}
-        active = row[13] in CANDIDATE_STATUSES
-        human = active and review[10] == "MENSELIJKE_EINDCONTROLE"
-        hold = active and (review[10].startswith("HOLD")
-                           or review[10] == "BRONCHECK_VOOR_VERZENDING")
-        if active and not (human or hold):
+        old = {"draft_id":key,"company":src[2],"email":src[3],
+               "source_url":src[8],"subject":src[5],"body":src[6]}
+        active = src[13] in CANDIDATE_STATUSES
+        eligible = active and now[10] == "MENSELIJKE_EINDCONTROLE"
+        hold = active and (now[10].startswith("HOLD")
+                           or now[10] == "BRONCHECK_VOOR_VERZENDING")
+        if active and not (eligible or hold):
             raise RuntimeError("unclassified_source_hold")
-        if not active and (review[8] != "NIET AANPASSEN" or review[7]):
+        if not active and (now[8] != "NIET AANPASSEN" or now[7]):
             raise RuntimeError("original_exclusion_changed")
         if active:
-            if (not review[7] or not review[3] or not review[6]
-                    or not review[14].startswith("FASE ")
-                    or not review[12]):
-                raise RuntimeError("review_copy_incomplete")
             try:
-                score = float(review[12])
-            except (ValueError, TypeError):
+                score = float(now[12])
+            except (TypeError, ValueError):
                 raise RuntimeError("review_score_invalid")
-            if not 9 <= score <= 10:
-                raise RuntimeError("review_score_below_nine")
-            content = review[7]
-            parts = content.split("\n\n")
-            if (len(parts) != 5 or parts[0] not in {"Goedendag,", "Hoi,"}
-                    or parts[1] != review[6]
-                    or not parts[2].startswith(("Zal ", "Mag ", "Zou "))
-                    or parts[2].count("?") != 1
-                    or parts[3] != OPT
-                    or parts[4] != "Groet,\nAndrew"
-                    or content.count(OPT) != 1
-                    or len(content.split()) > 110
-                    or not 5 <= len(review[3]) <= 160
-                    or any(v in content + review[3] for v in ("{{", "}}", "\x00"))
-                    or any(v in content for v in ("https://", "http://", "www."))):
+            body = now[7]
+            bits = body.split("\n\n")
+            if (not 9 <= score <= 10 or len(bits) != 5
+                    or bits[0] not in {"Goedendag,","Hoi,"}
+                    or bits[1] != now[6]
+                    or not bits[2].startswith(("Zal ","Mag ","Zou "))
+                    or bits[2].count("?") != 1
+                    or bits[3] != OPT or bits[4] != "Groet,\nAndrew"
+                    or body.count(OPT) != 1 or len(body.split()) > 110
+                    or not now[14].startswith("FASE ")
+                    or any(c in body + now[3] for c in ("{{","}}","\x00"))
+                    or not 5 <= len(now[3]) <= 160):
                 raise RuntimeError("review_body_invalid")
-        if human and (not review[15].startswith("ALLEEN CONCEPT")
-                      or (review[3], review[7]) == (row[5], row[6])):
-            raise RuntimeError("human_copy_or_gate_invalid")
-        if hold and not review[15].startswith(("NIET VERSTUREN", "ALLEEN CONCEPT")):
+        if eligible and not now[15].startswith("ALLEEN CONCEPT"):
+            raise RuntimeError("human_review_gate_invalid")
+        if hold and not now[15].startswith(("NIET VERSTUREN","ALLEEN CONCEPT")):
             raise RuntimeError("hold_gate_invalid")
-        updated = {**old,"subject":review[3],"body":review[7]} if human else old
-        expected[key] = {"old":old,"new":updated,"eligible":human,"hold":hold}
-    if (len(expected) != 450 or
-            sum(x["eligible"] for x in expected.values()) != 404 or
-            sum(x["hold"] for x in expected.values()) != 8 or
-            sum(not (x["eligible"] or x["hold"]) for x in expected.values()) != 38):
+        newer = {**old,"subject":now[3],"body":now[7]} if eligible else old
+        prior = None
+        if eligible and previous[10] == "MENSELIJKE_EINDCONTROLE":
+            if previous[7] and (previous[3],previous[7]) != (now[3],now[7]):
+                prior = {**old,"subject":previous[3],"body":previous[7]}
+        expected[key]={"old":old,"new":newer,"prior":prior,
+                       "eligible":eligible,"hold":hold}
+    if (len(expected) != 450
+            or sum(x["eligible"] for x in expected.values()) != 407
+            or sum(x["hold"] for x in expected.values()) != 5
+            or sum(not(x["eligible"] or x["hold"]) for x in expected.values()) != 38
+            or sum(x["prior"] is not None for x in expected.values()) != 1):
         raise RuntimeError("eligibility_snapshot_changed")
     return expected
 
@@ -135,47 +140,53 @@ def verify_suppressions(session, expected):
             raise RuntimeError("historically_suppressed_before_draft")
 
 
-def classify(inventory, expected, *, held_cleared=False):
-    """Recognize exact source or reviewed copy only; fail on external edits."""
-    grouped = defaultdict(lambda: {"old": [], "new": []})
+def classify(inventory, expected, *, post=False):
+    """Exact UID+copy classification, including one former reviewed version."""
+    grouped = defaultdict(lambda: {"old":[],"new":[],"prior":[]})
     for uid, record in inventory.items():
-        key = record["draft_id"]
+        key=record["draft_id"]
         if key not in expected:
             raise RuntimeError("unrelated_drafts_present_preserve_them")
         if (not record["draft_flag"] or b"\\DELETED" in record["flags"]
-                or parseaddr(record["message"].get("From", ""))[1].casefold() != legacy.USER):
+                or parseaddr(record["message"].get("From",""))[1].casefold()!=legacy.USER):
             raise RuntimeError("review_draft_flag_or_sender_changed")
-        item = expected[key]
-        is_new = item["eligible"] and _matches(build_message(item["new"]), record["message"])
-        is_old = _matches(build_message(item["old"]), record["message"])
-        if is_new and is_old:
-            raise RuntimeError("ambiguous_draft_versions")
-        if is_new:
-            grouped[key]["new"].append(uid)
-        elif is_old:
-            grouped[key]["old"].append(uid)
-        else:
+        item=expected[key]
+        kinds = []
+        for kind in ("old","new","prior"):
+            if kind == "new" and not item["eligible"]:
+                continue
+            part=item.get(kind)
+            if part is not None and _matches(build_message(part),record["message"]):
+                kinds.append(kind)
+        if len(kinds)!=1:
             raise RuntimeError("existing_review_draft_edited_or_unrecognized")
-    for key, item in expected.items():
-        state = grouped[key]
-        if len(state["old"]) > 1 or len(state["new"]) > 1:
+        grouped[key][kinds[0]].append(uid)
+    for key,item in expected.items():
+        state=grouped[key]
+        if any(len(state[k])>1 for k in ("old","new","prior")):
             raise RuntimeError("duplicate_review_draft_version")
-        if item["eligible"] and not state["old"] and not state["new"]:
+        if item["eligible"] and not (state["old"] or state["new"] or state["prior"]):
             raise RuntimeError("expected_review_draft_missing")
-        if item["hold"] and (len(state["old"]) != (0 if held_cleared else 1) or state["new"]):
+        if item["hold"] and (len(state["old"]) != (0 if post else 1)
+                             or state["new"] or state["prior"]):
             raise RuntimeError("held_draft_changed_or_missing")
-        if not item["eligible"] and not item["hold"] and (state["old"] or state["new"]):
+        if not item["eligible"] and not item["hold"] and any(state.values()):
             raise RuntimeError("excluded_draft_present")
+        if post and (state["old"] or state["prior"]):
+            raise RuntimeError("stale_drafts_remain")
     return grouped
 
-def verify_new_complete(groups, expected, *, held_cleared=False):
-    for key, item in expected.items():
-        state = groups[key]
+def verify_new_complete(groups, expected, *, post=False):
+    for key,item in expected.items():
+        state=groups[key]
         if item["eligible"] and len(state["new"]) != 1:
             raise RuntimeError("new_draft_not_verified")
-        if item["hold"] and (len(state["old"]) != (0 if held_cleared else 1) or state["new"]):
+        if item["hold"] and (len(state["old"]) != (0 if post else 1)
+                             or state["new"] or state["prior"]):
             raise RuntimeError("held_draft_changed")
-        if not item["eligible"] and not item["hold"] and (state["old"] or state["new"]):
+        if post and (state["old"] or state["prior"]):
+            raise RuntimeError("stale_drafts_remain")
+        if not item["eligible"] and not item["hold"] and any(state.values()):
             raise RuntimeError("excluded_draft_not_rejected")
 
 def audit():
@@ -200,13 +211,14 @@ def audit():
         records = transport.scan(client)
         DIAGNOSTIC_STAGE = "classify"
         held_cleared = len(records) == EXPECTED_ELIGIBLE
-        groups = classify(records, expected, held_cleared=held_cleared)
-        if not validity or len(records) not in {EXPECTED_MAILBOX, EXPECTED_ELIGIBLE}:
+        groups = classify(records, expected, post=held_cleared)
+        if not validity or len(records) not in {EXPECTED_MAILBOX, EXPECTED_ELIGIBLE, 816, 819}:
             raise RuntimeError("audit_mailbox_inventory_invalid")
         DIAGNOSTIC_STAGE = "complete"
         return {"total": len(records), "source_copy":sum(len(g["old"]) for k,g in groups.items() if expected[k]["eligible"]),
                 "review_copy":sum(len(g["new"]) for k,g in groups.items() if expected[k]["eligible"]),
-                "holds":sum(len(g["old"]) for k,g in groups.items() if expected[k]["hold"])}
+                "holds":sum(len(g["old"]) for k,g in groups.items() if expected[k]["hold"]),
+                "prior":sum(len(g["prior"]) for g in groups.values())}
     finally:
         try:
             client.logout()
@@ -247,9 +259,9 @@ def reconcile():
         staged = classify(ready, expected)
         verify_new_complete(staged, expected)
         old_uids = {u for key,item in expected.items() if item["eligible"] or item["hold"]
-                    for u in staged[key]["old"]}
-        if len(old_uids) != EXPECTED_MAILBOX:
-            raise RuntimeError("old_scope_not_exact_412")
+                    for u in staged[key]["old"] + staged[key]["prior"]}
+        if len(old_uids) != EXPECTED_MAILBOX + 1:
+            raise RuntimeError("old_scope_not_exact_413")
         old_hash = {uid: ready[uid]["sha256"] for uid in old_uids}
         if load_private_scope(conn) != expected:
             raise RuntimeError("private_review_changed_before_remove")
@@ -263,7 +275,7 @@ def reconcile():
         again = classify(before, expected)
         verify_new_complete(again, expected)
         if {u for key,item in expected.items() if item["eligible"] or item["hold"]
-                for u in again[key]["old"]} != old_uids:
+                for u in again[key]["old"] + again[key]["prior"]} != old_uids:
             raise RuntimeError("old_uid_scope_changed")
         if any(before[uid]["sha256"] != old_hash[uid] for uid in old_uids):
             raise RuntimeError("original_draft_changed")
@@ -283,9 +295,9 @@ def reconcile():
                 raise RuntimeError("old_draft_remove_readback_failed")
             removed += len(group)
         final = transport.scan(client)
-        final_groups = classify(final, expected, held_cleared=True)
-        verify_new_complete(final_groups, expected, held_cleared=True)
-        if any(final_groups[key]["old"] for key,item in expected.items() if item["eligible"] or item["hold"]):
+        final_groups = classify(final, expected, post=True)
+        verify_new_complete(final_groups, expected, post=True)
+        if any(final_groups[key]["old"] or final_groups[key]["prior"] for key,item in expected.items() if item["eligible"] or item["hold"]):
             raise RuntimeError("stale_drafts_remain")
         if len(final) != EXPECTED_ELIGIBLE:
             raise RuntimeError("final_draft_count_invalid")
