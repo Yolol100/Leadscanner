@@ -62,6 +62,16 @@ class FakeArchiveClient:
 
 
 class ConversationRegressionTests(unittest.TestCase):
+    def test_public_failure_reason_is_static_allowlist_only(self):
+        self.assertEqual(mod._safe_reason(RuntimeError("archive_append_failed")),
+                         "archive_append_failed")
+        self.assertEqual(mod._safe_reason(RuntimeError("conversation_uidplus_required")),
+                         "conversation_uidplus_required")
+        for error in (RuntimeError("archive_append_failed token=secret"),
+                      RuntimeError("account@example.nl"),
+                      KeyError(DID), ValueError("tokens")):
+            self.assertEqual(mod._safe_reason(error), "private_or_unclassified_error")
+
     def test_owner_command_requires_exact_issue_actor_and_mode(self):
         mod.authorize(event("PRECHECK"), "PRECHECK")
         mod.authorize(event("PILOT"), "PILOT")
