@@ -137,6 +137,30 @@ class ChatCommandTests(unittest.TestCase):
                 self.assertIn("--summary-only", args)
                 self.assertNotIn("--send", args)
 
+    def test_historical_review_evidence_is_bounded_private_and_never_sends(self):
+        for index in range(1, 6):
+            mode = "REVIEW_EVIDENCE_" + str(index)
+            with self.subTest(index=index), patch.object(command.subprocess, "run") as run:
+                command.execute(mode)
+                args = run.call_args.args[0]
+                self.assertEqual(args[1:], [
+                    "scripts/fast_website_evidence.py",
+                    "--source", "Review450", "--batch", str(index), "--force",
+                ])
+                self.assertTrue(run.call_args.kwargs["check"])
+                self.assertNotIn("--install", args)
+        for disallowed in ("REVIEW_EVIDENCE_0", "REVIEW_EVIDENCE_6"):
+            with self.assertRaises(ValueError):
+                command.execute(disallowed)
+
+    def test_historical_review_evidence_needs_exact_owner_and_request_id(self):
+        for index in range(1, 6):
+            mode = "REVIEW_EVIDENCE_" + str(index)
+            self.assertIn(mode, command.REQUIRES_ID)
+            with self.assertRaisesRegex(ValueError, "request_id_required"):
+                command.validate(event(mode))
+            self.assertEqual(command.validate(versioned_event(mode)), mode)
+
     def test_verified_discovery_has_no_mail_sender(self):
         with patch.object(command.subprocess, "run") as run:
             command.execute("VERIFIED_100")
