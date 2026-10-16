@@ -29,7 +29,7 @@ ISSUE = 1659
 REPO = "Yolol100/Leadscanner"
 OWNER = "Yolol100"
 PREFIX = "LEADS_CONVERSATIONS_V1:"
-MODES = frozenset({"PRECHECK", "PILOT", "AUDIT"} |
+MODES = frozenset({"PRECHECK", "PILOT", "AUDIT", "BATCH_2_TO_5"} |
                   {f"BATCH_{i}" for i in range(1, 6)})
 TABS = tuple((f"Gespreksstijl Fase{i} 20261016", 100 if i < 5 else 50)
              for i in range(1, 6))
@@ -336,6 +336,36 @@ def run(mode, event, *, connector=connect_imap):
             "sent": 0}
 
 
+def _delegate(event, mode):
+    # Only after authenticating the single owner-issued batch-chain comment.
+    clone = dict(event)
+    clone["comment"] = dict(event["comment"], body=PREFIX + mode)
+    return clone
+
+
+def run_remaining(event):
+    authorize(event, "BATCH_2_TO_5")
+    # The previous one-at-a-time pilot + first 100 scope must be independently
+    # verified before executing any later batch.
+    preliminary = run("AUDIT", _delegate(event, "AUDIT"))
+    if preliminary["total"] != 411 or preliminary["already_new"] < 87:
+        raise RuntimeError("conversation_first_batch_not_complete")
+    completed = []
+    for number in (2, 3, 4, 5):
+        mode = "BATCH_" + str(number)
+        result = run(mode, _delegate(event, mode))
+        if result["total"] != 411 or result["sent"] != 0:
+            raise RuntimeError("conversation_batch_integrity_error")
+        completed.append(number)
+    final = run("AUDIT", _delegate(event, "AUDIT"))
+    if (final["total"] != 411 or final["already_new"] != 391
+            or final["archived"] != 391 or final["sent"] != 0):
+        raise RuntimeError("conversation_full_scope_not_verified")
+    return {"total": final["total"], "eligible": final["eligible"],
+            "already_new": final["already_new"], "archived": final["archived"],
+            "blocked": final["blocked"], "batches": len(completed), "sent": 0}
+
+
 def main():
     command = os.getenv("CONVERSATION_MODE", "")
     mode = command[len(PREFIX):] if command.startswith(PREFIX) else ""
@@ -345,7 +375,7 @@ def main():
         with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as f:
             event = json.load(f)
         with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
-            result = run(mode, event)
+            result = run_remaining(event) if mode == "BATCH_2_TO_5" else run(mode, event)
         print("CONVERSATION411=green " +
               " ".join(f"{k}={v}" for k, v in result.items()))
         return 0
