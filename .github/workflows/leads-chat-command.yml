@@ -1,0 +1,64 @@
+name: Leadscanner ChatGPT on-demand (private, no mail)
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request:
+    paths:
+      - .github/workflows/leads-chat-command.yml
+      - scripts/leads_chat_command.py
+      - tests/test_leads_chat_command.py
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Verify issue authentication, command allowlist and no-send boundary
+        env:
+          PYTHONPATH: scripts
+        run: |
+          python3 -m compileall -q scripts/leads_chat_command.py
+          python3 -m unittest discover -s tests -p 'test_leads_chat_command.py' -v
+
+  execute:
+    # GitHub issue_comment workflows run from the default branch only.
+    # Never run private credential steps for PRs, third-party users or issues.
+    if: >-
+      github.event_name == 'issue_comment' &&
+      github.event.issue.number == 1720 &&
+      !github.event.issue.pull_request &&
+      github.event.comment.user.login == 'Yolol100' &&
+      startsWith(github.event.comment.body, 'LEADS_CHAT_V1:')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    concurrency:
+      group: leads-chat-command
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: python3 -m pip install -r requirements.txt -r requirements-draft.txt
+      - run: python3 -m compileall -q scripts
+      - name: Execute one owner-authorized, fixed, safe on-demand Leadscanner operation
+        env:
+          PYTHONPATH: scripts
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON }}
+        run: python3 scripts/leads_chat_command.py
