@@ -57,12 +57,9 @@ class ReconcileCurrentTests(unittest.TestCase):
 
     def test_blocked_entry_is_never_accepted_as_new(self):
         self.expected[self.key]["eligible"] = False
-        with self.assertRaisesRegex(RuntimeError, "new_draft_not_verified"):
-            # A blocked record cannot be considered an eligible replacement.
+        with self.assertRaisesRegex(RuntimeError, "excluded_draft_not_rejected"):
             target.verify_new_complete(
-                {self.key: {"new": ["2"], "old": ["1"]}},
-                {self.key: {**self.expected[self.key], "eligible": True,
-                            "old": self.old, "new": self.new}})
+                {self.key: {"new": ["2"], "old": ["1"]}}, self.expected)
 
     def test_scope_count_is_fail_closed(self):
         with patch.object(target.historical, "load_rows", return_value=[]):
