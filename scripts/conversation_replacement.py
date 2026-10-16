@@ -234,9 +234,15 @@ def run(mode, event, *, connector=connect_imap):
     records = _verified_scope(session)
     snapshot = _digest(records)
     folder, validity, state = _check_mailbox(connector, records)
-    if not imap.uidplus(connector()):
-        # Connection from capability probe must never leave a selected mailbox.
-        raise RuntimeError("conversation_uidplus_required")
+    probe = connector()
+    try:
+        if not imap.uidplus(probe):
+            raise RuntimeError("conversation_uidplus_required")
+    finally:
+        try:
+            probe.logout()
+        except Exception:
+            pass
     total_target = sum(row["category"] == "target" for row in records.values())
     changed = sum(version == "new" for key, (uid, version, sha) in state.items()
                   if records[key]["category"] == "target")
