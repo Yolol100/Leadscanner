@@ -20,7 +20,7 @@ from registry_readonly import authorized_session, load_suppressions
 
 OPT_OUT = "Liever geen e-mails meer? Antwoord met 'nee', dan laat ik het hierbij."
 DRAFT_RE = re.compile(r"draft-[0-9a-f]{32}\Z")
-STATUS_BLOCKED = "NIET_VERSTUREN"
+CANDIDATE_STATUSES = {"VOOR_MENSELIJKE_EINDCONTROLE", "VOORSTEL_HANDMATIGE_EINDCHECK"}
 
 
 def load_expected(session):
@@ -48,7 +48,7 @@ def load_expected(session):
         expected[draft_id] = {
             "company": company, "email": recipient, "subject": subject,
             "body": body, "source_url": source,
-            "blocked": STATUS_BLOCKED in status,
+            "blocked": status not in CANDIDATE_STATUSES,
         }
     return expected
 

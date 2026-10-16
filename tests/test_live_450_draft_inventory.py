@@ -28,7 +28,7 @@ class LiveDraftInventoryTests(unittest.TestCase):
             row[8] = "https://example.invalid"
             row[13] = (
                 "BRONBLOKKADE_NIET_VERSTUREN"
-                if number <= 37 else "VOOR_MENSELIJKE_EINDCONTROLE"
+                if number <= 38 else "VOOR_MENSELIJKE_EINDCONTROLE"
             )
             result.append(row)
         return result
@@ -37,7 +37,7 @@ class LiveDraftInventoryTests(unittest.TestCase):
         with patch.object(audit.review, "read", return_value=self.rows()):
             expected = audit.load_expected(object())
         self.assertEqual(len(expected), 450)
-        self.assertEqual(sum(x["blocked"] for x in expected.values()), 37)
+        self.assertEqual(sum(x["blocked"] for x in expected.values()), 38)
 
     def test_fail_closed_on_duplicate_id(self):
         data = self.rows()
