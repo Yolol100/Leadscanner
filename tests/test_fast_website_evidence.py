@@ -81,6 +81,50 @@ class FastOfficialEvidenceTests(unittest.TestCase):
         self.assertFalse(q._has("Wij serveren geen veganistische gerechten", "veganistische"))
         self.assertTrue(q._has("Groepsmenu en afhaalservice", "groepsmenu"))
 
+    def test_accented_activity_does_not_lose_its_quote(self):
+        record_data = dict(record(), branch="horecazaken")
+        official = {"email": record_data["email"],
+                    "branche_meervoud": "horecazaken",
+                    "source_url": record_data["website"]}
+        pages = [(record_data["website"],
+                  "Welkom bij ons speciaalbier caf\u00e9 in 5211 AB. "
+                  "Voorbeeld ontvangt gasten en serveert speciaalbier.")]
+        out = q.inspect_verified(record_data, official, pages)
+        self.assertEqual(out["status"], "verified_activity_only")
+        self.assertEqual(out["reason"],
+                         "official_email_and_local_activity_confirmed")
+        self.assertIn("caf\u00e9", q._excerpt(pages[0][1], "cafe"))
+
+    def test_accented_negation_still_skips_denied_service(self):
+        text = ("Wij bieden geen caf\u00e9. "
+                "Meer details komen later beschikbaar. "
+                "Bij onze tweede vestiging is een caf\u00e9ruimte geopend.")
+        quote = q._excerpt(text, "cafe")
+        self.assertIn("caf\u00e9ruimte", quote)
+        self.assertNotIn("geen caf\u00e9", quote)
+        self.assertEqual(q._excerpt("Wij bieden geen caf\u00e9.", "cafe"), "")
+
+    def test_quote_matches_spacing_and_decomposed_unicode(self):
+        self.assertIn("high tea", q._excerpt(
+            "Deze zaak verzorgt high   tea op aanvraag.", "high tea"))
+        self.assertIn("cafe\u0301", q._excerpt(
+            "Op ons terras is een cafe\u0301 gevestigd.", "cafe"))
+
+    def test_locality_and_cross_domain_gates_remain_closed(self):
+        row = dict(record(), branch="horecazaken")
+        official = {"email": row["email"],
+                    "branche_meervoud": "horecazaken",
+                    "source_url": row["website"]}
+        result = q.inspect_verified(row, official,
+            [(row["website"], "Voorbeeld heeft een caf\u00e9 in Nederland.")])
+        self.assertEqual(result["reason"], "dutch_locality_not_confirmed")
+        changed = dict(row, email="info@anderbedrijf.nl")
+        result = q.inspect_verified(changed,
+            {**official, "email": changed["email"]},
+            [(row["website"], "Voorbeeld heeft een caf\u00e9 in 5211 AB.")])
+        self.assertEqual(result["reason"],
+                         "cross_domain_email_needs_independent_association")
+
     def test_quote_never_uses_negated_occurrence_when_later_supported(self):
         """The evidence quote must identify the *affirmative* match, not a denied one."""
         text = ("Wij bieden geen groepsmenu. "
