@@ -215,7 +215,8 @@ def reconcile():
         ready = transport.scan(client)
         staged = classify(ready, expected)
         verify_new_complete(staged, expected)
-        old_uids = {u for g in staged.values() for u in g["old"]}
+        old_uids = {u for key,item in expected.items() if item["eligible"]
+                    for u in staged[key]["old"]}
         old_hash = {uid: ready[uid]["sha256"] for uid in old_uids}
         if load_private_scope(conn) != expected:
             raise RuntimeError("private_review_changed_before_remove")
@@ -228,7 +229,8 @@ def reconcile():
             raise RuntimeError("mailbox_changed_before_remove")
         again = classify(before, expected)
         verify_new_complete(again, expected)
-        if {u for g in again.values() for u in g["old"]} != old_uids:
+        if {u for key,item in expected.items() if item["eligible"]
+                for u in again[key]["old"]} != old_uids:
             raise RuntimeError("old_uid_scope_changed")
         if any(before[uid]["sha256"] != old_hash[uid] for uid in old_uids):
             raise RuntimeError("original_draft_changed")
@@ -250,7 +252,7 @@ def reconcile():
         final = transport.scan(client)
         final_groups = classify(final, expected)
         verify_new_complete(final_groups, expected)
-        if any(group["old"] for group in final_groups.values()):
+        if any(final_groups[key]["old"] for key,item in expected.items() if item["eligible"]):
             raise RuntimeError("stale_drafts_remain")
         if len(final) != EXPECTED_MAILBOX:
             raise RuntimeError("final_draft_count_invalid")
