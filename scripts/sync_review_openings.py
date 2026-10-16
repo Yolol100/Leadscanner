@@ -23,6 +23,7 @@ from private_candidate_handoff import authorized_writer
 from registry_readonly import load_suppressions
 
 TASK = "review450-20261016"
+DIAGNOSTIC_STAGE = "entry"
 DRAFT_RE = re.compile(r"draft-[a-f0-9]{32}\Z")
 CANDIDATE_STATUSES = {"VOOR_MENSELIJKE_EINDCONTROLE", "VOORSTEL_HANDMATIGE_EINDCHECK"}
 EXPECTED_ELIGIBLE = 404
@@ -161,18 +162,29 @@ def verify_new_complete(groups, expected):
 
 def audit():
     """Independent read-only pass, reusable before and after a sync."""
+    global DIAGNOSTIC_STAGE
+    DIAGNOSTIC_STAGE = "target"
     legacy.target_guard()
+    DIAGNOSTIC_STAGE = "credential"
     conn = authorized_writer()
+    DIAGNOSTIC_STAGE = "sheet"
     expected = load_private_scope(conn)
+    DIAGNOSTIC_STAGE = "registry"
     verify_suppressions(conn, expected)
+    DIAGNOSTIC_STAGE = "connect"
     client = connect_imap()
     try:
+        DIAGNOSTIC_STAGE = "folder"
         folder = find_drafts_folder(client)
+        DIAGNOSTIC_STAGE = "select"
         validity = legacy.select(client, folder, readonly=True)
+        DIAGNOSTIC_STAGE = "scan"
         records = transport.scan(client)
+        DIAGNOSTIC_STAGE = "classify"
         groups = classify(records, expected)
         if not validity or len(records) < EXPECTED_MAILBOX:
             raise RuntimeError("audit_mailbox_inventory_invalid")
+        DIAGNOSTIC_STAGE = "complete"
         return {"total": len(records), "source_copy":sum(len(g["old"]) for k,g in groups.items() if expected[k]["eligible"]),
                 "review_copy":sum(len(g["new"]) for k,g in groups.items() if expected[k]["eligible"]),
                 "holds":sum(len(g["old"]) for k,g in groups.items() if expected[k]["hold"])}
@@ -300,7 +312,7 @@ def main():
         }
         code = str(exc)
         code = code if type(exc) is RuntimeError and code in safe else "private_preflight_or_imap_failed"
-        print("MYHOST_VALUEFIRST=blocked reason=" + code + " sent=0")
+        print("MYHOST_VALUEFIRST=blocked stage=" + DIAGNOSTIC_STAGE + " reason=" + code + " sent=0")
         return 1
 
 
