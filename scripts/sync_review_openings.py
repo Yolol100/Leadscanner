@@ -24,6 +24,7 @@ from registry_readonly import load_suppressions
 
 TASK = "review450-20261016"
 DIAGNOSTIC_STAGE = "entry"
+REGISTRY_DIAGNOSTIC_STAGE = "idle"
 DRAFT_RE = re.compile(r"draft-[a-f0-9]{32}\Z")
 CANDIDATE_STATUSES = {"VOOR_MENSELIJKE_EINDCONTROLE", "VOORSTEL_HANDMATIGE_EINDCHECK"}
 EXPECTED_ELIGIBLE = 404
@@ -105,7 +106,10 @@ def load_private_scope(session):
     return expected
 
 def verify_suppressions(session, expected):
+    global REGISTRY_DIAGNOSTIC_STAGE
+    REGISTRY_DIAGNOSTIC_STAGE = "load"
     suppression = load_suppressions(session=session)
+    REGISTRY_DIAGNOSTIC_STAGE = "match"
     for value in expected.values():
         if not value["eligible"] and not value["hold"]:
             continue
@@ -311,8 +315,14 @@ def main():
             "private_batch_headers_invalid", "review_source_not_verified"
         }
         code = str(exc)
+        safe.update({"registry_read_failed", "registry_credentials_missing",
+                     "historical_suppression_unavailable", "historical_v2_headers_missing",
+                     "historical_v2_incomplete", "historical_v2_bad_hash_key_or_domain",
+                     "historical_v2_duplicate_identity", "historical_v2_source_overflow",
+                     "historical_v2_vault_unavailable_or_modified", "historical_v2_vault_key_invalid",
+                     "historical_v2_row_shape_invalid", "registry_auth_invalid"})
         code = code if type(exc) is RuntimeError and code in safe else "private_preflight_or_imap_failed"
-        print("MYHOST_VALUEFIRST=blocked stage=" + DIAGNOSTIC_STAGE + " reason=" + code + " sent=0")
+        print("MYHOST_VALUEFIRST=blocked stage=" + DIAGNOSTIC_STAGE + " registry=" + REGISTRY_DIAGNOSTIC_STAGE + " reason=" + code + " sent=0")
         return 1
 
 
