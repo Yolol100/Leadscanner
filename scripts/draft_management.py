@@ -23,6 +23,7 @@ SHA_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
 UID_PATTERN = re.compile(r"[1-9][0-9]*\Z")
 OWNER = "Yolol100"
 ISSUE = 1659
+OPT_OUT = "Liever geen e-mails meer? Antwoord met 'nee', dan laat ik het hierbij."
 
 
 def require_owner_approval(event, operation, draft_id):
@@ -112,17 +113,34 @@ def _snapshot(snapshots, *, draft_id, validity, uid, sha, raw):
     return key
 
 
-def _targeted_remove(client, folder, validity, uid):
+def _targeted_remove(client, folder, validity, uid, expected_sha):
+    """Only expunge an exact verified UID; clear its Deleted flag if expunge fails."""
     if not imap.uidplus(client):
         raise RuntimeError("targeted_uid_expunge_unsupported")
     if imap.select(client, folder, readonly=False) != validity:
         raise RuntimeError("uidvalidity_changed")
-    if client.uid("STORE", uid, "+FLAGS.SILENT", "(\\Deleted)")[0] != "OK":
-        raise RuntimeError("targeted_delete_flag_failed")
-    if client.uid("EXPUNGE", uid)[0] != "OK":
-        raise RuntimeError("targeted_uid_expunge_failed")
-    if uid in imap.uidset(client):
-        raise RuntimeError("targeted_delete_readback_failed")
+    current = imap.fetch_message(client, uid)
+    if current["sha256"] != expected_sha or not current["draft_flag"]:
+        raise RuntimeError("targeted_draft_changed_before_delete")
+    try:
+        if client.uid("STORE", uid, "+FLAGS.SILENT", "(\\Deleted)")[0] != "OK":
+            raise RuntimeError("targeted_delete_flag_failed")
+        if client.uid("EXPUNGE", uid)[0] != "OK":
+            raise RuntimeError("targeted_uid_expunge_failed")
+        if uid in imap.uidset(client):
+            raise RuntimeError("targeted_delete_readback_failed")
+    except Exception:
+        # If the exact original is still present, undo a temporary Deleted flag.
+        # Never use CLOSE or unscoped EXPUNGE as recovery.
+        try:
+            if uid in imap.uidset(client):
+                unchanged = imap.fetch_message(client, uid)
+                if (unchanged["sha256"] == expected_sha
+                        and b"\\DELETED" in unchanged["flags"]):
+                    client.uid("STORE", uid, "-FLAGS.SILENT", "(\\Deleted)")
+        except Exception:
+            pass
+        raise
 
 
 def _expect_target(record, *, uid, sha):
@@ -175,6 +193,9 @@ def execute(event, operation, draft_id, *, row=None, expected=None,
         prepared = _validate_row(row)
         if prepared["draft_id"] != draft_id:
             raise RuntimeError("private_review_identity_mismatch")
+        if (OPT_OUT not in prepared["body"]
+                or not prepared["body"].rstrip().endswith("Groet,\\nAndrew")):
+            raise RuntimeError("private_review_opt_out_or_signoff_invalid")
     if operation != "CREATE_DRAFT":
         if not isinstance(expected, dict) or not all(
                 isinstance(expected.get(key), str) for key in
@@ -258,7 +279,7 @@ def execute(event, operation, draft_id, *, row=None, expected=None,
             if fresh_validity != validity or set(current) != set(before):
                 raise RuntimeError("mailbox_changed_before_delete")
             _assert_untouched(before, current)
-            _targeted_remove(client, folder, validity, uid)
+            _targeted_remove(client, folder, validity, uid, old["sha256"])
             return _independent_readback(
                 connector, folder, validity, {"draft_id": draft_id}, uid,
                 operation, before, expected_total=len(before) - 1)
@@ -293,7 +314,7 @@ def execute(event, operation, draft_id, *, row=None, expected=None,
                            sha=expected["sha256"])
             if not current[uid]["draft_flag"] or not current[new_uid]["draft_flag"]:
                 raise RuntimeError("draft_flag_changed_before_delete")
-            _targeted_remove(client, folder, validity, uid)
+            _targeted_remove(client, folder, validity, uid, expected["sha256"])
             removed_old = True
         except Exception:
             # Never remove an unverified staged UID or an unrelated message.
@@ -307,7 +328,8 @@ def execute(event, operation, draft_id, *, row=None, expected=None,
                             and current[uid]["draft_flag"]
                             and _matches(build_message(prepared),
                                          current[new_uid]["message"])):
-                        _targeted_remove(client, folder, validity, new_uid)
+                        _targeted_remove(client, folder, validity, new_uid,
+                                         current[new_uid]["sha256"])
                 except Exception:
                     pass
             raise
