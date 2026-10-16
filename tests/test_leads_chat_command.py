@@ -229,20 +229,24 @@ class ChatCommandTests(unittest.TestCase):
 
     def test_list_history_only_reads_github_rest_without_writes(self):
         current = versioned_event()
-        mock_response = unittest.mock.Mock(status_code=200)
-        mock_response.json.return_value = [history_row(current)]
-        client = unittest.mock.MagicMock()
-        client.get.return_value = mock_response
+        response = unittest.mock.MagicMock()
+        response.status = 200
+        response.read.return_value = json.dumps([history_row(current)]).encode("utf-8")
         handle = unittest.mock.MagicMock()
-        handle.__enter__.return_value = client
+        handle.__enter__.return_value = response
         with patch.dict("os.environ", {"GITHUB_TOKEN": "synthetic-test-token"}), \
-             patch("requests.Session", return_value=handle):
+             patch("urllib.request.urlopen", return_value=handle) as opener:
             entries = command.list_issue_comments()
         self.assertEqual(len(entries), 1)
-        client.get.assert_called_once()
-        self.assertEqual(client.get.call_args.kwargs["timeout"], 20)
-        self.assertFalse(client.post.called)
-        self.assertFalse(client.patch.called)
+        opener.assert_called_once()
+        self.assertEqual(opener.call_args.kwargs["timeout"], 20)
+        self.assertIn("/issues/1720/comments", opener.call_args.args[0].full_url)
+
+    def test_github_api_failure_does_not_start_scan(self):
+        with patch.dict("os.environ", {"GITHUB_TOKEN": "synthetic-test-token"}), \
+             patch("urllib.request.urlopen", side_effect=OSError("not available")):
+            with self.assertRaisesRegex(RuntimeError, "history_unavailable"):
+                command.list_issue_comments()
 
 
 if __name__ == "__main__":
