@@ -298,7 +298,8 @@ def run(mode, event, *, connector=connect_imap):
 
 
 def main():
-    mode = os.getenv("CONVERSATION_MODE", "")
+    command = os.getenv("CONVERSATION_MODE", "")
+    mode = command[len(PREFIX):] if command.startswith(PREFIX) else ""
     try:
         if mode not in MODES or os.getenv("GITHUB_EVENT_NAME") != "issue_comment":
             raise RuntimeError("conversation_mode_invalid")
