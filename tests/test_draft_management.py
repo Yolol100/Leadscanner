@@ -156,11 +156,13 @@ class DraftManagementTests(unittest.TestCase):
 
     def perform(self, operation, *, draft_id=DID, row=None, expected=None,
                 source=lambda: True, snapshots=None):
-        return mgr.execute(
-            permission(operation, draft_id), operation, draft_id,
-            row=row, expected=expected, check_source=source,
-            snapshots=snapshots if snapshots is not None else self.snapshots,
-            connector=self.connector)
+        # Synthetic .nl domains need no DNS: URL resolver is separately tested.
+        with patch("draft_queue_readonly.is_public_http_url", return_value=True):
+            return mgr.execute(
+                permission(operation, draft_id), operation, draft_id,
+                row=row, expected=expected, check_source=source,
+                snapshots=snapshots if snapshots is not None else self.snapshots,
+                connector=self.connector)
 
     def test_create_requires_exact_owner_permission(self):
         event = permission("CREATE_DRAFT")
