@@ -1,8 +1,5 @@
 name: Leadscanner schedule health - read only
 on:
-  schedule:
-    # Run after the weekly 06:23 UTC discovery and weekday 07:17 UTC research.
-    - cron: '20 13 * * 1-5'
   workflow_dispatch:
   push:
     branches: [main]
