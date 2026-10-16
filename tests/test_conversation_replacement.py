@@ -62,6 +62,48 @@ class FakeArchiveClient:
 
 
 class ConversationRegressionTests(unittest.TestCase):
+    def test_read_throttle_and_429_retry_preserve_full_sheet_access(self):
+        clock = [0.0]
+        delays = []
+        def now():
+            return clock[0]
+        def sleep(seconds):
+            self.assertGreaterEqual(seconds, 0)
+            delays.append(seconds)
+            clock[0] += seconds
+        backend = Mock()
+        backend.get.side_effect = [
+            Mock(status_code=429), Mock(status_code=200, json=lambda: {"values": [["a"]]}),
+            Mock(status_code=200),
+        ]
+        session = mod.RateLimitedSourceReads(backend, clock=now, sleeper=sleep)
+        response = session.get("https://sheets.googleapis.com/test")
+        self.assertEqual(response.status_code, 200)
+        response = session.get("https://sheets.googleapis.com/test")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(backend.get.call_count, 3)
+        self.assertTrue(any(x >= 5 for x in delays))
+        self.assertTrue(any(x >= 1.5 for x in delays))
+
+    def test_non_transient_sheet_errors_are_not_retried(self):
+        clock = Mock(return_value=3)
+        backend = Mock()
+        backend.get.return_value = Mock(status_code=403)
+        session = mod.RateLimitedSourceReads(backend, clock=clock,
+                                             sleeper=Mock())
+        self.assertEqual(session.get("https://sheets.googleapis.com/test").status_code, 403)
+        backend.get.assert_called_once()
+
+    def test_429_exhaustion_fails_closed_without_extra_reads(self):
+        backend = Mock()
+        backend.get.return_value = Mock(status_code=429)
+        session = mod.RateLimitedSourceReads(
+            backend, clock=Mock(return_value=10),
+            sleeper=Mock())
+        with self.assertRaisesRegex(RuntimeError, "sheet_transient_exhausted"):
+            session.get("https://sheets.googleapis.com/test")
+        self.assertEqual(backend.get.call_count, session.RETRIES)
+
     def test_public_failure_reason_is_static_allowlist_only(self):
         self.assertEqual(mod._safe_reason(RuntimeError("archive_append_failed")),
                          "archive_append_failed")

@@ -11,6 +11,7 @@ import json
 import os
 import re
 import sys
+import time
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timezone
 from io import StringIO
@@ -36,6 +37,40 @@ TABS = tuple((f"Gespreksstijl Fase{i} 20261016", 100 if i < 5 else 50)
 EXPECTED_COUNTS = {"target": 391, "source_hold": 16, "held": 4,
                    "closed": 1, "excluded": 38}
 OPT = "Liever geen e-mails meer? Antwoord met 'nee', dan laat ik het hierbij."
+
+
+class RateLimitedSourceReads:
+    """Gentle bounded Google Sheets reads for the current single IMAP batch.
+
+    Avoid service-account read quota exhaustion from rechecking all 450
+    private records before EACH potentially destructive draft operation.
+    No cache, reduced preflight, extra permissions or public source content.
+    """
+
+    MIN_GAP_SECONDS = 1.5
+    TRANSIENT = frozenset({429, 500, 502, 503, 504})
+    RETRIES = 4
+
+    def __init__(self, session, *, clock=time.monotonic, sleeper=time.sleep):
+        self.session = session
+        self.clock = clock
+        self.sleeper = sleeper
+        self.next_read = 0.0
+
+    def get(self, url, **kwargs):
+        for attempt in range(self.RETRIES):
+            now = self.clock()
+            if now < self.next_read:
+                self.sleeper(self.next_read - now)
+            # Reserve the next read slot even if the provider request fails.
+            self.next_read = self.clock() + self.MIN_GAP_SECONDS
+            result = self.session.get(url, **kwargs)
+            if result.status_code not in self.TRANSIENT:
+                return result
+            if attempt + 1 == self.RETRIES:
+                raise RuntimeError("conversation_sheet_transient_exhausted")
+            self.sleeper(min(30, 5 * (2 ** attempt)))
+        raise RuntimeError("conversation_sheet_transient_exhausted")
 
 
 def authorize(event, mode):
@@ -264,7 +299,7 @@ def _verify_archived_originals(records, state, connector=connect_imap):
 def run(mode, event, *, connector=connect_imap):
     authorize(event, mode)
     imap.target_guard()
-    session = authorized_writer()
+    session = RateLimitedSourceReads(authorized_writer())
     records = _verified_scope(session)
     snapshot = _digest(records)
     folder, validity, state = _check_mailbox(connector, records)
@@ -431,6 +466,7 @@ _SAFE_REASONS = frozenset({
     "conversation_review_sheet_scope_invalid",
     "conversation_sender_changed",
     "conversation_source_identity_mismatch",
+    "conversation_sheet_transient_exhausted",
     "conversation_uidplus_required",
     "conversation_uidvalidity_changed",
     "conversation_unrelated_message_in_drafts",
