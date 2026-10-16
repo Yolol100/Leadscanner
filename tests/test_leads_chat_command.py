@@ -60,7 +60,7 @@ class ChatCommandTests(unittest.TestCase):
                     command.validate(changed)
 
     def test_preflight_only_reads_private_suppression(self):
-        with patch("registry_readonly.load_suppressions", return_value=[1, 2]) as read, \
+        with patch("registry_readonly.load_discovery_suppressions", return_value=[1, 2]) as read, \
              patch.object(command.subprocess, "run") as run:
             command.execute("CHECK")
         read.assert_called_once()
@@ -70,6 +70,26 @@ class ChatCommandTests(unittest.TestCase):
         with patch("registry_readonly.load_suppressions", return_value=[1]):
             with self.assertRaises(RuntimeError):
                 command.execute("CHECK")
+
+    def test_check_fails_closed_if_any_discovery_suppression_source_is_missing(self):
+        for reason in ("historical_v2_incomplete", "lead_history_headers_invalid",
+                       "draft_queue_registry_headers_invalid"):
+            with self.subTest(reason=reason):
+                with patch("registry_readonly.load_discovery_suppressions",
+                           side_effect=RuntimeError(reason)) as loader, \
+                     patch.object(command.subprocess, "run") as run:
+                    with self.assertRaises(RuntimeError):
+                        command.execute("CHECK")
+                loader.assert_called_once()
+                run.assert_not_called()
+
+    def test_read_only_mailbox_audit_is_only_existing_inventory(self):
+        with patch.object(command.subprocess, "run") as run:
+            command.execute("DRAFTS_AUDIT")
+        self.assertEqual(run.call_args.args[0][1:],
+                         ["scripts/live_450_draft_inventory.py"])
+        self.assertTrue(run.call_args.kwargs["check"])
+        self.assertNotIn("--install", run.call_args.args[0])
 
     def test_evidence_always_forces_approved_no_mail(self):
         with patch.object(command.subprocess, "run") as run:

@@ -57,8 +57,23 @@ jobs:
       - run: python3 -m pip install -r requirements.txt -r requirements-draft.txt
       - run: python3 -m compileall -q scripts
       - name: Execute one owner-authorized, fixed, safe on-demand Leadscanner operation
+        if: github.event.comment.body != 'LEADS_CHAT_V1:DRAFTS_AUDIT'
         env:
           PYTHONPATH: scripts
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON }}
+        run: python3 scripts/leads_chat_command.py
+      - name: Read-only Mijn.Host Drafts inventory without any mailbox writes
+        if: github.event.comment.body == 'LEADS_CHAT_V1:DRAFTS_AUDIT'
+        env:
+          PYTHONPATH: scripts
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON }}
+          OUTREACH_IMAP_HOST: ${{ vars.OUTREACH_IMAP_HOST || 'mail.andrewbaeten.nl' }}
+          OUTREACH_IMAP_PORT: ${{ vars.OUTREACH_IMAP_PORT || '993' }}
+          OUTREACH_MAIL_USER: ${{ vars.OUTREACH_MAIL_USER || 'info@andrewbaeten.nl' }}
+          OUTREACH_MAIL_PASSWORD: ${{ secrets.OUTREACH_MAIL_PASSWORD }}
+          OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME || 'Andrew Baeten' }}
+          OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
+          OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
         run: python3 scripts/leads_chat_command.py

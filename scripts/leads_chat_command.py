@@ -16,7 +16,7 @@ ISSUE = 1720
 OWNER = "Yolol100"
 PREFIX = "LEADS_CHAT_V1:"
 MODES = frozenset({
-    "CHECK", "EVIDENCE", "HINTS_10", "HINTS_30",
+    "CHECK", "DRAFTS_AUDIT", "EVIDENCE", "HINTS_10", "HINTS_30",
     "HINTS_50", "HINTS_100", "VERIFIED_100",
 })
 
@@ -48,13 +48,18 @@ def execute(mode: str) -> None:
     if mode not in MODES:
         raise ValueError("mode_not_allowlisted")
     if mode == "CHECK":
-        from registry_readonly import load_suppressions
-        entries = load_suppressions()
+        from registry_readonly import load_discovery_suppressions
+        # CHECK must cover exactly the same historical, HMAC, LeadHistory
+        # and DraftQueue sources as new discovery, not just the baseline.
+        entries = load_discovery_suppressions()
         if len(entries) < 2:
             raise RuntimeError("suppression_incomplete")
         print("LEADS_CHAT_PREFLIGHT=green")
         return
-    if mode == "EVIDENCE":
+    if mode == "DRAFTS_AUDIT":
+        # Existing read-only 450 inventory: no APPEND, STORE, EXPUNGE or SMTP.
+        args = ["scripts/live_450_draft_inventory.py"]
+    elif mode == "EVIDENCE":
         args = ["scripts/fast_website_evidence.py",
                 "--source", "Approved", "--batch", "1", "--force"]
     elif mode.startswith("HINTS_"):
