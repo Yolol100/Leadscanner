@@ -67,6 +67,8 @@ class ConversationRegressionTests(unittest.TestCase):
                          "archive_append_failed")
         self.assertEqual(mod._safe_reason(RuntimeError("conversation_uidplus_required")),
                          "conversation_uidplus_required")
+        self.assertEqual(mod._safe_reason(RuntimeError("private_sheet_read_failed")),
+                         "private_sheet_read_failed")
         for error in (RuntimeError("archive_append_failed token=secret"),
                       RuntimeError("account@example.nl"),
                       KeyError(DID), ValueError("tokens")):
