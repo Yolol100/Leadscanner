@@ -227,6 +227,40 @@ def _check_mailbox(connector=connect_imap, records=None):
             pass
 
 
+def _verify_archived_originals(records, state, connector=connect_imap):
+    """Every replaced draft must have exactly one private archived original."""
+    replaced = {key for key, (uid, version, sha) in state.items()
+                if version == "new" and records[key]["category"] == "target"}
+    if not replaced:
+        return 0
+    from private_imap_archive import _archive, ARCHIVE
+    client = connector()
+    try:
+        _archive(client)
+        archive_validity = imap.select(client, ARCHIVE, readonly=True)
+        archive_entries = transport.scan(client)
+        if set(archive_entries) != imap.uidset(client):
+            raise RuntimeError("conversation_archive_changed_during_readback")
+        by_draft = {}
+        for uid, saved in archive_entries.items():
+            key = saved["draft_id"]
+            if (key not in records or key in by_draft
+                    or saved["draft_flag"] or b"\\DELETED" in saved["flags"]):
+                raise RuntimeError("conversation_archive_scope_changed")
+            by_draft[key] = saved
+        for key in replaced:
+            older = by_draft.get(key)
+            if not older or not _matches(
+                    build_message(records[key]["current"]), older["message"]):
+                raise RuntimeError("conversation_original_archive_missing")
+        return len(replaced)
+    finally:
+        try:
+            client.logout()
+        except Exception:
+            pass
+
+
 def run(mode, event, *, connector=connect_imap):
     authorize(event, mode)
     imap.target_guard()
@@ -247,8 +281,9 @@ def run(mode, event, *, connector=connect_imap):
     changed = sum(version == "new" for key, (uid, version, sha) in state.items()
                   if records[key]["category"] == "target")
     if mode in {"PRECHECK", "AUDIT"}:
+        archived = _verify_archived_originals(records, state, connector=connector)
         return {"total": len(state), "eligible": total_target,
-                "already_new": changed,
+                "already_new": changed, "archived": archived,
                 "blocked": EXPECTED_COUNTS["source_hold"] + EXPECTED_COUNTS["held"],
                 "sent": 0}
     number = 1 if mode == "PILOT" else None
@@ -291,7 +326,11 @@ def run(mode, event, *, connector=connect_imap):
     for key in allowed:
         if follow[key][1] != "new":
             raise RuntimeError("conversation_batch_final_verification_failed")
+    archived = _verify_archived_originals(records, follow, connector=connector)
+    if archived < installed:
+        raise RuntimeError("conversation_archive_count_mismatch")
     return {"total": len(follow), "eligible": total_target,
+            "archived": archived,
             "installed": installed, "already_new": skipped,
             "blocked": EXPECTED_COUNTS["source_hold"] + EXPECTED_COUNTS["held"],
             "sent": 0}
