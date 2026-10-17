@@ -33,6 +33,15 @@ def history_row(event):
 
 
 class ChatCommandTests(unittest.TestCase):
+    def test_distinct_owner_evidence_requests_are_not_discarded_by_queue(self):
+        from pathlib import Path
+        workflow = (Path(__file__).resolve().parents[1]
+                    / ".github/workflows/leads-chat-command.yml").read_text()
+        self.assertIn("group: leads-chat-command", workflow)
+        self.assertIn("cancel-in-progress: false", workflow)
+        self.assertIn("queue: max", workflow)
+        self.assertIn("github.event.comment.user.login == 'Yolol100'", workflow)
+
     def test_read_only_legacy_modes_accepted(self):
         for mode in sorted(command.MODES - command.REQUIRES_ID):
             with self.subTest(mode=mode):
