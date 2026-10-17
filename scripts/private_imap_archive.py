@@ -38,25 +38,66 @@ def _archive(client, *, create=False):
     return ARCHIVE
 
 
-def _matching(client, draft_id):
-    # The dedicated archive contains only identified original messages.
+def _archive_index(client):
+    """One complete archive scan per private operation batch, not per draft.
+
+    transport.scan enforces before/after UID equality and hashes every MIME.
+    The resulting index is only reused while UIDVALIDITY and the full UID set
+    stay unchanged. Every referenced original is still fetched and SHA-checked
+    in a fresh IMAP session before a Drafts deletion may proceed.
+    """
     validity = transport.select(client, ARCHIVE, readonly=True)
-    contents = transport.scan(client)
-    entries = [(uid, row) for uid, row in contents.items()
-               if row["draft_id"] == draft_id]
-    if len(entries) > 1:
-        raise RuntimeError("archive_duplicate_draft_id")
-    if any(b"\\DELETED" in row["flags"] or row["draft_flag"]
-           for row in contents.values()):
-        raise RuntimeError("archive_flags_invalid")
-    return validity, contents, entries
+    scanned = transport.scan(client)
+    index = {}
+    for uid, item in scanned.items():
+        draft_id = item["draft_id"]
+        if not drafts.ID_PATTERN.fullmatch(draft_id):
+            raise RuntimeError("archive_identity_invalid")
+        if draft_id in index:
+            raise RuntimeError("archive_duplicate_draft_id")
+        if item["draft_flag"] or b"\\DELETED" in item["flags"]:
+            raise RuntimeError("archive_flags_invalid")
+        index[draft_id] = (uid, item["sha256"])
+    return validity, set(scanned), index
 
 
 class PrivateIMAPArchive:
-    """Durable, mailbox-private original MIME copies with fresh-session readback."""
+    """Private original MIME archive: once-per-batch index, exact per-UID proof."""
 
     def __init__(self, *, connector=connect_imap):
         self.connector = connector
+        self._validity = None
+        self._uids = None
+        self._index = None
+
+    def _initialize(self):
+        if self._index is not None:
+            return
+        client = self.connector()
+        try:
+            _archive(client, create=True)
+            validity, uids, index = _archive_index(client)
+            self._validity, self._uids, self._index = validity, uids, index
+        finally:
+            try:
+                client.logout()
+            except Exception:
+                pass
+
+    def _check_session(self, client):
+        _archive(client)
+        validity = transport.select(client, ARCHIVE, readonly=True)
+        # Never reuse the private snapshot if an external archive append,
+        # deletion or UIDVALIDITY reset occurred during this batch.
+        if validity != self._validity or transport.uidset(client) != self._uids:
+            raise RuntimeError("archive_scope_changed")
+
+    @staticmethod
+    def _check_original(item, draft_id, sha):
+        if (item["draft_id"] != draft_id or item["sha256"] != sha):
+            raise RuntimeError("archive_independent_readback_failed")
+        if item["draft_flag"] or b"\\DELETED" in item["flags"]:
+            raise RuntimeError("archive_flags_invalid")
 
     def save(self, draft_id, uidvalidity, uid, raw):
         if not drafts.ID_PATTERN.fullmatch(draft_id) or not raw:
@@ -65,33 +106,41 @@ class PrivateIMAPArchive:
             raise RuntimeError("archive_uidvalidity_invalid")
         sha = hashlib.sha256(raw).hexdigest()
         key = (draft_id, sha)
+        self._initialize()
         client = self.connector()
         try:
-            _archive(client, create=True)
-            validity, contents, entries = _matching(client, draft_id)
-            if entries:
-                archived_uid, archived = entries[0]
-                if archived["sha256"] != sha:
+            self._check_session(client)
+            known = self._index.get(draft_id)
+            if known:
+                archived_uid, old_sha = known
+                if old_sha != sha:
                     raise RuntimeError("archive_original_conflict")
+                saved = transport.fetch_message(client, archived_uid)
+                self._check_original(saved, draft_id, sha)
                 if drafts._raw_snapshot(client, archived_uid, sha) != raw:
                     raise RuntimeError("archive_old_bytes_not_equal")
                 return key
-            before = set(contents)
-            if client.append(_mailbox_arg(ARCHIVE), r"(\Seen)", None, raw)[0] != "OK":
+            if client.append(_mailbox_arg(ARCHIVE), r"(\\Seen)", None, raw)[0] != "OK":
                 raise RuntimeError("archive_append_failed")
-            new_validity, after, entries = _matching(client, draft_id)
-            created = set(after) - before
-            if (new_validity != validity or len(created) != 1
-                    or len(entries) != 1 or entries[0][0] not in created
-                    or after[entries[0][0]]["sha256"] != sha):
+            new_validity = transport.select(client, ARCHIVE, readonly=True)
+            after_uids = transport.uidset(client)
+            created = after_uids - self._uids
+            if (new_validity != self._validity
+                    or len(created) != 1
+                    or len(after_uids) != len(self._uids) + 1
+                    or not self._uids.issubset(after_uids)):
                 raise RuntimeError("archive_write_scope_or_hash_mismatch")
-            if drafts._raw_snapshot(client, entries[0][0], sha) != raw:
+            archived_uid = next(iter(created))
+            saved = transport.fetch_message(client, archived_uid)
+            if saved["draft_id"] != draft_id or saved["sha256"] != sha:
+                raise RuntimeError("archive_write_scope_or_hash_mismatch")
+            self._check_original(saved, draft_id, sha)
+            if drafts._raw_snapshot(client, archived_uid, sha) != raw:
                 raise RuntimeError("archive_write_mime_mismatch")
-            for original_uid, previous in contents.items():
-                now = after.get(original_uid)
-                if (not now or now["sha256"] != previous["sha256"]
-                        or now["flags"] != previous["flags"]):
-                    raise RuntimeError("archive_unrelated_message_changed")
+            # Update the in-process index only AFTER exact independent-source
+            # checks. The caller's separate .read() opens a FRESH connection.
+            self._uids = set(after_uids)
+            self._index[draft_id] = (archived_uid, sha)
             return key
         finally:
             try:
@@ -104,13 +153,17 @@ class PrivateIMAPArchive:
         if (not drafts.ID_PATTERN.fullmatch(draft_id)
                 or not drafts.SHA_PATTERN.fullmatch(sha)):
             raise RuntimeError("archive_read_identity_invalid")
+        self._initialize()
         client = self.connector()
         try:
-            _archive(client)
-            _, _, entries = _matching(client, draft_id)
-            if len(entries) != 1 or entries[0][1]["sha256"] != sha:
+            self._check_session(client)
+            known = self._index.get(draft_id)
+            if known is None or known[1] != sha:
                 raise RuntimeError("archive_independent_readback_failed")
-            return drafts._raw_snapshot(client, entries[0][0], sha)
+            archived_uid = known[0]
+            saved = transport.fetch_message(client, archived_uid)
+            self._check_original(saved, draft_id, sha)
+            return drafts._raw_snapshot(client, archived_uid, sha)
         finally:
             try:
                 client.logout()
