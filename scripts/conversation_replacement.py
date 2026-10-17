@@ -535,8 +535,14 @@ def run_remaining(event):
     preliminary = run("AUDIT", _delegate(event, "AUDIT"))
     if preliminary["total"] != 411 or preliminary["already_new"] < 87:
         raise RuntimeError("conversation_first_batch_not_complete")
+    # The first 100 records were completed in the original 391-target
+    # baseline. If new site evidence separately releases a source hold in
+    # that area, re-scan batch 1 idempotently before later 100-row batches.
+    # No message is rewritten twice: the existing \Draft readback detects
+    # an already-installed exact new generation and skips it.
+    batch_numbers = (1, 2, 3, 4, 5) if preliminary["eligible"] > 391 else (2, 3, 4, 5)
     completed = []
-    for number in (2, 3, 4, 5):
+    for number in batch_numbers:
         mode = "BATCH_" + str(number)
         result = run(mode, _delegate(event, mode))
         if result["total"] != 411 or result["sent"] != 0:
