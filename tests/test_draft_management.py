@@ -282,6 +282,57 @@ class DraftManagementTests(unittest.TestCase):
         self.assertEqual(self.storage.append_count, 0)
         self.assertIn(uid, self.storage.messages)
 
+    def test_update_uses_targeted_staging_read_and_full_predelete_scan(self):
+        uid = self.storage.add(ROW)
+        updated = dict(ROW, subject="Fictieve verse voorraad")
+        original_scan = mgr.transport.scan
+        with patch.object(mgr.transport, "scan", wraps=original_scan) as scan:
+            result = self.perform(
+                "UPDATE_DRAFT", row=updated, expected=self.storage.expected(uid))
+        self.assertEqual(result["status"], "verified")
+        # Initial full scan, pre-deletion full scan, independent final scan.
+        # APPEND-stage validity/UID delta and exact MIME use targeted reads.
+        self.assertEqual(scan.call_count, 3)
+        self.assertEqual(self.storage.deleted, [uid])
+        self.assertEqual(self.storage.append_count, 1)
+
+    def test_unrelated_message_tamper_is_still_blocked_before_old_delete(self):
+        uid = self.storage.add(ROW)
+        other = dict(ROW, draft_id=OTHER, subject="Onverwante zaak")
+        other_uid = self.storage.add(other)
+        expected = self.storage.expected(uid)
+        changed = dict(ROW, subject="Ander onderwerp")
+        original_scan = mgr.transport.scan
+        count = [0]
+
+        def scan_with_external_change(client):
+            count[0] += 1
+            if count[0] == 2:
+                raw, flags = self.storage.messages[other_uid]
+                self.storage.messages[other_uid] = (raw + b"\nexternal edit", flags)
+            return original_scan(client)
+
+        with patch.object(mgr.transport, "scan", side_effect=scan_with_external_change):
+            with self.assertRaisesRegex(RuntimeError, "unrelated_draft_changed"):
+                self.perform("UPDATE_DRAFT", row=changed, expected=expected)
+        self.assertIn(uid, self.storage.messages)
+        self.assertNotIn(uid, self.storage.deleted)
+        self.assertEqual(self.storage.deleted.__len__(), 1)
+        self.assertEqual(self.storage.append_count, 1)
+
+    def test_scoped_inventory_does_not_repeat_bulk_scan_uid_search(self):
+        # The bulk scanner itself checks UID membership twice.
+        fake_inventory = {"17": object()}
+        with patch.object(mgr.imap, "select", return_value="7"), \
+             patch.object(mgr.transport, "scan", return_value=fake_inventory) as scanner, \
+             patch.object(mgr.imap, "uidset") as redundant:
+            validity, inventory = mgr._scope(object(), "Drafts")
+        self.assertEqual(validity, "7")
+        self.assertIs(inventory, fake_inventory)
+        scanner.assert_called_once()
+        redundant.assert_not_called()
+
+
 
 if __name__ == "__main__":
     unittest.main()

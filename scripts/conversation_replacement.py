@@ -345,8 +345,11 @@ def _private_rows(conn):
 
 def _digest(records):
     return hashlib.sha256(json.dumps([
-        (key, row["category"], row["current"]["subject"],
-         row["current"]["body"], row["new"]["subject"], row["new"]["body"])
+        (key, row["category"], row["number"],
+         row["current"]["email"], row["current"]["source_url"],
+         row["current"]["subject"], row["current"]["body"],
+         row["new"]["email"], row["new"]["source_url"],
+         row["new"]["subject"], row["new"]["body"])
         for key, row in records.items()
     ], ensure_ascii=True).encode()).hexdigest()
 
@@ -399,9 +402,8 @@ def _check_mailbox(connector=connect_imap, records=None):
         folder = find_drafts_folder(client)
         validity = imap.select(client, folder, readonly=True)
         scan = transport.scan(client)
-        before = set(scan)
-        if before != imap.uidset(client):
-            raise RuntimeError("conversation_mailbox_changed_during_scan")
+        # transport.scan checks the complete UID set before and after FETCH.
+        # Avoid repeating an identical round trip after that verified scan.
         return folder, validity, _classify(records, scan)
     finally:
         try:
@@ -422,8 +424,7 @@ def _verify_archived_originals(records, state, connector=connect_imap):
         _archive(client)
         archive_validity = imap.select(client, ARCHIVE, readonly=True)
         archive_entries = transport.scan(client)
-        if set(archive_entries) != imap.uidset(client):
-            raise RuntimeError("conversation_archive_changed_during_readback")
+        # transport.scan already checks the full archive UID set twice.
         by_draft = {}
         for uid, saved in archive_entries.items():
             key = saved["draft_id"]

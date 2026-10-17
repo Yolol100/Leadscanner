@@ -54,9 +54,9 @@ def _guard(check_source):
 
 def _scope(client, folder):
     validity = imap.select(client, folder, readonly=True)
+    # transport.scan already checks the complete UID set before and after
+    # every bulk read; a third identical SEARCH adds latency without safety.
     inventory = transport.scan(client)
-    if imap.uidset(client) != set(inventory):
-        raise RuntimeError("draft_inventory_changed")
     return validity, inventory
 
 
@@ -292,24 +292,32 @@ def execute(event, operation, draft_id, *, row=None, expected=None,
         new_uid = None
         removed_old = False
         try:
-            fresh_validity, stage = _scope(client, folder)
-            delta = set(stage) - set(before)
+            # The APPEND stage needs only one extra UID and that message's
+            # complete MIME. The mandatory FULL scan immediately before
+            # deletion still rechecks every unrelated UID/flag/hash.
+            fresh_validity = imap.select(client, folder, readonly=True)
+            stage_ids = imap.uidset(client)
+            delta = stage_ids - set(before)
             if (fresh_validity != validity or len(delta) != 1
-                    or len(stage) != len(before) + 1):
+                    or len(stage_ids) != len(before) + 1):
                 raise RuntimeError("draft_stage_uid_scope_changed")
             new_uid = next(iter(delta))
-            new = stage[new_uid]
+            new = imap.fetch_message(client, new_uid)
             if (new["draft_id"] != draft_id or not new["draft_flag"]
+                    or b"\\DELETED" in new["flags"]
                     or not _matches(build_message(prepared), new["message"])):
                 raise RuntimeError("draft_stage_readback_mismatch")
-            _assert_untouched(before, stage)
             _guard(check_source)
             if imap.select(client, folder, readonly=False) != validity:
                 raise RuntimeError("uidvalidity_changed_before_delete")
             current = transport.scan(client)
-            if set(current) != set(stage):
+            if set(current) != stage_ids:
                 raise RuntimeError("mailbox_changed_before_delete")
-            _assert_untouched(stage, current)
+            _assert_untouched(before, current)
+            # Check the staged MIME and flags again AFTER the full scan.
+            if (current[new_uid]["sha256"] != new["sha256"]
+                    or current[new_uid]["flags"] != new["flags"]):
+                raise RuntimeError("draft_stage_readback_mismatch")
             _expect_target(current[uid], uid=uid,
                            sha=expected["sha256"])
             if not current[uid]["draft_flag"] or not current[new_uid]["draft_flag"]:
