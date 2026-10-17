@@ -12,6 +12,15 @@ class WorkflowSpeedContract(unittest.TestCase):
         self.assertIn("cancel-in-progress: false", workflow)
         self.assertIn("queue: max", workflow)
 
+    def test_replacement_job_uses_only_mailbox_dependencies(self):
+        workflow = (ROOT / ".github/workflows/sync450-openings.yml").read_text()
+        job = workflow.split("  conversation-replacement:", 1)[1]
+        self.assertIn("cache-dependency-path: requirements-draft.txt", job)
+        self.assertIn("pip install -r requirements-draft.txt", job)
+        self.assertNotIn("pip install -r requirements.txt", job)
+        self.assertIn("group: leadscanner-myhost-draft", job)
+        self.assertIn("cancel-in-progress: false", job)
+
     def test_draft_dependencies_exclude_the_discovery_engine(self):
         requirements = (ROOT / "requirements-draft.txt").read_text().lower()
         self.assertIn("google-auth", requirements)

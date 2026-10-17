@@ -422,6 +422,26 @@ class ConversationRegressionTests(unittest.TestCase):
         for call in run.call_args_list:
             self.assertEqual(call.args[1]["comment"]["body"], mod.PREFIX + call.args[0])
 
+    def test_verified_batch_milestones_do_not_require_public_recipient_data(self):
+        # Only anonymized counts may escape the otherwise redirected provider IO.
+        initial = {"total": 411, "eligible": 391, "already_new": 92,
+                   "archived": 92, "sent": 0}
+        batch = {"total": 411, "eligible": 391, "installed": 90,
+                 "already_new": 10, "archived": 391, "sent": 0}
+        final = {"total": 411, "eligible": 391, "already_new": 391,
+                 "archived": 391, "blocked": 20, "sent": 0}
+        milestones = []
+        with patch.object(mod, "run", side_effect=[
+                initial, batch, batch, batch, batch, final]):
+            completed = mod.run_remaining(
+                event("BATCH_2_TO_5"),
+                on_batch=lambda number, state: milestones.append(
+                    (number, state["installed"], state["archived"])))
+        self.assertEqual([number for number, _, _ in milestones],
+                         [2, 3, 4, 5])
+        self.assertEqual(completed["batches"], 4)
+        self.assertEqual(completed["sent"], 0)
+
     def test_released_source_holds_in_first_hundred_are_idempotent(self):
         pre = {"total": 411, "eligible": 392, "already_new": 87,
                "archived": 87, "blocked": 19, "sent": 0}
