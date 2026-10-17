@@ -138,10 +138,22 @@ class ScopedSheetsSnapshot:
                     raise ValueError("batch shape")
                 for requested, entry in zip(ranges, actual):
                     actual_range = entry["range"]
-                    expected_tab = requested.split("!", 1)[0].strip("'")
-                    actual_tab = actual_range.split("!", 1)[0].strip("'")
+                    expected_tab, expected_a1 = requested.split("!", 1)
+                    actual_tab, actual_a1 = actual_range.split("!", 1)
+                    expected_tab = expected_tab.strip("'")
+                    actual_tab = actual_tab.strip("'")
+                    # Whole-column reads are expanded to the sheet row limit
+                    # by the Sheets API; fixed rectangles must match exactly.
+                    if re.fullmatch(r"[A-Z]+:[A-Z]+", expected_a1):
+                        begin, end = expected_a1.split(":", 1)
+                        valid_a1 = bool(re.fullmatch(
+                            re.escape(begin) + r"1:" + re.escape(end) + r"[1-9][0-9]*",
+                            actual_a1,
+                        ))
+                    else:
+                        valid_a1 = actual_a1 == expected_a1
                     values = entry.get("values", [])
-                    if (expected_tab != actual_tab
+                    if (expected_tab != actual_tab or not valid_a1
                             or not isinstance(values, list)
                             or any(not isinstance(row, list) for row in values)
                             or (spreadsheet_id, requested) in self._values):
