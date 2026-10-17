@@ -286,7 +286,7 @@ class ConversationRegressionTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             mod.authorize(case, "PILOT")
 
-    def test_source_holds_are_released_only_inside_verified_407_pool(self):
+    def test_source_holds_and_historical_holds_need_separate_review(self):
         baseline = dict(mod.EXPECTED_COUNTS)
         mod.validate_source_population(baseline, 450)
         for promotions in (1, 8, 15, 16):
@@ -294,11 +294,17 @@ class ConversationRegressionTests(unittest.TestCase):
                            target=391 + promotions,
                            source_hold=16 - promotions)
             mod.validate_source_population(updated, 450)
+        for approved in (1, 2, 3, 4):
+            reviewed = dict(baseline,
+                            target=407 + approved, source_hold=0,
+                            held=4 - approved)
+            mod.validate_source_population(reviewed, 450)
         forbidden = [
             dict(baseline, target=390, source_hold=17),
             dict(baseline, target=392, source_hold=16),
             dict(baseline, target=408, source_hold=-1),
-            dict(baseline, held=3, target=392),
+            dict(baseline, held=3, target=391),
+            dict(baseline, held=5, target=390),
             dict(baseline, closed=0, target=392),
             dict(baseline, excluded=37, target=392),
         ]
@@ -308,6 +314,33 @@ class ConversationRegressionTests(unittest.TestCase):
                     mod.validate_source_population(counts, 450)
         with self.assertRaisesRegex(RuntimeError, "population_changed"):
             mod.validate_source_population(baseline, 449)
+
+    def test_historical_release_requires_private_review_and_verified_email(self):
+        proposal = [""] * 13
+        evidence = [""] * 14
+        proposal[9] = "VOORLOPIG REDACTIONEEL VOORSTEL"
+        proposal[10] = mod.HOLD_RELEASE_SOURCE
+        proposal[11] = mod.HOLD_RELEASE_LEGAL
+        evidence[12] = "verified_activity_only"
+        self.assertTrue(mod._historical_hold_approved(
+            "held", proposal, evidence))
+        evidence[12] = "verified_with_detail"
+        self.assertTrue(mod._historical_hold_approved(
+            "held", proposal, evidence))
+        for change in (
+            lambda p, e: p.__setitem__(9, "OVERGESLAGEN - BRONBLOKKADE"),
+            lambda p, e: p.__setitem__(10, "HOLD_BRONCHECK"),
+            lambda p, e: p.__setitem__(11, "VERZENDGEREED"),
+            lambda p, e: e.__setitem__(12, "needs_manual_check"),
+        ):
+            p, e = list(proposal), list(evidence)
+            change(p, e)
+            self.assertFalse(mod._historical_hold_approved(
+                "held", p, e))
+        self.assertFalse(mod._historical_hold_approved(
+            "closed", proposal, evidence))
+        self.assertFalse(mod._historical_hold_approved(
+            "excluded", proposal, evidence))
 
     def test_final_chain_uses_proven_eligible_count_not_frozen_391(self):
         pre = {"total": 411, "eligible": 400, "already_new": 87,
