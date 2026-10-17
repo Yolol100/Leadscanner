@@ -154,8 +154,11 @@ def execute(mode: str) -> None:
                 "--source", "Approved", "--batch", "1", "--force"]
     elif mode in REVIEW_MODES:
         batch = mode.rsplit("_", 1)[1]
+        # Retry unverified evidence only; keep fresh independently verified
+        # records unchanged instead of risking 100 unrelated website failures.
+        # Expired verified cache entries are still checked by run() before reuse.
         args = ["scripts/fast_website_evidence.py",
-                "--source", "Review450", "--batch", batch, "--force"]
+                "--source", "Review450", "--batch", batch]
     elif mode.startswith("HINTS_"):
         limit = mode.removeprefix("HINTS_")
         args = ["scripts/new_leads.py", "--region", "Nederland",

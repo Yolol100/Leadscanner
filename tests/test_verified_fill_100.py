@@ -40,6 +40,42 @@ class FakeResponse:
 
 
 class WebsiteProofTests(unittest.TestCase):
+    def test_optional_failure_diagnostic_preserves_robots_and_identity_gates(self):
+        site = {"name_hint": "Schildersbedrijf Amstel",
+                "website_hint": "https://voorbeeld.nl/",
+                "category_hint": "painter"}
+        reasons = []
+        client = Mock()
+        client.get.return_value = FakeResponse(status=403)
+        with patch("verify_official_lead.is_public_http_url", return_value=True):
+            self.assertIsNone(verify_official_site(
+                site, session=client, expected_email="info@voorbeeld.nl",
+                diagnostic=reasons.append))
+        self.assertEqual(reasons, ["robots_unavailable"])
+        self.assertEqual(client.get.call_count, 1)
+
+        reasons.clear()
+        client.get.side_effect = lambda url, **kw: (
+            FakeResponse(status=404) if url.endswith("robots.txt")
+            else FakeResponse("<h1>Andere Zaak</h1>"))
+        with patch("verify_official_lead.is_public_http_url", return_value=True):
+            self.assertIsNone(verify_official_site(
+                site, session=client, expected_email="info@voorbeeld.nl",
+                diagnostic=reasons.append))
+        self.assertEqual(reasons, ["homepage_identity_unverified"])
+
+        reasons.clear()
+        client.get.side_effect = lambda url, **kw: (
+            FakeResponse(status=404) if url.endswith("robots.txt")
+            else FakeResponse(
+                "<h1>Schildersbedrijf Amstel</h1>"
+                "<p>Amstel levert schilderwerk.</p>"))
+        with patch("verify_official_lead.is_public_http_url", return_value=True):
+            self.assertIsNone(verify_official_site(
+                site, session=client, expected_email="info@voorbeeld.nl",
+                diagnostic=reasons.append))
+        self.assertEqual(reasons, ["selected_address_not_published"])
+
     def test_belongs_to_official_site_and_email_is_published(self):
         site = hint(1)
         site["name_hint"] = "Schildersbedrijf Amstel"

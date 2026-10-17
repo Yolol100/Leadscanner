@@ -323,12 +323,18 @@ def inspect(record):
         else:
             hint = {"name_hint": record["company"], "website_hint": record["website"],
                     "category_hint": category, "country_hint": "NL"}
+            reasons = []
             with requests.Session() as session:
                 official = verify_official_site(
                     hint, session=session, expected_email=record["email"],
-                    collect_evidence=True)
+                    collect_evidence=True, diagnostic=reasons.append)
             result = inspect_verified(record, official,
                      official.get("_captured_pages", []) if official else [])
+            if (official is None and reasons and
+                    result["reason"] == "official_company_or_email_not_confirmed"):
+                # Only a fixed, non-identifying failure class reaches the
+                # PRIVATE evidence sheet, never public actions logs.
+                result["reason"] = "official_" + reasons[-1]
     except Exception:
         result = _initial_result(record)
         result["reason"] = "bounded_official_site_request_failed"
