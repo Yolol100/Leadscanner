@@ -61,6 +61,110 @@ class FakeArchiveClient:
         self.closed = True
 
 
+
+class SheetsBatchSnapshotTests(unittest.TestCase):
+    """Four fresh live Sheets reads per gate; no persistent source cache."""
+
+    @staticmethod
+    def backend(*, truncate=False, wrong_range=False, status=200):
+        from urllib.parse import parse_qs, urlsplit
+
+        def get(url, **kwargs):
+            parsed = urlsplit(url)
+            assert parsed.scheme == "https"
+            assert parsed.netloc == "sheets.googleapis.com"
+            assert parsed.path.endswith("/values:batchGet")
+            assert kwargs.get("timeout") == 30
+            spreadsheet_id = parsed.path.split("/")[3]
+            ranges = parse_qs(parsed.query)["ranges"]
+            reply = []
+            for index, requested in enumerate(ranges):
+                tab, a1 = requested.split("!", 1)
+                if a1 == "A:J":
+                    a1 = "A1:J10000"
+                if wrong_range and index == 0:
+                    a1 = "B1:J10000"
+                reply.append({
+                    "range": tab + "!" + a1,
+                    "values": [[requested]],
+                })
+            if truncate:
+                reply.pop()
+            return Mock(status_code=status, json=lambda: {
+                "spreadsheetId": spreadsheet_id, "valueRanges": reply,
+            })
+        result = Mock()
+        result.get.side_effect = get
+        return result
+
+    def test_all_sources_still_read_fresh_in_four_batches(self):
+        from urllib.parse import quote
+        import registry_readonly as registry
+        backend = self.backend()
+        first = mod.ScopedSheetsSnapshot(backend)
+        self.assertEqual(backend.get.call_count, 4)
+        def check(reader, sid, a1):
+            url = ("https://sheets.googleapis.com/v4/spreadsheets/"
+                   + sid + "/values/" + quote(a1, safe=""))
+            assert reader.get(url, timeout=20).status_code == 200
+            self.assertEqual(reader.get(url).json()["values"], [[a1]])
+        for sid, a1 in [
+            (mod.history.source.SID, "QA450Actueel!A2:P451"),
+            (mod.history.source.SID, "'Gespreksstijl Fase5 20261016'!A1:M51"),
+            (mod.history.source.SID, "WebsiteEvidence!A1:N1000"),
+            (mod.history.source.SID, "LeadHistory!A:J"),
+            (registry.REGISTRY_ID, "DedupeRegistry!A:J"),
+            (registry.REGISTRY_ID, "HistoricalHmacV2!A:J"),
+            (registry.DRAFT_QUEUE_ID, "DraftQueue!A:J"),
+        ]:
+            check(first, sid, a1)
+        key = ("https://sheets.googleapis.com/v4/spreadsheets/"
+               + registry.REGISTRY_ID + "/values/"
+               + quote("HistoricalHmacV2!A:J", safe=""))
+        first.get(key).json()["values"][0][0] = "accidental local mutation"
+        self.assertEqual(first.get(key).json()["values"],
+                         [["HistoricalHmacV2!A:J"]])
+        second = mod.ScopedSheetsSnapshot(backend)
+        self.assertEqual(backend.get.call_count, 8)
+        self.assertEqual(second.get(key).json()["values"],
+                         [["HistoricalHmacV2!A:J"]])
+
+    def test_batch_missing_ranges_or_wrong_a1_fails_closed(self):
+        for options in ({"truncate": True}, {"wrong_range": True}):
+            with self.assertRaisesRegex(RuntimeError, "conversation_batch_source_invalid"):
+                mod.ScopedSheetsSnapshot(self.backend(**options))
+
+    def test_batch_http_failure_fails_closed(self):
+        with self.assertRaisesRegex(RuntimeError, "conversation_batch_source_read_failed"):
+            mod.ScopedSheetsSnapshot(self.backend(status=403))
+
+    def test_unknown_or_cross_origin_single_get_is_not_delegated(self):
+        from urllib.parse import quote
+        backend = self.backend()
+        session = mod.ScopedSheetsSnapshot(backend)
+        for url in [
+            "https://example.com/v4/spreadsheets/abc/values/LeadHistory%21A%3AJ",
+            "http://sheets.googleapis.com/v4/spreadsheets/abc/values/LeadHistory%21A%3AJ",
+            "https://sheets.googleapis.com/v4/spreadsheets/abc/values/LeadHistory%21A%3AJ",
+            "https://sheets.googleapis.com/v4/spreadsheets/"
+                + mod.history.source.SID + "/values/"
+                + quote("UnknownTab!A1:Z999", safe=""),
+        ]:
+            with self.assertRaisesRegex(RuntimeError, "conversation_unbatched_source_request"):
+                session.get(url)
+        self.assertEqual(backend.get.call_count, 4)
+
+    def test_private_source_gate_still_calls_full_original_validators(self):
+        source = object()
+        wrapped = object()
+        with patch.object(mod, "ScopedSheetsSnapshot", return_value=wrapped) as b, \
+             patch.object(mod.history, "load_scope", side_effect=RuntimeError("sentinel")) as load:
+            with self.assertRaisesRegex(RuntimeError, "sentinel"):
+                mod._private_rows(source)
+            b.assert_called_once_with(source)
+            load.assert_called_once_with(wrapped)
+
+
 class ConversationRegressionTests(unittest.TestCase):
     def test_read_throttle_and_429_retry_preserve_full_sheet_access(self):
         clock = [0.0]
