@@ -287,7 +287,7 @@ class FastOfficialEvidenceTests(unittest.TestCase):
             [(official["source_url"],
               "Hovenier Amstel doet tuinonderhoud info@anderbedrijf.nl")],
             [(official["source_url"],
-              "Hovenier Amstel 5211 AB doet horeca info@anderbedrijf.nl")],
+              "Amstel 5211 AB is een horecazaak info@anderbedrijf.nl")],
         ]
         for pages in cases:
             with self.subTest(pages=pages):
