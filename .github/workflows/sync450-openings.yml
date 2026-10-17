@@ -98,8 +98,8 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-          cache-dependency-path: requirements.txt
-      - run: python3 -m pip install -r requirements.txt -r requirements-draft.txt
+          cache-dependency-path: requirements-draft.txt
+      - run: python3 -m pip install -r requirements-draft.txt
       - name: Offline archive, authorization and draft safety regressions
         env:
           PYTHONPATH: scripts:tests
