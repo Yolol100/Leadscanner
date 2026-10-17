@@ -47,6 +47,9 @@ jobs:
     concurrency:
       group: leads-chat-command
       cancel-in-progress: false
+      # Retain every distinct owner-authorized V2 request. Without queue:max,
+      # a third waiting comment supersedes the second pending request.
+      queue: max
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
