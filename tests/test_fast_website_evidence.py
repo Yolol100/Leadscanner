@@ -81,7 +81,10 @@ class FastOfficialEvidenceTests(unittest.TestCase):
             outcome = q.inspect(entry)
         self.assertEqual(outcome["status"], "needs_manual_check")
         self.assertEqual(outcome["reason"], "official_robots_unavailable")
-        self.assertNotIn(entry["email"], json.dumps(outcome))
+        # Identity fields intentionally remain in the PRIVATE record. The
+        # added diagnostic must never copy them into a public reason code.
+        self.assertNotIn(entry["email"], outcome["reason"])
+        self.assertNotIn(entry["company"], outcome["reason"])
 
     def test_unclassified_verifier_errors_still_reject_without_leaking(self):
         with patch.object(q, "verify_official_site",
