@@ -40,6 +40,42 @@ class FakeResponse:
 
 
 class WebsiteProofTests(unittest.TestCase):
+    def test_large_but_bounded_official_html_still_requires_exact_publication(self):
+        # Some ordinary Dutch business pages exceed the previous 350 kB cap.
+        # They still need name, actual trade, postcode and EXACT public email.
+        site = {"name_hint": "Schildersbedrijf Amstel",
+                "website_hint": "https://voorbeeld.nl/",
+                "category_hint": "painter"}
+        home = ('<h1>Schildersbedrijf Amstel</h1>'
+                '<p>Amstel verzorgt schilderwerk, 5211 AB.</p>'
+                '<a href="mailto:info@voorbeeld.nl">info@voorbeeld.nl</a>'
+                '<p>' + 'x' * 355_000 + '</p>')
+        client = Mock()
+        client.get.side_effect = lambda url, **kw: (
+            FakeResponse(status=404) if url.endswith("/robots.txt")
+            else FakeResponse(home))
+        with patch("verify_official_lead.is_public_http_url", return_value=True):
+            evidence = verify_official_site(
+                site, session=client, expected_email="info@voorbeeld.nl",
+                collect_evidence=True)
+        self.assertIsNotNone(evidence)
+        self.assertEqual(evidence["email"], "info@voorbeeld.nl")
+        self.assertEqual(client.get.call_count, 2)
+
+    def test_bounded_html_cap_rejects_oversized_response(self):
+        import verify_official_lead as v
+        self.assertLessEqual(v.MAX_BYTES, 1_000_000)
+        self.assertGreater(v.MAX_BYTES, 350_000)
+        client = Mock()
+        client.get.return_value = FakeResponse("z" * (v.MAX_BYTES + 1))
+        reasons = []
+        with patch("verify_official_lead.is_public_http_url", return_value=True):
+            result = v._get("https://voorbeeld.nl/", "voorbeeld.nl",
+                            client, diagnostic=reasons.append)
+        self.assertIsNone(result)
+        self.assertEqual(reasons, ["size_limit"])
+        client.get.assert_called_once()
+
     def test_bounded_http_fetch_reports_anonymous_failure_without_unsafe_retry(self):
         import requests
         import verify_official_lead as v
