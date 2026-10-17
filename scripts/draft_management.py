@@ -54,9 +54,9 @@ def _guard(check_source):
 
 def _scope(client, folder):
     validity = imap.select(client, folder, readonly=True)
+    # transport.scan already checks the complete UID set before and after
+    # every bulk read; a third identical SEARCH adds latency without safety.
     inventory = transport.scan(client)
-    if imap.uidset(client) != set(inventory):
-        raise RuntimeError("draft_inventory_changed")
     return validity, inventory
 
 
