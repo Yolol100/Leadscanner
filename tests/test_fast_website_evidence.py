@@ -69,6 +69,28 @@ class OwnerEvidenceCommandContractTests(unittest.TestCase):
         self.assertIn("LEADS_CACHE_SMOKE:", workflow)
 
 class FastOfficialEvidenceTests(unittest.TestCase):
+    def test_private_failure_class_is_anonymous_and_does_not_approve(self):
+        entry = record()
+
+        def denied(hint, **kwargs):
+            self.assertEqual(hint["name_hint"], entry["company"])
+            kwargs["diagnostic"]("robots_unavailable")
+            return None
+
+        with patch.object(q, "verify_official_site", side_effect=denied):
+            outcome = q.inspect(entry)
+        self.assertEqual(outcome["status"], "needs_manual_check")
+        self.assertEqual(outcome["reason"], "official_robots_unavailable")
+        self.assertNotIn(entry["email"], json.dumps(outcome))
+
+    def test_unclassified_verifier_errors_still_reject_without_leaking(self):
+        with patch.object(q, "verify_official_site",
+                          side_effect=ValueError("private contact detail")):
+            outcome = q.inspect(record())
+        self.assertEqual(outcome["status"], "needs_manual_check")
+        self.assertEqual(outcome["reason"], "bounded_official_site_request_failed")
+        self.assertNotIn("private contact detail", json.dumps(outcome))
+
     def test_only_exact_email_shortcut_skips_contact_page(self):
         hint = {"name_hint": "Schildersbedrijf Amstel",
                 "website_hint": "https://voorbeeld.nl/",
