@@ -485,6 +485,36 @@ class ConversationRegressionTests(unittest.TestCase):
         self.assertGreaterEqual(len(clients), 3)
         self.assertTrue(all(client.closed for client in clients))
 
+    def test_mailbox_check_trusts_bulk_scan_uid_consistency_gate(self):
+        client = Mock()
+        inventory = {"10": object()}
+        with patch.object(mod, "find_drafts_folder", return_value="Drafts"), \
+             patch.object(mod.imap, "select", return_value="7"), \
+             patch.object(mod.transport, "scan", return_value=inventory) as scan, \
+             patch.object(mod.imap, "uidset") as redundant, \
+             patch.object(mod, "_classify", return_value={"sentinel": 1}) as classify:
+            folder, validity, result = mod._check_mailbox(
+                connector=lambda: client, records={})
+        self.assertEqual((folder, validity), ("Drafts", "7"))
+        self.assertEqual(result, {"sentinel": 1})
+        scan.assert_called_once_with(client)
+        classify.assert_called_once_with({}, inventory)
+        redundant.assert_not_called()
+        client.logout.assert_called_once()
+
+    def test_private_source_fingerprint_detects_recipient_change(self):
+        from copy import deepcopy
+        records = {DID: {"category": "target", "number": 1,
+                         "current": ROW, "new": NEW}}
+        original = mod._digest(records)
+        changed = deepcopy(records)
+        changed[DID]["new"]["email"] = "info@nieuwe-zaak.example"
+        self.assertNotEqual(mod._digest(changed), original)
+        changed = deepcopy(records)
+        changed[DID]["new"]["source_url"] = "https://nieuwe-zaak.example/"
+        self.assertNotEqual(mod._digest(changed), original)
+
+
 
 if __name__ == "__main__":
     unittest.main()
