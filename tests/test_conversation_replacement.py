@@ -317,14 +317,14 @@ class ConversationRegressionTests(unittest.TestCase):
         done = {"total": 411, "eligible": 400, "already_new": 400,
                 "archived": 400, "blocked": 11, "sent": 0}
         with patch.object(mod, "run",
-                          side_effect=[pre, middle, middle, middle, middle, done]):
+                          side_effect=[pre, middle, middle, middle, middle, middle, done]):
             outcome = mod.run_remaining(event("BATCH_2_TO_5"))
         self.assertEqual(outcome["already_new"], 400)
         self.assertEqual(outcome["archived"], 400)
         self.assertEqual(outcome["blocked"], 11)
         mismatched = dict(done, archived=399)
         with patch.object(mod, "run",
-                          side_effect=[pre, middle, middle, middle, middle, mismatched]):
+                          side_effect=[pre, middle, middle, middle, middle, middle, mismatched]):
             with self.assertRaisesRegex(RuntimeError, "full_scope_not_verified"):
                 mod.run_remaining(event("BATCH_2_TO_5"))
 
@@ -449,7 +449,7 @@ class ConversationRegressionTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "first_batch_not_complete"):
                 mod.run_remaining(event)
             self.assertEqual(run.call_count, 1)
-        pre = {"total": 411, "already_new": 87, "sent": 0}
+        pre = {"total": 411, "eligible": 391, "already_new": 87, "sent": 0}
         with patch.object(mod, "run", side_effect=[pre, pre, RuntimeError("synthetic")]) as run:
             with self.assertRaisesRegex(RuntimeError, "synthetic"):
                 mod.run_remaining(event)
