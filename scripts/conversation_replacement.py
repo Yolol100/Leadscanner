@@ -529,7 +529,7 @@ def _delegate(event, mode):
     return clone
 
 
-def run_remaining(event):
+def run_remaining(event, *, on_batch=None):
     authorize(event, "BATCH_2_TO_5")
     # The previous one-at-a-time pilot + first 100 scope must be independently
     # verified before executing any later batch.
@@ -549,6 +549,10 @@ def run_remaining(event):
         if result["total"] != 411 or result["sent"] != 0:
             raise RuntimeError("conversation_batch_integrity_error")
         completed.append(number)
+        # Only a fully read-back and archived batch is reported. Never log
+        # IDs, recipients, source URLs, subjects or original MIME content.
+        if on_batch is not None:
+            on_batch(number, result)
     final = run("AUDIT", _delegate(event, "AUDIT"))
     if (final["total"] != 411
             or not EXPECTED_COUNTS["target"] <= final["eligible"] <= SOURCE_REVIEW_POOL
@@ -853,8 +857,20 @@ def main():
             raise RuntimeError("conversation_mode_invalid")
         with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as f:
             event = json.load(f)
+        # Preserve privacy redaction for all library/provider output, while
+        # showing an anonymous milestone AFTER each verified 100-row batch.
+        public_output = sys.stdout
+
+        def report_batch(number, outcome):
+            print("CONVERSATION411=batch_verified batch={} installed={} "
+                  "already_new={} archived={} sent=0".format(
+                      int(number), int(outcome["installed"]),
+                      int(outcome["already_new"]), int(outcome["archived"])),
+                  file=public_output, flush=True)
+
         with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
-            result = run_remaining(event) if mode == "BATCH_2_TO_5" else run(mode, event)
+            result = (run_remaining(event, on_batch=report_batch)
+                      if mode == "BATCH_2_TO_5" else run(mode, event))
         print("CONVERSATION411=green " +
               " ".join(f"{k}={v}" for k, v in result.items()))
         return 0
