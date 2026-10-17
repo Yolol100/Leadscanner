@@ -145,7 +145,7 @@ class ChatCommandTests(unittest.TestCase):
                 args = run.call_args.args[0]
                 self.assertEqual(args[1:], [
                     "scripts/fast_website_evidence.py",
-                    "--source", "Review450", "--batch", str(index), "--force",
+                    "--source", "Review450", "--batch", str(index),
                 ])
                 self.assertTrue(run.call_args.kwargs["check"])
                 self.assertNotIn("--install", args)
