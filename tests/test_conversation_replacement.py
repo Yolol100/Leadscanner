@@ -129,6 +129,52 @@ class SheetsBatchSnapshotTests(unittest.TestCase):
         self.assertEqual(second.get(key).json()["values"],
                          [["HistoricalHmacV2!A:J"]])
 
+    def test_real_sheets_grid_clamps_whole_column_ranges(self):
+        """Accept A:J -> A:H when the sheet physically has eight columns."""
+        backend = self.backend()
+        original = backend.get.side_effect
+        clamped_columns = {
+            "LeadHistory": "H",
+            "DedupeRegistry": "H",
+            "HistoricalHmacV2": "F",
+            "Keys": "C",
+            "DraftQueue": "G",
+        }
+
+        def clipped(url, **kwargs):
+            response = original(url, **kwargs)
+            payload = response.json()
+            for item in payload["valueRanges"]:
+                tab, bounds = item["range"].split("!", 1)
+                if tab in clamped_columns and bounds == "A1:J10000":
+                    item["range"] = tab + "!A1:" + clamped_columns[tab] + "10000"
+            return Mock(status_code=200, json=lambda: payload)
+
+        backend.get.side_effect = clipped
+        reader = mod.ScopedSheetsSnapshot(backend)
+        self.assertEqual(backend.get.call_count, 4)
+        from urllib.parse import quote
+        source = "LeadHistory!A:J"
+        url = ("https://sheets.googleapis.com/v4/spreadsheets/"
+               + mod.history.source.SID + "/values/" + quote(source, safe=""))
+        self.assertEqual(reader.get(url).json()["values"], [[source]])
+
+    def test_clamp_must_not_expand_or_shift_grid_columns(self):
+        backend = self.backend()
+        original = backend.get.side_effect
+
+        def out_of_scope(url, **kwargs):
+            response = original(url, **kwargs)
+            payload = response.json()
+            for item in payload["valueRanges"]:
+                if item["range"].startswith("LeadHistory!"):
+                    item["range"] = "LeadHistory!B1:K10000"
+            return Mock(status_code=200, json=lambda: payload)
+
+        backend.get.side_effect = out_of_scope
+        with self.assertRaisesRegex(RuntimeError, "conversation_batch_source_invalid"):
+            mod.ScopedSheetsSnapshot(backend)
+
     def test_batch_missing_ranges_or_wrong_a1_fails_closed(self):
         for options in ({"truncate": True}, {"wrong_range": True}):
             with self.assertRaisesRegex(RuntimeError, "conversation_batch_source_invalid"):
