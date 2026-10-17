@@ -28,6 +28,27 @@ def verified(**changes):
     return result
 
 
+class OwnerEvidenceCommandContractTests(unittest.TestCase):
+    def test_exact_authorization_and_shared_imap_source_lock(self):
+        from pathlib import Path
+        workflow = (Path(__file__).resolve().parents[1]
+                    / ".github/workflows/fast-website-evidence.yml").read_text()
+        self.assertIn("issue_comment:", workflow)
+        self.assertIn("github.event.issue.number == 1659", workflow)
+        self.assertIn("github.actor == 'Yolol100'", workflow)
+        self.assertIn("github.event.comment.user.login == 'Yolol100'", workflow)
+        self.assertIn("!github.event.issue.pull_request", workflow)
+        self.assertIn("group: leadscanner-myhost-draft", workflow)
+        self.assertIn("queue: max", workflow)
+        for i in range(1, 6):
+            self.assertIn("LEADS_EVIDENCE_V1:REVIEW450_BATCH_" + str(i),
+                          workflow)
+        self.assertIn("SOURCE=Review450", workflow)
+        self.assertIn('python3 scripts/fast_website_evidence.py --source "$SOURCE" --batch "$BATCH"', workflow)
+        self.assertNotIn("cron:", workflow)
+        self.assertNotIn("smtplib", workflow)
+
+
 class FastOfficialEvidenceTests(unittest.TestCase):
     def test_only_exact_email_shortcut_skips_contact_page(self):
         hint = {"name_hint": "Schildersbedrijf Amstel",
