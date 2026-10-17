@@ -68,6 +68,7 @@ jobs:
         contains(fromJSON('["LEADS_EVIDENCE_V1:REVIEW450_BATCH_1","LEADS_EVIDENCE_V1:REVIEW450_BATCH_2","LEADS_EVIDENCE_V1:REVIEW450_BATCH_3","LEADS_EVIDENCE_V1:REVIEW450_BATCH_4","LEADS_EVIDENCE_V1:REVIEW450_BATCH_5"]'),
                  github.event.comment.body)) ||
        github.event_name == 'workflow_dispatch' ||
+       github.event_name == 'schedule' ||
        (github.event_name == 'push' &&
         (startsWith(github.event.head_commit.message, 'LEADS_EVIDENCE_ONCE:') ||
          startsWith(github.event.head_commit.message, 'LEADS_CACHE_SMOKE:'))))
