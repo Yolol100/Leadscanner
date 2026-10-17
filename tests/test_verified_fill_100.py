@@ -40,6 +40,40 @@ class FakeResponse:
 
 
 class WebsiteProofTests(unittest.TestCase):
+    def test_bounded_http_fetch_reports_anonymous_failure_without_unsafe_retry(self):
+        import requests
+        import verify_official_lead as v
+        url = "https://voorbeeld.nl/"
+        client = Mock()
+        reasons = []
+        for status, expected in (
+            (403, "http_access_denied"),
+            (404, "http_not_found"),
+            (503, "http_server_error"),
+            (429, "http_rate_limited"),
+        ):
+            with self.subTest(status=status):
+                client.reset_mock()
+                reasons.clear()
+                client.get.return_value = FakeResponse(status=status)
+                with patch("verify_official_lead.is_public_http_url",
+                           return_value=True):
+                    self.assertIsNone(v._get(
+                        url, "voorbeeld.nl", client,
+                        diagnostic=reasons.append))
+                self.assertEqual(reasons, [expected])
+                client.get.assert_called_once()  # no bypass or repeats
+
+        client.reset_mock()
+        reasons.clear()
+        client.get.side_effect = requests.Timeout("do not leak secret")
+        with patch("verify_official_lead.is_public_http_url", return_value=True):
+            self.assertIsNone(v._get(
+                url, "voorbeeld.nl", client,
+                diagnostic=reasons.append))
+        self.assertEqual(reasons, ["request_timeout"])
+        self.assertNotIn("secret", reasons[0])
+
     def test_optional_failure_diagnostic_preserves_robots_and_identity_gates(self):
         site = {"name_hint": "Schildersbedrijf Amstel",
                 "website_hint": "https://voorbeeld.nl/",

@@ -154,11 +154,22 @@ def _safe_same_site(url, host):
     return _same_site_shape(url, host) and is_public_http_url(url)
 
 
-def _get(url, host, session):
+def _get(url, host, session, *, diagnostic=None):
+    """One bounded official HTML retrieval with private-only failure categories.
+
+    Preserve DNS/SSRF, same-site redirects, response size, and exact MIME
+    rules. The optional callback receives only fixed error codes, NEVER URLs,
+    site content, exception messages, headers, or contact identities.
+    """
+    def reject(code):
+        if diagnostic is not None:
+            diagnostic(code)
+        return None
+
     # Redirects are manual: never follow links to another domain or private hosts.
     for _ in range(3):
         if not _safe_same_site(url, host):
-            return None
+            return reject("url_not_public")
         try:
             response = session.get(url, timeout=TIMEOUT, headers={"User-Agent": AGENT},
                                    allow_redirects=False, stream=True)
@@ -166,26 +177,35 @@ def _get(url, host, session):
                 if response.status_code in {301, 302, 303, 307, 308}:
                     target = urljoin(url, response.headers.get("Location", ""))
                     if not _safe_same_site(target, host):
-                        return None
+                        return reject("redirect_rejected")
                     url = target
                     continue
                 if response.status_code != 200:
-                    return None
+                    if response.status_code in {401, 403}:
+                        return reject("http_access_denied")
+                    if response.status_code == 429:
+                        return reject("http_rate_limited")
+                    if response.status_code in {500, 502, 503, 504}:
+                        return reject("http_server_error")
+                    if response.status_code == 404:
+                        return reject("http_not_found")
+                    return reject("http_unavailable")
                 if "text/html" not in response.headers.get("Content-Type", "").lower():
-                    return None
+                    return reject("non_html")
                 chunks, size = [], 0
                 for chunk in response.iter_content(chunk_size=16384):
                     size += len(chunk)
                     if size > MAX_BYTES:
-                        return None
+                        return reject("size_limit")
                     chunks.append(chunk)
                 return b"".join(chunks).decode("utf-8", errors="replace")
             finally:
                 response.close()
+        except requests.Timeout:
+            return reject("request_timeout")
         except requests.RequestException:
-            return None
-    return None
-
+            return reject("network_unavailable")
+    return reject("redirect_limit")
 
 def _robots_policy(base_url, session):
     # Read once per site. Deny if unavailable, malformed or redirected unsafely.
@@ -263,9 +283,12 @@ def verify_official_site(row, *, session=requests, expected_email=None,
         return reject("robots_unavailable")
     if policy is not True and not policy.can_fetch(AGENT, url):
         return reject("robots_disallowed")
-    html = _get(url, host, session)
+    homepage_causes = []
+    html = _get(url, host, session, diagnostic=homepage_causes.append)
     if html is None:
-        return reject("homepage_unavailable")
+        # The extra subtype is a fixed token from _get(), not provider text.
+        return reject("homepage_" + (homepage_causes[-1]
+                                     if homepage_causes else "unavailable"))
     page = PublicHTML()
     page.feed(html)
     evidence_pages = [(url, " ".join(page.texts))] if collect_evidence else []
