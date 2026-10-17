@@ -245,7 +245,24 @@ def review_body(value):
         raise RuntimeError("conversation_review_body_invalid")
 
 
-def _private_rows(conn):
+def _check_evidence_timestamp(value, now, *, require_fresh):
+    """Historical read-only audits validate timestamp shape, not age.
+
+    An actual mailbox write still needs official evidence younger than 24h;
+    time passing cannot invalidate an unchanged, privately archived original.
+    """
+    try:
+        checked = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if checked.tzinfo is None:
+            raise ValueError("evidence timezone missing")
+        age = (now - checked).total_seconds()
+        if age < 0 or (require_fresh and age >= 86400):
+            raise ValueError("evidence stale")
+    except (ValueError, TypeError, AttributeError):
+        raise RuntimeError("conversation_official_evidence_stale") from None
+
+
+def _private_rows(conn, *, require_fresh=True):
     conn = ScopedSheetsSnapshot(conn)
     older = history.load_scope(conn)
     # Every historical source must remain available, including the independent
@@ -304,13 +321,8 @@ def _private_rows(conn):
                 or evidence_row[3] != websites._digest(
                     [proof[2], proof[7], proof[3], proof[9]])):
             raise RuntimeError("conversation_official_evidence_identity_mismatch")
-        try:
-            checked = datetime.fromisoformat(
-                evidence_row[11].replace("Z", "+00:00"))
-            if checked.tzinfo is None or not 0 <= (now-checked).total_seconds() < 86400:
-                raise ValueError("evidence stale")
-        except (ValueError, TypeError, AttributeError):
-            raise RuntimeError("conversation_official_evidence_stale") from None
+        _check_evidence_timestamp(
+            evidence_row[11], now, require_fresh=require_fresh)
         old_category = base["category"]
         # Historical holds are immutable in the original baseline. A new
         # explicit PRIVATE reviewed proposal can release an individual draft
@@ -420,8 +432,8 @@ def _classify(records, inventory):
     return state
 
 
-def _verified_scope(session, previous=None):
-    current = _private_rows(session)
+def _verified_scope(session, previous=None, *, require_fresh=True):
+    current = _private_rows(session, require_fresh=require_fresh)
     if previous is not None and _digest(current) != previous:
         raise RuntimeError("conversation_private_sources_changed")
     return current
@@ -480,7 +492,9 @@ def run(mode, event, *, connector=connect_imap):
     authorize(event, mode)
     imap.target_guard()
     session = RateLimitedSourceReads(authorized_writer())
-    records = _verified_scope(session)
+    # AUDIT/PRECHECK only reconcile existing MIME, hashes and privacy gates.
+    # New writes still require fresh official proof before every mutation.
+    records = _verified_scope(session, require_fresh=mode not in {"AUDIT", "PRECHECK"})
     snapshot = _digest(records)
     folder, validity, state = _check_mailbox(connector, records)
     probe = connector()
