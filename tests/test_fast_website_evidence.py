@@ -191,6 +191,53 @@ class FastOfficialEvidenceTests(unittest.TestCase):
         self.assertEqual(result["status"], "needs_manual_check")
         self.assertEqual(result["reason"], "cross_domain_email_needs_independent_association")
 
+    def test_officially_published_cross_domain_email_accepted_only_at_source(self):
+        source = "https://voorbeeld.nl/contact"
+        r = dict(record(), email="info@secondary.nl")
+        official = {
+            "email": r["email"], "branche_meervoud": "hoveniers",
+            "source_url": source
+        }
+        pages = [(r["website"], "Hovenier Amstel 5211 AB tuinonderhoud"),
+                 (source, "Hovenier Amstel 5211 AB tuinontwerp info@secondary.nl")]
+        result = q.inspect_verified(r, official, pages)
+        self.assertEqual(result["status"], "verified_with_detail")
+        self.assertEqual(result["reason"],
+                         "official_email_and_local_activity_confirmed")
+        self.assertEqual(result["email_source_url"], source)
+
+        no_publication = [(r["website"],
+                          "Hovenier Amstel 5211 AB tuinonderhoud"),
+                          (source, "Hovenier Amstel 5211 AB tuinontwerp")]
+        blocked = q.inspect_verified(r, official, no_publication)
+        self.assertEqual(blocked["status"], "needs_manual_check")
+        self.assertEqual(blocked["reason"],
+                         "cross_domain_email_needs_independent_association")
+
+        wrong_page = [(r["website"],
+                       "Hovenier Amstel 5211 AB tuinonderhoud info@secondary.nl"),
+                      (source, "Hovenier Amstel 5211 AB tuinontwerp")]
+        mismatch = q.inspect_verified(r, official, wrong_page)
+        self.assertEqual(mismatch["status"], "needs_manual_check")
+
+        different_domain = [(r["website"],
+                             "Hovenier Amstel 5211 AB tuinonderhoud"),
+                            ("https://another.example/contact",
+                             "Hovenier Amstel 5211 AB info@secondary.nl")]
+        unsafe = q.inspect_verified(r, official, different_domain)
+        self.assertEqual(unsafe["status"], "needs_manual_check")
+
+    def test_cross_domain_published_address_does_not_override_identity(self):
+        r = dict(record(), email="info@secondary.nl")
+        source = "https://voorbeeld.nl/contact"
+        pages = [(r["website"], "Hovenier Amstel 5211 AB tuinonderhoud"),
+                 (source, "Hovenier Amstel 5211 AB info@secondary.nl")]
+        other = q.inspect_verified(r, {
+            "email": "info@wrong.nl", "branche_meervoud": "hoveniers",
+            "source_url": source}, pages)
+        self.assertEqual(other["status"], "needs_manual_check")
+        self.assertEqual(other["reason"], "official_identity_email_or_branch_mismatch")
+
     def test_unrelated_pages_do_not_count_as_official_proof(self):
         result = q.inspect_verified(record(), {
             "email": "info@voorbeeld.nl", "branche_meervoud": "hoveniers",
