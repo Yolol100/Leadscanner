@@ -36,6 +36,21 @@ TABS = tuple((f"Gespreksstijl Fase{i} 20261016", 100 if i < 5 else 50)
              for i in range(1, 6))
 EXPECTED_COUNTS = {"target": 391, "source_hold": 16, "held": 4,
                    "closed": 1, "excluded": 38}
+# Only the previously held website-evidence candidates can be promoted after
+# fresh official site/recipient verification; historical holds stay fixed.
+SOURCE_REVIEW_POOL = EXPECTED_COUNTS["target"] + EXPECTED_COUNTS["source_hold"]
+
+
+def validate_source_population(counts, row_count):
+    if (row_count != 450
+            or any(counts.get(kind) != EXPECTED_COUNTS[kind]
+                   for kind in ("held", "closed", "excluded"))
+            or counts.get("source_hold", -1) < 0
+            or counts.get("target", -1) < EXPECTED_COUNTS["target"]
+            or counts.get("target", 0) + counts.get("source_hold", 0)
+               != SOURCE_REVIEW_POOL):
+        raise RuntimeError("conversation_population_changed")
+
 OPT = "Liever geen e-mails meer? Antwoord met 'nee', dan laat ik het hierbij."
 
 
@@ -296,6 +311,16 @@ def _private_rows(conn):
             category = "source_hold"
             # A proposal may exist but must never cause a mailbox mutation.
         elif evidence_row[12] in {"verified_activity_only", "verified_with_detail"}:
+            # Status alone is insufficient: require the first-party page on
+            # which the trusted verifier found the exact selected address.
+            from urllib.parse import urlsplit
+            proof_url = urlsplit(proof[7])
+            email_page = urlsplit(evidence_row[8])
+            if (email_page.scheme not in {"http", "https"}
+                    or not email_page.hostname or not proof_url.hostname
+                    or email_page.hostname.removeprefix("www.").casefold() !=
+                       proof_url.hostname.removeprefix("www.").casefold()):
+                raise RuntimeError("conversation_official_evidence_identity_mismatch")
             category = "target"
             if proposal[9] != "VOORLOPIG REDACTIONEEL VOORSTEL":
                 raise RuntimeError("conversation_review_not_ready")
@@ -314,8 +339,7 @@ def _private_rows(conn):
                        "current": current, "new": new,
                        "website_status": evidence_row[12]}
         counts[category] += 1
-    if counts != EXPECTED_COUNTS or len(mapped) != 450:
-        raise RuntimeError("conversation_population_changed")
+    validate_source_population(counts, len(mapped))
     return mapped
 
 
@@ -443,7 +467,8 @@ def run(mode, event, *, connector=connect_imap):
         archived = _verify_archived_originals(records, state, connector=connector)
         return {"total": len(state), "eligible": total_target,
                 "already_new": changed, "archived": archived,
-                "blocked": EXPECTED_COUNTS["source_hold"] + EXPECTED_COUNTS["held"],
+                "blocked": sum(row["category"] in {"source_hold", "held"}
+                               for row in records.values()),
                 "sent": 0}
     number = 1 if mode == "PILOT" else None
     batch = int(mode.rsplit("_", 1)[1]) if mode.startswith("BATCH_") else None
@@ -491,7 +516,8 @@ def run(mode, event, *, connector=connect_imap):
     return {"total": len(follow), "eligible": total_target,
             "archived": archived,
             "installed": installed, "already_new": skipped,
-            "blocked": EXPECTED_COUNTS["source_hold"] + EXPECTED_COUNTS["held"],
+            "blocked": sum(row["category"] in {"source_hold", "held"}
+                               for row in records.values()),
             "sent": 0}
 
 
@@ -517,8 +543,12 @@ def run_remaining(event):
             raise RuntimeError("conversation_batch_integrity_error")
         completed.append(number)
     final = run("AUDIT", _delegate(event, "AUDIT"))
-    if (final["total"] != 411 or final["already_new"] != 391
-            or final["archived"] != 391 or final["sent"] != 0):
+    if (final["total"] != 411
+            or not EXPECTED_COUNTS["target"] <= final["eligible"] <= SOURCE_REVIEW_POOL
+            or final["already_new"] != final["eligible"]
+            or final["archived"] != final["eligible"]
+            or final["blocked"] != 411 - final["eligible"]
+            or final["sent"] != 0):
         raise RuntimeError("conversation_full_scope_not_verified")
     return {"total": final["total"], "eligible": final["eligible"],
             "already_new": final["already_new"], "archived": final["archived"],
