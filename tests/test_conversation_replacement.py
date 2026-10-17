@@ -472,8 +472,16 @@ class ConversationRegressionTests(unittest.TestCase):
             assert client.storage[uid]["sha256"] == expected
             return client.storage[uid]["raw"]
         snapshots = archive.PrivateIMAPArchive(connector=connect)
+
+        def fetched(client, uid):
+            return {k: value for k, value in client.storage[uid].items()
+                    if k != "raw"}
+
         with patch.object(archive.transport, "select", return_value="5"), \
-             patch.object(archive.transport, "scan", side_effect=scanned), \
+             patch.object(archive.transport, "scan", side_effect=scanned) as bulk_scan, \
+             patch.object(archive.transport, "uidset",
+                          side_effect=lambda client: set(client.storage)), \
+             patch.object(archive.transport, "fetch_message", side_effect=fetched), \
              patch.object(archive.drafts, "_raw_snapshot", side_effect=raw_snapshot), \
              patch.object(archive, "find_drafts_folder", return_value="Drafts"):
             key = snapshots.save(DID, "7", "1", raw)
@@ -482,6 +490,19 @@ class ConversationRegressionTests(unittest.TestCase):
             self.assertEqual(snapshots.save(DID, "7", "1", raw), key)
             with self.assertRaisesRegex(RuntimeError, "original_conflict"):
                 snapshots.save(DID, "7", "1", raw + b"bad")
+            # All per-UID saves and independent reads share one validated
+            # immutable archive INDEX; no repeated whole-folder MIME scan.
+            self.assertEqual(bulk_scan.call_count, 1)
+            store["3"]["flags"] = {b"\\DELETED"}
+            with self.assertRaisesRegex(RuntimeError, "archive_flags_invalid"):
+                snapshots.read(key)
+            store["3"]["flags"] = {b"\\SEEN"}
+            # An external archive append changes the UID set and blocks
+            # stale cached state before another deletion could be approved.
+            store["4"] = dict(store["3"], uid="4")
+            with self.assertRaisesRegex(RuntimeError, "archive_scope_changed"):
+                snapshots.read(key)
+            self.assertEqual(bulk_scan.call_count, 1)
         self.assertGreaterEqual(len(clients), 3)
         self.assertTrue(all(client.closed for client in clients))
 
