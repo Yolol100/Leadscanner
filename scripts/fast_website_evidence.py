@@ -291,9 +291,13 @@ def inspect_verified(record, official, pages):
             # mere similarity, another site, or a business-directory hint.
             published_source = str(official.get("source_url", ""))
             exact_email = record["email"].casefold()
+            exact_pattern = re.compile(
+                r"(?<![a-z0-9._%+-])" + re.escape(exact_email) +
+                r"(?![a-z0-9.-])", re.I
+            )
             independently_published = any(
                 page_url == published_source and
-                exact_email in page_text.casefold()
+                exact_pattern.search(page_text) is not None
                 for page_url, page_text in safe_pages
             )
             if not independently_published:
