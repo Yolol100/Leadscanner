@@ -157,7 +157,7 @@ class SheetsBatchSnapshotTests(unittest.TestCase):
     def test_private_source_gate_still_calls_full_original_validators(self):
         source = object()
         wrapped = object()
-        with patch.object(mod, "ScopedSheetsSnapshot", return_value=wrapped) as b, \\
+        with patch.object(mod, "ScopedSheetsSnapshot", return_value=wrapped) as b, \
              patch.object(mod.history, "load_scope", side_effect=RuntimeError("sentinel")) as load:
             with self.assertRaisesRegex(RuntimeError, "sentinel"):
                 mod._private_rows(source)
