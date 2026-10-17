@@ -422,6 +422,22 @@ class ConversationRegressionTests(unittest.TestCase):
         for call in run.call_args_list:
             self.assertEqual(call.args[1]["comment"]["body"], mod.PREFIX + call.args[0])
 
+    def test_released_source_holds_in_first_hundred_are_idempotent(self):
+        pre = {"total": 411, "eligible": 392, "already_new": 87,
+               "archived": 87, "blocked": 19, "sent": 0}
+        mid = {"total": 411, "eligible": 392, "already_new": 89,
+               "archived": 89, "blocked": 19, "sent": 0}
+        final = {"total": 411, "eligible": 392, "already_new": 392,
+                 "archived": 392, "blocked": 19, "sent": 0}
+        with patch.object(mod, "run",
+                          side_effect=[pre, mid, mid, mid, mid, mid, final]) as execute:
+            outcome = mod.run_remaining(event("BATCH_2_TO_5"))
+        self.assertEqual(outcome["batches"], 5)
+        self.assertEqual(outcome["already_new"], 392)
+        self.assertEqual([call.args[0] for call in execute.call_args_list],
+                         ["AUDIT", "BATCH_1", "BATCH_2", "BATCH_3",
+                          "BATCH_4", "BATCH_5", "AUDIT"])
+
     def test_remaining_batches_refuse_incomplete_first_batch_and_stop_on_error(self):
         event = {"action": "created", "repository": {"full_name": mod.REPO},
                  "issue": {"number": mod.ISSUE},
