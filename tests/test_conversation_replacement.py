@@ -236,6 +236,7 @@ class ConversationRegressionTests(unittest.TestCase):
         wrapped = object()
         with patch.object(mod, "authorized_writer", return_value=writer), \
              patch.object(mod, "RateLimitedSourceReads", return_value=wrapped), \
+             patch.object(mod, "_digest", return_value="frozen-source-digest"), \
              patch.object(mod, "_verified_scope", return_value=values) as source, \
              patch.object(mod, "_check_mailbox",
                           return_value=("Drafts", "12", mailbox)), \
