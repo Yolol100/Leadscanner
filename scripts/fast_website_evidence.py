@@ -283,8 +283,26 @@ def inspect_verified(record, official, pages):
         email_domain = record["email"].rsplit("@", 1)[-1].lower()
         host = site.hostname.removeprefix("www.").casefold()
         if email_domain != host:
-            result["status"] = "needs_manual_check"
-            result["reason"] = "cross_domain_email_needs_independent_association"
+            # The selected address may have a different domain (e.g. a
+            # branded secondary domain). Do not reject a *direct, exact*
+            # publication by the verified official site itself. The trusted
+            # verifier must have associated the address with an actual page
+            # captured in THIS bounded same-site pass; never infer it from
+            # mere similarity, another site, or a business-directory hint.
+            published_source = str(official.get("source_url", ""))
+            exact_email = record["email"].casefold()
+            exact_pattern = re.compile(
+                r"(?<![a-z0-9._%+-])" + re.escape(exact_email) +
+                r"(?![a-z0-9.-])", re.I
+            )
+            independently_published = any(
+                page_url == published_source and
+                exact_pattern.search(page_text) is not None
+                for page_url, page_text in safe_pages
+            )
+            if not independently_published:
+                result["status"] = "needs_manual_check"
+                result["reason"] = "cross_domain_email_needs_independent_association"
         return result
     except (ValueError, TypeError, KeyError, re.error):
         result["reason"] = "source_text_processing_failed"
