@@ -237,24 +237,35 @@ def _with_captured_pages(payload, pages, enabled):
 
 
 def verify_official_site(row, *, session=requests, expected_email=None,
-                         collect_evidence=False):
-    """Return a conservatively verified company+published email or None."""
+                         collect_evidence=False, diagnostic=None):
+    """Return a verified official company/address, or None with safe reason.
+
+    diagnostic is an optional callback receiving ONLY a fixed reason code.
+    Never pass website, email, page content, exception, or contact identity.
+    """
+    def reject(reason):
+        if diagnostic is not None:
+            diagnostic(reason)
+        return None
+
     from new_leads import safe_hint
     from target_scope import is_blocked_place
     name = str(row.get("name_hint") or "").strip()
     url = safe_hint(row.get("website_hint"))
     mapping = category(row)
     if not name or not url or not mapping:
-        return None
+        return reject("input_not_verified")
     host = urlsplit(url).hostname
     if not _safe_same_site(url, host):
-        return None
+        return reject("site_url_not_public")
     policy = _robots_policy(url, session)
-    if policy is None or (policy is not True and not policy.can_fetch(AGENT, url)):
-        return None
+    if policy is None:
+        return reject("robots_unavailable")
+    if policy is not True and not policy.can_fetch(AGENT, url):
+        return reject("robots_disallowed")
     html = _get(url, host, session)
     if html is None:
-        return None
+        return reject("homepage_unavailable")
     page = PublicHTML()
     page.feed(html)
     evidence_pages = [(url, " ".join(page.texts))] if collect_evidence else []
@@ -264,11 +275,11 @@ def verify_official_site(row, *, session=requests, expected_email=None,
                   and x not in GENERIC_NAME_WORDS and not x.endswith("bedrijf")]
     # A category word like "schildersbedrijf" alone cannot prove identity.
     if not name_words or not any(word in content.split() for word in name_words):
-        return None
+        return reject("homepage_identity_unverified")
     if is_blocked_place(norm(name), norm(row.get("category_hint"))):
-        return None
+        return reject("place_blocked")
     if not any(word in content for word in BRANCH_PROOF[mapping[1]]):
-        return None
+        return reject("homepage_activity_unverified")
     candidates = list(page.mailto)
     named_links = list(page.named_links)
     candidates.extend(x.lower() for x in re.findall(
@@ -281,7 +292,7 @@ def verify_official_site(row, *, session=requests, expected_email=None,
     # New discovery calls keep the original named-owner-first search unchanged.
     expected = str(expected_email or "").strip().casefold()
     if expected and not MAIL_RE.fullmatch(expected):
-        return None
+        return reject("selected_address_invalid")
     # Evidence collection may need the official contact page for Dutch
     # locality even if the exact email is already on the homepage.
     # A fully sufficient homepage still takes the two-request fast path.
@@ -341,13 +352,13 @@ def verify_official_site(row, *, session=requests, expected_email=None,
             break
     if expected:
         if expected not in published:
-            return None
+            return reject("selected_address_not_published")
         # Exact-address rechecks must not silently substitute a different
         # address that is also on the official contact page.
         chosen, first = expected, None
     if chosen is None:
         if not general:
-            return None
+            return reject("general_address_not_published")
         chosen = next((x for x in general if x.startswith("info@")), general[0])
     greeting = f"Hoi {first}," if first else ("Hoi," if mapping[0] >= 5 else "Goedendag,")
     return _with_captured_pages({
