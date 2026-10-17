@@ -224,6 +224,30 @@ class FastOfficialEvidenceTests(unittest.TestCase):
         self.assertEqual(signal["certainty"], "text_mention_only")
         self.assertIn("source_url", signal)
 
+    def test_explicit_pedicure_and_group_classes_count_as_local_activity(self):
+        # Both are permitted target-industry activities, but require actual
+        # direct official-site wording. Neither is inferred from a sector.
+        for branch, confirmed, negated in [
+            ("schoonheidssalons", "medisch pedicure", "geen pedicure"),
+            ("sportscholen", "groepslessen", "geen groepslessen"),
+        ]:
+            with self.subTest(branch=branch):
+                row = dict(record(), branch=branch)
+                official = {
+                    "email": row["email"], "branche_meervoud": branch,
+                    "source_url": row["website"],
+                }
+                pages = [(row["website"],
+                          "Hovenier Amstel in 5211 AB biedt " + confirmed)]
+                got = q.inspect_verified(row, official, pages)
+                self.assertIn(got["status"],
+                              {"verified_activity_only", "verified_with_detail"})
+                denied = [(row["website"],
+                           "Hovenier Amstel in 5211 AB biedt " + negated)]
+                blocked = q.inspect_verified(row, official, denied)
+                self.assertEqual(blocked["status"], "needs_manual_check")
+                self.assertEqual(blocked["reason"], "activity_not_confirmed")
+
     def test_concrete_hotel_cafe_and_gym_services_require_official_text(self):
         cases = [
             ("logiesbedrijven", "hotel", "familiekamer"),
