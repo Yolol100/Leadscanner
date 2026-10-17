@@ -73,6 +73,100 @@ class RateLimitedSourceReads:
         raise RuntimeError("conversation_sheet_transient_exhausted")
 
 
+
+class _ScopedValueResponse:
+    """Read-only response compatible with the existing values GET validators."""
+
+    status_code = 200
+
+    def __init__(self, values):
+        self._values = values
+
+    def json(self):
+        # A second suppression check must never share mutable parser state.
+        from copy import deepcopy
+        return {"values": deepcopy(self._values)}
+
+
+class ScopedSheetsSnapshot:
+    """Read every private input afresh, with one batchGet per spreadsheet.
+
+    Constructed once for EACH _private_rows preflight; never cached across
+    operations, destructive checks, retries, jobs or process invocations.
+    Existing source validators and independent IMAP/MIME gates are unchanged.
+    """
+
+    def __init__(self, session):
+        from urllib.parse import urlencode
+        import historical_v2
+        import registry_readonly as registry
+
+        review_ranges = [
+            "QA450Actueel!A2:P451",
+            "OpeningenReview20261016!A2:Q451",
+            "LeadHistory!A:J",
+            "Review450!A1:P451",
+            "WebsiteEvidence!A1:N1000",
+        ] + [
+            "'" + tab + "'!A1:M" + str(length + 1)
+            for tab, length in TABS
+        ]
+        groups = (
+            (history.source.SID, review_ranges),
+            (registry.REGISTRY_ID, [
+                "DedupeRegistry!A:J", "HistoricalHmacV2!A:J",
+            ]),
+            (historical_v2.VAULT_SHEET_ID, ["Keys!A:J"]),
+            (registry.DRAFT_QUEUE_ID, ["DraftQueue!A:J"]),
+        )
+        self._values = {}
+        for spreadsheet_id, ranges in groups:
+            endpoint = (
+                "https://sheets.googleapis.com/v4/spreadsheets/"
+                + spreadsheet_id + "/values:batchGet?"
+                + urlencode([("ranges", value) for value in ranges])
+            )
+            response = session.get(endpoint, timeout=30)
+            if response.status_code != 200:
+                raise RuntimeError("conversation_batch_source_read_failed")
+            try:
+                payload = response.json()
+                actual = payload["valueRanges"]
+                if (payload.get("spreadsheetId") != spreadsheet_id
+                        or not isinstance(actual, list)
+                        or len(actual) != len(ranges)):
+                    raise ValueError("batch shape")
+                for requested, entry in zip(ranges, actual):
+                    actual_range = entry["range"]
+                    expected_tab = requested.split("!", 1)[0].strip("'")
+                    actual_tab = actual_range.split("!", 1)[0].strip("'")
+                    values = entry.get("values", [])
+                    if (expected_tab != actual_tab
+                            or not isinstance(values, list)
+                            or any(not isinstance(row, list) for row in values)
+                            or (spreadsheet_id, requested) in self._values):
+                        raise ValueError("batch range or row shape")
+                    self._values[(spreadsheet_id, requested)] = values
+            except (KeyError, TypeError, ValueError, AttributeError):
+                raise RuntimeError("conversation_batch_source_invalid") from None
+
+    def get(self, url, **kwargs):
+        from urllib.parse import unquote, urlsplit
+        target = urlsplit(url)
+        matched = re.fullmatch(
+            r"/v4/spreadsheets/([A-Za-z0-9_-]+)/values/(.+)",
+            target.path,
+        )
+        if (target.scheme != "https"
+                or target.netloc != "sheets.googleapis.com"
+                or target.query or target.fragment or not matched):
+            raise RuntimeError("conversation_unbatched_source_request")
+        key = (matched.group(1), unquote(matched.group(2)))
+        if key not in self._values:
+            raise RuntimeError("conversation_unbatched_source_request")
+        return _ScopedValueResponse(self._values[key])
+
+
 def authorize(event, mode):
     if mode not in MODES or not isinstance(event, dict):
         raise RuntimeError("conversation_mode_unauthorized")
@@ -99,6 +193,7 @@ def review_body(value):
 
 
 def _private_rows(conn):
+    conn = ScopedSheetsSnapshot(conn)
     older = history.load_scope(conn)
     # Every historical source must remain available, including the independent
     # HMAC vault and current private LeadHistory/DraftQueue. Never clear them.
@@ -430,6 +525,9 @@ _SAFE_REASONS = frozenset({
     "concurrent_unrelated_drafts_present",
     "configured_drafts_folder_not_verified",
     "conversation_archive_changed_during_readback",
+    "conversation_batch_source_invalid",
+    "conversation_batch_source_read_failed",
+    "conversation_unbatched_source_request",
     "conversation_archive_count_mismatch",
     "conversation_archive_scope_changed",
     "conversation_batch_empty",
