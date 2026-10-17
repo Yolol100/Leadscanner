@@ -39,17 +39,26 @@ EXPECTED_COUNTS = {"target": 391, "source_hold": 16, "held": 4,
 # Only the previously held website-evidence candidates can be promoted after
 # fresh official site/recipient verification; historical holds stay fixed.
 SOURCE_REVIEW_POOL = EXPECTED_COUNTS["target"] + EXPECTED_COUNTS["source_hold"]
+# Historical holds are an extra separately reviewed pool, never automatic targets.
+HISTORICAL_HOLD_POOL = EXPECTED_COUNTS["held"]
+HOLD_RELEASE_SOURCE = "HISTORISCHE_BRONHOLD_OPGELOST_OFFICIEEL_EMAIL"
+HOLD_RELEASE_LEGAL = "NIET VERZENDGEREED - MENSELIJKE JURIDISCHE CONTROLE"
 
 
 def validate_source_population(counts, row_count):
+    held = counts.get("held", -1)
     if (row_count != 450
+            or set(counts) != set(EXPECTED_COUNTS)
+            or sum(counts.values()) != row_count
+            or not 0 <= held <= HISTORICAL_HOLD_POOL
             or any(counts.get(kind) != EXPECTED_COUNTS[kind]
-                   for kind in ("held", "closed", "excluded"))
+                   for kind in ("closed", "excluded"))
             or counts.get("source_hold", -1) < 0
             or counts.get("target", -1) < EXPECTED_COUNTS["target"]
-            or counts.get("target", 0) + counts.get("source_hold", 0)
-               != SOURCE_REVIEW_POOL):
+            or counts.get("target", 0) + counts.get("source_hold", 0) + held
+               != SOURCE_REVIEW_POOL + HISTORICAL_HOLD_POOL):
         raise RuntimeError("conversation_population_changed")
+
 
 OPT = "Liever geen e-mails meer? Antwoord met 'nee', dan laat ik het hierbij."
 
@@ -303,7 +312,14 @@ def _private_rows(conn):
         except (ValueError, TypeError, AttributeError):
             raise RuntimeError("conversation_official_evidence_stale") from None
         old_category = base["category"]
-        if old_category in {"closed", "excluded", "held"}:
+        # Historical holds are immutable in the original baseline. A new
+        # explicit PRIVATE reviewed proposal can release an individual draft
+        # only through the same official identity, exact recipient, 24h site
+        # evidence, historical suppression, MIME and UID gates as all targets.
+        released_held = _historical_hold_approved(
+            old_category, proposal, evidence_row)
+        if old_category in {"closed", "excluded"} or (
+                old_category == "held" and not released_held):
             category = old_category
             if proposal[7] or proposal[9] != "OVERGESLAGEN - BRONBLOKKADE":
                 raise RuntimeError("conversation_blocked_entry_modified")
@@ -341,6 +357,21 @@ def _private_rows(conn):
         counts[category] += 1
     validate_source_population(counts, len(mapped))
     return mapped
+
+
+def _historical_hold_approved(category, proposal, evidence):
+    """Explicit private review + fresh first-party exact-address proof required.
+
+    Historical held originals remain held in the legacy baseline, even after
+    a reviewed draft is installed. Never turn a source hold into an opt-out
+    override; full historical/HMAC suppression remains the earlier gate.
+    """
+    return (category == "held"
+            and len(proposal) == 13 and len(evidence) == 14
+            and proposal[9] == "VOORLOPIG REDACTIONEEL VOORSTEL"
+            and proposal[10] == HOLD_RELEASE_SOURCE
+            and proposal[11] == HOLD_RELEASE_LEGAL
+            and evidence[12] in {"verified_activity_only", "verified_with_detail"})
 
 
 def _digest(records):
@@ -555,7 +586,7 @@ def run_remaining(event, *, on_batch=None):
             on_batch(number, result)
     final = run("AUDIT", _delegate(event, "AUDIT"))
     if (final["total"] != 411
-            or not EXPECTED_COUNTS["target"] <= final["eligible"] <= SOURCE_REVIEW_POOL
+            or not EXPECTED_COUNTS["target"] <= final["eligible"] <= (SOURCE_REVIEW_POOL + HISTORICAL_HOLD_POOL)
             or final["already_new"] != final["eligible"]
             or final["archived"] != final["eligible"]
             or final["blocked"] != 411 - final["eligible"]
