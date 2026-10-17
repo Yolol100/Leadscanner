@@ -49,6 +49,25 @@ class OwnerEvidenceCommandContractTests(unittest.TestCase):
         self.assertNotIn("smtplib", workflow)
 
 
+    def test_noop_events_do_not_hold_owner_recheck_queue(self):
+        from pathlib import Path
+        workflow = (Path(__file__).resolve().parents[1]
+                    / ".github/workflows/fast-website-evidence.yml").read_text()
+        # Actual source writes retain both independent serialization gates.
+        self.assertIn("'leads-private-candidates'", workflow)
+        self.assertIn("group: leadscanner-myhost-draft", workflow)
+        self.assertIn("cancel-in-progress: false", workflow)
+        self.assertIn("queue: max", workflow)
+        # Unrelated issue comments, PR tests and ordinary pushes use one
+        # unique no-op group per run rather than blocking real work.
+        self.assertIn("leads-evidence-skip-{0}", workflow)
+        self.assertIn("github.run_id", workflow)
+        self.assertIn("github.event_name == 'issue_comment'", workflow)
+        self.assertIn("github.event.comment.body", workflow)
+        self.assertIn("github.event_name == 'push'", workflow)
+        self.assertIn("LEADS_EVIDENCE_ONCE:", workflow)
+        self.assertIn("LEADS_CACHE_SMOKE:", workflow)
+
 class FastOfficialEvidenceTests(unittest.TestCase):
     def test_only_exact_email_shortcut_skips_contact_page(self):
         hint = {"name_hint": "Schildersbedrijf Amstel",

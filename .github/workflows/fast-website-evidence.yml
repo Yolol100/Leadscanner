@@ -31,8 +31,24 @@ on:
         default: false
 permissions:
   contents: read
+# Only actual owner-requested website rechecks share the global source
+# queue. Pull-request tests, unrelated comments and ordinary pushes must not
+# sit in that queue merely to skip every source-writing job.
 concurrency:
-  group: leads-private-candidates
+  group: >-
+    ${{ (
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.number == 1659 &&
+       !github.event.issue.pull_request &&
+       github.actor == 'Yolol100' &&
+       github.event.comment.user.login == 'Yolol100' &&
+       contains(fromJSON('["LEADS_EVIDENCE_V1:REVIEW450_BATCH_1","LEADS_EVIDENCE_V1:REVIEW450_BATCH_2","LEADS_EVIDENCE_V1:REVIEW450_BATCH_3","LEADS_EVIDENCE_V1:REVIEW450_BATCH_4","LEADS_EVIDENCE_V1:REVIEW450_BATCH_5"]'), github.event.comment.body)) ||
+      (github.event_name == 'push' &&
+       (startsWith(github.event.head_commit.message, 'LEADS_EVIDENCE_ONCE:') ||
+        startsWith(github.event.head_commit.message, 'LEADS_CACHE_SMOKE:')))
+      ) && 'leads-private-candidates' ||
+      format('leads-evidence-skip-{0}', github.run_id) }}
   cancel-in-progress: false
   queue: max
 jobs:
