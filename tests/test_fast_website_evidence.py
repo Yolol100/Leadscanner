@@ -63,6 +63,43 @@ class FastOfficialEvidenceTests(unittest.TestCase):
         self.assertEqual(result["email"], "info@voorbeeld.nl")
         self.assertEqual(client.get.call_count, 3)
 
+    def test_contact_link_takes_priority_over_about_with_same_request_cap(self):
+        """A preceding about link must not hide the published contact email."""
+        hint = {"name_hint": "Schildersbedrijf Amstel",
+                "website_hint": "https://voorbeeld.nl/",
+                "category_hint": "painter"}
+        home = ('<h1>Schildersbedrijf Amstel</h1>'
+                '<p>Amstel doet schilderswerk in 5211 AB.</p>'
+                '<a href="/over-ons">Over ons</a>'
+                '<a href="/contact/">Contact</a>')
+        about = '<p>Wij zijn Schildersbedrijf Amstel.</p>'
+        contact = ('<p>Schildersbedrijf Amstel 5211 AB, schilderwerken.</p>'
+                   '<a href="mailto:info@voorbeeld.nl">Mail ons</a>'
+                   '<p>info@voorbeeld.nl</p>')
+        client = Mock()
+        urls = []
+
+        def fetch(url, **kwargs):
+            urls.append(url)
+            if url.endswith("robots.txt"):
+                return FakeResponse(status=404)
+            if url.endswith("/over-ons"):
+                return FakeResponse(about)
+            if url.endswith("/contact/"):
+                return FakeResponse(contact)
+            return FakeResponse(home)
+
+        client.get.side_effect = fetch
+        with patch("verify_official_lead.is_public_http_url", return_value=True):
+            result = verify_official_site(
+                hint, session=client, expected_email="info@voorbeeld.nl",
+                collect_evidence=True)
+        self.assertEqual(result["email"], "info@voorbeeld.nl")
+        self.assertEqual(result["source_url"], "https://voorbeeld.nl/contact/")
+        self.assertEqual(len(result["_captured_pages"]), 2)
+        self.assertEqual(client.get.call_count, 3)
+        self.assertFalse(any(url.endswith("/over-ons") for url in urls))
+
     def test_exact_unpublished_address_never_replaced_by_other_email(self):
         hint = {"name_hint": "Schildersbedrijf Amstel",
                 "website_hint": "https://voorbeeld.nl/",
