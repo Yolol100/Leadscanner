@@ -120,7 +120,7 @@ class PrivateIMAPArchive:
                 if drafts._raw_snapshot(client, archived_uid, sha) != raw:
                     raise RuntimeError("archive_old_bytes_not_equal")
                 return key
-            if client.append(_mailbox_arg(ARCHIVE), r"(\\Seen)", None, raw)[0] != "OK":
+            if client.append(_mailbox_arg(ARCHIVE), r"(\Seen)", None, raw)[0] != "OK":
                 raise RuntimeError("archive_append_failed")
             new_validity = transport.select(client, ARCHIVE, readonly=True)
             after_uids = transport.uidset(client)
