@@ -282,6 +282,19 @@ class DraftManagementTests(unittest.TestCase):
         self.assertEqual(self.storage.append_count, 0)
         self.assertIn(uid, self.storage.messages)
 
+    def test_scoped_inventory_does_not_repeat_bulk_scan_uid_search(self):
+        # The bulk scanner itself checks UID membership twice.
+        fake_inventory = {"17": object()}
+        with patch.object(mgr.imap, "select", return_value="7"), \
+             patch.object(mgr.transport, "scan", return_value=fake_inventory) as scanner, \
+             patch.object(mgr.imap, "uidset") as redundant:
+            validity, inventory = mgr._scope(object(), "Drafts")
+        self.assertEqual(validity, "7")
+        self.assertIs(inventory, fake_inventory)
+        scanner.assert_called_once()
+        redundant.assert_not_called()
+
+
 
 if __name__ == "__main__":
     unittest.main()
