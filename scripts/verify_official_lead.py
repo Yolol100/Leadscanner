@@ -296,6 +296,8 @@ def verify_official_site(row, *, session=requests, expected_email=None,
             "status": "verified_website_and_email",
         }, evidence_pages, collect_evidence)
     # Only a linked, same-domain contact/about page, never a generic site crawl.
+    # Prefer an explicitly labeled contact endpoint over an earlier "about"
+    # link. Both choices remain bounded to at most ONE additional same-site GET.
     links = []
     for href in page.links:
         dest = urljoin(url, href)
@@ -303,7 +305,9 @@ def verify_official_site(row, *, session=requests, expected_email=None,
         if (any(term in slug for term in ("contact", "over-ons", "about"))
                 and _same_site_shape(dest, host) and dest not in links):
             links.append(dest)
-            break
+    links.sort(key=lambda item: (
+        0 if "contact" in urlsplit(item).path.casefold() else 1,
+    ))
     for dest in links[:1]:
         if policy is not True and not policy.can_fetch(AGENT, dest):
             continue  # Homepage contact may already be independently published.
