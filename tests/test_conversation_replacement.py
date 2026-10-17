@@ -212,6 +212,50 @@ class SheetsBatchSnapshotTests(unittest.TestCase):
 
 
 class ConversationRegressionTests(unittest.TestCase):
+    def test_readonly_mailbox_audit_accepts_expired_but_valid_evidence(self):
+        from datetime import datetime, timezone
+        now = datetime(2026, 10, 18, 0, 0, tzinfo=timezone.utc)
+        expired = "2026-10-16T22:25:44.957Z"
+        mod._check_evidence_timestamp(expired, now, require_fresh=False)
+        with self.assertRaisesRegex(RuntimeError, "official_evidence_stale"):
+            mod._check_evidence_timestamp(expired, now, require_fresh=True)
+        for incorrect in ("2026-10-19T00:00:00Z",
+                          "2026-10-17T00:00:00", "not-a-timestamp", None):
+            with self.subTest(value=incorrect):
+                with self.assertRaisesRegex(RuntimeError, "official_evidence_stale"):
+                    mod._check_evidence_timestamp(
+                        incorrect, now, require_fresh=False)
+
+    def test_readonly_modes_never_weaken_write_freshness_gate(self):
+        class DummyClient:
+            def logout(self):
+                return None
+        values = {DID: {"category": "target"}}
+        mailbox = {DID: ("123", "new", "hash")}
+        writer = object()
+        wrapped = object()
+        with patch.object(mod, "authorized_writer", return_value=writer), \
+             patch.object(mod, "RateLimitedSourceReads", return_value=wrapped), \
+             patch.object(mod, "_digest", return_value="frozen-source-digest"), \
+             patch.object(mod, "_verified_scope", return_value=values) as source, \
+             patch.object(mod, "_check_mailbox",
+                          return_value=("Drafts", "12", mailbox)), \
+             patch.object(mod, "_verify_archived_originals", return_value=1), \
+             patch.object(mod.imap, "target_guard"), \
+             patch.object(mod.imap, "uidplus", return_value=True):
+            for mode in ("AUDIT", "PRECHECK"):
+                source.reset_mock()
+                result = mod.run(
+                    mode, event(mode), connector=lambda: DummyClient())
+                self.assertEqual(result["archived"], 1)
+                self.assertEqual(result["sent"], 0)
+                source.assert_called_once_with(wrapped, require_fresh=False)
+            source.side_effect = RuntimeError("stop before any IMAP write")
+            with self.assertRaisesRegex(RuntimeError, "stop before any IMAP write"):
+                mod.run("BATCH_1", event("BATCH_1"),
+                        connector=lambda: DummyClient())
+            source.assert_called_with(wrapped, require_fresh=True)
+
     def test_read_throttle_and_429_retry_preserve_full_sheet_access(self):
         clock = [0.0]
         delays = []
