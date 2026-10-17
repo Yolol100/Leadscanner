@@ -286,6 +286,48 @@ class ConversationRegressionTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             mod.authorize(case, "PILOT")
 
+    def test_source_holds_are_released_only_inside_verified_407_pool(self):
+        baseline = dict(mod.EXPECTED_COUNTS)
+        mod.validate_source_population(baseline, 450)
+        for promotions in (1, 8, 15, 16):
+            updated = dict(baseline,
+                           target=391 + promotions,
+                           source_hold=16 - promotions)
+            mod.validate_source_population(updated, 450)
+        forbidden = [
+            dict(baseline, target=390, source_hold=17),
+            dict(baseline, target=392, source_hold=16),
+            dict(baseline, target=408, source_hold=-1),
+            dict(baseline, held=3, target=392),
+            dict(baseline, closed=0, target=392),
+            dict(baseline, excluded=37, target=392),
+        ]
+        for counts in forbidden:
+            with self.subTest(changed=counts):
+                with self.assertRaisesRegex(RuntimeError, "population_changed"):
+                    mod.validate_source_population(counts, 450)
+        with self.assertRaisesRegex(RuntimeError, "population_changed"):
+            mod.validate_source_population(baseline, 449)
+
+    def test_final_chain_uses_proven_eligible_count_not_frozen_391(self):
+        pre = {"total": 411, "eligible": 400, "already_new": 87,
+               "archived": 87, "blocked": 11, "sent": 0}
+        middle = {"total": 411, "eligible": 400, "already_new": 200,
+                  "archived": 200, "blocked": 11, "sent": 0}
+        done = {"total": 411, "eligible": 400, "already_new": 400,
+                "archived": 400, "blocked": 11, "sent": 0}
+        with patch.object(mod, "run",
+                          side_effect=[pre, middle, middle, middle, middle, done]):
+            outcome = mod.run_remaining(event("BATCH_2_TO_5"))
+        self.assertEqual(outcome["already_new"], 400)
+        self.assertEqual(outcome["archived"], 400)
+        self.assertEqual(outcome["blocked"], 11)
+        mismatched = dict(done, archived=399)
+        with patch.object(mod, "run",
+                          side_effect=[pre, middle, middle, middle, middle, mismatched]):
+            with self.assertRaisesRegex(RuntimeError, "full_scope_not_verified"):
+                mod.run_remaining(event("BATCH_2_TO_5"))
+
     def test_body_has_one_company_question_and_exact_optout(self):
         mod.review_body(ROW["body"])
         for value in [
