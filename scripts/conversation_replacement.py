@@ -145,11 +145,28 @@ class ScopedSheetsSnapshot:
                     # Whole-column reads are expanded to the sheet row limit
                     # by the Sheets API; fixed rectangles must match exactly.
                     if re.fullmatch(r"[A-Z]+:[A-Z]+", expected_a1):
-                        begin, end = expected_a1.split(":", 1)
-                        valid_a1 = bool(re.fullmatch(
-                            re.escape(begin) + r"1:" + re.escape(end) + r"[1-9][0-9]*",
+                        # The Sheets API clips requested whole-column ranges
+                        # to the grid's actual columnCount. Example:
+                        # LeadHistory!A:J is returned as A1:H10000 because
+                        # LeadHistory has eight columns, not ten.
+                        begin, requested_end = expected_a1.split(":", 1)
+                        match = re.fullmatch(
+                            r"([A-Z]+)1:([A-Z]+)([1-9][0-9]*)",
                             actual_a1,
-                        ))
+                        )
+
+                        def column_number(value):
+                            result = 0
+                            for char in value:
+                                result = result * 26 + ord(char) - ord("A") + 1
+                            return result
+
+                        valid_a1 = bool(
+                            match and match.group(1) == begin
+                            and column_number(begin)
+                                <= column_number(match.group(2))
+                                <= column_number(requested_end)
+                        )
                     else:
                         valid_a1 = actual_a1 == expected_a1
                     values = entry.get("values", [])
