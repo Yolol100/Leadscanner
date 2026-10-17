@@ -15,7 +15,9 @@ import requests
 from url_safety import is_public_http_url
 
 AGENT = "WebactueelLeadscanner/1.0 (+https://andrewbaeten.nl)"
-MAX_BYTES = 350_000
+# Limit HTML to 1 MB to accommodate legitimate larger first-party pages.
+# Keep a strict streaming cap; never download unbounded responses.
+MAX_BYTES = 1_000_000
 TIMEOUT = (4, 7)
 
 # Each category corresponds to exactly one canonical Leads Skill leaf.
