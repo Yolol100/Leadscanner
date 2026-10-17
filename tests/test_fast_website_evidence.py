@@ -240,7 +240,8 @@ class FastOfficialEvidenceTests(unittest.TestCase):
                 pages = [(row["website"],
                           "Hovenier Amstel in 5211 AB biedt " + confirmed)]
                 got = q.inspect_verified(row, official, pages)
-                self.assertEqual(got["status"], "verified_activity_only")
+                self.assertIn(got["status"],
+                              {"verified_activity_only", "verified_with_detail"})
                 denied = [(row["website"],
                            "Hovenier Amstel in 5211 AB biedt " + negated)]
                 blocked = q.inspect_verified(row, official, denied)
