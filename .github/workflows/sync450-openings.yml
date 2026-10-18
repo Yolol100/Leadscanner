@@ -83,6 +83,10 @@ jobs:
        github.event.comment.body == 'LEADS_CONVERSATIONS_V1:BATCH_4' ||
        github.event.comment.body == 'LEADS_CONVERSATIONS_V1:BATCH_5' ||
        github.event.comment.body == 'LEADS_CONVERSATIONS_V1:BATCH_2_TO_5' ||
+       github.event.comment.body == 'LEADS_CONVERSATIONS_V1:REVISION_PRECHECK' ||
+       github.event.comment.body == 'LEADS_CONVERSATIONS_V1:REVISION_PILOT' ||
+       github.event.comment.body == 'LEADS_CONVERSATIONS_V1:REVISION_ALL' ||
+       github.event.comment.body == 'LEADS_CONVERSATIONS_V1:REVISION_AUDIT' ||
        github.event.comment.body == 'LEADS_CONVERSATIONS_V1:AUDIT')
     runs-on: ubuntu-24.04
     timeout-minutes: 360
@@ -107,6 +111,7 @@ jobs:
           python3 -m compileall -q scripts
           python3 -m unittest discover -s tests -p 'test_conversation_replacement.py' -q
           python3 -m unittest discover -s tests -p 'test_draft_management.py' -q
+          python3 -m unittest discover -s tests -p 'test_draft_revision.py' -q
       - name: Run only explicitly authorized and privately verified IMAP operation
         env:
           PYTHONPATH: scripts
@@ -120,4 +125,4 @@ jobs:
           OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME || 'Andrew Baeten' }}
           OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
           OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
-        run: python3 scripts/conversation_replacement.py
+        run: python3 scripts/draft_revision.py
