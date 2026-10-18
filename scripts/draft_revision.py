@@ -116,8 +116,11 @@ def unchanged(before, after, *, removed=frozenset(), added=frozenset()):
     for uid, item in before.items():
         if uid in removed:
             continue
+        # RFC 3501 2.3.2: Recent belongs to a session, not the stored message.
+        # Retain every persistent flag/keyword, UID and byte-hash comparison.
         if (after[uid]["sha256"] != item["sha256"]
-                or after[uid]["flags"] != item["flags"]):
+                or (after[uid]["flags"] - {b"\\RECENT"}) !=
+                   (item["flags"] - {b"\\RECENT"})):
             raise RuntimeError("revision_mailbox_changed")
 
 
