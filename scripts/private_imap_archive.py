@@ -13,29 +13,31 @@ import replace450 as transport
 from myhost_draft import _mailbox_arg, connect_imap, find_drafts_folder
 
 ARCHIVE = "Webactueel Original Drafts 20261017"
+REVISION_ARCHIVE = "Webactueel Drafts Before Revision 20261018"
 _ARCHIVE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9 ]{1,80}$")
 
 
-def _archive(client, *, create=False):
-    if not _ARCHIVE_RE.fullmatch(ARCHIVE):
+def _archive(client, *, create=False, folder=None):
+    folder = ARCHIVE if folder is None else folder
+    if folder not in {ARCHIVE, REVISION_ARCHIVE} or not _ARCHIVE_RE.fullmatch(folder):
         raise RuntimeError("archive_folder_name_invalid")
     status, listed = client.list()
     if status != "OK" or not isinstance(listed, list):
         raise RuntimeError("archive_folder_list_failed")
-    # Only this fixed-name private folder may be touched. We never treat
+    # Only the fixed-name private version folders may be touched. Never treat
     # Drafts, INBOX, Sent or a similarly named folder as an archive.
     is_present = any(
         str(v.decode("utf-8") if isinstance(v, bytes) else v)
-        .endswith('"' + ARCHIVE + '"') for v in listed
+        .endswith('"' + folder + '"') for v in listed
     )
     if not is_present:
         if not create:
             raise RuntimeError("archive_folder_not_initialized")
-        if client.create(_mailbox_arg(ARCHIVE))[0] != "OK":
+        if client.create(_mailbox_arg(folder))[0] != "OK":
             raise RuntimeError("archive_folder_creation_failed")
-    if ARCHIVE == find_drafts_folder(client):
+    if folder == find_drafts_folder(client):
         raise RuntimeError("archive_cannot_be_drafts")
-    return ARCHIVE
+    return folder
 
 
 def _archive_index(client):
