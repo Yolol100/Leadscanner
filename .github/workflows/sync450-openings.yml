@@ -87,6 +87,13 @@ jobs:
        github.event.comment.body == 'LEADS_CONVERSATIONS_V1:REVISION_PILOT' ||
        github.event.comment.body == 'LEADS_CONVERSATIONS_V1:REVISION_ALL' ||
        github.event.comment.body == 'LEADS_CONVERSATIONS_V1:REVISION_AUDIT' ||
+       github.event.comment.body == 'LEADS_CONVERSATIONS_V1:RECREATE_PRECHECK' ||
+       github.event.comment.body == 'LEADS_CONVERSATIONS_V1:RECREATE_PILOT' ||
+       github.event.comment.body == 'LEADS_CONVERSATIONS_V1:RECREATE_BATCH_1' ||
+       github.event.comment.body == 'LEADS_CONVERSATIONS_V1:RECREATE_BATCH_2' ||
+       github.event.comment.body == 'LEADS_CONVERSATIONS_V1:RECREATE_BATCH_3' ||
+       github.event.comment.body == 'LEADS_CONVERSATIONS_V1:RECREATE_BATCH_4' ||
+       github.event.comment.body == 'LEADS_CONVERSATIONS_V1:RECREATE_BATCH_5' ||
        github.event.comment.body == 'LEADS_CONVERSATIONS_V1:AUDIT')
     runs-on: ubuntu-24.04
     timeout-minutes: 360
@@ -112,6 +119,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_conversation_replacement.py' -q
           python3 -m unittest discover -s tests -p 'test_draft_management.py' -q
           python3 -m unittest discover -s tests -p 'test_draft_revision.py' -q
+          python3 -m unittest discover -s tests -p 'test_recreate_reviewed_drafts.py' -q
       - name: Run only explicitly authorized and privately verified IMAP operation
         env:
           PYTHONPATH: scripts

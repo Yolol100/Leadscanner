@@ -27,7 +27,10 @@ HEADERS = [
 ]
 REVIEW_STATES = {"HERZIEN VOOR MENSELIJKE CONTROLE",
                  "EXTRA BRANCHEREVIEW - ALGEMEEN AANBOD"}
-MODES = {"REVISION_PRECHECK", "REVISION_AUDIT", "REVISION_PILOT", "REVISION_ALL"}
+RECREATE_MODES = {"RECREATE_PRECHECK", "RECREATE_PILOT"} | {
+    f"RECREATE_BATCH_{n}" for n in range(1, 6)
+}
+MODES = {"REVISION_PRECHECK", "REVISION_AUDIT", "REVISION_PILOT", "REVISION_ALL"} | RECREATE_MODES
 ERRORS = {
     "revision_command_invalid", "revision_source_shape", "revision_source_identity",
     "revision_source_scope", "revision_body_invalid", "revision_subject_changed",
@@ -57,8 +60,10 @@ def validate_body(body):
         raise RuntimeError("revision_body_invalid")
     # Validate without changing the approved greeting or stored content.
     legacy.review_body("\n\n".join(["Hoi,"] + parts[1:]))
-    if ("Ik ben Andrew van Webactueel." not in parts[1]
-            or "Ik help " not in parts[1]
+    # The opening must describe a verified company fact and an actual offer,
+    # not a compulsory self-introduction or a generic marketing phrase.
+    if ("Ik ben Andrew van Webactueel" in body
+            or not parts[1].strip()
             or "}}" in body or "[" in body or "]" in body):
         raise RuntimeError("revision_body_invalid")
 
@@ -254,6 +259,10 @@ def report(base, records, state, original_archives, revision_archives, mode):
 
 def run(mode, event, *, connector=connect_imap):
     authorize(mode, event)
+    if mode in RECREATE_MODES:
+        import recreate_reviewed_drafts
+        return recreate_reviewed_drafts.run(
+            mode, revision=sys.modules[__name__], connector=connector)
     legacy.imap.target_guard()
     session = legacy.RateLimitedSourceReads(legacy.authorized_writer())
     base, records = load_scope(session)

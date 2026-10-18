@@ -35,7 +35,7 @@ def fixtures():
         original = dict(previous, subject="Oorspronkelijk " + str(number))
         category = "target" if number <= 410 else "held" if number == 411 else "excluded"
         base[key] = {"number": number, "category": category, "current": original, "new": previous}
-        body = ("Goedendag,\n\nIk ben Andrew van Webactueel. Ik help bedrijven met een duidelijke website.\n\n"
+        body = ("Goedendag,\n\nJullie geven duidelijke informatie over jullie diensten. Ik kan die informatie ook op mobiel overzichtelijk tonen.\n\n"
                 "Zal ik een voorbeeld sturen voor " + company + "?\n\n" + mod.legacy.OPT + "\n\nGroet,\nAndrew")
         revised[key] = (dict(base[key], current=previous, new=dict(previous, body=body))
                         if category == "target" else dict(base[key]))
@@ -185,7 +185,7 @@ class RevisionTests(unittest.TestCase):
         body = self.rows[1][7]
         mod.validate_body(body)
         mod.validate_body(body.replace("Goedendag,", "Hoi,"))
-        for wrong in (body.replace(mod.legacy.OPT, ""), body.replace("Webactueel.", "[company]."),
+        for wrong in (body.replace(mod.legacy.OPT, ""), body.replace("diensten.", "[company]."),
                       body.replace("Andrew", "Other"), body.replace("sturen voor", "sturen? Voor")):
             with self.assertRaises(RuntimeError):
                 mod.validate_body(wrong)
