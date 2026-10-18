@@ -57,8 +57,10 @@ def validate_body(body):
         raise RuntimeError("revision_body_invalid")
     # Validate without changing the approved greeting or stored content.
     legacy.review_body("\n\n".join(["Hoi,"] + parts[1:]))
-    if ("Ik ben Andrew van Webactueel." not in parts[1]
-            or "Ik help " not in parts[1]
+    # The opening must describe a verified company fact and an actual offer,
+    # not a compulsory self-introduction or a generic marketing phrase.
+    if ("Ik ben Andrew van Webactueel" in body
+            or not parts[1].strip()
             or "}}" in body or "[" in body or "]" in body):
         raise RuntimeError("revision_body_invalid")
 
