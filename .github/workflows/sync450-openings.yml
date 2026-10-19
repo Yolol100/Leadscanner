@@ -103,6 +103,7 @@ jobs:
        github.event.comment.body == 'LEADS_V2_DRAFTS:BATCH_3' ||
        github.event.comment.body == 'LEADS_V2_DRAFTS:BATCH_4' ||
        github.event.comment.body == 'LEADS_V2_DRAFTS:BATCH_5' ||
+       github.event.comment.body == 'LEADS_V2_DRAFTS:RECREATE_REMAINING' ||
        github.event.comment.body == 'LEADS_V2_DRAFTS:RECREATE_BATCH_1' ||
        github.event.comment.body == 'LEADS_V2_DRAFTS:RECREATE_BATCH_2' ||
        github.event.comment.body == 'LEADS_V2_DRAFTS:RECREATE_BATCH_3' ||
