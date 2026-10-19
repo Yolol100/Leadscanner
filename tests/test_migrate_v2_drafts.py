@@ -57,6 +57,9 @@ class RecoveryClient(Client):
     """Synthetic IMAP: honor non-Draft flags in separate proof folder."""
 
     def append(self, folder, flags, date, raw):
+        if folder.strip('"') == m.archives.V2_CREATED:
+            # Real IMAP servers can normalize bare LF on APPEND.
+            raw = raw.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
         result = super().append(folder, flags, date, raw)
         if result[0] == "OK" and folder.strip('"') == m.archives.V2_CREATED:
             item = self.server.boxes[m.archives.V2_CREATED][
@@ -151,6 +154,29 @@ class MigrationSafetyTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "v2_mailbox_identity_changed"):
             m.classify(self.records, box)
 
+    def test_source_hold_of_installed_new_remains_readable_and_locked(self):
+        """A failed fresh site check must not invalidate archived installed MIME."""
+        server = recovered_server(self.base, self.records)
+        target_key = next(
+            key for key, row in self.records.items()
+            if row["category"] == "target" and key in
+            {v["draft_id"] for v in server.boxes["Drafts"].values()})
+        self.records[target_key]["category"] = "source_hold"
+        self.records[target_key]["active"] = False
+        result = self.execute_recovery(server, "PRECHECK")
+        self.assertEqual(result["new"], 405)
+        self.assertEqual(result["sent"], 0)
+        self.assertEqual(
+            self.execute_recovery(server, "RECREATE_BATCH_1")["new"], 405)
+        self.assertEqual(len(server.boxes["Drafts"]), 405)
+
+        # A forged new MIME with no original archive must still fail closed.
+        archive_uid = next(uid for uid, item in server.boxes[m.archives.V2_ARCHIVE].items()
+                           if item["draft_id"] == target_key)
+        del server.boxes[m.archives.V2_ARCHIVE][archive_uid]
+        with self.assertRaisesRegex(RuntimeError, "v2_original_backup_missing"):
+            self.execute_recovery(server, "PRECHECK")
+
     def test_inactive_source_hold_is_preserved(self):
         server = server_with(self.records, self.base)
         first = next(key for key, r in self.records.items()
@@ -161,8 +187,12 @@ class MigrationSafetyTests(unittest.TestCase):
         self.assertEqual(states[first][1], "old")
         server.boxes["Drafts"]["1"] = entry(
             1, build_message(self.records[first]["new"]).as_bytes(), {b"\\DRAFT"})
-        with self.assertRaisesRegex(RuntimeError, "v2_source_hold_modified"):
-            m.classify(self.records, server.boxes["Drafts"])
+        self.assertEqual(
+            m.classify(self.records, server.boxes["Drafts"])[first][1], "new")
+        # Recognition is read-only; without the independent old backup it is
+        # NOT permission to accept or modify the newly installed MIME.
+        with self.assertRaisesRegex(RuntimeError, "v2_original_backup_missing"):
+            self.execute(server, "PRECHECK")
 
     def test_read_only_precheck_does_not_create_archive(self):
         server = server_with(self.records, self.base)

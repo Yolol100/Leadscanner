@@ -196,7 +196,9 @@ class PrivateIMAPArchive:
             if not _matches(build_message(proposed), actual):
                 raise RuntimeError("archive_recovery_content_changed")
             return raw
-        raw = build_message(proposed).as_bytes()
+        # RFC 5322 wire format: IMAP may normalize bare LF to CRLF.
+        # Serialize canonically before its exact-MIME proof is archived.
+        raw = build_message(proposed).as_bytes(policy=policy.SMTP)
         key = self.save(draft_id, uidvalidity, None, raw)
         if self.read(key) != raw:
             raise RuntimeError("archive_recovery_readback_invalid")
