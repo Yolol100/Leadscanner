@@ -227,6 +227,17 @@ class MigrationSafetyTests(unittest.TestCase):
         repeat = self.execute_recovery(server, "RECREATE_REMAINING")
         self.assertEqual(repeat["new"], 410)
         self.assertEqual(self.execute_recovery(server, "AUDIT")["new"], 410)
+        # Changing only a MIME header must fail the independent byte proof.
+        recreated = next(
+            item for item in server.boxes["Drafts"].values()
+            if item["draft_id"] in
+            {v["draft_id"] for v in server.boxes[m.archives.V2_CREATED].values()})
+        record = self.records[recreated["draft_id"]]
+        server.boxes["Drafts"][recreated["uid"]] = entry(
+            int(recreated["uid"]),
+            build_message(record["new"]).as_bytes(), {b"\\DRAFT"})
+        with self.assertRaisesRegex(RuntimeError, "v2_recovery_proof_mismatch"):
+            self.execute_recovery(server, "AUDIT")
 
     def test_recovery_reuses_proofs_after_interrupted_drafts_append(self):
         server = recovered_server(self.base, self.records)
