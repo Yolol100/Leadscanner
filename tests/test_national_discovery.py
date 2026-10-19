@@ -79,8 +79,10 @@ class NationalDiscoveryTests(unittest.TestCase):
         from pathlib import Path
         workflow = (Path(__file__).resolve().parents[1] /
                     ".github/workflows/fresh-leads.yml").read_text()
-        self.assertIn("startsWith(github.event.head_commit.message, 'LEADS_PREFLIGHT_ONLY:')", workflow)
-        self.assertIn("startsWith(github.event.head_commit.message, 'LEADS_DISCOVERY_ONLY:')", workflow)
+        self.assertNotIn("LEADS_PREFLIGHT_ONLY:", workflow)
+        self.assertNotIn("LEADS_DISCOVERY_ONLY:", workflow)
+        self.assertIn("github.event_name == 'workflow_dispatch'", workflow)
+        self.assertIn("github.ref == 'refs/heads/main'", workflow)
         self.assertIn("python3 scripts/trigger_request.py", workflow)
         self.assertIn('FRESH_LEADS_PREFLIGHT=green', workflow)
 
