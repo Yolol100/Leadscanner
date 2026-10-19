@@ -187,8 +187,12 @@ class MigrationSafetyTests(unittest.TestCase):
         self.assertEqual(states[first][1], "old")
         server.boxes["Drafts"]["1"] = entry(
             1, build_message(self.records[first]["new"]).as_bytes(), {b"\\DRAFT"})
-        with self.assertRaisesRegex(RuntimeError, "v2_source_hold_modified"):
-            m.classify(self.records, server.boxes["Drafts"])
+        self.assertEqual(
+            m.classify(self.records, server.boxes["Drafts"])[first][1], "new")
+        # Recognition is read-only; without the independent old backup it is
+        # NOT permission to accept or modify the newly installed MIME.
+        with self.assertRaisesRegex(RuntimeError, "v2_original_backup_missing"):
+            self.execute(server, "PRECHECK")
 
     def test_read_only_precheck_does_not_create_archive(self):
         server = server_with(self.records, self.base)
