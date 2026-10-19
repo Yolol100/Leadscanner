@@ -22,7 +22,7 @@ import private_imap_archive as archives
 from myhost_draft import _matches, build_message, save_draft, _mailbox_arg, connect_imap
 
 PREFIX = "LEADS_V2_DRAFTS:"
-MODES = frozenset({"PRECHECK", "AUDIT", "PILOT"} |
+MODES = frozenset({"PRECHECK", "AUDIT", "PILOT", "RECREATE_REMAINING"} |
                   {f"BATCH_{i}" for i in range(1, 6)} |
                   {f"RECREATE_BATCH_{i}" for i in range(1, 6)})
 V2_HEADERS = [
@@ -221,6 +221,9 @@ def summary(records, state, archived):
 
 
 def selected(records, mode):
+    if mode == "RECREATE_REMAINING":
+        return {key for key, row in records.items()
+                if row["category"] == "target" and row["active"]}
     group = None
     if mode == "PILOT":
         return {key for key, row in records.items() if row["number"] == 1}
@@ -258,11 +261,13 @@ def run(mode, event, *, connector=connect_imap, loader=source_scope):
     pending = {key: uid for key, (uid, generation, _) in state.items()
                if key in chosen and generation == "old"
                and records[key]["active"]}
-    if mode.startswith("RECREATE_BATCH_"):
+    if mode.startswith("RECREATE_BATCH_") or mode == "RECREATE_REMAINING":
         if pending:
             raise RuntimeError("v2_recreate_before_update")
-        missing = [key for key in chosen if records[key]["category"] == "target"
-                   and records[key]["active"] and key not in state]
+        missing = sorted((key for key in chosen
+                          if records[key]["category"] == "target"
+                          and records[key]["active"] and key not in state),
+                         key=lambda key: records[key]["number"])
         if not missing:
             return baseline
         again = loader(session)
