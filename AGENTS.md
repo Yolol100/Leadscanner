@@ -1,24 +1,23 @@
-# Leadscanner — vier stappen
+# Leadscanner — één uitvoercontract
 
-Volg [README.md](README.md) en de actieve Leads Skill voor branchemapping, zes vaste mails en vierstappenworkflow.
+De actieve **Leads-skill** is inhoudelijk eigenaar; `webactueel-workflow` is uitsluitend procescontroller. De actuele Project Leads-bronnen zijn beleid; deze repo is de uitvoering. Lees [README.md](README.md) alleen voor actuele repo-opdrachten en technische gates.
 
-1. Zoek lokale Nederlandse vakbedrijven; Overture/PDOK is uitsluitend kandidaatbewijs.
-2. Verifieer de officiële website; kies eerst een aantoonbaar genoemde contactpersoon met gepubliceerd zakelijk e-mailadres, anders één gepubliceerd `info@`/`contact@`-adres.
-3. Controleer historische dedupe/opt-out; vul alle placeholders in en sla maximaal 100 concepten via privé Draft Queue en IMAP `\\Draft` op, met exacte readback.
-4. Stop voor menselijke beoordeling. Geen automatische verzending.
+## Bestaande route
 
-Nooit prospectgegevens in publieke GitHub-inhoud. Geen CRM, audits, scores, campagnes, tracking, follow-ups of SMTP. Stop bij ontbrekend bronbewijs of een onbetrouwbare register-/Drafts-readback.
+1. Zoek Nederlandse lokale vakbedrijven; Overture/PDOK zijn hints, geen bevestigde leads.
+2. Verifieer identiteit, officiële website en één expliciet gepubliceerd professioneel adres of algemeen bedrijfsadres. Controleer **alle** historische dedupe, HMAC, bounces, opt-outs, LeadHistory en DraftQueue.
+3. Maak alleen na autorisatie een privé Mijn.Host-concept via DraftQueue, IMAP `\\Draft` en exacte same-folder readback; nooit SMTP/send.
+4. Geef aan de mens voor inhoudelijke en wettelijke controle. Een openbaar e-mailadres is geen verzendtoestemming.
 
+## Bestaande commandopoorten
 
-## Brononderzoek zonder dubbele zoekactie
+- Issue **#1720**: `LEADS_CHAT_V1:CHECK` en `LEADS_CHAT_V1:DRAFTS_AUDIT` zijn read-only; zoeken en evidence alleen als `LEADS_CHAT_V2:<MODE>:r-<32hex>` met geautoriseerde mode, stabiel aanvraag-ID, private readback en geen dubbele run.
+- Issue **#1659**: `LEADS_DRAFT_ONLY` of `LEADS_DRAFT_BATCH_ONLY`, uitsluitend opaque geverifieerde draft-ID's en met huidige issue-/actor-/IMAP-gates.
+- De vroegere planning/cron is uitgeschakeld. `auto_draft_new.py` is geen alternatief om alsnog automatisch concepten te genereren.
 
-Als website + bedrijf al in de privé `Approved`- of `Review450`-bron staan, gebruik de optionele `fast-website-evidence.yml`-researchroute voor een nieuwe, brongebonden controle en hergebruik recent gecontroleerde records. Gebruik geen browser-search/Google als standaard voor reeds bekende officiële URL's. `WebsiteEvidence` bevat tekstvermeldingen, geen bewezen ontbreken of werking van websitefuncties. De bestaande vier stappen, historische dedupe, privacy, Mijn.Host-readback en menselijke eindcontrole blijven leidend. Verwijder tijdelijke 450-scripts pas na afsluiting van de aparte 450-taak.
+## Afbakening en opschoning
 
-
-### Alleen op aanvraag: ChatGPT-commandokanaal
-
-Leadscanner wordt uitsluitend op aanvraag gestart. Geen `schedule`/cron of automatische eerste concepten. Bestaande geplande broncode is inactief en mag niet worden geactiveerd.
-
-Via bestaand issue #1720 accepteert `leads_chat_command.py` vaste eigenaargeautoriseerde commando's. `REVIEW_EVIDENCE_1` tot `REVIEW_EVIDENCE_5` worden via `LEADS_CHAT_V2:<MODE>:r-<32hex>` individueel op aanvraag gestart: vijf batches van maximaal 100 officiële websites uit het bestaande privé-Review450, uitsluitend naar WebsiteEvidence, zonder mailboxwijzigingen of automatische verzending. Een groen resultaat is alleen bronbewijs, geen toestemming om geblokkeerde bedrijven te benaderen. Alleen read-only `LEADS_CHAT_V1:CHECK` (volledige historische/HMAC, LeadHistory en DraftQueue) en `LEADS_CHAT_V1:DRAFTS_AUDIT` (Mijn.Host alleen lezen) behouden V1. Zoekopdrachten `HINTS_10/30/50/100`, `EVIDENCE` en `VERIFIED_100` vereisen `LEADS_CHAT_V2:<MODE>:r-<32hex>` met één cryptografisch willekeurig, daarna stabiel opdracht-ID. Herhaling van hetzelfde ID of GitHub-rerun start geen tweede scan; conflicterend hergebruik blokkeert. `Candidates` bevat alleen ongeverifieerde hints met exacte `GITHUB_RUN_ID` en privé-readback; geen bedrijfsdata in GitHub-issues of logs. Gebruik de nieuwe V2-ID niet om een nog lopende of onbewerkte opdracht dubbel uit te voeren.
-
-Alleen geverifieerde, menselijk beoordeelde nieuwe leads mogen via het afzonderlijke opaque-ID-commandokanaal #1659 in Mijn.Host Drafts worden geplaatst. Oude concepten, 450-review en historische uitsluitingen niet stil wijzigen. Nooit SMTP, mail verzenden of nieuwe tijdschema's aanzetten. Webactueel-workflow blijft procescontroller en Leads Skill eigenaar.
+- Gewone leads krijgen **geen** diepgaande websiteaudits, leadscores, Ahrefs-cijfers of video-pitch. De aparte **voorgestelde** videoroute mag tot vijf reeds geselecteerde leads verdiepen, maar is **niet** als nieuw GitHub-commando actief.
+- De gewenste neutrale twee-alineamail is **nog niet geactiveerd**. De zes bestaande branchemails blijven het huidige repo-contract totdat bronnen, skill, code, tests en private readback formeel zijn gesynchroniseerd.
+- `Review450`-historie, tijdelijke 450-scripts, oude concepten en suppressies niet verwijderen of herschrijven zolang de afzonderlijke taak niet is afgesloten en de herstelroute niet bewezen is.
+- Nooit prospect-, contact- of maildata in publieke commits, issues, logs of artifacts. Weiger een mutatie bij ontbrekend bewijs/rechten; omzeil geen beveiliging. CI-groen is geen bewijs van een opgeslagen concept.
