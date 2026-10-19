@@ -247,7 +247,7 @@ class MigrationSafetyTests(unittest.TestCase):
         server = recovered_server(self.base, self.records)
         changed = copy.deepcopy(self.records)
         changed[next(iter(changed))]["new"]["body"] = "Modified"
-        reads = iter((self.records, changed))
+        reads = iter((self.records, self.records, changed))
         with self.assertRaisesRegex(RuntimeError, "v2_source_changed"):
             self.execute_recovery(
                 server, "RECREATE_REMAINING", loader=lambda _: next(reads))
