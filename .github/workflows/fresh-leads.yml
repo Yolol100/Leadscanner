@@ -86,9 +86,9 @@ jobs:
         run: |
           python3 - <<'PY'
           import sys
-          from registry_readonly import load_suppressions
+          from registry_readonly import load_discovery_suppressions
           try:
-              rows = load_suppressions()
+              rows = load_discovery_suppressions()
               if len(rows) < 2:
                   raise RuntimeError("incomplete")
               print("FRESH_LEADS_PREFLIGHT=green")

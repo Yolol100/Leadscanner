@@ -53,6 +53,14 @@ class WorkflowSpeedContract(unittest.TestCase):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, workflow)
 
+    def test_manual_preflight_reads_all_suppression_sources(self):
+        workflow = (ROOT / ".github/workflows/fresh-leads.yml").read_text()
+        preflight = workflow.split("  preflight:", 1)[1].split("  discover:", 1)[0]
+        self.assertIn("from registry_readonly import load_discovery_suppressions", preflight)
+        self.assertIn("rows = load_discovery_suppressions()", preflight)
+        self.assertNotIn("rows = load_suppressions()", preflight)
+        self.assertIn("FRESH_LEADS_PREFLIGHT=red", preflight)
+
     def test_no_active_workflow_reinstates_the_discontinued_cron(self):
         workflows = ROOT / ".github/workflows"
         self.assertFalse((workflows / "lead-schedule-health.yml").exists())
