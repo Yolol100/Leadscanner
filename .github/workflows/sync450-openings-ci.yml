@@ -6,6 +6,10 @@ on:
       - 'tests/test_sync450_openings.py'
       - 'scripts/live_450_draft_inventory.py'
       - 'tests/test_live_450_draft_inventory.py'
+      - 'scripts/migrate_v2_drafts.py'
+      - 'scripts/private_imap_archive.py'
+      - 'scripts/draft_revision.py'
+      - 'tests/test_migrate_v2_drafts.py'
       - '.github/workflows/sync450-openings.yml'
       - '.github/workflows/sync450-openings-ci.yml'
 permissions:
@@ -32,3 +36,5 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_sync450_openings.py' -q
           python3 -m unittest discover -s tests -p 'test_reconcile450_current.py' -q
           python3 -m unittest discover -s tests -p 'test_live_450_draft_inventory.py' -q
+          python3 -m unittest discover -s tests -p 'test_draft_revision.py' -q
+          python3 -m unittest discover -s tests -p 'test_migrate_v2_drafts.py' -q
