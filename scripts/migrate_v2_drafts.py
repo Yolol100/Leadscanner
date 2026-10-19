@@ -409,6 +409,38 @@ def run(mode, event, *, connector=connect_imap, loader=source_scope):
                 installed=len(pending), created=0)
 
 
+# Only stable internal codes may enter public CI logs. Never log an exception
+# message, traceback, mailbox UID, email, company or MIME data by default.
+_SAFE_REASON_CODES = frozenset({
+    "archive_folder_name_invalid", "archive_folder_creation_failed",
+    "archive_folder_not_initialized", "archive_folder_list_failed",
+    "archive_cannot_be_drafts", "archive_flags_invalid",
+    "archive_scope_changed", "archive_identity_invalid",
+    "archive_uidvalidity_invalid", "archive_duplicate_draft_id",
+    "archive_read_identity_invalid", "archive_readback_failed",
+    "archive_independent_readback_failed", "archive_old_bytes_not_equal",
+    "archive_original_conflict", "archive_write_mime_mismatch",
+    "archive_append_failed", "archive_write_scope_or_hash_mismatch",
+    "archive_recovery_identity_invalid", "archive_recovery_content_changed",
+    "archive_recovery_readback_invalid", "v2_source_changed",
+    "v2_mailbox_changed", "v2_source_shape", "v2_source_identity",
+    "v2_original_backup_missing", "v2_recovery_proof_mismatch",
+    "v2_archive_generation_conflict", "v2_recovery_marker_conflict",
+    "v2_create_failed", "v2_create_readback_failed",
+    "v2_final_readback_failed", "v2_uidplus_required",
+    "v2_mailbox_identity_changed", "v2_mailbox_text_changed",
+    "v2_source_unapproved", "v2_recreate_before_update",
+    "revision_archive_readback_failed", "revision_archive_changed",
+    "conversation_official_evidence_stale", "conversation_source_identity_mismatch",
+})
+
+
+def safe_error_reason(error):
+    reason = str(error) if type(error) is RuntimeError else ""
+    return (reason if reason in _SAFE_REASON_CODES
+            else "private_source_or_imap_unverified")
+
+
 def main():
     value = os.environ.get("CONVERSATION_MODE", "")
     mode = value[len(PREFIX):] if value.startswith(PREFIX) else ""
@@ -422,9 +454,9 @@ def main():
         print("DRAFT_V2=green mode=" + mode + " " +
               " ".join(f"{k}={v}" for k, v in outcome.items()))
         return 0
-    except Exception:
-        # No company names, emails, draft IDs, subjects or raw MIME in logs.
-        print("DRAFT_V2=blocked reason=private_source_or_imap_unverified sent=0")
+    except Exception as error:
+        # Known static machine reason only: never print raw private exceptions.
+        print("DRAFT_V2=blocked reason=" + safe_error_reason(error) + " sent=0")
         return 1
 
 
