@@ -57,6 +57,9 @@ class RecoveryClient(Client):
     """Synthetic IMAP: honor non-Draft flags in separate proof folder."""
 
     def append(self, folder, flags, date, raw):
+        if folder.strip('"') == m.archives.V2_CREATED:
+            # Real IMAP servers can normalize bare LF on APPEND.
+            raw = raw.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
         result = super().append(folder, flags, date, raw)
         if result[0] == "OK" and folder.strip('"') == m.archives.V2_CREATED:
             item = self.server.boxes[m.archives.V2_CREATED][
