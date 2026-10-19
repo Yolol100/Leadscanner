@@ -694,21 +694,22 @@ class FastOfficialEvidenceTests(unittest.TestCase):
         store.assert_not_called()
         self.assertEqual(json.loads(output.getvalue())["approved_stored_privately"], 0)
 
-    def test_scheduled_automation_never_invokes_mailbox_transport(self):
+    def test_no_scheduled_leads_or_mailbox_transport_in_research(self):
         from pathlib import Path
         root = Path(__file__).resolve().parents[1]
         fast = (root / ".github/workflows/fast-website-evidence.yml").read_text()
         new = (root / ".github/workflows/fresh-leads.yml").read_text()
-        self.assertIn("github.event_name == 'schedule'", fast)
-        self.assertIn("github.event_name == 'schedule'", new)
+        for workflow in (fast, new):
+            self.assertNotIn("\n  schedule:", workflow.split("\npermissions:", 1)[0])
         self.assertIn("LEADS_EVIDENCE_ONCE:", fast)
         self.assertIn("LEAD_REGISTRY_SERVICE_ACCOUNT_JSON", fast)
         self.assertNotIn("OUTREACH_MAIL_PASSWORD", fast)
-        research, drafts = new.split("  auto_first_drafts:", 1)
+        self.assertNotIn("\n  auto_first_drafts:", new)
+        research, preflight = new.split("\n  auto_draft_preflight:", 1)
         self.assertNotIn("OUTREACH_MAIL_PASSWORD", research)
-        self.assertIn("OUTREACH_MAIL_PASSWORD", drafts)
-        self.assertIn("github.event_name == 'schedule'", drafts)
-        self.assertNotIn("smtp", fast.lower() + research.lower())
+        self.assertIn("OUTREACH_MAIL_PASSWORD", preflight)
+        self.assertIn("scripts/auto_draft_new.py --mailbox-preflight", preflight)
+        self.assertNotIn("smtp", fast.lower() + research.lower() + preflight.lower())
 
     def test_cache_retention_preserves_review450_and_current_batch(self):
         old = verified(checked_at="2025-01-01T00:00:00+00:00")

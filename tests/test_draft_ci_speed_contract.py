@@ -38,12 +38,13 @@ class WorkflowSpeedContract(unittest.TestCase):
         # The heavy Overture dependency belongs to discovery, never the
         # scheduled IMAP/Draft Queue jobs or the metadata-only canary.
         self.assertEqual(workflow.count("cache-dependency-path: requirements.txt"), 3)
-        draft, preflight = workflow.split("  auto_first_drafts:", 1)[1].split(
-            "  auto_draft_preflight:", 1)
-        for job in (draft, preflight):
-            self.assertIn("pip install -r requirements-draft.txt", job)
-            self.assertIn("cache-dependency-path: requirements-draft.txt", job)
-            self.assertNotIn("pip install -r requirements.txt", job)
+        # The scheduled job was unreachable after PR #1719 removed cron.
+        # Only the read-only preflight retains its lightweight dependency set.
+        self.assertNotIn("  auto_first_drafts:", workflow)
+        preflight = workflow.split("  auto_draft_preflight:", 1)[1]
+        self.assertIn("pip install -r requirements-draft.txt", preflight)
+        self.assertIn("cache-dependency-path: requirements-draft.txt", preflight)
+        self.assertNotIn("pip install -r requirements.txt", preflight)
         self.assertIn("python3 -m unittest discover", workflow)
 
 

@@ -472,16 +472,17 @@ class AutomaticDraftSafetyTests(unittest.TestCase):
         self.assertNotIn("append", preflight.lower())
         self.assertNotIn("smtp", preflight.lower())
 
-    def test_schedule_is_bound_to_main_and_no_smtp(self):
+    def test_disabled_scheduled_first_draft_job_is_absent(self):
         path = Path(__file__).resolve().parents[1] / ".github/workflows/fresh-leads.yml"
         workflow = path.read_text()
-        section = workflow.split("  auto_first_drafts:",1)[1]
-        self.assertIn("github.event_name == 'schedule'", section)
-        self.assertIn("github.ref == 'refs/heads/main'", section)
-        self.assertIn("OUTREACH_IMAP_PORT", section)
-        self.assertIn("scripts/auto_draft_new.py", section)
-        self.assertNotIn("smtp", section.lower())
-        self.assertNotIn("LEADS_IMPROVE450", section)
+        triggers = workflow.split("\npermissions:", 1)[0]
+        self.assertNotIn("\n  schedule:", triggers)
+        self.assertNotIn("\n  auto_first_drafts:", workflow)
+        preflight = workflow.split("\n  auto_draft_preflight:", 1)[1]
+        self.assertIn("github.event_name == 'push'", preflight)
+        self.assertIn("scripts/auto_draft_new.py --mailbox-preflight", preflight)
+        self.assertNotIn("smtp", preflight.lower())
+        self.assertNotIn("LEADS_IMPROVE450", preflight)
 
 
 if __name__ == "__main__":
