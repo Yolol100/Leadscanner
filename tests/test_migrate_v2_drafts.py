@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import migrate_v2_drafts as m
 from myhost_draft import build_message
-from test_draft_revision import Server, entry, fixtures
+from test_draft_revision import Server, Client, entry, fixtures
 
 
 def event(mode, *, owner="Yolol100"):
@@ -50,6 +50,39 @@ def server_with(records, base):
     # Mimic five user-removed drafts; a migration must not delete unknown mail.
     for uid in ("406", "407", "408", "409", "410"):
         server.boxes["Drafts"].pop(uid, None)
+    return server
+
+
+class RecoveryClient(Client):
+    """Synthetic IMAP: honor non-Draft flags in separate proof folder."""
+
+    def append(self, folder, flags, date, raw):
+        result = super().append(folder, flags, date, raw)
+        if result[0] == "OK" and folder.strip('"') == m.archives.V2_CREATED:
+            item = self.server.boxes[m.archives.V2_CREATED][
+                str(self.server.next_id)]
+            item["flags"], item["draft_flag"] = {b"\SEEN"}, False
+        return result
+
+
+class RecoveryServer(Server):
+    def connect(self):
+        return RecoveryClient(self)
+
+
+def recovered_server(base, records):
+    server = RecoveryServer(base, records)
+    for uid in list(server.boxes["Drafts"]):
+        if int(uid) > 405 or records[
+                server.boxes["Drafts"][uid]["draft_id"]]["category"] != "target":
+            del server.boxes["Drafts"][uid]
+    server.boxes[m.archives.V2_ARCHIVE] = {}
+    for uid, item in list(server.boxes["Drafts"].items()):
+        record = records[item["draft_id"]]
+        server.boxes["Drafts"][uid] = entry(
+            int(uid), build_message(record["new"]).as_bytes(), {b"\DRAFT"})
+        server.boxes[m.archives.V2_ARCHIVE][uid] = entry(
+            int(uid), build_message(record["current"]).as_bytes(), {b"\SEEN"})
     return server
 
 
@@ -155,6 +188,84 @@ class MigrationSafetyTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "v2_recreate_before_update"):
             self.execute(server, "RECREATE_BATCH_5")
         self.assertEqual(len(server.boxes["Drafts"]), 405)
+
+    def execute_recovery(self, server, mode, *, loader=None):
+        def uidset(client):
+            return set(server.boxes[client.folder])
+
+        def fetch(client, uid):
+            return server.boxes[client.folder][uid]
+
+        def raw_snapshot(client, uid, sha):
+            from hashlib import sha256
+            raw = server.boxes[client.folder][uid]["raw"]
+            self.assertEqual(sha256(raw).hexdigest(), sha)
+            return raw
+
+        with patch.object(m.archives.transport, "uidset", side_effect=uidset), \
+             patch.object(m.archives.transport, "scan", side_effect=server.scan), \
+             patch.object(m.archives.transport, "fetch_message", side_effect=fetch), \
+             patch.object(m.archives.drafts, "_raw_snapshot",
+                          side_effect=raw_snapshot):
+            return self.execute(server, mode, loader=loader)
+
+    def test_recovery_creates_only_missing_with_private_mime_proofs(self):
+        server = recovered_server(self.base, self.records)
+        self.assertEqual(len(server.boxes["Drafts"]), 405)
+        out = self.execute_recovery(server, "RECREATE_REMAINING")
+        self.assertEqual((out["created"], out["total"], out["new"]),
+                         (5, 410, 410))
+        self.assertEqual(out["archived"], 405)
+        self.assertEqual(out["recovery_proofs"], 5)
+        self.assertEqual(out["sent"], 0)
+        self.assertEqual(out["pending"], 0)
+        self.assertEqual(len(server.boxes[m.archives.V2_CREATED]), 5)
+        self.assertTrue(all(not v["draft_flag"] for v
+                            in server.boxes[m.archives.V2_CREATED].values()))
+        self.assertFalse(any(action[0] in {"STORE", "EXPUNGE"} for action
+                             in server.log))
+        repeat = self.execute_recovery(server, "RECREATE_REMAINING")
+        self.assertEqual(repeat["new"], 410)
+        self.assertEqual(self.execute_recovery(server, "AUDIT")["new"], 410)
+        # Changing only a MIME header must fail the independent byte proof.
+        recreated = next(
+            item for item in server.boxes["Drafts"].values()
+            if item["draft_id"] in
+            {v["draft_id"] for v in server.boxes[m.archives.V2_CREATED].values()})
+        record = self.records[recreated["draft_id"]]
+        server.boxes["Drafts"][recreated["uid"]] = entry(
+            int(recreated["uid"]),
+            build_message(record["new"]).as_bytes(), {b"\\DRAFT"})
+        with self.assertRaisesRegex(RuntimeError, "v2_recovery_proof_mismatch"):
+            self.execute_recovery(server, "AUDIT")
+
+    def test_recovery_reuses_proofs_after_interrupted_drafts_append(self):
+        server = recovered_server(self.base, self.records)
+        # First five IMAP appends build private MIME proofs; the next
+        # append adds one draft. Simulate the second draft APPEND failing.
+        server.fail_append_at = 7
+        with self.assertRaisesRegex(RuntimeError, "v2_create_failed"):
+            self.execute_recovery(server, "RECREATE_REMAINING")
+        self.assertEqual(len(server.boxes[m.archives.V2_CREATED]), 5)
+        self.assertEqual(len(server.boxes["Drafts"]), 406)
+        resumed = self.execute_recovery(server, "RECREATE_REMAINING")
+        self.assertEqual(resumed["created"], 4)
+        self.assertEqual(resumed["new"], 410)
+        self.assertEqual(resumed["recovery_proofs"], 5)
+        self.assertEqual(self.execute_recovery(server, "AUDIT")["pending"], 0)
+
+    def test_recovery_rechecks_source_after_private_proof(self):
+        server = recovered_server(self.base, self.records)
+        changed = copy.deepcopy(self.records)
+        changed[next(iter(changed))]["new"]["body"] = "Modified"
+        reads = iter((self.records, self.records, changed))
+        with self.assertRaisesRegex(RuntimeError, "v2_source_changed"):
+            self.execute_recovery(
+                server, "RECREATE_REMAINING", loader=lambda _: next(reads))
+        self.assertEqual(len(server.boxes["Drafts"]), 405)
+        self.assertEqual(len(server.boxes[m.archives.V2_CREATED]), 5)
+        self.assertEqual(
+            self.execute_recovery(server, "RECREATE_REMAINING")["new"], 410)
 
     def test_real_source_shapes_keep_skips_and_low_scores_as_holds(self):
         from datetime import datetime, timezone

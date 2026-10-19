@@ -7,20 +7,24 @@ from __future__ import annotations
 
 import hashlib
 import re
+from email import policy
+from email.parser import BytesParser
 
 import draft_management as drafts
 import replace450 as transport
-from myhost_draft import _mailbox_arg, connect_imap, find_drafts_folder
+from myhost_draft import (_mailbox_arg, _matches, build_message,
+                          connect_imap, find_drafts_folder)
 
 ARCHIVE = "Webactueel Original Drafts 20261017"
 REVISION_ARCHIVE = "Webactueel Drafts Before Revision 20261018"
 V2_ARCHIVE = "Webactueel Drafts Before V2 20261019"
+V2_CREATED = "Webactueel V2 Missing Draft Proof 20261019"
 _ARCHIVE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9 ]{1,80}$")
 
 
 def _archive(client, *, create=False, folder=None):
     folder = ARCHIVE if folder is None else folder
-    if folder not in {ARCHIVE, REVISION_ARCHIVE, V2_ARCHIVE} or not _ARCHIVE_RE.fullmatch(folder):
+    if folder not in {ARCHIVE, REVISION_ARCHIVE, V2_ARCHIVE, V2_CREATED} or not _ARCHIVE_RE.fullmatch(folder):
         raise RuntimeError("archive_folder_name_invalid")
     status, listed = client.list()
     if status != "OK" or not isinstance(listed, list):
@@ -41,7 +45,7 @@ def _archive(client, *, create=False, folder=None):
     return folder
 
 
-def _archive_index(client):
+def _archive_index(client, *, folder=ARCHIVE):
     """One complete archive scan per private operation batch, not per draft.
 
     transport.scan enforces before/after UID equality and hashes every MIME.
@@ -49,7 +53,7 @@ def _archive_index(client):
     stay unchanged. Every referenced original is still fetched and SHA-checked
     in a fresh IMAP session before a Drafts deletion may proceed.
     """
-    validity = transport.select(client, ARCHIVE, readonly=True)
+    validity = transport.select(client, folder, readonly=True)
     scanned = transport.scan(client)
     index = {}
     for uid, item in scanned.items():
@@ -67,8 +71,11 @@ def _archive_index(client):
 class PrivateIMAPArchive:
     """Private original MIME archive: once-per-batch index, exact per-UID proof."""
 
-    def __init__(self, *, connector=connect_imap):
+    def __init__(self, *, connector=connect_imap, folder=ARCHIVE):
+        if folder not in {ARCHIVE, V2_CREATED}:
+            raise RuntimeError("archive_folder_name_invalid")
         self.connector = connector
+        self.folder = folder
         self._validity = None
         self._uids = None
         self._index = None
@@ -78,8 +85,8 @@ class PrivateIMAPArchive:
             return
         client = self.connector()
         try:
-            _archive(client, create=True)
-            validity, uids, index = _archive_index(client)
+            _archive(client, create=True, folder=self.folder)
+            validity, uids, index = _archive_index(client, folder=self.folder)
             self._validity, self._uids, self._index = validity, uids, index
         finally:
             try:
@@ -88,8 +95,8 @@ class PrivateIMAPArchive:
                 pass
 
     def _check_session(self, client):
-        _archive(client)
-        validity = transport.select(client, ARCHIVE, readonly=True)
+        _archive(client, folder=self.folder)
+        validity = transport.select(client, self.folder, readonly=True)
         # Never reuse the private snapshot if an external archive append,
         # deletion or UIDVALIDITY reset occurred during this batch.
         if validity != self._validity or transport.uidset(client) != self._uids:
@@ -123,9 +130,9 @@ class PrivateIMAPArchive:
                 if drafts._raw_snapshot(client, archived_uid, sha) != raw:
                     raise RuntimeError("archive_old_bytes_not_equal")
                 return key
-            if client.append(_mailbox_arg(ARCHIVE), r"(\Seen)", None, raw)[0] != "OK":
+            if client.append(_mailbox_arg(self.folder), r"(\Seen)", None, raw)[0] != "OK":
                 raise RuntimeError("archive_append_failed")
-            new_validity = transport.select(client, ARCHIVE, readonly=True)
+            new_validity = transport.select(client, self.folder, readonly=True)
             after_uids = transport.uidset(client)
             created = after_uids - self._uids
             if (new_validity != self._validity
@@ -172,3 +179,25 @@ class PrivateIMAPArchive:
                 client.logout()
             except Exception:
                 pass
+
+    def prepare_missing_draft(self, draft_id, uidvalidity, proposed):
+        """Archive intended MIME first, and safely reuse it on retries.
+
+        Caller must prove the draft ID absent in the full live mailbox.
+        This fixed private proof folder stores new, not old, generations.
+        """
+        if self.folder != V2_CREATED or proposed.get("draft_id") != draft_id:
+            raise RuntimeError("archive_recovery_identity_invalid")
+        self._initialize()
+        known = self._index.get(draft_id)
+        if known:
+            raw = self.read((draft_id, known[1]))
+            actual = BytesParser(policy=policy.default).parsebytes(raw)
+            if not _matches(build_message(proposed), actual):
+                raise RuntimeError("archive_recovery_content_changed")
+            return raw
+        raw = build_message(proposed).as_bytes()
+        key = self.save(draft_id, uidvalidity, None, raw)
+        if self.read(key) != raw:
+            raise RuntimeError("archive_recovery_readback_invalid")
+        return raw

@@ -19,10 +19,10 @@ from io import StringIO
 import conversation_replacement as legacy
 import draft_revision as rev
 import private_imap_archive as archives
-from myhost_draft import _matches, build_message, save_draft, _mailbox_arg, connect_imap
+from myhost_draft import _matches, build_message, _mailbox_arg, connect_imap
 
 PREFIX = "LEADS_V2_DRAFTS:"
-MODES = frozenset({"PRECHECK", "AUDIT", "PILOT"} |
+MODES = frozenset({"PRECHECK", "AUDIT", "PILOT", "RECREATE_REMAINING"} |
                   {f"BATCH_{i}" for i in range(1, 6)} |
                   {f"RECREATE_BATCH_{i}" for i in range(1, 6)})
 V2_HEADERS = [
@@ -201,7 +201,7 @@ def classify(records, inventory):
     return found
 
 
-def summary(records, state, archived):
+def summary(records, state, archived, recovery_proofs=0):
     eligible = sum(x["category"] == "target" for x in records.values())
     active = sum(x["category"] == "target" and x["active"] for x in records.values())
     new = sum(g == "new" for _, g, _ in state.values())
@@ -216,11 +216,15 @@ def summary(records, state, archived):
                           if row["category"] == "target")
     return dict(total=len(state), eligible=eligible, active=active, new=new,
                 old=old, missing=eligible-present_targets, pending=pending,
-                archived=archived, blocked=450-active,
+                archived=archived, recovery_proofs=recovery_proofs,
+                blocked=450-active,
                 quality_review=quality_review, sent=0, deleted=0)
 
 
 def selected(records, mode):
+    if mode == "RECREATE_REMAINING":
+        return {key for key, row in records.items()
+                if row["category"] == "target" and row["active"]}
     group = None
     if mode == "PILOT":
         return {key for key, row in records.items() if row["number"] == 1}
@@ -234,6 +238,12 @@ def selected(records, mode):
             if (row["number"]-1)//100+1 == group}
 
 
+def recovery_rows(records):
+    """Only active/held target identities may have a private new-MIME marker."""
+    return {key: dict(row, category="target", current=dict(row["new"]))
+            for key, row in records.items() if row["category"] == "target"}
+
+
 def run(mode, event, *, connector=connect_imap, loader=source_scope):
     authorize(event, mode)
     legacy.imap.target_guard()
@@ -244,12 +254,22 @@ def run(mode, event, *, connector=connect_imap, loader=source_scope):
     state = classify(records, before)
     _, _, stored = rev.archive_inventory(
         connector, records, archive_folder=archives.V2_ARCHIVE)
+    _, _, created_proofs = rev.archive_inventory(
+        connector, recovery_rows(records),
+        archive_folder=archives.V2_CREATED)
+    if set(stored) & set(created_proofs):
+        raise RuntimeError("v2_archive_generation_conflict")
+    if any(key in state and state[key][1] != "new" for key in created_proofs):
+        raise RuntimeError("v2_recovery_marker_conflict")
     required_prior = {key: None for key, (_, generation, _) in state.items()
                       if generation == "new"}
     for key in required_prior:
-        if key not in stored:
+        if key not in stored and key not in created_proofs:
             raise RuntimeError("v2_original_backup_missing")
-    baseline = summary(records, state, len(stored))
+        if (key in created_proofs
+                and state[key][2] != created_proofs[key]["sha256"]):
+            raise RuntimeError("v2_recovery_proof_mismatch")
+    baseline = summary(records, state, len(stored), len(created_proofs))
     if mode in {"AUDIT", "PRECHECK"}:
         return baseline
     chosen = selected(records, mode)
@@ -258,13 +278,23 @@ def run(mode, event, *, connector=connect_imap, loader=source_scope):
     pending = {key: uid for key, (uid, generation, _) in state.items()
                if key in chosen and generation == "old"
                and records[key]["active"]}
-    if mode.startswith("RECREATE_BATCH_"):
+    if mode.startswith("RECREATE_BATCH_") or mode == "RECREATE_REMAINING":
         if pending:
             raise RuntimeError("v2_recreate_before_update")
-        missing = [key for key in chosen if records[key]["category"] == "target"
-                   and records[key]["active"] and key not in state]
+        missing = sorted((key for key in chosen
+                          if records[key]["category"] == "target"
+                          and records[key]["active"] and key not in state),
+                         key=lambda key: records[key]["number"])
         if not missing:
             return baseline
+        again = loader(session)
+        if digest(again) != source_hash:
+            raise RuntimeError("v2_source_changed")
+        marker = archives.PrivateIMAPArchive(
+            connector=connector, folder=archives.V2_CREATED)
+        prepared = {key: marker.prepare_missing_draft(
+            key, validity, records[key]["new"]) for key in missing}
+        # Source/opt-outs must still match AFTER the durable private archive.
         again = loader(session)
         if digest(again) != source_hash:
             raise RuntimeError("v2_source_changed")
@@ -275,21 +305,42 @@ def run(mode, event, *, connector=connect_imap, loader=source_scope):
                 raise RuntimeError("v2_mailbox_changed")
             rev.unchanged(before, legacy.transport.scan(client))
             for key in missing:
-                if save_draft(client, folder, records[key]["new"]) != "created":
-                    raise RuntimeError("v2_create_readback_failed")
+                if client.append(_mailbox_arg(folder), r"(\Draft)", None,
+                                 prepared[key])[0] != "OK":
+                    raise RuntimeError("v2_create_failed")
         finally:
             client.logout()
         end_folder, end_validity, after = rev.read_drafts(connector)
         if end_folder != folder or end_validity != validity:
             raise RuntimeError("v2_mailbox_changed")
-        rev.unchanged(before, after, added=set(after)-set(before))
+        added = set(after) - set(before)
+        rev.unchanged(before, after, added=added)
+        if len(added) != len(missing):
+            raise RuntimeError("v2_create_readback_failed")
+        exact = set()
+        for uid in added:
+            item = after[uid]
+            key = item["draft_id"]
+            if (key not in prepared or key in exact or not item["draft_flag"]
+                    or item["sha256"] != hashlib.sha256(prepared[key]).hexdigest()
+                    or not _matches(build_message(records[key]["new"]),
+                                    item["message"])):
+                raise RuntimeError("v2_create_readback_failed")
+            exact.add(key)
+        if exact != set(missing):
+            raise RuntimeError("v2_create_readback_failed")
         final = classify(records, after)
         if any(key not in final or final[key][1] != "new" for key in missing):
             raise RuntimeError("v2_final_readback_failed")
         again = loader(session)
         if digest(again) != source_hash:
             raise RuntimeError("v2_source_changed")
-        return dict(summary(records, final, len(stored)),
+        _, _, confirmed = rev.archive_inventory(
+            connector, recovery_rows(records),
+            required={key: hashlib.sha256(raw).hexdigest()
+                      for key, raw in prepared.items()},
+            archive_folder=archives.V2_CREATED)
+        return dict(summary(records, final, len(stored), len(confirmed)),
                     created=len(missing), installed=0)
     if not pending:
         return baseline
@@ -354,7 +405,7 @@ def run(mode, event, *, connector=connect_imap, loader=source_scope):
     _, _, verified = rev.archive_inventory(
         connector, records, required={key: None for key in pending},
         archive_folder=archives.V2_ARCHIVE)
-    return dict(summary(records, end_state, len(verified)),
+    return dict(summary(records, end_state, len(verified), len(created_proofs)),
                 installed=len(pending), created=0)
 
 
