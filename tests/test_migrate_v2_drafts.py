@@ -156,6 +156,73 @@ class MigrationSafetyTests(unittest.TestCase):
             self.execute(server, "RECREATE_BATCH_5")
         self.assertEqual(len(server.boxes["Drafts"]), 405)
 
+    def test_real_source_shapes_keep_skips_and_low_scores_as_holds(self):
+        from datetime import datetime, timezone
+        rows = []
+        prior = [m.rev.HEADERS]
+        qa = [["Nr", "Draft-ID", "Bedrijf", "E-mailadres"] + [""] * 12]
+        v2_batches = [[m.V2_HEADERS] for _ in range(5)]
+        proof = [list(m.legacy.websites.COLUMNS)]
+        reviewed = 0
+        for key, item in self.records.items():
+            n = item["number"]
+            old = item["current"]
+            newer = item["new"]
+            is_target = item["category"] == "target"
+            low_score = n <= 54
+            group = (n - 1)//100
+            q = [""] * 16
+            q[0], q[1], q[2], q[3] = str(n), key, old["company"], old["email"]
+            q[5], q[6], q[8] = newer["subject"], newer["body"], old["source_url"]
+            q[10], q[13] = ("8.5" if low_score else "9.2"), "VOOR_MENSELIJKE_EINDCONTROLE"
+            qa.append(q)
+            copy = [""] * 13
+            copy[0], copy[1], copy[2], copy[4] = str(n), key, old["company"], newer["subject"]
+            copy[5] = ("HERZIEN VOOR MENSELIJKE CONTROLE" if is_target
+                       else "OVERGESLAGEN")
+            copy[7] = old["body"] if is_target else ""
+            copy[11] = "NIET VERZENDGEREED - HANDMATIGE REVIEW"
+            prior.append(copy)
+            props = [""] * 15
+            props[0], props[1], props[2], props[3], props[4] = (
+                str(n), key, old["company"], old["email"], old["source_url"])
+            props[11], props[12] = (
+                "NIET VERZENDGEREED - menselijke controle nodig", "ONGEWIJZIGD")
+            if is_target:
+                reviewed += 1
+                props[5], props[6] = newer["subject"], newer["body"]
+                props[7] = "TEKSTCHECK_OK 60 woorden"
+                props[13] = "REVIEW - individuele broncontrole open"
+            else:
+                props[13] = "HOLD - NIET VERVANGEN"
+            v2_batches[group].append(props)
+            row = [""] * 14
+            row[0] = "Review450:" + key
+            row[6] = old["email"]
+            row[11] = datetime.now(timezone.utc).isoformat()
+            row[12] = "verified_with_detail"
+            proof.append(row)
+        self.assertEqual(reviewed, 410)
+
+        def source_read(_session, _sid, a1):
+            if a1.startswith("QA450Actueel!"):
+                return qa
+            if a1.startswith("'Conceptkwaliteit 20261018'!"):
+                return prior
+            if a1.startswith("WebsiteEvidence!"):
+                return proof
+            for n in range(1, 6):
+                if a1.startswith(f"'Korte mails V2 B{n} REVIEW 20261019'!"):
+                    return v2_batches[n-1]
+            raise AssertionError("Unexpected source")
+        with patch.object(m.legacy, "_private_rows", return_value=self.records), \
+             patch.object(m.legacy.history.source, "read", side_effect=source_read):
+            result = m.source_scope(object())
+        self.assertEqual(len(result), 450)
+        self.assertEqual(sum(r["active"] for r in result.values()), 356)
+        self.assertEqual(sum(r["category"] == "held" for r in result.values()), 40)
+        self.assertEqual(sum(r.get("quality_ready") is False for r in result.values()), 54)
+
     def test_archive_restricts_scope_to_fixed_private_folder(self):
         server = server_with(self.records, self.base)
         client = server.connect()

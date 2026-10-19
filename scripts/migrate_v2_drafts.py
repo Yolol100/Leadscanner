@@ -102,7 +102,6 @@ def source_scope(session):
                 or original["new"]["company"] != company
                 or not base or base[6].casefold() != email.casefold()
                 or proposal[4] != original["new"]["source_url"]
-                or raw[5] != proposal[5] or raw[6] != proposal[6]
                 or proposal[11] != "NIET VERZENDGEREED - menselijke controle nodig"
                 or proposal[12] != "ONGEWIJZIGD" or key in result):
             raise RuntimeError("v2_source_identity")
@@ -118,14 +117,21 @@ def source_scope(session):
             result[key] = row
             continue
         count += 1
+        if raw[5] != proposal[5] or raw[6] != proposal[6]:
+            raise RuntimeError("v2_copy_changed")
         if (old[5] not in rev.REVIEW_STATES
                 or old[11] != "NIET VERZENDGEREED - HANDMATIGE REVIEW"
                 or old[4] != original["new"]["subject"]
                 or raw[13] not in ALLOWED_QA
                 or not proposal[13].startswith(("REVIEW - ", "HOLD - "))
-                or not proposal[7].startswith("TEKSTCHECK_OK ")
-                or not 9.0 <= float(raw[10]) <= 10.0):
+                or not proposal[7].startswith("TEKSTCHECK_OK ")):
             raise RuntimeError("v2_source_unapproved")
+        try:
+            editorial_score = float(raw[10])
+        except (ValueError, TypeError):
+            raise RuntimeError("v2_score_invalid") from None
+        if not 0 <= editorial_score <= 10:
+            raise RuntimeError("v2_score_invalid")
         rev.validate_body(old[7])
         valid_body(proposal[6])
         if (original["category"] not in {"target", "source_hold"}
@@ -151,7 +157,9 @@ def source_scope(session):
         row.update(
             category="target" if original["category"] == "target" else "source_hold",
             current=current, new=newer,
-            active=bool(fresh and original["category"] == "target"))
+            quality_ready=editorial_score >= 9.0,
+            active=bool(fresh and editorial_score >= 9.0
+                        and original["category"] == "target"))
         result[key] = row
     if count != 410 or len(result) != 450:
         raise RuntimeError("v2_source_scope")
@@ -197,6 +205,9 @@ def summary(records, state, archived):
     eligible = sum(x["category"] == "target" for x in records.values())
     active = sum(x["category"] == "target" and x["active"] for x in records.values())
     new = sum(g == "new" for _, g, _ in state.values())
+    quality_review = sum(row["category"] == "target" and
+                         not row.get("quality_ready", True)
+                         for row in records.values())
     old = sum(g == "old" for _, g, _ in state.values())
     pending = sum(x["category"] == "target" and x["active"]
                   and (key not in state or state[key][1] == "old")
@@ -205,7 +216,8 @@ def summary(records, state, archived):
                           if row["category"] == "target")
     return dict(total=len(state), eligible=eligible, active=active, new=new,
                 old=old, missing=eligible-present_targets, pending=pending,
-                archived=archived, blocked=450-active, sent=0, deleted=0)
+                archived=archived, blocked=450-active,
+                quality_review=quality_review, sent=0, deleted=0)
 
 
 def selected(records, mode):
