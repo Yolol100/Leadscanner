@@ -177,7 +177,7 @@ class MigrationSafetyTests(unittest.TestCase):
             q[10], q[13] = ("8.5" if low_score else "9.2"), "VOOR_MENSELIJKE_EINDCONTROLE"
             qa.append(q)
             copy = [""] * 13
-            copy[0], copy[1], copy[2], copy[4] = str(n), key, old["company"], old["subject"]
+            copy[0], copy[1], copy[2], copy[4] = str(n), key, old["company"], newer["subject"]
             copy[5] = ("HERZIEN VOOR MENSELIJKE CONTROLE" if is_target
                        else "OVERGESLAGEN")
             copy[7] = old["body"] if is_target else ""
