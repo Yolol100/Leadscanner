@@ -173,7 +173,8 @@ def classify(records, inventory):
     for uid, item in inventory.items():
         key = item["draft_id"]
         row = records.get(key)
-        if (not row or key in found or row["category"] != "target"
+        if (not row or key in found
+                or row["category"] not in {"target", "source_hold"}
                 or not item["draft_flag"] or b"\\DELETED" in item["flags"]
                 or parseaddr(item["message"].get("From", ""))[1].casefold()
                     != legacy.imap.USER):
@@ -184,6 +185,8 @@ def classify(records, inventory):
             generation = "old"
         else:
             raise RuntimeError("v2_mailbox_text_changed")
+        if row["category"] == "source_hold" and generation != "old":
+            raise RuntimeError("v2_source_hold_modified")
         found[key] = (uid, generation, item["sha256"])
     if len(found) > 410:
         raise RuntimeError("v2_mailbox_scope_changed")
@@ -198,8 +201,10 @@ def summary(records, state, archived):
     pending = sum(x["category"] == "target" and x["active"]
                   and (key not in state or state[key][1] == "old")
                   for key, x in records.items())
+    present_targets = sum(key in state for key, row in records.items()
+                          if row["category"] == "target")
     return dict(total=len(state), eligible=eligible, active=active, new=new,
-                old=old, missing=eligible-len(state), pending=pending,
+                old=old, missing=eligible-present_targets, pending=pending,
                 archived=archived, blocked=450-active, sent=0, deleted=0)
 
 
