@@ -53,9 +53,57 @@ def load_expected(session):
     return expected
 
 
+def load_alternate_versions(session, expected):
+    """Read known historical private copy generations; never accept an unknown UID.
+
+    These are only comparison fingerprints, not authorization to update mail.
+    None of the version content, recipient data or individual IDs is logged.
+    """
+    specs = {
+        "original": ("Review450!A2:P451", 0, 2, 5, 6),
+        "openingen": ("OpeningenReview20261016!A2:Q451", 1, 2, 3, 7),
+        "conceptkwaliteit": ("'Conceptkwaliteit 20261018'!A2:M451", 1, 2, 4, 7),
+    }
+    versions = {name: {} for name in (*specs, "gespreksstijl")}
+    for name, (range_a1, id_col, company_col, subject_col, body_col) in specs.items():
+        rows = review.read(session, review.SID, range_a1)
+        if len(rows) != 450:
+            raise RuntimeError("private_versions_count_invalid")
+        for row in rows:
+            if (len(row) <= max(id_col, company_col)
+                    or row[id_col] not in expected
+                    or row[company_col] != expected[row[id_col]]["company"]
+                    or row[id_col] in versions[name]):
+                raise RuntimeError("private_versions_identity_invalid")
+            subject = row[subject_col] if len(row) > subject_col else ""
+            body = row[body_col] if len(row) > body_col else ""
+            if subject and body:
+                versions[name][row[id_col]] = dict(
+                    expected[row[id_col]], subject=subject, body=body)
+    for batch in range(1, 6):
+        size = 50 if batch == 5 else 100
+        rows = review.read(
+            session, review.SID,
+            f"'Gespreksstijl Fase{batch} 20261016'!A2:M{size + 1}")
+        if len(rows) != size:
+            raise RuntimeError("private_versions_count_invalid")
+        for offset, row in enumerate(rows, 1):
+            number = (batch - 1) * 100 + offset
+            if (len(row) < 3 or row[0] != str(number)
+                    or row[1] not in expected
+                    or row[2] != expected[row[1]]["company"]
+                    or row[1] in versions["gespreksstijl"]):
+                raise RuntimeError("private_versions_identity_invalid")
+            if len(row) > 7 and row[6] and row[7]:
+                versions["gespreksstijl"][row[1]] = dict(
+                    expected[row[1]], subject=row[6], body=row[7])
+    return versions
+
+
 def audit():
     session = authorized_session()
     expected = load_expected(session)
+    versions = load_alternate_versions(session, expected)
     suppressions = load_suppressions(session=session)
     suppressed = sum(
         match_candidate({
@@ -85,6 +133,23 @@ def audit():
             else:
                 unexpected += 1
         exact = stale = missing = duplicate = blocked_existing = 0
+        generation_counts = {name: 0 for name in versions}
+        unrecognized = 0
+        for record in inventory.values():
+            key = record["draft_id"]
+            if key not in expected:
+                continue
+            matched = False
+            for name, generation in versions.items():
+                row = generation.get(key)
+                if row and record["draft_flag"] and _matches(
+                        build_message({"draft_id": key, **row}), record["message"]):
+                    generation_counts[name] += 1
+                    matched = True
+            if not matched and record["draft_flag"] and not _matches(
+                    build_message({"draft_id": key, **expected[key]}),
+                    record["message"]):
+                unrecognized += 1
         for key, row in expected.items():
             records = matching[key]
             if row["blocked"]:
@@ -114,6 +179,9 @@ def audit():
             "blocked_existing": blocked_existing,
             "suppressed_eligible": suppressed,
             "uidvalidity_ok": bool(validity),
+            "unrecognized_generations": unrecognized,
+            **{"generation_" + name: count
+               for name, count in generation_counts.items()},
         }
     finally:
         try:
