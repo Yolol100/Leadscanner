@@ -4,6 +4,8 @@ on:
     paths:
       - 'scripts/sync450_openings.py'
       - 'tests/test_sync450_openings.py'
+      - 'scripts/live_450_draft_inventory.py'
+      - 'tests/test_live_450_draft_inventory.py'
       - '.github/workflows/sync450-openings.yml'
       - '.github/workflows/sync450-openings-ci.yml'
 permissions:
@@ -29,3 +31,4 @@ jobs:
           python3 -m compileall -q scripts tests
           python3 -m unittest discover -s tests -p 'test_sync450_openings.py' -q
           python3 -m unittest discover -s tests -p 'test_reconcile450_current.py' -q
+          python3 -m unittest discover -s tests -p 'test_live_450_draft_inventory.py' -q
