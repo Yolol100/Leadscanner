@@ -14,12 +14,13 @@ from myhost_draft import _mailbox_arg, connect_imap, find_drafts_folder
 
 ARCHIVE = "Webactueel Original Drafts 20261017"
 REVISION_ARCHIVE = "Webactueel Drafts Before Revision 20261018"
+V2_ARCHIVE = "Webactueel Drafts Before V2 20261019"
 _ARCHIVE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9 ]{1,80}$")
 
 
 def _archive(client, *, create=False, folder=None):
     folder = ARCHIVE if folder is None else folder
-    if folder not in {ARCHIVE, REVISION_ARCHIVE} or not _ARCHIVE_RE.fullmatch(folder):
+    if folder not in {ARCHIVE, REVISION_ARCHIVE, V2_ARCHIVE} or not _ARCHIVE_RE.fullmatch(folder):
         raise RuntimeError("archive_folder_name_invalid")
     status, listed = client.list()
     if status != "OK" or not isinstance(listed, list):
