@@ -94,7 +94,20 @@ jobs:
        github.event.comment.body == 'LEADS_CONVERSATIONS_V1:RECREATE_BATCH_3' ||
        github.event.comment.body == 'LEADS_CONVERSATIONS_V1:RECREATE_BATCH_4' ||
        github.event.comment.body == 'LEADS_CONVERSATIONS_V1:RECREATE_BATCH_5' ||
-       github.event.comment.body == 'LEADS_CONVERSATIONS_V1:AUDIT')
+       github.event.comment.body == 'LEADS_CONVERSATIONS_V1:AUDIT' ||
+       github.event.comment.body == 'LEADS_V2_DRAFTS:PRECHECK' ||
+       github.event.comment.body == 'LEADS_V2_DRAFTS:AUDIT' ||
+       github.event.comment.body == 'LEADS_V2_DRAFTS:PILOT' ||
+       github.event.comment.body == 'LEADS_V2_DRAFTS:BATCH_1' ||
+       github.event.comment.body == 'LEADS_V2_DRAFTS:BATCH_2' ||
+       github.event.comment.body == 'LEADS_V2_DRAFTS:BATCH_3' ||
+       github.event.comment.body == 'LEADS_V2_DRAFTS:BATCH_4' ||
+       github.event.comment.body == 'LEADS_V2_DRAFTS:BATCH_5' ||
+       github.event.comment.body == 'LEADS_V2_DRAFTS:RECREATE_BATCH_1' ||
+       github.event.comment.body == 'LEADS_V2_DRAFTS:RECREATE_BATCH_2' ||
+       github.event.comment.body == 'LEADS_V2_DRAFTS:RECREATE_BATCH_3' ||
+       github.event.comment.body == 'LEADS_V2_DRAFTS:RECREATE_BATCH_4' ||
+       github.event.comment.body == 'LEADS_V2_DRAFTS:RECREATE_BATCH_5')
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     concurrency:
@@ -120,6 +133,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_draft_management.py' -q
           python3 -m unittest discover -s tests -p 'test_draft_revision.py' -q
           python3 -m unittest discover -s tests -p 'test_recreate_reviewed_drafts.py' -q
+          python3 -m unittest discover -s tests -p 'test_migrate_v2_drafts.py' -q
       - name: Run only explicitly authorized and privately verified IMAP operation
         env:
           PYTHONPATH: scripts
@@ -133,4 +147,9 @@ jobs:
           OUTREACH_SENDER_NAME: ${{ vars.OUTREACH_SENDER_NAME || 'Andrew Baeten' }}
           OUTREACH_SENDER_EMAIL: ${{ vars.OUTREACH_SENDER_EMAIL || 'info@andrewbaeten.nl' }}
           OUTREACH_DRAFT_FOLDER: ${{ vars.OUTREACH_DRAFT_FOLDER }}
-        run: python3 scripts/draft_revision.py
+        run: |
+          if [[ "$CONVERSATION_MODE" == LEADS_V2_DRAFTS:* ]]; then
+            python3 scripts/migrate_v2_drafts.py
+          else
+            python3 scripts/draft_revision.py
+          fi

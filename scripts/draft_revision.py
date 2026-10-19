@@ -136,16 +136,17 @@ def uidset(values):
     return ",".join(values)
 
 
-def archive_inventory(connector, records, *, required=None):
+def archive_inventory(connector, records, *, required=None,
+                      archive_folder=archives.REVISION_ARCHIVE):
     client = connector()
     try:
         try:
-            archives._archive(client, folder=archives.REVISION_ARCHIVE)
+            archives._archive(client, folder=archive_folder)
         except RuntimeError as error:
             if str(error) == "archive_folder_not_initialized" and not required:
                 return None, {}, {}
             raise
-        validity = legacy.imap.select(client, archives.REVISION_ARCHIVE, readonly=True)
+        validity = legacy.imap.select(client, archive_folder, readonly=True)
         found = legacy.transport.scan(client)
         by_key = check_archive(found, records)
         if required is not None:
@@ -170,12 +171,13 @@ def check_archive(found, records, *, allow_draft=False):
     return by_key
 
 
-def archive_batch(client, connector, folder, validity, before, records, pending):
+def archive_batch(client, connector, folder, validity, before, records, pending,
+                  *, archive_folder=archives.REVISION_ARCHIVE):
     """Server-side copies, then independent full SHA/MIME readback; no deletion."""
     keeper = connector()
     try:
-        archives._archive(keeper, create=True, folder=archives.REVISION_ARCHIVE)
-        av = legacy.imap.select(keeper, archives.REVISION_ARCHIVE, readonly=False)
+        archives._archive(keeper, create=True, folder=archive_folder)
+        av = legacy.imap.select(keeper, archive_folder, readonly=False)
         old_archive = legacy.transport.scan(keeper)
         old_keys = check_archive(old_archive, records, allow_draft=True)
     finally:
@@ -191,11 +193,11 @@ def archive_batch(client, connector, folder, validity, before, records, pending)
     if legacy.imap.select(client, folder, readonly=True) != validity:
         raise RuntimeError("uidvalidity_changed")
     unchanged(before, legacy.transport.scan(client))
-    if missing and client.uid("COPY", uidset(missing), _mailbox_arg(archives.REVISION_ARCHIVE))[0] != "OK":
+    if missing and client.uid("COPY", uidset(missing), _mailbox_arg(archive_folder))[0] != "OK":
         raise RuntimeError("revision_archive_copy_failed")
     keeper = connector()
     try:
-        if legacy.imap.select(keeper, archives.REVISION_ARCHIVE, readonly=False) != av:
+        if legacy.imap.select(keeper, archive_folder, readonly=False) != av:
             raise RuntimeError("revision_archive_changed")
         copied = legacy.transport.scan(keeper)
         added = set(copied) - set(old_archive)
@@ -211,7 +213,8 @@ def archive_batch(client, connector, folder, validity, before, records, pending)
             raise RuntimeError("revision_archive_flags_failed")
     finally:
         keeper.logout()
-    read_validity, readback, _ = archive_inventory(connector, records, required=required)
+    read_validity, readback, _ = archive_inventory(connector, records, required=required,
+                                                  archive_folder=archive_folder)
     if read_validity != av or set(readback) != set(copied):
         raise RuntimeError("revision_archive_readback_failed")
     for uid in copied:

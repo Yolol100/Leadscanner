@@ -1,0 +1,170 @@
+"""Offline, fictional tests of the guarded V2 draft-only migration."""
+import copy
+import unittest
+from unittest.mock import patch
+
+import migrate_v2_drafts as m
+from myhost_draft import build_message
+from test_draft_revision import Server, entry, fixtures
+
+
+def event(mode, *, owner="Yolol100"):
+    return {"action": "created",
+            "repository": {"full_name": "Yolol100/Leadscanner"},
+            "issue": {"number": 1659},
+            "comment": {"body": m.PREFIX + mode, "user": {"login": owner},
+                        "author_association": "OWNER"}}
+
+
+def data():
+    base, first, _ = fixtures()
+    result = {}
+    for key, record in first.items():
+        previous = dict(record["current"])
+        if record["category"] == "target":
+            subject = "Verbeterde mail " + str(record["number"])
+            body = ("Goedendag,\n\n"
+                    "Ik zag dat jullie een lokale dienst bieden. Een korte mobiele "
+                    "pagina met een duidelijke ingang kan daar goed op aansluiten.\n\n"
+                    "Zal ik één voorbeeld laten zien?\n\n"
+                    + m.OPT + "\n\nGroet,\nAndrew")
+            category = "target"
+            active = True
+            newer = dict(previous, subject=subject, body=body)
+        else:
+            category = "held"
+            active = False
+            newer = previous
+        result[key] = dict(record, current=previous, new=newer,
+                           category=category, active=active)
+    return base, result
+
+
+def server_with(records, base):
+    server = Server(base, records)
+    # No historic held/excluded record may enter live Drafts.
+    for uid in list(server.boxes["Drafts"]):
+        if server.boxes["Drafts"][uid]["draft_id"] not in {
+                key for key, r in records.items() if r["category"] == "target"}:
+            del server.boxes["Drafts"][uid]
+    # Mimic five user-removed drafts; a migration must not delete unknown mail.
+    for uid in ("406", "407", "408", "409", "410"):
+        server.boxes["Drafts"].pop(uid, None)
+    return server
+
+
+class MigrationSafetyTests(unittest.TestCase):
+    def setUp(self):
+        self.base, self.records = data()
+
+    def execute(self, server, mode, *, loader=None):
+        loader = loader or (lambda _: self.records)
+        with patch.object(m.legacy, "authorized_writer", return_value=object()), \
+             patch.object(m.legacy.imap, "target_guard"), \
+             patch.object(m.legacy.imap, "uidplus", return_value=True), \
+             patch.object(m.legacy, "find_drafts_folder", return_value="Drafts"), \
+             patch.object(m.archives, "find_drafts_folder", return_value="Drafts"), \
+             patch.object(m.legacy.imap, "select", side_effect=server.select), \
+             patch.object(m.legacy.transport, "scan", side_effect=server.scan):
+            return m.run(mode, event(mode), connector=server.connect, loader=loader)
+
+    def test_authorization_and_restricted_mode(self):
+        for mode in m.MODES:
+            m.authorize(event(mode), mode)
+        with self.assertRaises(RuntimeError):
+            m.authorize(event("PILOT", owner="other"), "PILOT")
+        with self.assertRaises(RuntimeError):
+            m.authorize(event("SEND"), "SEND")
+        with self.assertRaises(RuntimeError):
+            m.authorize({**event("PILOT"), "issue": {"number": 1}}, "PILOT")
+
+    def test_copy_contract_rejects_generic_or_malformed_mail(self):
+        example = next(r["new"]["body"] for r in self.records.values()
+                       if r["category"] == "target")
+        m.valid_body(example)
+        for bad in (example.replace(m.OPT, ""),
+                    example.replace("Zal ik", "Zal ik {{naam}}"),
+                    example.replace("Andrew", "Sender"),
+                    example.replace("dienst bieden.", "dienst bieden?"),
+                    example.replace("pagina", "Was gewoon benieuwd. pagina")):
+            with self.subTest(bad=bad[:20]), self.assertRaises(RuntimeError):
+                m.valid_body(bad)
+
+    def test_strict_classification_and_source_holds(self):
+        server = server_with(self.records, self.base)
+        box = copy.deepcopy(server.boxes["Drafts"])
+        states = m.classify(self.records, box)
+        self.assertEqual(len(states), 405)
+        self.assertEqual(sum(v[1] == "old" for v in states.values()), 405)
+        fake = next(key for key, r in self.records.items()
+                    if r["category"] == "held")
+        box["999"] = entry(999, build_message(self.records[fake]["current"]).as_bytes(),
+                           {b"\\DRAFT"})
+        with self.assertRaisesRegex(RuntimeError, "v2_mailbox_identity_changed"):
+            m.classify(self.records, box)
+
+    def test_inactive_source_hold_is_preserved(self):
+        server = server_with(self.records, self.base)
+        first = next(key for key, r in self.records.items()
+                     if r["category"] == "target")
+        self.records[first]["category"] = "source_hold"
+        self.records[first]["active"] = False
+        states = m.classify(self.records, server.boxes["Drafts"])
+        self.assertEqual(states[first][1], "old")
+        server.boxes["Drafts"]["1"] = entry(
+            1, build_message(self.records[first]["new"]).as_bytes(), {b"\\DRAFT"})
+        with self.assertRaisesRegex(RuntimeError, "v2_source_hold_modified"):
+            m.classify(self.records, server.boxes["Drafts"])
+
+    def test_read_only_precheck_does_not_create_archive(self):
+        server = server_with(self.records, self.base)
+        result = self.execute(server, "PRECHECK")
+        self.assertEqual(result["old"], 405)
+        self.assertEqual(result["missing"], 5)
+        self.assertEqual(result["sent"], 0)
+        self.assertNotIn(m.archives.V2_ARCHIVE, server.boxes)
+        self.assertFalse(any(c[0] == "APPEND" for c in server.log))
+
+    def test_pilot_archives_original_and_only_replaces_one_uid(self):
+        server = server_with(self.records, self.base)
+        original = server.boxes["Drafts"]["1"]["raw"]
+        outcome = self.execute(server, "PILOT")
+        self.assertEqual(outcome["installed"], 1)
+        self.assertEqual(outcome["sent"], 0)
+        self.assertEqual(len(server.boxes["Drafts"]), 405)
+        self.assertNotIn("1", server.boxes["Drafts"])
+        archive = list(server.boxes[m.archives.V2_ARCHIVE].values())
+        self.assertEqual(len(archive), 1)
+        self.assertEqual(archive[0]["raw"], original)
+        self.assertFalse(archive[0]["draft_flag"])
+        self.assertEqual(self.execute(server, "PILOT")["new"], 1)
+
+    def test_changed_source_stops_before_deleting_original(self):
+        server = server_with(self.records, self.base)
+        changed = copy.deepcopy(self.records)
+        changed[next(iter(changed))]["new"]["subject"] = "Changed"
+        calls = iter([self.records, changed])
+        with self.assertRaisesRegex(RuntimeError, "v2_source_changed"):
+            self.execute(server, "PILOT", loader=lambda _: next(calls))
+        self.assertIn("1", server.boxes["Drafts"])
+        self.assertEqual(m.classify(self.records, server.boxes["Drafts"])[
+            next(iter(self.records))][1], "old")
+
+    def test_missing_draft_is_not_recreated_before_old_batch_updated(self):
+        server = server_with(self.records, self.base)
+        with self.assertRaisesRegex(RuntimeError, "v2_recreate_before_update"):
+            self.execute(server, "RECREATE_BATCH_5")
+        self.assertEqual(len(server.boxes["Drafts"]), 405)
+
+    def test_archive_restricts_scope_to_fixed_private_folder(self):
+        server = server_with(self.records, self.base)
+        client = server.connect()
+        with self.assertRaisesRegex(RuntimeError, "archive_folder_name_invalid"):
+            m.archives._archive(client, folder="INBOX", create=True)
+        self.assertEqual(
+            m.archives._archive(client, folder=m.archives.V2_ARCHIVE, create=True),
+            m.archives.V2_ARCHIVE)
+
+
+if __name__ == "__main__":
+    unittest.main()
