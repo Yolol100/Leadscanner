@@ -58,15 +58,14 @@ class OwnerEvidenceCommandContractTests(unittest.TestCase):
         self.assertIn("group: leadscanner-myhost-draft", workflow)
         self.assertIn("cancel-in-progress: false", workflow)
         self.assertIn("queue: max", workflow)
-        # Unrelated issue comments, PR tests and ordinary pushes use one
-        # unique no-op group per run rather than blocking real work.
+        # Unrelated issue comments and PR tests do not block owner rechecks.
         self.assertIn("leads-evidence-skip-{0}", workflow)
         self.assertIn("github.run_id", workflow)
         self.assertIn("github.event_name == 'issue_comment'", workflow)
         self.assertIn("github.event.comment.body", workflow)
-        self.assertIn("github.event_name == 'push'", workflow)
-        self.assertIn("LEADS_EVIDENCE_ONCE:", workflow)
-        self.assertIn("LEADS_CACHE_SMOKE:", workflow)
+        self.assertNotIn("github.event_name == 'push'", workflow)
+        self.assertNotIn("LEADS_EVIDENCE_ONCE:", workflow)
+        self.assertNotIn("LEADS_CACHE_SMOKE:", workflow)
 
 class FastOfficialEvidenceTests(unittest.TestCase):
     def test_private_failure_class_is_anonymous_and_does_not_approve(self):
