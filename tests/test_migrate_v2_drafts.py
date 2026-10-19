@@ -111,6 +111,21 @@ class MigrationSafetyTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             m.authorize({**event("PILOT"), "issue": {"number": 1}}, "PILOT")
 
+    def test_failure_logging_cannot_expose_private_exception_text(self):
+        self.assertEqual(
+            m.safe_error_reason(RuntimeError("v2_source_changed")),
+            "v2_source_changed")
+        self.assertEqual(
+            m.safe_error_reason(RuntimeError("archive_original_conflict")),
+            "archive_original_conflict")
+        for danger in (
+                RuntimeError("info@private.example"),
+                RuntimeError("unrecognized draft subject and body"),
+                ValueError("unexpected source details")):
+            self.assertEqual(
+                m.safe_error_reason(danger),
+                "private_source_or_imap_unverified")
+
     def test_copy_contract_rejects_generic_or_malformed_mail(self):
         example = next(r["new"]["body"] for r in self.records.values()
                        if r["category"] == "target")
