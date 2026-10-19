@@ -193,8 +193,9 @@ def classify(records, inventory):
             generation = "old"
         else:
             raise RuntimeError("v2_mailbox_text_changed")
-        if row["category"] == "source_hold" and generation != "old":
-            raise RuntimeError("v2_source_hold_modified")
+        # A previously archived V2 draft can become source-held when today's
+        # official-site verification is inconclusive. Recognize it read-only;
+        # require the independently verified original archive below.
         found[key] = (uid, generation, item["sha256"])
     if len(found) > 410:
         raise RuntimeError("v2_mailbox_scope_changed")
@@ -238,10 +239,18 @@ def selected(records, mode):
             if (row["number"]-1)//100+1 == group}
 
 
+def archival_rows(records):
+    """Verify archived originals even after a formerly valid source is held."""
+    return {key: (dict(row, category="target")
+                  if row["category"] == "source_hold" else row)
+            for key, row in records.items()}
+
+
 def recovery_rows(records):
     """Only active/held target identities may have a private new-MIME marker."""
     return {key: dict(row, category="target", current=dict(row["new"]))
-            for key, row in records.items() if row["category"] == "target"}
+            for key, row in records.items()
+            if row["category"] in {"target", "source_hold"}}
 
 
 def run(mode, event, *, connector=connect_imap, loader=source_scope):
@@ -253,7 +262,7 @@ def run(mode, event, *, connector=connect_imap, loader=source_scope):
     folder, validity, before = rev.read_drafts(connector)
     state = classify(records, before)
     _, _, stored = rev.archive_inventory(
-        connector, records, archive_folder=archives.V2_ARCHIVE)
+        connector, archival_rows(records), archive_folder=archives.V2_ARCHIVE)
     _, _, created_proofs = rev.archive_inventory(
         connector, recovery_rows(records),
         archive_folder=archives.V2_CREATED)
@@ -349,7 +358,8 @@ def run(mode, event, *, connector=connect_imap, loader=source_scope):
         if not legacy.imap.uidplus(client):
             raise RuntimeError("v2_uidplus_required")
         rev.archive_batch(client, connector, folder, validity, before,
-                          records, pending, archive_folder=archives.V2_ARCHIVE)
+                          archival_rows(records), pending,
+                          archive_folder=archives.V2_ARCHIVE)
         if legacy.imap.select(client, folder, readonly=False) != validity:
             raise RuntimeError("v2_mailbox_changed")
         rev.unchanged(before, legacy.transport.scan(client))
@@ -403,7 +413,8 @@ def run(mode, event, *, connector=connect_imap, loader=source_scope):
     if any(end_state[key][1] != "new" for key in pending):
         raise RuntimeError("v2_final_readback_failed")
     _, _, verified = rev.archive_inventory(
-        connector, records, required={key: None for key in pending},
+        connector, archival_rows(records),
+        required={key: None for key in pending},
         archive_folder=archives.V2_ARCHIVE)
     return dict(summary(records, end_state, len(verified), len(created_proofs)),
                 installed=len(pending), created=0)
