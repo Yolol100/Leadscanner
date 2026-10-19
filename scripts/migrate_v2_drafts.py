@@ -266,6 +266,9 @@ def run(mode, event, *, connector=connect_imap, loader=source_scope):
     for key in required_prior:
         if key not in stored and key not in created_proofs:
             raise RuntimeError("v2_original_backup_missing")
+        if (key in created_proofs
+                and state[key][2] != created_proofs[key]["sha256"]):
+            raise RuntimeError("v2_recovery_proof_mismatch")
     baseline = summary(records, state, len(stored), len(created_proofs))
     if mode in {"AUDIT", "PRECHECK"}:
         return baseline
