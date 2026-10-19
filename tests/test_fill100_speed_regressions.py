@@ -87,9 +87,11 @@ class FastRefillTests(unittest.TestCase):
                ".github/workflows/fresh-leads.yml").read_text()
         self.assertIn("if: github.event_name != 'workflow_dispatch'", doc)
         self.assertEqual(doc.count("needs.test.result == 'skipped'"), 2)
-        self.assertEqual(doc.count("always() && !cancelled()"), 3)
-        self.assertEqual(doc.count("python3 -m compileall -q scripts"), 4)
-        self.assertIn("github.event_name == 'push'", doc)
+        self.assertEqual(doc.count("always() && !cancelled()"), 2)
+        self.assertEqual(doc.count("python3 -m compileall -q scripts"), 3)
+        self.assertIn("  push:", doc)
+        self.assertIn("github.event_name == 'workflow_dispatch'", doc)
+        self.assertNotIn("github.event_name == 'schedule'", doc)
         self.assertIn("pull_request:", doc)
 
     def test_parallel_simulation_reports_timing_without_external_requests(self):

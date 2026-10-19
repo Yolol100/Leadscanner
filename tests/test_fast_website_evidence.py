@@ -58,15 +58,14 @@ class OwnerEvidenceCommandContractTests(unittest.TestCase):
         self.assertIn("group: leadscanner-myhost-draft", workflow)
         self.assertIn("cancel-in-progress: false", workflow)
         self.assertIn("queue: max", workflow)
-        # Unrelated issue comments, PR tests and ordinary pushes use one
-        # unique no-op group per run rather than blocking real work.
+        # Unrelated issue comments and PR tests do not block owner rechecks.
         self.assertIn("leads-evidence-skip-{0}", workflow)
         self.assertIn("github.run_id", workflow)
         self.assertIn("github.event_name == 'issue_comment'", workflow)
         self.assertIn("github.event.comment.body", workflow)
-        self.assertIn("github.event_name == 'push'", workflow)
-        self.assertIn("LEADS_EVIDENCE_ONCE:", workflow)
-        self.assertIn("LEADS_CACHE_SMOKE:", workflow)
+        self.assertNotIn("github.event_name == 'push'", workflow)
+        self.assertNotIn("LEADS_EVIDENCE_ONCE:", workflow)
+        self.assertNotIn("LEADS_CACHE_SMOKE:", workflow)
 
 class FastOfficialEvidenceTests(unittest.TestCase):
     def test_private_failure_class_is_anonymous_and_does_not_approve(self):
@@ -694,21 +693,22 @@ class FastOfficialEvidenceTests(unittest.TestCase):
         store.assert_not_called()
         self.assertEqual(json.loads(output.getvalue())["approved_stored_privately"], 0)
 
-    def test_scheduled_automation_never_invokes_mailbox_transport(self):
+    def test_manual_evidence_has_no_cron_or_mailbox_transport(self):
         from pathlib import Path
         root = Path(__file__).resolve().parents[1]
         fast = (root / ".github/workflows/fast-website-evidence.yml").read_text()
         new = (root / ".github/workflows/fresh-leads.yml").read_text()
-        self.assertIn("github.event_name == 'schedule'", fast)
-        self.assertIn("github.event_name == 'schedule'", new)
-        self.assertIn("LEADS_EVIDENCE_ONCE:", fast)
+        self.assertIn("github.event_name == 'workflow_dispatch'", fast)
+        self.assertIn("github.actor == 'Yolol100'", fast)
+        self.assertIn("LEADS_EVIDENCE_V1:REVIEW450_BATCH_1", fast)
         self.assertIn("LEAD_REGISTRY_SERVICE_ACCOUNT_JSON", fast)
-        self.assertNotIn("OUTREACH_MAIL_PASSWORD", fast)
-        research, drafts = new.split("  auto_first_drafts:", 1)
-        self.assertNotIn("OUTREACH_MAIL_PASSWORD", research)
-        self.assertIn("OUTREACH_MAIL_PASSWORD", drafts)
-        self.assertIn("github.event_name == 'schedule'", drafts)
-        self.assertNotIn("smtp", fast.lower() + research.lower())
+        for workflow in (fast, new):
+            self.assertNotIn("  schedule:", workflow)
+            self.assertNotIn("github.event_name == 'schedule'", workflow)
+            self.assertNotIn("OUTREACH_MAIL_PASSWORD", workflow)
+            self.assertNotIn("smtp", workflow.lower())
+        self.assertNotIn("LEADS_EVIDENCE_ONCE:", fast)
+        self.assertNotIn("  auto_first_drafts:", new)
 
     def test_cache_retention_preserves_review450_and_current_batch(self):
         old = verified(checked_at="2025-01-01T00:00:00+00:00")
