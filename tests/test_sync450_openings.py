@@ -100,6 +100,26 @@ class OpeningSyncSafety(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "review_body_invalid"):
             s.check_body(old)
 
+    def test_historical_baseline_accepts_valid_five_or_six_paragraphs(self):
+        historical_five = ("Goedendag,\n\n"
+                           "Ik zag dat bezoekers een afspraak kunnen maken."
+                           "\n\nZou het handig zijn als klanten zelf een tijdstip kiezen?"
+                           "\n\n" + s.OPT + "\n\nGroet,\nAndrew")
+        historical_six = ("Goedendag,\n\n"
+                          "Ik zag dat bezoekers een afspraak kunnen maken."
+                          "\n\nEen aanvullende online keuze kan nuttig zijn."
+                          "\n\nZou het handig zijn als klanten zelf een tijdstip kiezen?"
+                          "\n\n" + s.OPT + "\n\nGroet,\nAndrew")
+        s.check_body(historical_five, old=True)
+        s.check_body(historical_six, old=True)
+        with self.assertRaisesRegex(RuntimeError, "review_body_invalid"):
+            s.check_body(historical_six, old=False)
+        for bad in (historical_five.replace(s.OPT, ""),
+                    historical_five.replace("Zou het", "Ik kan"),
+                    historical_six.replace("Groet,\nAndrew", "Groet,\nX")):
+            with self.assertRaisesRegex(RuntimeError, "review_body_invalid"):
+                s.check_body(bad, old=True)
+
     def test_no_automatic_dispatch(self):
         with patch.dict("os.environ", {"OPENING450_TASK": s.TASK,
                                        "OPENING450_MODE": "unknown"}):
