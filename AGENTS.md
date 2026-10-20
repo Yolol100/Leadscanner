@@ -17,7 +17,7 @@ Als website + bedrijf al in de privé `Approved`- of `Review450`-bron staan, geb
 
 ### Alleen op aanvraag: ChatGPT-commandokanaal
 
-Leadscanner wordt uitsluitend op aanvraag gestart. Geen `schedule`/cron of automatische eerste concepten. Bestaande geplande broncode is inactief en mag niet worden geactiveerd.
+Leadscanner wordt uitsluitend op aanvraag gestart. Geen `schedule`/cron of automatische eerste concepten. Geplande eerste-conceptautomatisering is verwijderd; voeg geen scheduler toe.
 
 Via bestaand issue #1720 accepteert `leads_chat_command.py` vaste eigenaargeautoriseerde commando's. `REVIEW_EVIDENCE_1` tot `REVIEW_EVIDENCE_5` worden via `LEADS_CHAT_V2:<MODE>:r-<32hex>` individueel op aanvraag gestart: vijf batches van maximaal 100 officiële websites uit het bestaande privé-Review450, uitsluitend naar WebsiteEvidence, zonder mailboxwijzigingen of automatische verzending. Een groen resultaat is alleen bronbewijs, geen toestemming om geblokkeerde bedrijven te benaderen. Alleen read-only `LEADS_CHAT_V1:CHECK` (volledige historische/HMAC, LeadHistory en DraftQueue) en `LEADS_CHAT_V1:DRAFTS_AUDIT` (Mijn.Host alleen lezen) behouden V1. Zoekopdrachten `HINTS_10/30/50/100`, `EVIDENCE` en `VERIFIED_100` vereisen `LEADS_CHAT_V2:<MODE>:r-<32hex>` met één cryptografisch willekeurig, daarna stabiel opdracht-ID. Herhaling van hetzelfde ID of GitHub-rerun start geen tweede scan; conflicterend hergebruik blokkeert. `Candidates` bevat alleen ongeverifieerde hints met exacte `GITHUB_RUN_ID` en privé-readback; geen bedrijfsdata in GitHub-issues of logs. Gebruik de nieuwe V2-ID niet om een nog lopende of onbewerkte opdracht dubbel uit te voeren.
 

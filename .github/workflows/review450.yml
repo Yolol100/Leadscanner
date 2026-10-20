@@ -1,7 +1,5 @@
 name: Review 450 - private preparation only
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       confirmation:
@@ -13,9 +11,9 @@ permissions:
 jobs:
   prepare:
     if: >-
+      github.event_name == 'workflow_dispatch' &&
       github.ref == 'refs/heads/main' &&
-      ((github.event_name == 'push' && startsWith(github.event.head_commit.message, 'LEADS_PREPARE450_ONLY:')) ||
-       (github.event_name == 'workflow_dispatch' && inputs.confirmation == 'review450-20261015'))
+      inputs.confirmation == 'review450-20261015'
     runs-on: ubuntu-24.04
     timeout-minutes: 110
     concurrency:
