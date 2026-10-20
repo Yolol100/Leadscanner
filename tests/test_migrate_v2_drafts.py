@@ -121,6 +121,11 @@ class MigrationSafetyTests(unittest.TestCase):
         self.assertEqual(
             m.safe_error_reason(RuntimeError("archive_original_conflict")),
             "archive_original_conflict")
+        for safe_code in ("v2_copy_changed", "v2_source_scope",
+                          "v2_private_source_read_unverified",
+                          "v2_imap_draft_read_unverified",
+                          "conversation_review_sheet_scope_invalid"):
+            self.assertEqual(m.safe_error_reason(RuntimeError(safe_code)), safe_code)
         for danger in (
                 RuntimeError("info@private.example"),
                 RuntimeError("unrecognized draft subject and body"),
@@ -312,7 +317,7 @@ class MigrationSafetyTests(unittest.TestCase):
         self.assertEqual(
             self.execute_recovery(server, "RECREATE_REMAINING")["new"], 410)
 
-    def test_real_source_shapes_keep_skips_and_low_scores_as_holds(self):
+    def test_real_source_shapes_preserve_holds_but_low_scores_are_feedback(self):
         from datetime import datetime, timezone
         rows = []
         prior = [m.rev.HEADERS]
@@ -377,9 +382,14 @@ class MigrationSafetyTests(unittest.TestCase):
              patch.object(m.legacy.history.source, "read", side_effect=source_read):
             result = m.source_scope(object())
         self.assertEqual(len(result), 450)
-        self.assertEqual(sum(r["active"] for r in result.values()), 351)
+        self.assertEqual(sum(r["active"] for r in result.values()), 405)
         self.assertEqual(sum(r["category"] == "held" for r in result.values()), 40)
         self.assertEqual(sum(r.get("quality_ready") is False for r in result.values()), 54)
+        low_scored = next(r for r in result.values() if r["number"] == 1)
+        self.assertEqual(low_scored["category"], "target")
+        self.assertFalse(low_scored["quality_ready"])
+        self.assertTrue(low_scored["active"])
+        self.assertIn(low_scored["current"]["draft_id"], m.selected(result, "BATCH_1"))
         for number in (172, 310, 324, 344, 360):
             held = next(r for r in result.values() if r["number"] == number)
             self.assertEqual(held["category"], "source_hold")
