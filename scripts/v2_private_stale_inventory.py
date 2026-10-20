@@ -21,9 +21,9 @@ HEADERS = (
     "Officiele bron URL", "HMAC / juridische status", "Pilot-status",
     "GitHub run ID", "Snapshot UTC",
 )
-DIGITS = re.compile(r"[1-9][0-9]*\\Z")
-SHA = re.compile(r"[0-9a-f]{64}\\Z")
-DRAFT = re.compile(r"draft-[0-9a-f]{32}\\Z")
+DIGITS = re.compile(r"[1-9][0-9]*\Z")
+SHA = re.compile(r"[0-9a-f]{64}\Z")
+DRAFT = re.compile(r"draft-[0-9a-f]{32}\Z")
 
 
 def build_rows(records, state, archived, validity, *, run_id, now=None):
@@ -64,7 +64,7 @@ def build_rows(records, state, archived, validity, *, run_id, now=None):
             archive_status = "ARCHIEF_ORIGINEEL_MIME_SHA_OK"
         else:
             archived_sha = ""
-            archive_status = "NIET_GEARChIVEERD_GEEN_VERVANGING"
+            archive_status = "GEEN_ORIGINEEL_MIME_ARCHIEF"
         result.append([
             str(row["number"]), key, str(validity), str(uid), str(sha),
             archive_status, archived_sha, row["category"],
