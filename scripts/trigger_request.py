@@ -1,35 +1,22 @@
-"""Validate read-only GitHub discovery requests; never interpolate into a shell."""
+"""Validate owner-triggered manual discovery; never interpolate into a shell."""
 from __future__ import annotations
 
 import json
 import os
 from pathlib import Path
-import re
 import subprocess
 import sys
 
 
 def resolve_request(event_name: str, event_payload: dict, inputs: dict) -> tuple:
-    if event_name == "push":
-        message = str((event_payload.get("head_commit") or {}).get("message") or "")
-        first_line = message.splitlines()[0].strip() if message else ""
-        match = re.fullmatch(
-            r"LEADS_DISCOVERY_ONLY:\s*([A-Za-zÀ-ÿ '\-]{2,100})\|([A-Za-zÀ-ÿ ,\-]{2,150})\|([1-9][0-9]?)",
-            first_line,
-        )
-        if not match:
-            raise ValueError("invalid_push_request")
-        region, keywords, limit = match.groups()
-        radius = "25"
-    elif event_name == "workflow_dispatch":
-        if inputs.get("execution_mode") != "discover":
-            raise ValueError("invalid_dispatch_mode")
-        region = str(inputs.get("region") or "")
-        keywords = str(inputs.get("keywords") or "")
-        limit = str(inputs.get("limit") or "")
-        radius = str(inputs.get("radius_km") or "")
-    else:
-        raise ValueError("untrusted_event")
+    # Only explicit workflow_dispatch on protected main may reach this program.
+    # A commit message or issue comment never authorizes lead discovery.
+    if event_name != "workflow_dispatch" or inputs.get("execution_mode") != "discover":
+        raise ValueError("manual_discovery_only")
+    region = str(inputs.get("region") or "")
+    keywords = str(inputs.get("keywords") or "")
+    limit = str(inputs.get("limit") or "")
+    radius = str(inputs.get("radius_km") or "")
     region, keywords = region.strip(), keywords.strip()
     words = [v.strip() for v in keywords.split(",") if v.strip()]
     if not (2 <= len(region) <= 100 and 1 <= len(words) <= 8
