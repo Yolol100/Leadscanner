@@ -40,10 +40,15 @@ def check_body(body, *, old=False):
     if not isinstance(body, str) or len(body.split()) > 110 or "{{" in body or "}}" in body:
         raise RuntimeError("review_body_invalid")
     paragraphs = body.replace("\r\n", "\n").strip().split("\n\n")
-    q_index = 3 if old else 2
-    opt_index = 4 if old else 3
-    sign_index = 5 if old else 4
-    if (len(paragraphs) != (6 if old else 5)
+    # The private historical baseline contains both 5- and 6-paragraph
+    # originals. Recognize either only when old=True; each must still pass
+    # the exact one-question, opt-out and sign-off checks. This does not
+    # promote a historical draft to the current approved first-touch style.
+    allowed_lengths = {5, 6} if old else {5}
+    q_index = len(paragraphs) - 3
+    opt_index = len(paragraphs) - 2
+    sign_index = len(paragraphs) - 1
+    if (len(paragraphs) not in allowed_lengths
             or paragraphs[0] not in {"Goedendag,", "Hoi,"}
             or paragraphs[opt_index] != OPT
             or paragraphs[sign_index] != "Groet,\nAndrew"
