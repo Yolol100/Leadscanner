@@ -126,7 +126,7 @@ class ReportTests(unittest.TestCase):
                 report.store_rows(rows, session)
             self.assertEqual(session.writes, 0)
 
-    def test_reject_injected_formula_or_non-private_output(self):
+    def test_reject_injected_formula_or_non_private_output(self):
         records, state = fixtures()
         rows = report.build_rows(records, state, {}, "123", run_id="456")
         wrong = copy.deepcopy(rows)
