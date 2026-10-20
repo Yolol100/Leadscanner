@@ -7,47 +7,19 @@ permissions:
   issues: read
 jobs:
   conversation-replacement:
-    # Explicit owner-only action; no cron, send, dispatch or automatic trigger.
+    # Explicit owner-only read-only/prepare operations; old write paths retired.
     if: >-
       github.event.issue.number == 1659 &&
       !github.event.issue.pull_request &&
       github.actor == 'Yolol100' &&
       github.event.comment.user.login == 'Yolol100' &&
       (github.event.comment.body == 'LEADS_CONVERSATIONS_V1:PRECHECK' ||
-       github.event.comment.body == 'LEADS_CONVERSATIONS_V1:PILOT' ||
-       github.event.comment.body == 'LEADS_CONVERSATIONS_V1:BATCH_1' ||
-       github.event.comment.body == 'LEADS_CONVERSATIONS_V1:BATCH_2' ||
-       github.event.comment.body == 'LEADS_CONVERSATIONS_V1:BATCH_3' ||
-       github.event.comment.body == 'LEADS_CONVERSATIONS_V1:BATCH_4' ||
-       github.event.comment.body == 'LEADS_CONVERSATIONS_V1:BATCH_5' ||
-       github.event.comment.body == 'LEADS_CONVERSATIONS_V1:BATCH_2_TO_5' ||
-       github.event.comment.body == 'LEADS_CONVERSATIONS_V1:REVISION_PRECHECK' ||
-       github.event.comment.body == 'LEADS_CONVERSATIONS_V1:REVISION_PILOT' ||
-       github.event.comment.body == 'LEADS_CONVERSATIONS_V1:REVISION_ALL' ||
-       github.event.comment.body == 'LEADS_CONVERSATIONS_V1:REVISION_AUDIT' ||
-       github.event.comment.body == 'LEADS_CONVERSATIONS_V1:RECREATE_PRECHECK' ||
-       github.event.comment.body == 'LEADS_CONVERSATIONS_V1:RECREATE_PILOT' ||
-       github.event.comment.body == 'LEADS_CONVERSATIONS_V1:RECREATE_BATCH_1' ||
-       github.event.comment.body == 'LEADS_CONVERSATIONS_V1:RECREATE_BATCH_2' ||
-       github.event.comment.body == 'LEADS_CONVERSATIONS_V1:RECREATE_BATCH_3' ||
-       github.event.comment.body == 'LEADS_CONVERSATIONS_V1:RECREATE_BATCH_4' ||
-       github.event.comment.body == 'LEADS_CONVERSATIONS_V1:RECREATE_BATCH_5' ||
        github.event.comment.body == 'LEADS_CONVERSATIONS_V1:AUDIT' ||
+       github.event.comment.body == 'LEADS_CONVERSATIONS_V1:REVISION_PRECHECK' ||
+       github.event.comment.body == 'LEADS_CONVERSATIONS_V1:RECREATE_PRECHECK' ||
        github.event.comment.body == 'LEADS_V2_DRAFTS:PRECHECK' ||
-       github.event.comment.body == 'LEADS_V2_DRAFTS:PREPARE60' ||
        github.event.comment.body == 'LEADS_V2_DRAFTS:AUDIT' ||
-       github.event.comment.body == 'LEADS_V2_DRAFTS:PILOT' ||
-       github.event.comment.body == 'LEADS_V2_DRAFTS:BATCH_1' ||
-       github.event.comment.body == 'LEADS_V2_DRAFTS:BATCH_2' ||
-       github.event.comment.body == 'LEADS_V2_DRAFTS:BATCH_3' ||
-       github.event.comment.body == 'LEADS_V2_DRAFTS:BATCH_4' ||
-       github.event.comment.body == 'LEADS_V2_DRAFTS:BATCH_5' ||
-       github.event.comment.body == 'LEADS_V2_DRAFTS:RECREATE_REMAINING' ||
-       github.event.comment.body == 'LEADS_V2_DRAFTS:RECREATE_BATCH_1' ||
-       github.event.comment.body == 'LEADS_V2_DRAFTS:RECREATE_BATCH_2' ||
-       github.event.comment.body == 'LEADS_V2_DRAFTS:RECREATE_BATCH_3' ||
-       github.event.comment.body == 'LEADS_V2_DRAFTS:RECREATE_BATCH_4' ||
-       github.event.comment.body == 'LEADS_V2_DRAFTS:RECREATE_BATCH_5')
+       github.event.comment.body == 'LEADS_V2_DRAFTS:PREPARE60')
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     concurrency:
