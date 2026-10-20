@@ -25,7 +25,7 @@ def drafts(n):
          "source_url": "https://fictieve-hovenier-" + str(i) + ".nl/contact/",
          "created_at": "2026-10-14T20:00:00+02:00",
          "subject": "Vraag over Fictief Hoveniersbedrijf " + str(i),
-         "body": "Goedendag,\n\nIk zag dat jullie tuinonderhoud aanbieden.\n\nZou het handig zijn als klanten hun tuinwensen vooraf kunnen doorgeven?\n\nLiever geen e-mails meer? Antwoord met 'nee', dan laat ik het hierbij.\n\nGroet,\nAndrew"
+         "body": "Goedendag,\n\nIk zag dat jullie tuinonderhoud aanbieden.\n\nZou het handig zijn als klanten hun tuinwensen vooraf kunnen doorgeven?\n\nLiever geen e-mails meer? Antwoord met 'nee', dan laat ik het hierbij.\n\nGroet,\nAndrew"}
         for i in range(1, n + 1)
     ]
 
