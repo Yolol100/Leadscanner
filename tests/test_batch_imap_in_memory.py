@@ -15,7 +15,7 @@ def make_rows(count=50):
         "email": "info@fictief-" + str(index) + ".nl",
         "source_url": "https://fictief-" + str(index) + ".nl/contact",
         "subject": "Vraag over Fictief Hoveniersbedrijf " + str(index),
-        "body": "Goedendag,\n\nKorte fictieve testmail.\n\nWebactueel",
+        "body": "Goedendag,\n\nIk zag dat jullie tuinonderhoud aanbieden.\n\nZou het handig zijn als klanten hun tuinwensen vooraf kunnen doorgeven?\n\nLiever geen e-mails meer? Antwoord met 'nee', dan laat ik het hierbij.\n\nGroet,\nAndrew",
     } for index in range(1, count + 1)]
 
 
