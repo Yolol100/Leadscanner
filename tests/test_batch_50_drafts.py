@@ -18,7 +18,7 @@ def rows(n):
             "email": f"info@fictief-{index}.nl",
             "source_url": f"https://fictief-{index}.nl/contact",
             "subject": f"Vraag over Fictief Schildersbedrijf {index}",
-            "body": "Goedendag, een korte vraag over websites en vindbaarheid.\n\nWebactueel",
+            "body": "Goedendag,\n\nIk zag dat jullie schilderwerk aanbieden.\n\nZou het handig zijn als klanten hun wensen vooraf kunnen doorgeven?\n\nLiever geen e-mails meer? Antwoord met 'nee', dan laat ik het hierbij.\n\nGroet,\nAndrew",
         }
         for index in range(1, n + 1)
     ]
