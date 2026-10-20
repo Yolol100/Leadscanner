@@ -117,18 +117,21 @@ class ReportTests(unittest.TestCase):
         sheet = PrivateSheet()
         meta = {}
         self.assertEqual(report.store_rows(rows, sheet, metadata=meta), 60)
-        self.assertEqual(meta, {"snapshot_reused": 0, "active_flag_drift": 0})
+        self.assertEqual(meta, {"snapshot_reused": 0, "active_flag_drift": 0,
+                                "category_drift": 0})
         self.assertEqual(sheet.writes, 1)
         self.assertEqual(sheet.rows, rows)
         updated = copy.deepcopy(rows)
         updated[1][8] = "JA" if updated[1][8] == "NEE" else "NEE"
         updated[2][8] = "JA" if updated[2][8] == "NEE" else "NEE"
+        updated[2][7] = "target" if updated[2][7] == "source_hold" else "source_hold"
         for row in updated[1:]:
             row[13] = "999111"
             row[14] = "2026-10-21T00:00:00+00:00"
         frozen = copy.deepcopy(sheet.rows)
         self.assertEqual(report.store_rows(updated, sheet, metadata=meta), 60)
-        self.assertEqual(meta, {"snapshot_reused": 1, "active_flag_drift": 2})
+        self.assertEqual(meta, {"snapshot_reused": 1, "active_flag_drift": 2,
+                                "category_drift": 1})
         self.assertEqual(sheet.writes, 1)
         self.assertEqual(sheet.rows, frozen)
         for session, reason in (
@@ -142,7 +145,7 @@ class ReportTests(unittest.TestCase):
     def test_reject_retained_identity_drift_without_writing(self):
         records, state = fixtures()
         rows = report.build_rows(records, state, {}, "123", run_id="456")
-        for column in (0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12):
+        for column in (0, 1, 2, 3, 4, 5, 6, 9, 10, 11, 12):
             with self.subTest(column=column):
                 sheet = PrivateSheet()
                 report.store_rows(rows, sheet)
@@ -157,7 +160,8 @@ class ReportTests(unittest.TestCase):
     def test_retained_snapshot_rejects_malformed_provenance(self):
         records, state = fixtures()
         rows = report.build_rows(records, state, {}, "123", run_id="456")
-        for column, value in ((13, "not-a-run"), (14, "no-timezone")):
+        for column, value in ((7, "invalid-category"), (13, "not-a-run"),
+                              (14, "no-timezone")):
             sheet = PrivateSheet()
             report.store_rows(rows, sheet)
             sheet.rows[1][column] = value
