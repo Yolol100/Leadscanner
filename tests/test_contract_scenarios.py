@@ -200,30 +200,13 @@ class OutputPrivacyScenarios(unittest.TestCase):
         self.assertEqual(r["emails_sent"], 0)
 
 class DispatchScenarios(unittest.TestCase):
-    def test_valid_push_request(self):
-        request = resolve_request("push", {"head_commit": {
-            "message": "LEADS_DISCOVERY_ONLY: Leiden|schoonmaak,installatie|10"
-        }}, {})
-        self.assertEqual(request, ("Leiden", "schoonmaak,installatie", "10", "25.0"))
-
-    def test_invalid_push_markers_do_not_trigger(self):
-        bad = ("", "LEADS_PREFLIGHT_ONLY:", "LEADS_DISCOVERY_ONLY: Amsterdam|horeca|0",
-               "LEADS_DISCOVERY_ONLY: Leiden|zorg|101",
-               "LEADS_DISCOVERY_ONLY: Leiden|zorg|1; touch /tmp/attack",
-               "LEADS_DISCOVERY_ONLY: Leiden|zorg|1 extra",
-               "LEADS_DISCOVERY_ONLY: Leiden|zorg|1|extra",
-               "LEADS_DISCOVERY_ONLY: Leiden|zorg|1\nInjected control line",
-               "LEADS_DISCOVERY_ONLY: Leiden|zorg|1\nanother line")
-        for v in bad:
-            with self.subTest(message=v):
-                if v.endswith("\nInjected control line") or v.endswith("\nanother line"):
-                    # Only the FIRST line of a commit message is an authorized marker;
-                    # later commit-body content is deliberately ignored by this parser.
-                    self.assertEqual(resolve_request("push", {"head_commit": {"message": v}}, {}),
-                                     ("Leiden", "zorg", "1", "25.0"))
-                else:
-                    with self.assertRaises(ValueError):
-                        resolve_request("push", {"head_commit": {"message": v}}, {})
+    def test_legacy_commit_message_cannot_start_discovery(self):
+        for event in ("push", "issue_comment", "pull_request"):
+            with self.subTest(event=event):
+                with self.assertRaisesRegex(ValueError, "manual_discovery_only"):
+                    resolve_request(event, {"head_commit": {
+                        "message": "LEADS_DISCOVERY_ONLY: Leiden|schoonmaak|10"
+                    }}, {})
 
     def test_invalid_events_and_dispatch_inputs_rejected(self):
         bad_cases = [

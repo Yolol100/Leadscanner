@@ -51,21 +51,6 @@ class NationalDiscoveryTests(unittest.TestCase):
                 new_leads.run("Nederland", ["bouwbedrijf"], 25, 30)
             source.assert_not_called()
 
-    def test_push_request_is_bounded_and_has_no_shell_interpolation(self):
-        request = resolve_request("push", {
-            "head_commit": {"message": "LEADS_DISCOVERY_ONLY: Nederland|kapsalon,bouwbedrijf|30"}
-        }, {})
-        self.assertEqual(request, ("Nederland", "kapsalon,bouwbedrijf", "30", "25.0"))
-        for message in (
-            "LEADS_DISCOVERY_ONLY: Nederland; echo BAD|kapsalon|30",
-            "LEADS_DISCOVERY_ONLY: Nederland|kapsalon|101",
-            "LEADS_DISCOVERY_ONLY: Nederland|kapsalon|0",
-            "LEADS_DISCOVERY_ONLY: Nederland|kapsalon|30; ls",
-            "LEADS_PREFLIGHT_ONLY: noop",
-        ):
-            with self.assertRaises(ValueError):
-                resolve_request("push", {"head_commit": {"message": message}}, {})
-
     def test_unapproved_dispatch_does_not_trigger_discovery(self):
         with self.assertRaises(ValueError):
             resolve_request("workflow_dispatch", {}, {"execution_mode": "preflight"})
@@ -75,7 +60,7 @@ class NationalDiscoveryTests(unittest.TestCase):
         })
         self.assertEqual(accepted, ("Nederland", "kapsalon,bouwbedrijf", "30", "25.0"))
 
-    def test_workflow_requires_two_distinct_run_markers(self):
+    def test_workflow_discovery_is_manual_and_preflight_guarded(self):
         from pathlib import Path
         workflow = (Path(__file__).resolve().parents[1] /
                     ".github/workflows/fresh-leads.yml").read_text()
