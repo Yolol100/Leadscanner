@@ -497,6 +497,7 @@ _SAFE_REASON_CODES = frozenset({
     "v2_private_inventory_scope_invalid",
     "v2_private_inventory_archive_mismatch",
     "v2_private_inventory_readback_failed",
+    "v2_private_inventory_already_initialized",
     "v2_create_failed", "v2_create_readback_failed",
     "v2_final_readback_failed", "v2_uidplus_required",
     "v2_mailbox_identity_changed", "v2_mailbox_text_changed",

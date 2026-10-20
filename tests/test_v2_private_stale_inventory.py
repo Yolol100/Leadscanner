@@ -118,11 +118,14 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(report.store_rows(rows, sheet), 60)
         self.assertEqual(sheet.writes, 1)
         self.assertEqual(sheet.rows, rows)
-        with self.assertRaisesRegex(RuntimeError, "v2_private_inventory_readback_failed"):
+        with self.assertRaisesRegex(RuntimeError, "v2_private_inventory_already_initialized"):
             report.store_rows(rows, sheet)
         self.assertEqual(sheet.writes, 1)
-        for session in (PrivateSheet(hidden=False), PrivateSheet(existing=True)):
-            with self.assertRaisesRegex(RuntimeError, "v2_private_inventory_readback_failed"):
+        for session, reason in (
+            (PrivateSheet(hidden=False), "v2_private_inventory_readback_failed"),
+            (PrivateSheet(existing=True), "v2_private_inventory_already_initialized"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, reason):
                 report.store_rows(rows, session)
             self.assertEqual(session.writes, 0)
 

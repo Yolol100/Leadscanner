@@ -103,8 +103,12 @@ def store_rows(rows, session):
                 or matches[0].get("gridProperties", {}).get("columnCount") != len(HEADERS)):
             raise ValueError("private sheet mismatch")
         before = session.get(base + values_path, timeout=25)
-        if before.status_code != 200 or before.json().get("values", []):
-            raise ValueError("private sheet not empty")
+        if before.status_code != 200:
+            raise ValueError("private inventory read failed")
+        if before.json().get("values", []):
+            # One-time private evidence already exists. Never overwrite it
+            # or disguise the existing snapshot as a fresh one.
+            raise RuntimeError("v2_private_inventory_already_initialized")
         payload = {
             "requests": [{
                 "updateCells": {
@@ -128,6 +132,9 @@ def store_rows(rows, session):
         checked = session.get(base + values_path, timeout=25)
         if checked.status_code != 200 or checked.json().get("values") != rows:
             raise ValueError("private sheet readback mismatch")
-    except Exception:
+    except Exception as error:
+        if (type(error) is RuntimeError
+                and str(error) == "v2_private_inventory_already_initialized"):
+            raise
         raise RuntimeError("v2_private_inventory_readback_failed") from None
     return OLD_COUNT
