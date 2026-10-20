@@ -78,10 +78,51 @@ def build_rows(records, state, archived, validity, *, run_id, now=None):
     return result
 
 
-def store_rows(rows, session):
-    """Write an empty, hidden, fixed private tab exactly once, then read back.
+# These columns encode durable per-message identity, original MIME proof,
+# recipient, first-party source and safety state. Active flags may change when
+# fresh official-site evidence arrives; never rewrite the retained snapshot.
+IMMUTABLE_COLUMNS = (0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12)
 
-    No unverified remote row contents or exception strings may reach logs.
+
+def verify_existing_snapshot(expected, saved):
+    """Compare preserved snapshot to live, without any private Sheet mutation.
+
+    A match is evidence only of SAME 60 identities/MIME hashes, not current
+    legal approval. Report changed active flags in anonymous aggregate form.
+    """
+    error = "v2_private_inventory_existing_mismatch"
+    if (not isinstance(saved, list) or len(saved) != OLD_COUNT + 1
+            or saved[0] != list(HEADERS)):
+        raise RuntimeError(error)
+    active_differences = 0
+    source_run = source_timestamp = None
+    for old, current in zip(saved[1:], expected[1:]):
+        if (not isinstance(old, list) or len(old) != len(HEADERS)
+                or any(old[index] != current[index]
+                       for index in IMMUTABLE_COLUMNS)
+                or old[8] not in {"JA", "NEE"}
+                or not DIGITS.fullmatch(str(old[13]))
+                or not isinstance(old[14], str)):
+            raise RuntimeError(error)
+        try:
+            checked = datetime.fromisoformat(old[14].replace("Z", "+00:00"))
+        except ValueError:
+            raise RuntimeError(error) from None
+        if checked.tzinfo is None:
+            raise RuntimeError(error)
+        if source_run is None:
+            source_run, source_timestamp = old[13], old[14]
+        elif old[13] != source_run or old[14] != source_timestamp:
+            raise RuntimeError(error)
+        active_differences += old[8] != current[8]
+    return active_differences
+
+
+def store_rows(rows, session, *, metadata=None):
+    """Fill empty private tab once; otherwise verify immutable identity read-only.
+
+    The old snapshot is never overwritten. Only anonymous drift counts leave
+    this function. No private source content reaches logs.
     """
     if (len(rows) != OLD_COUNT + 1 or rows[0] != list(HEADERS)
             or any(len(row) != len(HEADERS) for row in rows)):
@@ -105,10 +146,14 @@ def store_rows(rows, session):
         before = session.get(base + values_path, timeout=25)
         if before.status_code != 200:
             raise ValueError("private inventory read failed")
-        if before.json().get("values", []):
-            # One-time private evidence already exists. Never overwrite it
-            # or disguise the existing snapshot as a fresh one.
-            raise RuntimeError("v2_private_inventory_already_initialized")
+        prior = before.json().get("values", [])
+        if prior:
+            changed = verify_existing_snapshot(rows, prior)
+            # Deliberate no-write path; the snapshot remains dated to its
+            # original run even when the current approval flag has changed.
+            if metadata is not None:
+                metadata.update(snapshot_reused=1, active_flag_drift=changed)
+            return OLD_COUNT
         payload = {
             "requests": [{
                 "updateCells": {
@@ -134,7 +179,9 @@ def store_rows(rows, session):
             raise ValueError("private sheet readback mismatch")
     except Exception as error:
         if (type(error) is RuntimeError
-                and str(error) == "v2_private_inventory_already_initialized"):
+                and str(error) == "v2_private_inventory_existing_mismatch"):
             raise
         raise RuntimeError("v2_private_inventory_readback_failed") from None
+    if metadata is not None:
+        metadata.update(snapshot_reused=0, active_flag_drift=0)
     return OLD_COUNT

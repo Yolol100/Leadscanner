@@ -334,10 +334,12 @@ def run(mode, event, *, connector=connect_imap, loader=source_scope):
         private_rows = build_rows(
             records, state, stored, validity,
             run_id=os.environ.get("GITHUB_RUN_ID", ""))
-        count = store_rows(private_rows, session.session)
+        comparison = {}
+        count = store_rows(private_rows, session.session, metadata=comparison)
         backed_up = sum(row[5] == "ARCHIEF_ORIGINEEL_MIME_SHA_OK"
                         for row in private_rows[1:])
-        return dict(baseline, private_inventory=count, old_mime_backups=backed_up)
+        return dict(baseline, private_inventory=count, old_mime_backups=backed_up,
+                    **comparison)
     chosen = selected(records, mode)
     if not chosen:
         raise RuntimeError("v2_batch_empty")
@@ -498,6 +500,7 @@ _SAFE_REASON_CODES = frozenset({
     "v2_private_inventory_archive_mismatch",
     "v2_private_inventory_readback_failed",
     "v2_private_inventory_already_initialized",
+    "v2_private_inventory_existing_mismatch",
     "v2_create_failed", "v2_create_readback_failed",
     "v2_final_readback_failed", "v2_uidplus_required",
     "v2_mailbox_identity_changed", "v2_mailbox_text_changed",
