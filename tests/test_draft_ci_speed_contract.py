@@ -64,6 +64,8 @@ class WorkflowSpeedContract(unittest.TestCase):
     def test_no_active_workflow_reinstates_the_discontinued_cron(self):
         workflows = ROOT / ".github/workflows"
         self.assertFalse((workflows / "lead-schedule-health.yml").exists())
+        self.assertFalse((workflows / "reconcile450-current.yml").exists())
+        self.assertNotIn("\n  opening-sync:", (workflows / "sync450-openings.yml").read_text())
         for path in workflows.glob("*.yml"):
             with self.subTest(workflow=path.name):
                 text = path.read_text()
