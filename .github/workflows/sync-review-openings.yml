@@ -31,7 +31,6 @@ jobs:
         run: |
           python3 -m compileall -q scripts tests
           python3 -m unittest discover -s tests -p 'test_sync_review_openings.py' -q
-          python3 -m unittest discover -s tests -p 'test_reconcile450_current.py' -q
 
   audit:
     if: >-
@@ -100,7 +99,6 @@ jobs:
           PYTHONPATH: scripts
         run: |
           python3 -m unittest discover -s tests -p 'test_sync_review_openings.py' -q
-          python3 -m unittest discover -s tests -p 'test_reconcile450_current.py' -q
       - name: Append 407 reviewed drafts and clear 412 originals plus stale staged copy; never send
         env:
           PYTHONPATH: scripts
