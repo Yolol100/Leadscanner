@@ -159,8 +159,10 @@ def source_scope(session):
             category=("source_hold" if review_held or original["category"] != "target"
                       else "target"),
             current=current, new=newer,
+            # An internal copywriting score is feedback, not a mailbox
+            # creation gate. Drafts are never sent by this workflow.
             quality_ready=editorial_score >= 9.0,
-            active=bool(not review_held and fresh and editorial_score >= 9.0
+            active=bool(not review_held and fresh
                         and original["category"] == "target"))
         result[key] = row
     if count != 410 or len(result) != 450:
@@ -261,10 +263,20 @@ def recovery_rows(records):
 def run(mode, event, *, connector=connect_imap, loader=source_scope):
     authorize(event, mode)
     legacy.imap.target_guard()
-    session = legacy.RateLimitedSourceReads(legacy.authorized_writer())
-    records = loader(session)
+    try:
+        session = legacy.RateLimitedSourceReads(legacy.authorized_writer())
+        records = loader(session)
+    except Exception as error:
+        if type(error) is RuntimeError and str(error) in _SAFE_REASON_CODES:
+            raise
+        raise RuntimeError("v2_private_source_read_unverified") from None
     source_hash = digest(records)
-    folder, validity, before = rev.read_drafts(connector)
+    try:
+        folder, validity, before = rev.read_drafts(connector)
+    except Exception as error:
+        if type(error) is RuntimeError and str(error) in _SAFE_REASON_CODES:
+            raise
+        raise RuntimeError("v2_imap_draft_read_unverified") from None
     state = classify(records, before)
     _, _, stored = rev.archive_inventory(
         connector, archival_rows(records), archive_folder=archives.V2_ARCHIVE)
@@ -461,6 +473,20 @@ _SAFE_REASON_CODES = frozenset({
     "v2_source_unapproved", "v2_recreate_before_update",
     "revision_archive_readback_failed", "revision_archive_changed",
     "conversation_official_evidence_stale", "conversation_source_identity_mismatch",
+    # Stable, anonymous diagnostic codes only: do not expose exception text.
+    "v2_private_source_read_unverified", "v2_imap_draft_read_unverified",
+    "v2_text_unverified", "v2_evidence_duplicate", "v2_hold_release_denied",
+    "v2_copy_changed", "v2_score_invalid", "v2_source_scope",
+    "v2_subject_invalid", "v2_mailbox_scope_changed",
+    "conversation_review_sheet_scope_invalid", "conversation_review_missing",
+    "conversation_official_source_changed", "conversation_evidence_missing",
+    "conversation_evidence_row_invalid", "conversation_evidence_duplicate",
+    "conversation_official_evidence_identity_mismatch",
+    "conversation_blocked_entry_modified", "conversation_review_not_ready",
+    "conversation_duplicate_question", "conversation_website_not_verified",
+    "conversation_batch_source_invalid", "conversation_unbatched_source_request",
+    "revision_source_shape", "revision_source_identity",
+    "revision_source_scope", "revision_body_invalid",
 })
 
 
