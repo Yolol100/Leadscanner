@@ -109,6 +109,24 @@ class LiveDraftInventoryTests(unittest.TestCase):
                     RuntimeError, "private_versions_count_invalid"):
                 audit.load_alternate_versions(object(), expected)
 
+    def test_active_short_format_is_separate_from_exact_historical_copy(self):
+        legacy = {
+            "subject": "Korte vraag over afspraak",
+            "body": ("Goedendag,\n\nEen korte uitleg over onze dienstverlening."
+                     "\n\nZal ik een social voorbeeld sturen?\n\n"
+                     + audit.OPT_OUT + "\n\nGroet,\nAndrew")
+        }
+        self.assertFalse(audit.matches_current_style(legacy))
+        current = dict(legacy)
+        current["body"] = "\n\n".join((
+            "Goedendag,",
+            "Ik zag dat klanten bij jullie telefonisch een afspraak kunnen maken.",
+            "Zou het handig zijn als klanten online zelf een tijdstip kunnen kiezen?",
+            audit.OPT_OUT,
+            "Groet,\nAndrew",
+        ))
+        self.assertTrue(audit.matches_current_style(current))
+
     def test_no_mailbox_mutations(self):
         source = (Path(__file__).resolve().parents[1]
                   / "scripts" / "live_450_draft_inventory.py").read_text()
