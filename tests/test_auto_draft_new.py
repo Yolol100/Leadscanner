@@ -462,26 +462,22 @@ class AutomaticDraftSafetyTests(unittest.TestCase):
         client.store.assert_not_called()
         client.logout.assert_called_once()
 
-    def test_live_canary_secrets_are_scoped_to_read_only_check(self):
-        source = (Path(__file__).resolve().parents[1] /
-                  ".github/workflows/fresh-leads.yml").read_text()
-        preflight = source.split("  auto_draft_preflight:", 1)[1]
-        self.assertIn("scripts/auto_draft_new.py --mailbox-preflight", preflight)
-        self.assertIn("IMAP EXAMINE", preflight)
-        self.assertIn("OUTREACH_MAIL_PASSWORD", preflight)
-        self.assertNotIn("append", preflight.lower())
-        self.assertNotIn("smtp", preflight.lower())
+    def test_retired_credential_canary_is_not_triggerable_by_discovery(self):
+        workflow = (Path(__file__).resolve().parents[1] /
+                    ".github/workflows/fresh-leads.yml").read_text()
+        self.assertNotIn("  auto_draft_preflight:", workflow)
+        self.assertNotIn("OUTREACH_MAIL_PASSWORD", workflow)
+        self.assertNotIn("auto_draft_new.py", workflow)
+        self.assertIn("LEAD_REGISTRY_SERVICE_ACCOUNT_JSON", workflow)
 
-    def test_schedule_is_bound_to_main_and_no_smtp(self):
-        path = Path(__file__).resolve().parents[1] / ".github/workflows/fresh-leads.yml"
-        workflow = path.read_text()
-        section = workflow.split("  auto_first_drafts:",1)[1]
-        self.assertIn("github.event_name == 'schedule'", section)
-        self.assertIn("github.ref == 'refs/heads/main'", section)
-        self.assertIn("OUTREACH_IMAP_PORT", section)
-        self.assertIn("scripts/auto_draft_new.py", section)
-        self.assertNotIn("smtp", section.lower())
-        self.assertNotIn("LEADS_IMPROVE450", section)
+    def test_manual_discovery_cannot_start_old_draft_job(self):
+        workflow = (Path(__file__).resolve().parents[1] /
+                    ".github/workflows/fresh-leads.yml").read_text()
+        self.assertNotIn("  auto_first_drafts:", workflow)
+        self.assertNotIn("github.event_name == 'schedule'", workflow)
+        self.assertIn("github.ref == 'refs/heads/main'", workflow)
+        self.assertIn("github.event_name == 'workflow_dispatch'", workflow)
+        self.assertNotIn("smtp", workflow.lower())
 
 
 if __name__ == "__main__":

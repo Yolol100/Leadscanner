@@ -77,7 +77,7 @@ De vorige 450-mailchat en alle bestaande mailboxconcepten vallen expliciet buite
 
 **Runtimebewijs:** de afzonderlijke onderzoeksfunctie controleerde op 15 oktober 2026 57 officiële websites in 26,95 seconden: 46 geslaagde broncontroles, 11 handmatige controles; 10 specifieke dienstvermeldingen. De geplande nieuwe-conceptenworkflow is synthetisch getest, maar een daadwerkelijke geplande IMAP-run is nog niet uitgevoerd. Groene CI bewijst géén succesvolle echte toekomstige mailboxopslag.
 
-**Herstel:** GitHub Actions → `fresh-leads.yml` uitschakelen of revert van de merge schakelt zowel wekelijkse nieuwe-leadverzameling als nieuwe automatische Drafts uit. Schakel desgewenst alleen `auto_first_drafts` uit via een rollback-commit om onderzoek te behouden. Oude `Review450` en Mijn.Host-gegevens nooit wissen. Handmatige IMAP-/kwaliteitscontrole blijft eindpoort.
+**Herstel:** de oude geplande route en `auto_first_drafts` zijn uit de workflow verwijderd. Pauzeer alleen de handmatige `fresh-leads.yml`-run of herstel de vorige gecontroleerde commit als een nieuwe fout optreedt. Oude `Review450`- en Mijn.Host-gegevens nooit wissen. Handmatige IMAP-/kwaliteitscontrole blijft eindpoort.
 
 ## Afsluiting historische 450-redactie en bronblokkades (15 oktober 2026)
 
