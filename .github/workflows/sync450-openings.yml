@@ -7,13 +7,12 @@ permissions:
   issues: read
 jobs:
   conversation-replacement:
-    # Explicit owner-only action; no cron, send, dispatch or automatic trigger.
+    # Explicit owner-only read-only/prepare operations; old write paths retired.
     if: >-
       github.event.issue.number == 1659 &&
       !github.event.issue.pull_request &&
       github.actor == 'Yolol100' &&
       github.event.comment.user.login == 'Yolol100' &&
-      # Old copywriting migrations are retired: only read-only/prepare modes.
       (github.event.comment.body == 'LEADS_CONVERSATIONS_V1:PRECHECK' ||
        github.event.comment.body == 'LEADS_CONVERSATIONS_V1:AUDIT' ||
        github.event.comment.body == 'LEADS_CONVERSATIONS_V1:REVISION_PRECHECK' ||
