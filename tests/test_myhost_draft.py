@@ -11,7 +11,7 @@ ROW = {
     "email": "info@voorbeeld.nl",
     "source_url": "https://voorbeeld.nl/contact",
     "subject": "Vraag voor Voorbeeld BV",
-    "body": "Goedendag,\n\nKorte testmail.",
+    "body": "Goedendag,\n\nIk zag dat klanten bij jullie een afspraak kunnen maken.\n\nZou het handig zijn als klanten hun wensen vooraf kunnen doorgeven?\n\nLiever geen e-mails meer? Antwoord met 'nee', dan laat ik het hierbij.\n\nGroet,\nAndrew",
 }
 
 
