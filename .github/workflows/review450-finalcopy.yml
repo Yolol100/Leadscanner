@@ -1,12 +1,20 @@
 name: Review 450 - final editorial QA
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Exact owner-approved 450 final QA task identity
+        type: string
+        required: true
 permissions:
   contents: read
 jobs:
   final_copy:
-    if: github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'LEADS_FINALIZE450_ONLY:')
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'Yolol100' &&
+      inputs.confirmation == 'review450-20261015'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     concurrency:
