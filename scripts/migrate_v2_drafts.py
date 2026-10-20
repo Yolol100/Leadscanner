@@ -260,6 +260,36 @@ def recovery_rows(records):
             if row["category"] in {"target", "source_hold"}}
 
 
+
+def private_source_reason(error):
+    """Report only stable anonymous failure classes, never private exception text.
+
+    This is diagnostics ONLY. All existing source/HMAC, official-site,
+    UID/SHA, MIME backup and readback gates remain unchanged.
+    """
+    if type(error) is not RuntimeError:
+        return "v2_private_source_read_unverified"
+    reason = str(error)
+    if reason in _SAFE_REASON_CODES:
+        return reason
+    fixed = {
+        "conversation_batch_source_read_failed": "v2_source_batch_read_failed",
+        "conversation_sheet_transient_exhausted": "v2_source_retry_exhausted",
+        "conversation_population_changed": "v2_source_population_changed",
+        "conversation_review_body_invalid": "v2_source_legacy_text_invalid",
+        "review_body_invalid": "v2_source_legacy_text_invalid",
+        "private_source_scope_changed": "v2_source_historical_scope_invalid",
+        "private_review_identity_changed": "v2_source_historical_scope_invalid",
+        "historical_suppression_changed": "v2_source_suppression_unverified",
+    }
+    if reason in fixed:
+        return fixed[reason]
+    if reason.startswith(("historical_v2_", "registry_",
+                          "lead_history_", "draft_queue_registry_")):
+        return "v2_source_suppression_unverified"
+    return "v2_private_source_read_unverified"
+
+
 def run(mode, event, *, connector=connect_imap, loader=source_scope):
     authorize(event, mode)
     legacy.imap.target_guard()
@@ -269,7 +299,7 @@ def run(mode, event, *, connector=connect_imap, loader=source_scope):
     except Exception as error:
         if type(error) is RuntimeError and str(error) in _SAFE_REASON_CODES:
             raise
-        raise RuntimeError("v2_private_source_read_unverified") from None
+        raise RuntimeError(private_source_reason(error)) from None
     source_hash = digest(records)
     try:
         folder, validity, before = rev.read_drafts(connector)
@@ -487,6 +517,9 @@ _SAFE_REASON_CODES = frozenset({
     "conversation_batch_source_invalid", "conversation_unbatched_source_request",
     "revision_source_shape", "revision_source_identity",
     "revision_source_scope", "revision_body_invalid",
+    "v2_source_batch_read_failed", "v2_source_retry_exhausted",
+    "v2_source_population_changed", "v2_source_legacy_text_invalid",
+    "v2_source_historical_scope_invalid", "v2_source_suppression_unverified",
 })
 
 

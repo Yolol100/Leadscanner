@@ -114,6 +114,30 @@ class MigrationSafetyTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             m.authorize({**event("PILOT"), "issue": {"number": 1}}, "PILOT")
 
+    def test_anonymous_private_source_error_routing(self):
+        cases = {
+            "conversation_batch_source_read_failed": "v2_source_batch_read_failed",
+            "conversation_sheet_transient_exhausted": "v2_source_retry_exhausted",
+            "conversation_population_changed": "v2_source_population_changed",
+            "conversation_review_body_invalid": "v2_source_legacy_text_invalid",
+            "registry_read_failed": "v2_source_suppression_unverified",
+            "historical_v2_incomplete": "v2_source_suppression_unverified",
+            "private_review_identity_changed": "v2_source_historical_scope_invalid",
+            "v2_copy_changed": "v2_copy_changed",
+        }
+        for internal, public in cases.items():
+            with self.subTest(internal=internal):
+                self.assertEqual(m.private_source_reason(RuntimeError(internal)),
+                                 public)
+                self.assertEqual(m.safe_error_reason(RuntimeError(public)),
+                                 public)
+        for unsafe in (RuntimeError("private@example.invalid"),
+                       RuntimeError("registry token for private@example.invalid"),
+                       ValueError("private draft body"),
+                       Exception("email secret")):
+            self.assertEqual(m.private_source_reason(unsafe),
+                             "v2_private_source_read_unverified")
+
     def test_failure_logging_cannot_expose_private_exception_text(self):
         self.assertEqual(
             m.safe_error_reason(RuntimeError("v2_source_changed")),
