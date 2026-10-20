@@ -78,10 +78,10 @@ def build_rows(records, state, archived, validity, *, run_id, now=None):
     return result
 
 
-# These columns encode durable per-message identity, original MIME proof,
-# recipient, first-party source and safety state. Active flags may change when
-# fresh official-site evidence arrives; never rewrite the retained snapshot.
-IMMUTABLE_COLUMNS = (0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12)
+# These columns encode immutable message identity, MIME/archive proof and
+# first-party source. Category and active status are *not* immutable: refreshed
+# official evidence can promote a former source hold without altering a draft.
+IMMUTABLE_COLUMNS = (0, 1, 2, 3, 4, 5, 6, 9, 10, 11, 12)
 
 
 def verify_existing_snapshot(expected, saved):
@@ -94,12 +94,14 @@ def verify_existing_snapshot(expected, saved):
     if (not isinstance(saved, list) or len(saved) != OLD_COUNT + 1
             or saved[0] != list(HEADERS)):
         raise RuntimeError(error)
-    active_differences = 0
+    active_differences = category_differences = 0
     source_run = source_timestamp = None
     for old, current in zip(saved[1:], expected[1:]):
         if (not isinstance(old, list) or len(old) != len(HEADERS)
                 or any(old[index] != current[index]
                        for index in IMMUTABLE_COLUMNS)
+                or old[7] not in {"target", "source_hold"}
+                or current[7] not in {"target", "source_hold"}
                 or old[8] not in {"JA", "NEE"}
                 or not DIGITS.fullmatch(str(old[13]))
                 or not isinstance(old[14], str)):
@@ -115,7 +117,8 @@ def verify_existing_snapshot(expected, saved):
         elif old[13] != source_run or old[14] != source_timestamp:
             raise RuntimeError(error)
         active_differences += old[8] != current[8]
-    return active_differences
+        category_differences += old[7] != current[7]
+    return active_differences, category_differences
 
 
 def store_rows(rows, session, *, metadata=None):
@@ -148,11 +151,13 @@ def store_rows(rows, session, *, metadata=None):
             raise ValueError("private inventory read failed")
         prior = before.json().get("values", [])
         if prior:
-            changed = verify_existing_snapshot(rows, prior)
-            # Deliberate no-write path; the snapshot remains dated to its
-            # original run even when the current approval flag has changed.
+            active_changed, category_changed = verify_existing_snapshot(rows, prior)
+            # Deliberate no-write path: the preserved snapshot is historical;
+            # never report a changed source state as a fresh stored approval.
             if metadata is not None:
-                metadata.update(snapshot_reused=1, active_flag_drift=changed)
+                metadata.update(snapshot_reused=1,
+                                active_flag_drift=active_changed,
+                                category_drift=category_changed)
             return OLD_COUNT
         payload = {
             "requests": [{
@@ -183,5 +188,6 @@ def store_rows(rows, session, *, metadata=None):
             raise
         raise RuntimeError("v2_private_inventory_readback_failed") from None
     if metadata is not None:
-        metadata.update(snapshot_reused=0, active_flag_drift=0)
+        metadata.update(snapshot_reused=0, active_flag_drift=0,
+                        category_drift=0)
     return OLD_COUNT
