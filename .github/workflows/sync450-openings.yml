@@ -96,6 +96,7 @@ jobs:
        github.event.comment.body == 'LEADS_CONVERSATIONS_V1:RECREATE_BATCH_5' ||
        github.event.comment.body == 'LEADS_CONVERSATIONS_V1:AUDIT' ||
        github.event.comment.body == 'LEADS_V2_DRAFTS:PRECHECK' ||
+       github.event.comment.body == 'LEADS_V2_DRAFTS:PREPARE60' ||
        github.event.comment.body == 'LEADS_V2_DRAFTS:AUDIT' ||
        github.event.comment.body == 'LEADS_V2_DRAFTS:PILOT' ||
        github.event.comment.body == 'LEADS_V2_DRAFTS:BATCH_1' ||
@@ -135,6 +136,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_draft_revision.py' -q
           python3 -m unittest discover -s tests -p 'test_recreate_reviewed_drafts.py' -q
           python3 -m unittest discover -s tests -p 'test_migrate_v2_drafts.py' -q
+          python3 -m unittest discover -s tests -p 'test_v2_private_stale_inventory.py' -q
       - name: Run only explicitly authorized and privately verified IMAP operation
         env:
           PYTHONPATH: scripts

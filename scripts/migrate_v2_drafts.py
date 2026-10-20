@@ -22,7 +22,7 @@ import private_imap_archive as archives
 from myhost_draft import _matches, build_message, _mailbox_arg, connect_imap
 
 PREFIX = "LEADS_V2_DRAFTS:"
-MODES = frozenset({"PRECHECK", "AUDIT", "PILOT", "RECREATE_REMAINING"} |
+MODES = frozenset({"PRECHECK", "AUDIT", "PREPARE60", "PILOT", "RECREATE_REMAINING"} |
                   {f"BATCH_{i}" for i in range(1, 6)} |
                   {f"RECREATE_BATCH_{i}" for i in range(1, 6)})
 V2_HEADERS = [
@@ -106,6 +106,7 @@ def source_scope(session):
                 or proposal[12] != "ONGEWIJZIGD" or key in result):
             raise RuntimeError("v2_source_identity")
         was_skipped = old[5] == "OVERGESLAGEN"
+        review_held = proposal[13].startswith("HOLD - ")
         row = dict(original, number=number)
         if was_skipped:
             if (old[7] or proposal[5] or proposal[6]
@@ -155,10 +156,11 @@ def source_scope(session):
             except RuntimeError:
                 pass
         row.update(
-            category="target" if original["category"] == "target" else "source_hold",
+            category=("source_hold" if review_held or original["category"] != "target"
+                      else "target"),
             current=current, new=newer,
             quality_ready=editorial_score >= 9.0,
-            active=bool(fresh and editorial_score >= 9.0
+            active=bool(not review_held and fresh and editorial_score >= 9.0
                         and original["category"] == "target"))
         result[key] = row
     if count != 410 or len(result) != 450:
@@ -228,7 +230,9 @@ def selected(records, mode):
                 if row["category"] == "target" and row["active"]}
     group = None
     if mode == "PILOT":
-        return {key for key, row in records.items() if row["number"] == 1}
+        return {key for key, row in records.items()
+                if row["number"] == 1 and row["category"] == "target"
+                and row["active"]}
     if "_BATCH_" in mode:
         group = int(mode.rsplit("_", 1)[1])
     elif mode.startswith("BATCH_"):
@@ -236,7 +240,8 @@ def selected(records, mode):
     if group is None:
         return set()
     return {key for key, row in records.items()
-            if (row["number"]-1)//100+1 == group}
+            if row["category"] == "target" and row["active"]
+            and (row["number"]-1)//100+1 == group}
 
 
 def archival_rows(records):
@@ -281,6 +286,16 @@ def run(mode, event, *, connector=connect_imap, loader=source_scope):
     baseline = summary(records, state, len(stored), len(created_proofs))
     if mode in {"AUDIT", "PRECHECK"}:
         return baseline
+    if mode == "PREPARE60":
+        # No IMAP writes. Private Sheet only after complete live MIME/archive preflight.
+        from v2_private_stale_inventory import build_rows, store_rows
+        private_rows = build_rows(
+            records, state, stored, validity,
+            run_id=os.environ.get("GITHUB_RUN_ID", ""))
+        count = store_rows(private_rows, session.session)
+        backed_up = sum(row[5] == "ARCHIEF_ORIGINEEL_MIME_SHA_OK"
+                        for row in private_rows[1:])
+        return dict(baseline, private_inventory=count, old_mime_backups=backed_up)
     chosen = selected(records, mode)
     if not chosen:
         raise RuntimeError("v2_batch_empty")
@@ -437,6 +452,9 @@ _SAFE_REASON_CODES = frozenset({
     "v2_mailbox_changed", "v2_source_shape", "v2_source_identity",
     "v2_original_backup_missing", "v2_recovery_proof_mismatch",
     "v2_archive_generation_conflict", "v2_recovery_marker_conflict",
+    "v2_private_inventory_scope_invalid",
+    "v2_private_inventory_archive_mismatch",
+    "v2_private_inventory_readback_failed",
     "v2_create_failed", "v2_create_readback_failed",
     "v2_final_readback_failed", "v2_uidplus_required",
     "v2_mailbox_identity_changed", "v2_mailbox_text_changed",

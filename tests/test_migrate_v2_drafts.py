@@ -348,7 +348,9 @@ class MigrationSafetyTests(unittest.TestCase):
                 reviewed += 1
                 props[5], props[6] = newer["subject"], newer["body"]
                 props[7] = "TEKSTCHECK_OK 60 woorden"
-                props[13] = "REVIEW - individuele broncontrole open"
+                props[13] = ("HOLD - BRONCONTROLE ONVOLDOENDE" if n in
+                             {172, 310, 324, 344, 360} else
+                             "REVIEW - individuele broncontrole open")
             else:
                 props[13] = "HOLD - NIET VERVANGEN"
             v2_batches[group].append(props)
@@ -375,9 +377,16 @@ class MigrationSafetyTests(unittest.TestCase):
              patch.object(m.legacy.history.source, "read", side_effect=source_read):
             result = m.source_scope(object())
         self.assertEqual(len(result), 450)
-        self.assertEqual(sum(r["active"] for r in result.values()), 356)
+        self.assertEqual(sum(r["active"] for r in result.values()), 351)
         self.assertEqual(sum(r["category"] == "held" for r in result.values()), 40)
         self.assertEqual(sum(r.get("quality_ready") is False for r in result.values()), 54)
+        for number in (172, 310, 324, 344, 360):
+            held = next(r for r in result.values() if r["number"] == number)
+            self.assertEqual(held["category"], "source_hold")
+            self.assertFalse(held["active"])
+            self.assertNotIn(
+                held["current"]["draft_id"],
+                m.selected(result, f"BATCH_{(number-1)//100+1}"))
 
     def test_archive_restricts_scope_to_fixed_private_folder(self):
         server = server_with(self.records, self.base)
