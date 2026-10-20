@@ -115,19 +115,56 @@ class ReportTests(unittest.TestCase):
         records, state = fixtures()
         rows = report.build_rows(records, state, {}, "123", run_id="456")
         sheet = PrivateSheet()
-        self.assertEqual(report.store_rows(rows, sheet), 60)
+        meta = {}
+        self.assertEqual(report.store_rows(rows, sheet, metadata=meta), 60)
+        self.assertEqual(meta, {"snapshot_reused": 0, "active_flag_drift": 0})
         self.assertEqual(sheet.writes, 1)
         self.assertEqual(sheet.rows, rows)
-        with self.assertRaisesRegex(RuntimeError, "v2_private_inventory_already_initialized"):
-            report.store_rows(rows, sheet)
+        updated = copy.deepcopy(rows)
+        updated[1][8] = "JA" if updated[1][8] == "NEE" else "NEE"
+        updated[2][8] = "JA" if updated[2][8] == "NEE" else "NEE"
+        for row in updated[1:]:
+            row[13] = "999111"
+            row[14] = "2026-10-21T00:00:00+00:00"
+        frozen = copy.deepcopy(sheet.rows)
+        self.assertEqual(report.store_rows(updated, sheet, metadata=meta), 60)
+        self.assertEqual(meta, {"snapshot_reused": 1, "active_flag_drift": 2})
         self.assertEqual(sheet.writes, 1)
+        self.assertEqual(sheet.rows, frozen)
         for session, reason in (
             (PrivateSheet(hidden=False), "v2_private_inventory_readback_failed"),
-            (PrivateSheet(existing=True), "v2_private_inventory_already_initialized"),
+            (PrivateSheet(existing=True), "v2_private_inventory_existing_mismatch"),
         ):
             with self.assertRaisesRegex(RuntimeError, reason):
                 report.store_rows(rows, session)
             self.assertEqual(session.writes, 0)
+
+    def test_reject_retained_identity_drift_without_writing(self):
+        records, state = fixtures()
+        rows = report.build_rows(records, state, {}, "123", run_id="456")
+        for column in (0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12):
+            with self.subTest(column=column):
+                sheet = PrivateSheet()
+                report.store_rows(rows, sheet)
+                modified = copy.deepcopy(rows)
+                modified[4][column] += "_CHANGED"
+                with self.assertRaisesRegex(
+                        RuntimeError, "v2_private_inventory_existing_mismatch"):
+                    report.store_rows(modified, sheet)
+                self.assertEqual(sheet.writes, 1)
+                self.assertEqual(sheet.rows, rows)
+
+    def test_retained_snapshot_rejects_malformed_provenance(self):
+        records, state = fixtures()
+        rows = report.build_rows(records, state, {}, "123", run_id="456")
+        for column, value in ((13, "not-a-run"), (14, "no-timezone")):
+            sheet = PrivateSheet()
+            report.store_rows(rows, sheet)
+            sheet.rows[1][column] = value
+            with self.assertRaisesRegex(
+                    RuntimeError, "v2_private_inventory_existing_mismatch"):
+                report.store_rows(rows, sheet)
+            self.assertEqual(sheet.writes, 1)
 
     def test_reject_injected_formula_or_non_private_output(self):
         records, state = fixtures()
