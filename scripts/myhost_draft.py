@@ -14,6 +14,7 @@ from email.utils import formatdate, make_msgid
 from draft_queue_readonly import load_draft, load_drafts
 from dedupe_preflight import match_candidate, normalize_company, normalize_domain, domains_match
 from registry_readonly import load_suppressions
+from short_email_policy import validate_short_email
 
 DRAFT_HEADER = "X-Webactueel-Draft-ID"
 
@@ -143,6 +144,8 @@ def _find_matches(client, folder: str, draft_id: str, *, selected: bool = False)
 
 
 def save_draft(client, folder: str, row: dict[str, str], *, selected: bool = False) -> str:
+    # Retire historical six-branch sales copy from ALL new IMAP writes.
+    validate_short_email(row)
     expected = build_message(row)
     existing = _find_matches(client, folder, row["draft_id"], selected=selected)
     if len(existing) > 1:
@@ -173,6 +176,7 @@ def save_draft(client, folder: str, row: dict[str, str], *, selected: bool = Fal
 
 def create_from_queue(draft_id: str) -> str:
     row = load_draft(draft_id)
+    validate_short_email(row)  # Reject obsolete copy before IMAP access.
     # Recheck all historical contacts, bounces and opt-outs immediately before
     # even creating a draft. This internal safety gate is not a fifth step.
     try:
@@ -203,7 +207,17 @@ def create_batch_from_queue(draft_ids: list[str]) -> dict[str, int]:
     any IMAP login. Each eligible draft still receives exact readback.
     """
     rows = load_drafts(draft_ids, skip_invalid=True)
-    invalid = len(draft_ids) - len(rows)
+    # An old-style proposal is invalid for this NEW-draft route, not a reason
+    # to create or overwrite a legacy draft. Reject individually before IMAP.
+    reviewed = []
+    for row in rows:
+        try:
+            validate_short_email(row)
+        except RuntimeError:
+            continue
+        reviewed.append(row)
+    invalid = len(draft_ids) - len(reviewed)
+    rows = reviewed
     try:
         registry = load_suppressions()
         company_seen: set[str] = set()

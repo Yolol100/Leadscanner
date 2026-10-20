@@ -17,7 +17,7 @@ ROW = {
     "email": "info@fictief-schildersbedrijf.nl",
     "source_url": "https://fictief-schildersbedrijf.nl/contact",
     "subject": "Vraag over Fictief Schildersbedrijf",
-    "body": "Goedendag, Webactueel stelt één korte vraag. Geen interesse? Afmelden.",
+    "body": "Goedendag,\n\nIk zag dat jullie schilderwerk aanbieden.\n\nZou het handig zijn als klanten hun wensen vooraf kunnen doorgeven?\n\nLiever geen e-mails meer? Antwoord met 'nee', dan laat ik het hierbij.\n\nGroet,\nAndrew",
 }
 
 

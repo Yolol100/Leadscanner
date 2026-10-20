@@ -15,7 +15,7 @@ def make_rows(count=50):
         "email": "info@fictief-" + str(index) + ".nl",
         "source_url": "https://fictief-" + str(index) + ".nl/contact",
         "subject": "Vraag over Fictief Hoveniersbedrijf " + str(index),
-        "body": "Goedendag,\n\nKorte fictieve testmail.\n\nWebactueel",
+        "body": "Goedendag,\n\nIk zag dat jullie tuinonderhoud aanbieden.\n\nZou het handig zijn als klanten hun tuinwensen vooraf kunnen doorgeven?\n\nLiever geen e-mails meer? Antwoord met 'nee', dan laat ik het hierbij.\n\nGroet,\nAndrew",
     } for index in range(1, count + 1)]
 
 
@@ -155,19 +155,15 @@ class BatchIMAPSimulation(unittest.TestCase):
              patch("myhost_draft.connect_imap", return_value=client), \
              patch("myhost_draft.time.sleep", return_value=None):
             outcome = draft.create_batch_from_queue(draft_ids)
-        self.assertEqual(outcome, {"total": 6, "created": 6, "existing": 0, "skipped_invalid": 0, "skipped_suppressed": 0, "skipped_duplicate": 0})
+        # Old six-branch copy must never be written as a NEW draft.
+        self.assertEqual(outcome, {"total": 6, "created": 0, "existing": 0,
+                                   "skipped_invalid": 6, "skipped_suppressed": 0,
+                                   "skipped_duplicate": 0})
         self.assertEqual(session.get.call_count, 1)
-        self.assertEqual(client.append_attempts, 6)
-        self.assertEqual(client.logout_count, 1)
-        for i, (raw, flags) in enumerate(client.messages):
-            msg = BytesParser(policy=policy.default).parsebytes(raw)
-            self.assertEqual(flags, b"\\Draft")
-            self.assertEqual(msg["Subject"], subjects[i])
-            self.assertIn(opt_out, msg.get_content())
-            self.assertTrue(msg.get_content().rstrip().endswith("Andrew"))
-            self.assertNotIn("{{", msg.get_content())
-            self.assertLessEqual(len(msg.get_content().split()), 110)
-        print("SIX_CLUSTER_HANDOFF_SIM=green queue=6 imap_readback=6 sent=0")
+        self.assertEqual(client.append_attempts, 0)
+        self.assertEqual(client.logout_count, 0)
+        self.assertEqual(client.messages, [])
+        print("SIX_LEGACY_STYLES_RETIRED=green rejected=6 appended=0 sent=0")
 
 
 if __name__ == "__main__":
