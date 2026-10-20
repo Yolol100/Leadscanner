@@ -17,6 +17,7 @@ import review450 as review
 from dedupe_preflight import match_candidate
 from myhost_draft import _matches, build_message, connect_imap, find_drafts_folder
 from registry_readonly import authorized_session, load_suppressions
+from short_email_policy import validate_short_email
 
 OPT_OUT = "Liever geen e-mails meer? Antwoord met 'nee', dan laat ik het hierbij."
 DRAFT_RE = re.compile(r"draft-[0-9a-f]{32}\Z")
@@ -100,6 +101,15 @@ def load_alternate_versions(session, expected):
     return versions
 
 
+def matches_current_style(row):
+    """Apply the active single-format validator to an already matched source row."""
+    try:
+        validate_short_email(row)
+    except RuntimeError:
+        return False
+    return True
+
+
 def audit():
     session = authorized_session()
     expected = load_expected(session)
@@ -133,6 +143,7 @@ def audit():
             else:
                 unexpected += 1
         exact = stale = missing = duplicate = blocked_existing = 0
+        exact_new_style = exact_legacy_style = 0
         generation_counts = {name: 0 for name in versions}
         unrecognized = 0
         for record in inventory.values():
@@ -165,6 +176,10 @@ def audit():
                 build_message({"draft_id": key, **row}), records[0]["message"]
             ):
                 exact += 1
+                if matches_current_style(row):
+                    exact_new_style += 1
+                else:
+                    exact_legacy_style += 1
             else:
                 stale += 1
         return {
@@ -175,6 +190,8 @@ def audit():
             "unrelated": unexpected,
             "nondraft": non_drafts,
             "exact": exact, "stale": stale,
+            "exact_new_style": exact_new_style,
+            "exact_legacy_style": exact_legacy_style,
             "missing": missing, "duplicates": duplicate,
             "blocked_existing": blocked_existing,
             "suppressed_eligible": suppressed,
