@@ -207,16 +207,35 @@ def audit():
             pass
 
 
+def cohort_acceptance_state(stats):
+    """Separate a successful read from proven draft-cohort acceptance.
+
+    In particular, zero recognized IDs is not evidence that a historic cohort
+    was deleted: the account/folder/source identity may be wrong.
+    """
+    if stats["eligible"] > 0 and stats["known"] == 0:
+        return "unverified_mailbox_cohort"
+    if any(stats[field] for field in (
+            "missing", "stale", "duplicates",
+            "blocked_existing", "unrecognized_generations")):
+        return "mismatch"
+    if (stats["exact"] != stats["eligible"]
+            or stats["exact_new_style"] != stats["eligible"]):
+        return "needs_review"
+    return "verified"
+
+
 def main():
     try:
         # External libraries must never log private rows or mailbox contents.
         with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
             stats = audit()
-        print("MYHOST_450_READONLY=" + " ".join(
+        state = cohort_acceptance_state(stats)
+        print("MYHOST_450_READONLY=cohort_status=" + state + " " + " ".join(
             f"{key}={str(value).lower() if isinstance(value, bool) else value}"
             for key, value in stats.items()
         ) + " sent=0 deleted=0 created=0")
-        return 0
+        return 0 if state == "verified" else 1
     except Exception:
         print("MYHOST_450_READONLY=blocked reason=private_preflight_or_imap_unverified sent=0")
         return 1

@@ -136,5 +136,46 @@ class LiveDraftInventoryTests(unittest.TestCase):
         self.assertNotIn("sendmail(", source)
 
 
+    def test_no_known_cohort_ids_is_blocked_even_if_imap_read_succeeds(self):
+        # A green transport result cannot certify that 412 drafts were lost.
+        import contextlib
+        import io
+        counts = dict(eligible=412, blocked=38, mailbox_total=346, known=0,
+                      unrelated=346, exact=0, exact_new_style=0, missing=412,
+                      stale=0, duplicates=0, blocked_existing=0,
+                      unrecognized_generations=0)
+        output = io.StringIO()
+        with patch.object(audit, "audit", return_value=counts):
+            with contextlib.redirect_stdout(output):
+                status = audit.main()
+        self.assertEqual(status, 1)
+        self.assertIn("cohort_status=unverified_mailbox_cohort", output.getvalue())
+        self.assertIn("missing=412", output.getvalue())
+        self.assertIn("sent=0 deleted=0 created=0", output.getvalue())
+
+    def test_partial_or_legacy_cohort_cannot_pass_acceptance(self):
+        basic = dict(eligible=412, known=100, exact=100,
+                     exact_new_style=100, missing=312, stale=0,
+                     duplicates=0, blocked_existing=0,
+                     unrecognized_generations=0)
+        self.assertEqual(audit.cohort_acceptance_state(basic), "mismatch")
+        basic.update(exact=412, exact_new_style=0, missing=0, known=412)
+        self.assertEqual(audit.cohort_acceptance_state(basic), "needs_review")
+
+    def test_fully_reconciled_current_style_is_the_only_green_result(self):
+        counts = dict(eligible=412, blocked=38, mailbox_total=450, known=412,
+                      unrelated=38, exact=412, exact_new_style=412, missing=0,
+                      stale=0, duplicates=0, blocked_existing=0,
+                      unrecognized_generations=0)
+        import contextlib
+        import io
+        output = io.StringIO()
+        with patch.object(audit, "audit", return_value=counts):
+            with contextlib.redirect_stdout(output):
+                status = audit.main()
+        self.assertEqual(status, 0)
+        self.assertIn("cohort_status=verified", output.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()
