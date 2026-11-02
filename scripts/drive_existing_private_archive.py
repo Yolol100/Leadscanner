@@ -75,11 +75,11 @@ class ExistingPrivateArchive:
 
     def replace_empty_with(self, replacement):
         original = self.read_bytes()
-        if hashlib.sha256(original).hexdigest() != self.bootstrap_sha:
-            raise RuntimeError("archive_bootstrap_changed")
         with zipfile.ZipFile(io.BytesIO(original)) as src:
             if json.loads(src.read("manifest.json")).get("status") != "empty-bootstrap":
                 raise RuntimeError("archive_already_contains_records")
+        if hashlib.sha256(original).hexdigest() != self.bootstrap_sha:
+            raise RuntimeError("archive_bootstrap_changed")
         if not isinstance(replacement, bytes) or not 100 < len(replacement) <= 100_000_000:
             raise RuntimeError("archive_replacement_invalid")
         with zipfile.ZipFile(io.BytesIO(replacement)) as source:
