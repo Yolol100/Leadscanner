@@ -8,6 +8,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import re
 import zipfile
 
 import draft_management as draft
@@ -82,6 +83,12 @@ if __name__ == "__main__":
         result = run()
         print("PRIVATE_DRAFT_ARCHIVE={} stored={} modified=0 sent=0".format(
             result["state"], result.get("messages", 0)))
-    except Exception:
-        print("PRIVATE_DRAFT_ARCHIVE=blocked modified=0 sent=0")
+    except Exception as exc:
+        # Never disclose arbitrary exception text, message bytes, credentials,
+        # mailbox addresses, URLs or stack traces to public Actions logs.
+        raw = str(exc)
+        reason = raw if re.fullmatch(
+            r"(?:archive|draft|drive|imap|mailbox|snapshot)_[a-z0-9_]{3,72}",
+            raw) else "private_operation_unverified"
+        print("PRIVATE_DRAFT_ARCHIVE=blocked reason={} modified=0 sent=0".format(reason))
         raise SystemExit(1) from None
