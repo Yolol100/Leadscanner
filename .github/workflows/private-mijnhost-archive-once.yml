@@ -46,7 +46,7 @@ jobs:
           JOB_STATUS: ${{ job.status }}
         run: |
           if [ "$JOB_STATUS" = "success" ]; then
-            gh issue comment 1782 --body "PRIVATE_DRAFT_ARCHIVE=runner_succeeded (verify Drive bytes before acceptance); sent=0"
+            gh issue comment 1782 --body "PRIVATE_DRAFT_ARCHIVE=runner_succeeded run_id=$GITHUB_RUN_ID (verify Drive bytes before acceptance); sent=0"
           else
-            gh issue comment 1782 --body "PRIVATE_DRAFT_ARCHIVE=runner_blocked; modified=0 sent=0 (Drive and IMAP may need configuration)"
+            gh issue comment 1782 --body "PRIVATE_DRAFT_ARCHIVE=runner_blocked run_id=$GITHUB_RUN_ID; mailbox_modified=0 sent=0"
           fi
