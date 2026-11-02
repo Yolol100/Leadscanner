@@ -48,7 +48,8 @@ class ExistingPrivateArchive:
             raise RuntimeError("archive_access_unavailable")
         data = response.json()
         if (data.get("id") != self.file_id or data.get("trashed") is not False
-                or self.folder_id not in (data.get("parents") or [])
+                or (data.get("parents") is not None
+                    and self.folder_id not in data["parents"])
                 or data.get("mimeType") != "application/zip"
                 or not (data.get("capabilities") or {}).get("canEdit")):
             raise RuntimeError("archive_target_unverified")
