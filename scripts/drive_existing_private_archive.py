@@ -74,6 +74,9 @@ class ExistingPrivateArchive:
 
     def replace_empty_with(self, replacement):
         original = self.read_bytes()
+        expected = "1a2452da9a1446895864506b65da3a5431953c57cb5474048a7495ef7ec4a983"
+        if hashlib.sha256(original).hexdigest() != expected:
+            raise RuntimeError("archive_bootstrap_changed")
         with zipfile.ZipFile(io.BytesIO(original)) as src:
             if json.loads(src.read("manifest.json")).get("status") != "empty-bootstrap":
                 raise RuntimeError("archive_already_contains_records")
