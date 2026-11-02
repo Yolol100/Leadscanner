@@ -61,11 +61,11 @@ class ExistingArchiveTests(unittest.TestCase):
         self.session = FakeDriveSession(self.folder, self.file_id)
         self.archive = ExistingPrivateArchive(self.file_id, self.folder,
                                                session=self.session,
-                                               bootstrap_sha=hashlib.sha256(packed("empty-bootstrap")).hexdigest())
+                                               bootstrap_sha=hashlib.sha256(self.session.bytes).hexdigest())
 
     def test_write_complete_once_and_readback(self):
         content = packed("complete", 1)
-        self.assertEqual(self.archive.read_bytes(), packed("empty-bootstrap"))
+        self.assertEqual(self.archive.read_bytes(), self.session.bytes)
         self.assertTrue(self.archive.replace_empty_with(content))
         self.assertEqual(self.archive.read_bytes(), content)
         self.assertEqual(self.session.uploads, 1)
