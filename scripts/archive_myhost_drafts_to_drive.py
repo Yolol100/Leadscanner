@@ -25,8 +25,10 @@ def snapshot_current_drafts(client, folder):
     with zipfile.ZipFile(stream, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
         for uid in sorted(inventory, key=int):
             item = inventory[uid]
-            if not item["draft_flag"] or b"\\DELETED" in item["flags"]:
-                raise RuntimeError("draft_archive_non_draft_or_deleted_flag")
+            # Preserve every current Drafts-folder message exactly, even if
+            # its IMAP Draft flag is missing or its Deleted flag is present.
+            # These flags stay private in the manifest and never authorize
+            # later replacement or deletion.
             raw = draft._raw_snapshot(client, uid, item["sha256"])
             name = "originals/uid-" + uid + ".eml"
             archive.writestr(name, raw)
@@ -40,6 +42,9 @@ def snapshot_current_drafts(client, folder):
             "status": "complete",
             "folder": folder, "uidvalidity": validity,
             "messages": len(records), "records": records,
+            "draft_flagged": sum(item["draft_flag"] for item in inventory.values()),
+            "deleted_flagged": sum(b"\\DELETED" in item["flags"]
+                                   for item in inventory.values()),
             "modified": 0, "sent": 0,
         }
         archive.writestr("manifest.json", json.dumps(manifest, sort_keys=True))
