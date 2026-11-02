@@ -60,14 +60,18 @@ class ArchiveAcceptanceTests(unittest.TestCase):
         self.assertEqual(again["state"], "archive_already_populated")
         self.assertEqual(destination.writes, 1)
 
-    def test_non_draft_flag_blocks_archive(self):
+    def test_missing_draft_flag_is_preserved_for_review(self):
         store = MemoryStore()
         uid = store.add(ROW)
         raw, flags = store.messages[uid]
         store.messages[uid] = (raw, set())
         client = MemoryClient(store)
-        with self.assertRaisesRegex(RuntimeError, "non_draft"):
-            snapshot_current_drafts(client, "Drafts")
+        payload, validity, _ = snapshot_current_drafts(client, "Drafts")
+        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+            manifest = json.loads(archive.read("manifest.json"))
+            self.assertEqual(manifest["draft_flagged"], 0)
+            self.assertEqual(manifest["messages"], 1)
+            self.assertEqual(archive.read("originals/uid-" + uid + ".eml"), raw)
         self.assertEqual(store.deleted, [])
         self.assertEqual(store.append_count, 0)
 
