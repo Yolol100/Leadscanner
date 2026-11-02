@@ -33,11 +33,12 @@ def service_session():
 
 
 class ExistingPrivateArchive:
-    def __init__(self, file_id, folder_id, session=None):
+    def __init__(self, file_id, folder_id, session=None, bootstrap_sha="1a2452da9a1446895864506b65da3a5431953c57cb5474048a7495ef7ec4a983"):
         if not _ID.fullmatch(str(file_id)) or not _ID.fullmatch(str(folder_id)):
             raise RuntimeError("archive_ids_invalid")
         self.file_id, self.folder_id = file_id, folder_id
         self.session = session if session is not None else service_session()
+        self.bootstrap_sha = bootstrap_sha
 
     def inspect(self):
         response = self.session.get(_DRIVE_URL + self.file_id,
@@ -74,8 +75,7 @@ class ExistingPrivateArchive:
 
     def replace_empty_with(self, replacement):
         original = self.read_bytes()
-        expected = "1a2452da9a1446895864506b65da3a5431953c57cb5474048a7495ef7ec4a983"
-        if hashlib.sha256(original).hexdigest() != expected:
+        if hashlib.sha256(original).hexdigest() != self.bootstrap_sha:
             raise RuntimeError("archive_bootstrap_changed")
         with zipfile.ZipFile(io.BytesIO(original)) as src:
             if json.loads(src.read("manifest.json")).get("status") != "empty-bootstrap":
