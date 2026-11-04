@@ -10,22 +10,39 @@ from myhost_draft import create_from_queue, create_batch_from_queue
 
 ISSUE_NUMBER = 1659
 DRAFT_RE = re.compile(r"^LEADS_DRAFT_ONLY:\s*(draft-[0-9a-f]{32})\s*$", re.I)
-ALLOWED_ASSOCIATIONS = {"OWNER", "MEMBER", "COLLABORATOR"}
+OWNER_LOGIN = "Yolol100"
+REPOSITORY = "Yolol100/Leadscanner"
+
+
+def _require_owner(event_name: str, event: dict) -> None:
+    """Enforce the existing owner-only contract on both GitHub trigger paths."""
+    if event_name == "issue_comment":
+        issue = event.get("issue") or {}
+        comment = event.get("comment") or {}
+        repository = event.get("repository") or {}
+        if (repository.get("full_name") != REPOSITORY
+                or issue.get("number") != ISSUE_NUMBER or issue.get("pull_request")
+                or (comment.get("user") or {}).get("login") != OWNER_LOGIN
+                or comment.get("author_association") != "OWNER"):
+            raise ValueError("draft_trigger_owner_required")
+    elif event_name == "workflow_dispatch":
+        if (os.environ.get("GITHUB_ACTOR") != OWNER_LOGIN
+                or os.environ.get("GITHUB_REF") != "refs/heads/main"):
+            raise ValueError("draft_dispatch_owner_and_main_required")
+    else:
+        raise ValueError("draft_trigger_untrusted_event")
 
 
 def resolve_request(event_name: str, event: dict, inputs: dict) -> str:
     if event_name == "issue_comment":
-        issue = event.get("issue") or {}
+        _require_owner(event_name, event)
         comment = event.get("comment") or {}
-        if issue.get("number") != ISSUE_NUMBER:
-            raise ValueError("wrong_issue")
-        if str(comment.get("author_association") or "").upper() not in ALLOWED_ASSOCIATIONS:
-            raise ValueError("unauthorized_commenter")
         match = DRAFT_RE.fullmatch(str(comment.get("body") or "").strip())
         if not match:
             raise ValueError("invalid_comment")
         return match.group(1).casefold()
     if event_name == "workflow_dispatch":
+        _require_owner(event_name, event)
         value = str(inputs.get("draft_id") or "").strip()
         if not re.fullmatch(r"draft-[0-9a-f]{32}", value, re.I):
             raise ValueError("invalid_dispatch_id")
@@ -35,16 +52,14 @@ def resolve_request(event_name: str, event: dict, inputs: dict) -> str:
 
 def resolve_batch_request(event_name: str, event: dict, inputs: dict) -> list[str]:
     if event_name == "issue_comment":
-        issue = event.get("issue") or {}
+        _require_owner(event_name, event)
         comment = event.get("comment") or {}
-        if (issue.get("number") != ISSUE_NUMBER or
-                str(comment.get("author_association") or "").upper() not in ALLOWED_ASSOCIATIONS):
-            raise ValueError("batch_trigger_unauthorized")
         text = str(comment.get("body") or "").strip()
         if not text.startswith("LEADS_DRAFT_BATCH_ONLY:"):
             raise ValueError("batch_trigger_invalid")
         payload = text.split(":", 1)[1].strip()
     elif event_name == "workflow_dispatch":
+        _require_owner(event_name, event)
         payload = str(inputs.get("draft_ids") or "").strip()
     else:
         raise ValueError("batch_trigger_untrusted")
