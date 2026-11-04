@@ -64,7 +64,7 @@ class RecoveryClient(Client):
         if result[0] == "OK" and folder.strip('"') == m.archives.V2_CREATED:
             item = self.server.boxes[m.archives.V2_CREATED][
                 str(self.server.next_id)]
-            item["flags"], item["draft_flag"] = {b"\SEEN"}, False
+            item["flags"], item["draft_flag"] = {b"\\SEEN"}, False
         return result
 
 
@@ -83,9 +83,9 @@ def recovered_server(base, records):
     for uid, item in list(server.boxes["Drafts"].items()):
         record = records[item["draft_id"]]
         server.boxes["Drafts"][uid] = entry(
-            int(uid), build_message(record["new"]).as_bytes(), {b"\DRAFT"})
+            int(uid), build_message(record["new"]).as_bytes(), {b"\\DRAFT"})
         server.boxes[m.archives.V2_ARCHIVE][uid] = entry(
-            int(uid), build_message(record["current"]).as_bytes(), {b"\SEEN"})
+            int(uid), build_message(record["current"]).as_bytes(), {b"\\SEEN"})
     return server
 
 
