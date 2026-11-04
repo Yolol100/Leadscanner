@@ -93,8 +93,10 @@ class BatchOnlyTests(unittest.TestCase):
 
     def test_batch_limits_and_untrusted_payload(self):
         ids = [PREFIX + f"{index:032x}" for index in range(1, 51)]
-        authorized = {"issue": {"number": 1659},
-                      "comment": {"author_association": "OWNER",
+        authorized = {"repository": {"full_name": "Yolol100/Leadscanner"},
+                      "issue": {"number": 1659},
+                      "comment": {"user": {"login": "Yolol100"},
+                                  "author_association": "OWNER",
                                   "body": "LEADS_DRAFT_BATCH_ONLY: " + ",".join(ids)}}
         self.assertEqual(resolve_batch_request("issue_comment", authorized, {}), ids)
         with self.assertRaises(ValueError):
