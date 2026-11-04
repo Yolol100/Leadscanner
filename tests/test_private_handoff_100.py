@@ -120,7 +120,9 @@ class HundredDraftBatchTests(unittest.TestCase):
 
     def test_hundred_valid_ids_but_hundred_and_one_blocked(self):
         ids = [row["draft_id"] for row in drafts(100)]
-        event = {"issue": {"number": 1659}, "comment": {
+        event = {"repository": {"full_name": "Yolol100/Leadscanner"},
+                 "issue": {"number": 1659}, "comment": {
+            "user": {"login": "Yolol100"},
             "author_association": "OWNER",
             "body": "LEADS_DRAFT_BATCH_ONLY: " + ",".join(ids)
         }}
