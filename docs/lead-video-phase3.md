@@ -2,8 +2,9 @@
 
 This is **new generic capability code only**. It is not yet wired into the
 owner-only GitHub issue command or production DraftQueue. Existing four-step
-Leadscanner, historical/HMAC suppressions, six active templates, Mijn.Host
-IMAP Draft readback, old drafts and no-send rule remain unchanged.
+Leadscanner, historical/HMAC suppressions, the single active factual first-touch
+mail A, Mijn.Host IMAP Draft readback, old drafts and no-send rule remain unchanged.
+The six historical commercial templates are retired and must not be reactivated.
 
 ## Fast decision path
 
@@ -39,7 +40,7 @@ an MP4. Do not expose the private inputs in public CI or logs.
 
 No GitHub Actions event, CLI, cron or email automation is added by this patch.
 The production switch requires reconciliation of the active Leads Google
-Drive source, its hash manifest, installed Leads Skill, six-template policy,
+Drive source, its hash manifest, installed Leads Skill, single-template A policy,
 private source authorization, and an independent end-to-end test, plus owner
 approval. Do not bulk-rewrite existing drafts without a durable individual
 MIME backup, UID/SHA preflight, explicit authority and readback.
@@ -48,4 +49,5 @@ MIME backup, UID/SHA preflight, explicit authority and readback.
 
 `PYTHONPATH=scripts python3 -m unittest discover -s tests -p 'test_lead_video_planner.py' -v`
 
-The tests use only invented `.example` domains; no network, Sheets or mail.
+The tests use only invented `.example` domains and relative-time fixture timestamps;
+no network, Sheets or mail. The CI suite covers this module on each pull request.

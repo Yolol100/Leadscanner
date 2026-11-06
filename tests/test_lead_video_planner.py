@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from lead_video_planner import (route_verified_leads, render_short_email,
                                 prepare_video_storyboard, OPT_OUT)
 
-STAMP = "2026-10-19T12:00:00+00:00"
+STAMP = datetime.now(timezone.utc).isoformat()  # Keep positive fixtures current; stale/future use relative offsets.
 
 def lead(i, video=False):
     base = f"https://bedrijf{i}.example/"
