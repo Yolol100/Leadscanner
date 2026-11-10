@@ -53,10 +53,9 @@ jobs:
        github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-24.04
     timeout-minutes: 45
-    # The same concurrency queue as the authorized IMAP replacement prevents
-    # changing WebsiteEvidence in the middle of a private source snapshot.
+    # Serialized source evidence operations, independent from retired mail tasks.
     concurrency:
-      group: leadscanner-myhost-draft
+      group: leadscanner-website-evidence
       cancel-in-progress: false
       queue: max
     steps:
