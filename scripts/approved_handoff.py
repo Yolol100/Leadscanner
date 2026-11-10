@@ -1,6 +1,6 @@
 """Write only website-verified, non-suppressed businesses to a PRIVATE sheet tab.
 
-Separate from the unverified Candidates tab and read-only Mijn.Host Draft Queue.
+Separate from unverified Candidates and the historical read-only suppression ledger.
 All values are private Google Sheets stringValue cells, never GitHub artifacts/logs.
 """
 from __future__ import annotations
@@ -8,7 +8,7 @@ import os
 import re
 from urllib.parse import quote
 
-from draft_queue_readonly import valid_general_email
+from business_contacts import valid_general_email
 from new_leads import safe_hint
 from private_candidate_handoff import authorized_writer, SHEET_ID
 

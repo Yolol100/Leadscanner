@@ -29,7 +29,7 @@ def verified(**changes):
 
 
 class OwnerEvidenceCommandContractTests(unittest.TestCase):
-    def test_exact_authorization_and_shared_imap_source_lock(self):
+    def test_exact_authorization_and_research_source_lock(self):
         from pathlib import Path
         workflow = (Path(__file__).resolve().parents[1]
                     / ".github/workflows/fast-website-evidence.yml").read_text()
@@ -38,7 +38,7 @@ class OwnerEvidenceCommandContractTests(unittest.TestCase):
         self.assertIn("github.actor == 'Yolol100'", workflow)
         self.assertIn("github.event.comment.user.login == 'Yolol100'", workflow)
         self.assertIn("!github.event.issue.pull_request", workflow)
-        self.assertIn("group: leadscanner-myhost-draft", workflow)
+        self.assertIn("group: leadscanner-website-evidence", workflow)
         self.assertIn("queue: max", workflow)
         for i in range(1, 6):
             self.assertIn("LEADS_EVIDENCE_V1:REVIEW450_BATCH_" + str(i),
@@ -55,7 +55,7 @@ class OwnerEvidenceCommandContractTests(unittest.TestCase):
                     / ".github/workflows/fast-website-evidence.yml").read_text()
         # Actual source writes retain both independent serialization gates.
         self.assertIn("'leads-private-candidates'", workflow)
-        self.assertIn("group: leadscanner-myhost-draft", workflow)
+        self.assertIn("group: leadscanner-website-evidence", workflow)
         self.assertIn("cancel-in-progress: false", workflow)
         self.assertIn("queue: max", workflow)
         # Unrelated issue comments and PR tests do not block owner rechecks.

@@ -117,13 +117,13 @@ class ChatCommandTests(unittest.TestCase):
                 loader.assert_called_once()
                 run.assert_not_called()
 
-    def test_read_only_mailbox_audit_is_only_existing_inventory(self):
+    def test_legacy_mailbox_audit_is_rejected_without_execution(self):
         with patch.object(command.subprocess, "run") as run:
-            command.execute("DRAFTS_AUDIT")
-        self.assertEqual(run.call_args.args[0][1:],
-                         ["scripts/live_450_draft_inventory.py"])
-        self.assertTrue(run.call_args.kwargs["check"])
-        self.assertNotIn("--install", run.call_args.args[0])
+            with self.assertRaisesRegex(ValueError, "mode_not_allowlisted"):
+                command.execute("DRAFTS_AUDIT")
+            with self.assertRaisesRegex(ValueError, "command_not_allowlisted"):
+                command.validate(event("DRAFTS_AUDIT"))
+            run.assert_not_called()
 
     def test_evidence_always_forces_approved_no_mail(self):
         with patch.object(command.subprocess, "run") as run:
