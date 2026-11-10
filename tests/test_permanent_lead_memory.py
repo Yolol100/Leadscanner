@@ -71,11 +71,17 @@ class PermanentLeadMemoryTests(unittest.TestCase):
                     with self.assertRaises(RuntimeError):
                         load_discovery_suppressions(session)
 
-    def test_draft_history_does_not_block_first_draft_creation(self):
-        # Discovery suppression includes all saved drafts, but the canonical
-        # mail-creation registry is historically suppressed only.
-        import myhost_draft
-        self.assertIs(myhost_draft.load_suppressions.__module__, "registry_readonly")
+    def test_archived_draft_history_remains_read_only_suppression(self):
+        # Removing mailbox writers must never permit rediscovery of
+        # previously contacted or prepared companies.
+        session, read = self.make_loader()
+        with patch("registry_readonly.load_suppressions", return_value=[]), \
+             patch("registry_readonly.read_values", side_effect=read):
+            registry = load_discovery_suppressions(session)
+        self.assertIsNotNone(match_candidate({
+            "name_hint": "Fictieve Bakker",
+            "website_hint": "https://bakker-fictief.nl/"
+        }, registry))
 
 
 if __name__ == "__main__":
