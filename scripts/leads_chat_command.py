@@ -22,7 +22,7 @@ REQUIRES_ID = frozenset({"EVIDENCE", "HINTS_10", "HINTS_30", "HINTS_50", "HINTS_
 REQUEST_RE = re.compile(r"r-[0-9a-f]{32}\Z")
 MAX_COMMENT_PAGES = 20
 MODES = frozenset({
-    "CHECK", "DRAFTS_AUDIT", "EVIDENCE", "HINTS_10", "HINTS_30",
+    "CHECK", "EVIDENCE", "HINTS_10", "HINTS_30",
     "HINTS_50", "HINTS_100", "VERIFIED_100",
 }) | REVIEW_MODES
 
@@ -146,10 +146,7 @@ def execute(mode: str) -> None:
             raise RuntimeError("suppression_incomplete")
         print("LEADS_CHAT_PREFLIGHT=green")
         return
-    if mode == "DRAFTS_AUDIT":
-        # Existing read-only 450 inventory: no APPEND, STORE, EXPUNGE or SMTP.
-        args = ["scripts/live_450_draft_inventory.py"]
-    elif mode == "EVIDENCE":
+    if mode == "EVIDENCE":
         args = ["scripts/fast_website_evidence.py",
                 "--source", "Approved", "--batch", "1", "--force"]
     elif mode in REVIEW_MODES:
