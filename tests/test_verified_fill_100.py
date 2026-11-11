@@ -237,6 +237,34 @@ class RefillTests(unittest.TestCase):
         self.assertTrue(r["complete"])
         self.assertFalse(any(x["company"] == "Fictief Kapsalon 2" for x in r["approved"]))
 
+    def test_extra_fifty_progresses_across_unvisited_regions_until_exact_target(self):
+        from verified_fill import EXTRA_REGION_SETS
+        self.assertEqual(len(EXTRA_REGION_SETS["extra opvolging"]), 10)
+        self.assertEqual(len(EXTRA_REGION_SETS["extra vervolg"]), 10)
+        self.assertFalse(set(EXTRA_REGION_SETS["extra opvolging"])
+                         & set(EXTRA_REGION_SETS["extra vervolg"]))
+        seen = []
+        def discoverer(**kwargs):
+            seen.append(kwargs["region"])
+            index = (len(seen) - 1) * 15
+            return {"candidates": [hint(i) for i in range(index, index + 15)]}
+        def verifier(row):
+            # 20 percent of official websites have insufficient evidence.
+            return (None if int(row["overture_id"].split("-")[1]) % 5 == 0
+                    else approved(row))
+        result = fill_verified(
+            "Extra opvolging", ["vakbedrijven"], 30, target=50,
+            discoverer=discoverer, verifier=verifier, load_registry=lambda: [],
+            max_site_checks=800,
+        )
+        self.assertEqual(len(result["approved"]), 50)
+        self.assertEqual(result["target"], 50)
+        self.assertTrue(result["complete"])
+        self.assertGreater(result["counts"]["sites_checked"], 50)
+        self.assertEqual(seen, list(EXTRA_REGION_SETS["extra opvolging"][:len(seen)]))
+        self.assertEqual(result["emails_sent"], 0)
+        self.assertEqual(result["mailbox_writes"], 0)
+
     def test_bounded_shortfall_is_reported_honestly_not_faked(self):
         r = fill_verified("Delft", ["vakbedrijven"], 8,
             discoverer=lambda **k: {"candidates": [hint(i) for i in range(10)]},
