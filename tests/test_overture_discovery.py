@@ -510,7 +510,8 @@ class OvertureDiscoveryTests(unittest.TestCase):
             self.assertEqual(result["candidate_count"], 1)
             self.assertEqual(result["download_diagnostics"]["feature_count"], 1)
             self.assertEqual(result["download_diagnostics"]["website_feature_count"], 1)
-            self.assertEqual(result["emails_sent"] if "emails_sent" in result else 0, 0)
+            self.assertFalse(result["privacy_and_scope"]["email_send"])
+            self.assertFalse(result["privacy_and_scope"]["draftqueue_write"])
         finally:
             fixture.unlink(missing_ok=True)
 
