@@ -385,11 +385,17 @@ def read_candidates(
     keywords: list[str],
     max_results: int,
     require_website: bool,
+    diagnostics: dict | None = None,
 ) -> list[dict]:
     if not 1 <= max_results <= MAX_RESULTS:
         raise ValueError(f"max_results must be 1-{MAX_RESULTS}")
 
     candidates: list[dict] = []
+    # Collect download diagnostics during the same JSON decode pass as the
+    # candidate filter. This avoids parsing every Overture feature twice.
+    feature_count = website_feature_count = 0
+    sample_property_keys: list[str] = []
+    sample_basic_category = sample_legacy_primary = sample_taxonomy_primary = None
     with path.open("r", encoding="utf-8") as handle:
         for raw_line in handle:
             line = raw_line.lstrip("\x1e").strip()
@@ -397,6 +403,17 @@ def read_candidates(
                 continue
             feature = json.loads(line)
             properties = feature.get("properties") or {}
+            if diagnostics is not None:
+                feature_count += 1
+                website_for_diagnostics = _website_hint(properties)
+                website_feature_count += bool(website_for_diagnostics)
+                if not sample_property_keys:
+                    sample_property_keys = sorted(str(key) for key in properties.keys())
+                    sample_basic_category = properties.get("basic_category")
+                    legacy = properties.get("categories")
+                    sample_legacy_primary = legacy.get("primary") if isinstance(legacy, dict) else None
+                    taxonomy = properties.get("taxonomy")
+                    sample_taxonomy_primary = taxonomy.get("primary") if isinstance(taxonomy, dict) else None
             if not _matches_keywords(properties, keywords):
                 continue
 
@@ -404,7 +421,8 @@ def read_candidates(
             if "closed" in status:
                 continue
 
-            website = _website_hint(properties)
+            website = (website_for_diagnostics if diagnostics is not None
+                       else _website_hint(properties))
             if require_website and not website:
                 continue
 
@@ -438,6 +456,17 @@ def read_candidates(
                     "identity_status": "needs_leads_verification",
                 }
             )
+
+    if diagnostics is not None:
+        diagnostics.update({
+            "feature_count": feature_count,
+            "website_feature_count": website_feature_count,
+            "file_size_bytes": path.stat().st_size if path.exists() else 0,
+            "sample_property_keys": sample_property_keys,
+            "sample_basic_category": sample_basic_category,
+            "sample_legacy_primary": sample_legacy_primary,
+            "sample_taxonomy_primary": sample_taxonomy_primary,
+        })
 
     candidates.sort(
         key=lambda item: (
@@ -625,7 +654,14 @@ def discover(
     with tempfile.TemporaryDirectory(prefix="leadscanner-overture-") as tmpdir:
         data_path = Path(tmpdir) / "places.geojsonseq"
         download_overture_places(resolved_bbox, data_path)
-        download_diagnostics = inspect_download(data_path)
+        download_diagnostics = {}
+        candidates = read_candidates(
+            data_path,
+            keywords=clean_keywords,
+            max_results=max_results,
+            require_website=require_website,
+            diagnostics=download_diagnostics,
+        )
         print(
             "OVERTURE_DOWNLOAD_DIAGNOSTICS "
             f"features={download_diagnostics['feature_count']} "
@@ -634,12 +670,6 @@ def discover(
             f"basic={download_diagnostics['sample_basic_category']!r} "
             f"legacy={download_diagnostics['sample_legacy_primary']!r} "
             f"taxonomy={download_diagnostics['sample_taxonomy_primary']!r}"
-        )
-        candidates = read_candidates(
-            data_path,
-            keywords=clean_keywords,
-            max_results=max_results,
-            require_website=require_website,
         )
 
     if probe_websites:

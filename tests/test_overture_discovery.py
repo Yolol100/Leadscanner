@@ -456,6 +456,65 @@ class OvertureDiscoveryTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["overture_id"], "dup-1")
 
+    def test_inline_diagnostics_match_legacy_without_double_json_decode(self):
+        """One pass collects the same anonymous stats and vetted candidates."""
+        from overture_discovery import inspect_download
+        original = [
+            self.feature(fid="a", name="Fictieve Bakkerij A",
+                         category="bakery", website="https://a.example/"),
+            self.feature(fid="b", name="Fictieve Bakkerij B",
+                         category="bakery"),
+            self.feature(fid="c", name="Fictieve Winkel C",
+                         category="store", website="https://c.example/"),
+        ]
+        path = self.write_geojsonseq(original)
+        try:
+            expected = inspect_download(path)
+            stats = {}
+            with patch("overture_discovery.json.loads", wraps=json.loads) as decoder:
+                new_rows = read_candidates(
+                    path, keywords=["bakery"], max_results=10,
+                    require_website=True, diagnostics=stats,
+                )
+            self.assertEqual(decoder.call_count, len(original))
+            self.assertEqual(stats, expected)
+            self.assertEqual([r["overture_id"] for r in new_rows], ["a"])
+            old_rows = read_candidates(
+                path, keywords=["bakery"], max_results=10,
+                require_website=True,
+            )
+            self.assertEqual(new_rows, old_rows)
+        finally:
+            path.unlink(missing_ok=True)
+
+    def test_discover_does_not_run_legacy_diagnostic_second_pass(self):
+        from overture_discovery import discover
+        item = self.feature(fid="x", name="Fictieve Bakkerij X",
+                            category="bakery", website="https://x.example/")
+        fixture = self.write_geojsonseq([item])
+        try:
+            expected_bytes = fixture.read_bytes()
+
+            def fake_download(bbox, output_path):
+                output_path.write_bytes(expected_bytes)
+
+            with patch("overture_discovery.resolve_region_center",
+                       return_value={"lon": 4.5, "lat": 52.0}), \
+                 patch("overture_discovery.download_overture_places",
+                       side_effect=fake_download), \
+                 patch("overture_discovery.inspect_download",
+                       side_effect=AssertionError("second decode pass forbidden")):
+                result = discover(region="Fictieve Regio", bbox=None, radius_km=8,
+                                  keywords=["bakery"], max_results=10,
+                                  require_website=True, probe_websites=False)
+            self.assertEqual(result["candidate_count"], 1)
+            self.assertEqual(result["download_diagnostics"]["feature_count"], 1)
+            self.assertEqual(result["download_diagnostics"]["website_feature_count"], 1)
+            self.assertFalse(result["privacy_and_scope"]["email_send"])
+            self.assertFalse(result["privacy_and_scope"]["draftqueue_write"])
+        finally:
+            fixture.unlink(missing_ok=True)
+
     def test_direct_discovery_max_results_is_bounded_to_5000(self):
         path = self.write_geojsonseq([])
         try:
