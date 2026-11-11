@@ -1,5 +1,6 @@
 """New company hints only: read live suppressions, no mail or registry writes."""
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import redirect_stdout, redirect_stderr
 from io import StringIO
 from itertools import zip_longest
@@ -20,6 +21,8 @@ NATIONAL_HUBS = (
     "Utrecht", "Haarlem", "Den Haag", "Middelburg", "Eindhoven", "Maastricht",
 )
 NATIONAL_NAMES = {"nederland", "heel nederland", "netherlands", "nl"}
+# Bound parallel remote downloads to protect source capacity and runner memory.
+MAX_NATIONAL_DISCOVERY_WORKERS = 3
 
 
 def safe_hint(value):
@@ -90,17 +93,21 @@ def select_candidates(raw, registry, limit):
 
 
 def discover_sampled_netherlands(keywords, radius, scan_limit):
-    """Sample every province using a bounded Overture region. No complete-NL claim."""
+    """Bounded parallel regional discovery; preserve deterministic province order.
+
+    This runs only after the complete historical suppression preflight in run().
+    Concurrent workers may discover hints, but private Sheets writes remain serial.
+    """
     per_region = min(70, max(25, (scan_limit + len(NATIONAL_HUBS) - 1) // len(NATIONAL_HUBS)))
-    groups = []
-    for index, centre in enumerate(NATIONAL_HUBS, start=1):
+
+    def fetch_region(item):
+        index, centre = item
         try:
             response = discover(region=centre, bbox=None, radius_km=radius,
                                 keywords=keywords, max_results=per_region,
                                 require_website=True, probe_websites=False)
         except Exception as exc:
-            # Only fixed diagnostic codes and a numeric region index reach
-            # public GitHub Actions. Never print an exception's source text.
+            # Fixed anonymous errors only. Never log provider response or prospects.
             description = str(exc)
             if "PDOK could not resolve region" in description:
                 code = "pdok_no_match"
@@ -113,12 +120,17 @@ def discover_sampled_netherlands(keywords, radius, scan_limit):
             raise RuntimeError(f"national_region_{index:02d}_{code}") from None
         if not isinstance(response, dict) or not isinstance(response.get("candidates"), list):
             raise RuntimeError(f"national_region_{index:02d}_invalid_payload")
-        groups.append(response["candidates"])
-    # Round-robin rather than global confidence sorting: geographic diversity.
+        return response["candidates"]
+
+    # executor.map yields results in input order, regardless of completion order.
+    # Abort the entire search if ANY province fails: never silently mark partial
+    # coverage as a complete national sample.
+    with ThreadPoolExecutor(max_workers=MAX_NATIONAL_DISCOVERY_WORKERS) as executor:
+        groups = list(executor.map(fetch_region, enumerate(NATIONAL_HUBS, start=1)))
+
     hints = [item for group in zip_longest(*groups) for item in group if item is not None]
     return {"candidates": hints, "regions_scanned": len(NATIONAL_HUBS),
             "coverage": "12_regional_centre_samples_not_exhaustive"}
-
 
 def run(region, keywords, radius, limit):
     if not (2 <= len(region) <= 100 and 1 <= len(keywords) <= 8
