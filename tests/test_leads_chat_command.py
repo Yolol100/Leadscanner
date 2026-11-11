@@ -181,7 +181,7 @@ class ChatCommandTests(unittest.TestCase):
                     command.validate(event(mode))
                 with patch.dict("os.environ", {"REGION": "untrusted",
                                                  "KEYWORDS": "unexpected",
-                                                 "RADIUS": "1000"}), \\
+                                                 "RADIUS": "1000"}), \
                      patch.object(command.subprocess, "run") as run:
                     command.execute(mode)
                 args = run.call_args.args[0]
@@ -196,7 +196,7 @@ class ChatCommandTests(unittest.TestCase):
     def test_unknown_region_mode_never_runs(self):
         for raw in ("VERIFIED_REGION_00", "VERIFIED_REGION_25",
                     "VERIFIED_REGION_01;echo unsafe", "VERIFIED_REGION_ROTTERDAM"):
-            with self.subTest(raw=raw), \\
+            with self.subTest(raw=raw), \
                  patch.object(command.subprocess, "run") as run:
                 with self.assertRaises(ValueError):
                     command.execute(raw)
