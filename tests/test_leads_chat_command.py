@@ -191,6 +191,9 @@ class ChatCommandTests(unittest.TestCase):
                 self.assertEqual(env["REGION"], city)
                 self.assertEqual(env["KEYWORDS"], "vakbedrijven")
                 self.assertEqual(env["RADIUS"], "30")
+                self.assertEqual(env["LEAD_CAMPAIGN_SINCE_UTC"],
+                                 "2026-11-11T12:42:00+00:00")
+                self.assertEqual(env["LEAD_CAMPAIGN_GOAL"], "450")
                 self.assertNotIn("--send", args)
 
     def test_unknown_region_mode_never_runs(self):

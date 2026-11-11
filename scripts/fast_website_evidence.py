@@ -39,7 +39,7 @@ COLUMNS = (
     "feature_mentions_json", "checked_at", "status", "reason")
 BATCH_SIZE = 100
 MAX_WORKERS = 8
-MAX_RECORDS = 900
+MAX_RECORDS = 2000
 TTL_SECONDS = 24 * 3600
 ZIP_NL = re.compile(r"\b[1-9]\d{3}\s?[A-Z]{2}\b")
 DETAILS = {
@@ -354,7 +354,7 @@ def _cache_id(conn):
             return prop["sheetId"], False
     resp = conn.post(base + ":batchUpdate", timeout=30, json={"requests": [{
         "addSheet": {"properties": {"title": TAB,
-            "gridProperties": {"rowCount": 1000, "columnCount": len(COLUMNS),
+            "gridProperties": {"rowCount": 2200, "columnCount": len(COLUMNS),
                                "frozenRowCount": 1}}}}]})
     if resp.status_code != 200:
         raise RuntimeError("evidence_private_tab_create_failed")
@@ -362,7 +362,7 @@ def _cache_id(conn):
 
 
 def _cache(conn):
-    raw = _read(conn, TAB + "!A1:N1000")
+    raw = _read(conn, TAB + "!A1:N2200")
     # A run interrupted just after addSheet may leave a genuinely empty tab.
     # Retrying is safe: recheck every source before the first actual write.
     if not raw:
