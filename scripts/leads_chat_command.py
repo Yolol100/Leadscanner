@@ -197,7 +197,11 @@ def execute(mode: str) -> None:
         raise ValueError("mode_not_supported")
     if mode in REGIONAL_VERIFIED:
         environment = dict(os.environ)
-        environment.update(REGION=REGIONAL_VERIFIED[mode], KEYWORDS="vakbedrijven", RADIUS="30")
+        environment.update(
+            REGION=REGIONAL_VERIFIED[mode], KEYWORDS="vakbedrijven", RADIUS="30",
+            LEAD_CAMPAIGN_SINCE_UTC="2026-11-11T12:42:00+00:00",
+            LEAD_CAMPAIGN_GOAL="450",
+        )
         subprocess.run([sys.executable, *args], check=True, env=environment)
     else:
         subprocess.run([sys.executable, *args], check=True)
