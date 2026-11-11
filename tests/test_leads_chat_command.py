@@ -170,6 +170,40 @@ class ChatCommandTests(unittest.TestCase):
                 command.validate(event(mode))
             self.assertEqual(command.validate(versioned_event(mode)), mode)
 
+    def test_region_verified_mode_is_owner_only_and_has_bounded_safe_environment(self):
+        self.assertEqual(len(command.REGIONAL_VERIFIED), 24)
+        self.assertEqual(len(set(command.REGIONAL_VERIFIED.values())), 24)
+        for mode, city in command.REGIONAL_VERIFIED.items():
+            with self.subTest(mode=mode):
+                self.assertIn(mode, command.REQUIRES_ID)
+                self.assertEqual(command.validate(versioned_event(mode)), mode)
+                with self.assertRaisesRegex(ValueError, "request_id_required"):
+                    command.validate(event(mode))
+                with patch.dict("os.environ", {"REGION": "untrusted",
+                                                 "KEYWORDS": "unexpected",
+                                                 "RADIUS": "1000"}), \
+                     patch.object(command.subprocess, "run") as run:
+                    command.execute(mode)
+                args = run.call_args.args[0]
+                self.assertEqual(args[1:], ["scripts/verified_fill.py"])
+                self.assertTrue(run.call_args.kwargs["check"])
+                env = run.call_args.kwargs["env"]
+                self.assertEqual(env["REGION"], city)
+                self.assertEqual(env["KEYWORDS"], "vakbedrijven")
+                self.assertEqual(env["RADIUS"], "30")
+                self.assertNotIn("--send", args)
+
+    def test_unknown_region_mode_never_runs(self):
+        for raw in ("VERIFIED_REGION_00", "VERIFIED_REGION_25",
+                    "VERIFIED_REGION_01;echo unsafe", "VERIFIED_REGION_ROTTERDAM"):
+            with self.subTest(raw=raw), \
+                 patch.object(command.subprocess, "run") as run:
+                with self.assertRaises(ValueError):
+                    command.execute(raw)
+                with self.assertRaises(ValueError):
+                    command.validate(versioned_event(raw))
+                run.assert_not_called()
+
     def test_verified_discovery_has_no_mail_sender(self):
         with patch.object(command.subprocess, "run") as run:
             command.execute("VERIFIED_100")

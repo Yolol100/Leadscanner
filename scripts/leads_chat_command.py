@@ -18,13 +18,39 @@ OWNER = "Yolol100"
 PREFIX = "LEADS_CHAT_V1:"
 PREFIX2 = "LEADS_CHAT_V2:"
 REVIEW_MODES = frozenset(f"REVIEW_EVIDENCE_{i}" for i in range(1, 6))
-REQUIRES_ID = frozenset({"EVIDENCE", "HINTS_10", "HINTS_30", "HINTS_50", "HINTS_100", "VERIFIED_100"}) | REVIEW_MODES
+REGIONAL_VERIFIED = {
+    "VERIFIED_REGION_01": "Rotterdam",
+    "VERIFIED_REGION_02": "Amsterdam",
+    "VERIFIED_REGION_03": "Breda",
+    "VERIFIED_REGION_04": "Tilburg",
+    "VERIFIED_REGION_05": "Nijmegen",
+    "VERIFIED_REGION_06": "Enschede",
+    "VERIFIED_REGION_07": "Apeldoorn",
+    "VERIFIED_REGION_08": "Alkmaar",
+    "VERIFIED_REGION_09": "Leiden",
+    "VERIFIED_REGION_10": "Dordrecht",
+    "VERIFIED_REGION_11": "Venlo",
+    "VERIFIED_REGION_12": "Almere",
+    "VERIFIED_REGION_13": "Amersfoort",
+    "VERIFIED_REGION_14": "Deventer",
+    "VERIFIED_REGION_15": "Emmen",
+    "VERIFIED_REGION_16": "Hoorn",
+    "VERIFIED_REGION_17": "Roosendaal",
+    "VERIFIED_REGION_18": "Gouda",
+    "VERIFIED_REGION_19": "Heerlen",
+    "VERIFIED_REGION_20": "Hilversum",
+    "VERIFIED_REGION_21": "Ede",
+    "VERIFIED_REGION_22": "Hengelo",
+    "VERIFIED_REGION_23": "Doetinchem",
+    "VERIFIED_REGION_24": "Sittard",
+}
+REQUIRES_ID = frozenset({"EVIDENCE", "HINTS_10", "HINTS_30", "HINTS_50", "HINTS_100", "VERIFIED_100"}) | REVIEW_MODES | REGIONAL_VERIFIED.keys()
 REQUEST_RE = re.compile(r"r-[0-9a-f]{32}\Z")
 MAX_COMMENT_PAGES = 20
 MODES = frozenset({
     "CHECK", "EVIDENCE", "HINTS_10", "HINTS_30",
     "HINTS_50", "HINTS_100", "VERIFIED_100",
-}) | REVIEW_MODES
+}) | REVIEW_MODES | REGIONAL_VERIFIED.keys()
 
 
 
@@ -163,9 +189,18 @@ def execute(mode: str) -> None:
                 "--radius-km", "25", "--summary-only", "--private-handoff"]
     elif mode == "VERIFIED_100":
         args = ["scripts/verified_fill.py"]
+    elif mode in REGIONAL_VERIFIED:
+        # Exact allowlist: no free-text region, shell command, or user-supplied
+        # parameters. Existing verification and private suppression gates apply.
+        args = ["scripts/verified_fill.py"]
     else:
         raise ValueError("mode_not_supported")
-    subprocess.run([sys.executable, *args], check=True)
+    if mode in REGIONAL_VERIFIED:
+        environment = dict(os.environ)
+        environment.update(REGION=REGIONAL_VERIFIED[mode], KEYWORDS="vakbedrijven", RADIUS="30")
+        subprocess.run([sys.executable, *args], check=True, env=environment)
+    else:
+        subprocess.run([sys.executable, *args], check=True)
     print("LEADS_CHAT_COMMAND=green mode=" + mode)
 
 
