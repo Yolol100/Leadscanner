@@ -33,7 +33,8 @@ def fill_verified(region, keywords, radius_km, *, target=100,
                   max_site_checks=MAX_SITE_CHECKS):
     if (not isinstance(region, str) or not 2 <= len(region.strip()) <= 100
             or not isinstance(keywords, list) or not 1 <= len(keywords) <= 8
-            or not 0.5 <= radius_km <= 30 or target != 100
+            or not 0.5 <= radius_km <= 30 or not isinstance(target, int)
+            or not 1 <= target <= 100
             or not isinstance(max_site_checks, int)
             or not 1 <= max_site_checks <= MAX_SITE_CHECKS):
         raise ValueError("verified_fill_invalid_request")
@@ -168,15 +169,33 @@ def main():
         words = [x.strip() for x in re.split(r"[,;]", os.getenv("KEYWORDS", "vakbedrijven"))
                  if x.strip()]
         radius = float(os.getenv("RADIUS", "25"))
+        campaign_goal = None
+        campaign_before = None
+        target = 100
+        if os.getenv("LEAD_CAMPAIGN_SINCE_UTC"):
+            from lead_campaign_counter import remaining
+            if os.getenv("LEAD_CAMPAIGN_GOAL") != "450":
+                raise RuntimeError("campaign_target_invalid")
+            campaign_goal = 450
+            left = remaining(os.environ["LEAD_CAMPAIGN_SINCE_UTC"], goal=campaign_goal)
+            campaign_before = campaign_goal - left
+            if left == 0:
+                print(json.dumps({"status": "goal_reached", "campaign_valid_total":
+                                  campaign_goal, "emails_sent": 0,
+                                  "mailbox_writes": 0, "public_identities": 0},
+                                 sort_keys=True))
+                return 0
+            target = min(100, left)
         with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
             # Weekly automation is deliberately bounded; it may end PARTIAL.
             limit = 240 if os.getenv("GITHUB_EVENT_NAME") == "schedule" else MAX_SITE_CHECKS
-            result = fill_verified(region, words, radius, target=100,
+            result = fill_verified(region, words, radius, target=target,
                                    verifier=_verify_with_one_pass_evidence,
                                    max_site_checks=limit)
             saved = 0
             extra = {"source_rows": 0, "captured_without_refetch": 0,
-                     "verified_with_detail": 0, "needs_manual_check": 0}
+                     "verified_with_detail": 0, "verified_activity_only": 0,
+                     "needs_manual_check": 0}
             if result["approved"]:
                 from approved_handoff import store_approved, values as approved_values
                 from fast_website_evidence import prepare_new_approved_evidence
@@ -194,12 +213,20 @@ def main():
                     "captured_without_refetch": len(fact_rows),
                     "verified_with_detail": sum(
                         row["status"] == "verified_with_detail" for row in fact_rows),
+                    "verified_activity_only": sum(
+                        row["status"] == "verified_activity_only" for row in fact_rows),
                     "needs_manual_check": sum(
                         row["status"] == "needs_manual_check" for row in fact_rows),
                 }
+        campaign_valid_total = (campaign_before + extra["verified_with_detail"] +
+                                extra["verified_activity_only"] if campaign_before is not None
+                                else None)
         print(json.dumps({
             "status": "complete" if result["complete"] else "partial",
-            "target": 100, "approved_stored_privately": saved,
+            "target": target, "approved_stored_privately": saved,
+            "campaign_valid_total": campaign_valid_total,
+            "campaign_remaining": (max(0, campaign_goal - campaign_valid_total)
+                                   if campaign_goal is not None else None),
             "one_pass_evidence": extra,
             "counts": result["counts"], "timings": result["timings"], "emails_sent": 0,
             "mailbox_writes": 0, "public_identities": 0,
