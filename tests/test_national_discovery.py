@@ -40,7 +40,6 @@ class NationalDiscoveryTests(unittest.TestCase):
         lock = Lock()
         active = 0
         highest = 0
-        durations = []
         positions = {region: idx + 1 for idx, region in enumerate(new_leads.NATIONAL_HUBS)}
 
         def delayed_source(**kwargs):
@@ -72,6 +71,8 @@ class NationalDiscoveryTests(unittest.TestCase):
         self.assertEqual(active, 0)
         # Allow substantial CI scheduling variance, but confirm useful gain.
         self.assertLess(parallel_time, baseline_time * 0.85)
+        print(f"NATIONAL_DISCOVERY_BENCH=green serial_s={baseline_time:.3f} "
+              f"parallel_s={parallel_time:.3f} speedup={baseline_time / parallel_time:.2f}")
 
     def test_failure_in_later_region_is_anonymous_and_blocks_all(self):
         def source(**kwargs):
