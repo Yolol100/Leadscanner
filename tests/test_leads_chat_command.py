@@ -170,6 +170,31 @@ class ChatCommandTests(unittest.TestCase):
                 command.validate(event(mode))
             self.assertEqual(command.validate(versioned_event(mode)), mode)
 
+    def test_extra_fifty_uses_only_fixed_regions_and_exact_campaign_goal(self):
+        self.assertEqual(set(command.EXTRA_VERIFIED), {
+            "VERIFIED_EXTRA_50", "VERIFIED_EXTRA_50_ALT"})
+        for mode, region in command.EXTRA_VERIFIED.items():
+            with self.subTest(mode=mode):
+                self.assertIn(mode, command.REQUIRES_ID)
+                self.assertEqual(command.validate(versioned_event(mode)), mode)
+                with self.assertRaisesRegex(ValueError, "request_id_required"):
+                    command.validate(event(mode))
+                with patch.dict("os.environ", {"REGION": "untrusted",
+                                             "LEAD_CAMPAIGN_GOAL": "9999"}), \
+                     patch.object(command.subprocess, "run") as run:
+                    command.execute(mode)
+                args = run.call_args.args[0]
+                self.assertEqual(args[1:], ["scripts/verified_fill.py"])
+                self.assertTrue(run.call_args.kwargs["check"])
+                env = run.call_args.kwargs["env"]
+                self.assertEqual(env["REGION"], region)
+                self.assertEqual(env["LEAD_CAMPAIGN_GOAL"], "500")
+                self.assertEqual(env["LEAD_CAMPAIGN_SINCE_UTC"],
+                                 "2026-11-11T12:42:00+00:00")
+                self.assertEqual(env["KEYWORDS"], "vakbedrijven")
+                self.assertEqual(env["RADIUS"], "30")
+                self.assertNotIn("--send", args)
+
     def test_region_verified_mode_is_owner_only_and_has_bounded_safe_environment(self):
         self.assertEqual(len(command.REGIONAL_VERIFIED), 24)
         self.assertEqual(len(set(command.REGIONAL_VERIFIED.values())), 24)
