@@ -25,6 +25,15 @@ MAX_PER_REGION = 700
 MAX_SITE_CHECKS = 800
 MAX_WORKERS = 6
 CHUNK = 24
+# Fixed, not user-configurable region sets for the additional 450 -> 500 goal.
+# Continue beyond the already sampled 24 regions without unbounded scanning.
+EXTRA_REGION_SETS = {
+    "extra opvolging": ("Emmen", "Hoorn", "Roosendaal", "Gouda", "Heerlen",
+                         "Hilversum", "Ede", "Hengelo", "Doetinchem", "Sittard"),
+    "extra vervolg": ("Goes", "Meppel", "Oss", "Harderwijk", "Purmerend",
+                      "Drachten", "Alphen aan den Rijn", "Hoogeveen",
+                      "Zutphen", "Schagen"),
+}
 
 
 def fill_verified(region, keywords, radius_km, *, target=100,
@@ -43,7 +52,9 @@ def fill_verified(region, keywords, radius_km, *, target=100,
     discovery_seconds = verification_seconds = 0.0
     # The source registry/HMAC must be complete BEFORE a single website lookup.
     registry = load_registry()
-    regions = NATIONAL_HUBS if region.casefold().strip() in NATIONAL_NAMES else (region,)
+    region_key = region.casefold().strip()
+    regions = (EXTRA_REGION_SETS[region_key] if region_key in EXTRA_REGION_SETS
+               else NATIONAL_HUBS if region_key in NATIONAL_NAMES else (region,))
     approved = []
     seen_names, seen_domains, seen_emails = set(), set(), set()
     seen_sites = set()
@@ -174,9 +185,10 @@ def main():
         target = 100
         if os.getenv("LEAD_CAMPAIGN_SINCE_UTC"):
             from lead_campaign_counter import remaining
-            if os.getenv("LEAD_CAMPAIGN_GOAL") != "450":
+            goal_text = os.getenv("LEAD_CAMPAIGN_GOAL")
+            if goal_text not in {"450", "500"}:
                 raise RuntimeError("campaign_target_invalid")
-            campaign_goal = 450
+            campaign_goal = int(goal_text)
             left = remaining(os.environ["LEAD_CAMPAIGN_SINCE_UTC"], goal=campaign_goal)
             campaign_before = campaign_goal - left
             if left == 0:
@@ -221,8 +233,12 @@ def main():
         campaign_valid_total = (campaign_before + extra["verified_with_detail"] +
                                 extra["verified_activity_only"] if campaign_before is not None
                                 else None)
+        # A website-approved candidate with manual evidence cannot count as
+        # confirmed. Never claim the 500 target before official evidence agrees.
+        goal_complete = result["complete"] and (
+            campaign_goal is None or campaign_valid_total >= campaign_goal)
         print(json.dumps({
-            "status": "complete" if result["complete"] else "partial",
+            "status": "complete" if goal_complete else "partial",
             "target": target, "approved_stored_privately": saved,
             "campaign_valid_total": campaign_valid_total,
             "campaign_remaining": (max(0, campaign_goal - campaign_valid_total)
@@ -231,7 +247,7 @@ def main():
             "counts": result["counts"], "timings": result["timings"], "emails_sent": 0,
             "mailbox_writes": 0, "public_identities": 0,
         }, sort_keys=True))
-        return 0 if result["complete"] else 2
+        return 0 if goal_complete else 2
     except Exception:
         print(json.dumps({"status": "blocked", "reason": "source_or_registry_unavailable",
                           "emails_sent": 0, "public_identities": 0}, sort_keys=True))
