@@ -44,13 +44,18 @@ REGIONAL_VERIFIED = {
     "VERIFIED_REGION_23": "Doetinchem",
     "VERIFIED_REGION_24": "Sittard",
 }
-REQUIRES_ID = frozenset({"EVIDENCE", "HINTS_10", "HINTS_30", "HINTS_50", "HINTS_100", "VERIFIED_100"}) | REVIEW_MODES | REGIONAL_VERIFIED.keys()
+# Only bounded, owner-authorized follow-up campaigns may raise the count to 500.
+EXTRA_VERIFIED = {
+    "VERIFIED_EXTRA_50": "Extra opvolging",
+    "VERIFIED_EXTRA_50_ALT": "Extra vervolg",
+}
+REQUIRES_ID = frozenset({"EVIDENCE", "HINTS_10", "HINTS_30", "HINTS_50", "HINTS_100", "VERIFIED_100"}) | REVIEW_MODES | REGIONAL_VERIFIED.keys() | EXTRA_VERIFIED.keys()
 REQUEST_RE = re.compile(r"r-[0-9a-f]{32}\Z")
 MAX_COMMENT_PAGES = 20
 MODES = frozenset({
     "CHECK", "EVIDENCE", "HINTS_10", "HINTS_30",
     "HINTS_50", "HINTS_100", "VERIFIED_100",
-}) | REVIEW_MODES | REGIONAL_VERIFIED.keys()
+}) | REVIEW_MODES | REGIONAL_VERIFIED.keys() | EXTRA_VERIFIED.keys()
 
 
 
@@ -189,18 +194,20 @@ def execute(mode: str) -> None:
                 "--radius-km", "25", "--summary-only", "--private-handoff"]
     elif mode == "VERIFIED_100":
         args = ["scripts/verified_fill.py"]
-    elif mode in REGIONAL_VERIFIED:
+    elif mode in REGIONAL_VERIFIED or mode in EXTRA_VERIFIED:
         # Exact allowlist: no free-text region, shell command, or user-supplied
         # parameters. Existing verification and private suppression gates apply.
         args = ["scripts/verified_fill.py"]
     else:
         raise ValueError("mode_not_supported")
-    if mode in REGIONAL_VERIFIED:
+    if mode in REGIONAL_VERIFIED or mode in EXTRA_VERIFIED:
         environment = dict(os.environ)
         environment.update(
-            REGION=REGIONAL_VERIFIED[mode], KEYWORDS="vakbedrijven", RADIUS="30",
+            REGION=(EXTRA_VERIFIED[mode] if mode in EXTRA_VERIFIED
+                    else REGIONAL_VERIFIED[mode]),
+            KEYWORDS="vakbedrijven", RADIUS="30",
             LEAD_CAMPAIGN_SINCE_UTC="2026-11-11T12:42:00+00:00",
-            LEAD_CAMPAIGN_GOAL="450",
+            LEAD_CAMPAIGN_GOAL=("500" if mode in EXTRA_VERIFIED else "450"),
         )
         subprocess.run([sys.executable, *args], check=True, env=environment)
     else:
