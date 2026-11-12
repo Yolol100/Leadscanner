@@ -80,6 +80,38 @@ class CampaignCounterTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "campaign_goal_invalid"):
             campaign.remaining(SINCE, goal=0, session=object())
 
+    def test_exact_goal_auto_refills_across_regions_with_private_readback(self):
+        import os
+        import verified_fill as vf
+        visited = []
+        def simulate_batch():
+            visited.append(os.environ["REGION"])
+            return 2
+        with patch.dict(os.environ, {"LEAD_AUTO_TARGET": "1",
+                                    "LEAD_CAMPAIGN_GOAL": "450",
+                                    "LEAD_CAMPAIGN_SINCE_UTC": SINCE}), \
+             patch.object(vf, "_single", side_effect=simulate_batch), \\
+             patch("lead_campaign_counter.remaining", side_effect=[450, 250, 100, 0]):
+            self.assertEqual(vf.main(), 0)
+        self.assertEqual(visited, list(vf.AUTO_REGIONS))
+
+    def test_partial_goal_is_successful_processing_not_fake_completion(self):
+        import io
+        import os
+        import contextlib
+        import verified_fill as vf
+        output = io.StringIO()
+        with patch.dict(os.environ, {"LEAD_AUTO_TARGET": "1",
+                                    "LEAD_CAMPAIGN_GOAL": "450",
+                                    "LEAD_CAMPAIGN_SINCE_UTC": SINCE}), \
+             patch.object(vf, "_single", return_value=2) as checker, \\
+             patch("lead_campaign_counter.remaining", return_value=450), \\
+             contextlib.redirect_stdout(output):
+            self.assertEqual(vf.main(), 0)
+        self.assertEqual(checker.call_count, 3)
+        self.assertIn('"status": "partial"', output.getvalue())
+        self.assertIn('"remaining": 450', output.getvalue())
+
     def test_bounded_verified_batch_accepts_small_last_target(self):
         result = fill_verified("Rotterdam", ["vakbedrijven"], 30, target=2,
             discoverer=lambda **kwargs: {"candidates": [hint(i) for i in range(5)]},
