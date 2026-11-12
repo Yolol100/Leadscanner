@@ -5,6 +5,7 @@ approval. Only aggregate counts reach GitHub; private handoff keeps identities.
 """
 from __future__ import annotations
 
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import redirect_stdout, redirect_stderr
 from io import StringIO
@@ -115,7 +116,18 @@ def fill_verified(region, keywords, radius_km, *, target=100,
                     continue
                 possible.append(row)
 
-            # Small chunks cap in-flight requests; stop at exactly 100 results.
+            # Rotate industries before network checks. This avoids taking the
+            # first hundred hints from one dominant sector.
+            buckets = {}
+            for item in possible:
+                buckets.setdefault(category(item)[1], deque()).append(item)
+            possible = []
+            while any(buckets.values()):
+                for group in buckets.values():
+                    if group:
+                        possible.append(group.popleft())
+
+            # Small chunks cap in-flight requests; stop at the exact target.
             index = 0
             while index < len(possible):
                 remaining_budget = max_site_checks - counts["sites_checked"]
@@ -168,10 +180,18 @@ def fill_verified(region, keywords, radius_km, *, target=100,
 
 
 def _verify_with_one_pass_evidence(row):
-    """Keep parsed official text only for the private, successful first pass."""
+    """Only count a verified general inbox with complete first-party evidence."""
     import requests
+    from fast_website_evidence import inspect_verified
+
     with requests.Session() as session:
-        return verify_official_site(row, session=session, collect_evidence=True)
+        actual = verify_official_site(row, session=session, collect_evidence=True)
+    if actual is None:
+        return None
+    record = {"company": actual["company"], "website": actual["website"],
+              "email": actual["email"], "branch": actual["branche_meervoud"]}
+    proof = inspect_verified(record, actual, actual.get("_captured_pages", []))
+    return actual if proof["status"].startswith("verified_") else None
 
 
 def main():
@@ -186,9 +206,11 @@ def main():
         if os.getenv("LEAD_CAMPAIGN_SINCE_UTC"):
             from lead_campaign_counter import remaining
             goal_text = os.getenv("LEAD_CAMPAIGN_GOAL")
-            if goal_text not in {"450", "500"}:
+            if not goal_text or not goal_text.isascii() or not goal_text.isdecimal():
                 raise RuntimeError("campaign_target_invalid")
             campaign_goal = int(goal_text)
+            if not 1 <= campaign_goal <= 5000:
+                raise RuntimeError("campaign_target_invalid")
             left = remaining(os.environ["LEAD_CAMPAIGN_SINCE_UTC"], goal=campaign_goal)
             campaign_before = campaign_goal - left
             if left == 0:
@@ -218,6 +240,9 @@ def main():
                     result["approved"], os.getenv("GITHUB_RUN_ID", ""))
                 fact_rows = prepare_new_approved_evidence(
                     result["approved"], approved_snapshot)
+                if any(not row["status"].startswith("verified_")
+                       for row in fact_rows):
+                    raise RuntimeError("unverified_evidence_cannot_enter_history")
                 saved = store_approved(result["approved"],
                                        evidence_rows=fact_rows)
                 extra = {
