@@ -194,7 +194,7 @@ def _verify_with_one_pass_evidence(row):
     return actual if proof["status"].startswith("verified_") else None
 
 
-def main():
+def _single():
     try:
         region = os.getenv("REGION", "Nederland").strip() or "Nederland"
         words = [x.strip() for x in re.split(r"[,;]", os.getenv("KEYWORDS", "vakbedrijven"))
@@ -276,6 +276,63 @@ def main():
     except Exception:
         print(json.dumps({"status": "blocked", "reason": "source_or_registry_unavailable",
                           "emails_sent": 0, "public_identities": 0}, sort_keys=True))
+        return 1
+
+
+# A single owner request may need several verified batches. Keep each batch
+# small and atomic; the cutoff comes from the authenticated GitHub event.
+AUTO_REGIONS = ("Nederland", "Extra opvolging", "Extra vervolg")
+MAX_AUTO_BATCHES = 12
+MAX_AUTO_SECONDS = 85 * 60
+
+
+def main():
+    if os.getenv("LEAD_AUTO_TARGET") != "1":
+        return _single()
+    from lead_campaign_counter import remaining
+
+    started = time.monotonic()
+    since = os.getenv("LEAD_CAMPAIGN_SINCE_UTC", "")
+    goal_text = os.getenv("LEAD_CAMPAIGN_GOAL", "")
+    if not goal_text.isascii() or not goal_text.isdecimal():
+        return 1
+    goal = int(goal_text)
+    if not since or not 1 <= goal <= 1000:
+        return 1
+    try:
+        left = remaining(since, goal=goal)
+        no_progress = 0
+        for n in range(MAX_AUTO_BATCHES):
+            if left == 0:
+                print(json.dumps({"status": "complete", "remaining": 0,
+                                  "requested": goal, "emails_sent": 0,
+                                  "mailbox_writes": 0, "public_identities": 0},
+                                 sort_keys=True))
+                return 0
+            if time.monotonic() - started >= MAX_AUTO_SECONDS:
+                break
+            os.environ["REGION"] = AUTO_REGIONS[n % len(AUTO_REGIONS)]
+            status = _single()
+            if status == 1:  # System, credential or source-integrity failure.
+                return 1
+            updated = remaining(since, goal=goal)  # Fresh private readback.
+            no_progress = no_progress + 1 if updated >= left else 0
+            left = updated
+            if no_progress >= len(AUTO_REGIONS):
+                break
+        done = left == 0
+        print(json.dumps({"status": "complete" if done else "partial",
+                          "requested": goal, "remaining": left,
+                          "reason": "" if done else "bounded_sources_or_time",
+                          "emails_sent": 0, "mailbox_writes": 0,
+                          "public_identities": 0}, sort_keys=True))
+        # A valid partial is not a broken GitHub job. Never call it complete.
+        return 0
+    except Exception:
+        print(json.dumps({"status": "blocked",
+                          "reason": "campaign_progress_unavailable",
+                          "emails_sent": 0, "public_identities": 0},
+                         sort_keys=True))
         return 1
 
 
