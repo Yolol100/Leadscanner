@@ -221,6 +221,39 @@ class ChatCommandTests(unittest.TestCase):
                 self.assertEqual(env["LEAD_CAMPAIGN_GOAL"], "450")
                 self.assertNotIn("--send", args)
 
+    def test_exact_goal_request_requires_v2_owner_and_safe_count(self):
+        for amount in (1, 50, 450, 1000):
+            mode = f"VERIFIED_GOAL_{amount}"
+            event_data = versioned_event(mode)
+            event_data["comment"]["created_at"] = "2026-11-12T10:00:00Z"
+            self.assertEqual(command.validate(event_data), mode)
+            with self.assertRaises(ValueError):
+                command.validate(event(mode))  # No V1 writes.
+            with patch.object(command.subprocess, "run") as runner:
+                command.execute(mode, event=event_data)
+            args = runner.call_args.args[0]
+            self.assertEqual(args[1:], ["scripts/verified_fill.py"])
+            self.assertTrue(runner.call_args.kwargs["check"])
+            environ = runner.call_args.kwargs["env"]
+            self.assertEqual(environ["LEAD_AUTO_TARGET"], "1")
+            self.assertEqual(environ["LEAD_CAMPAIGN_GOAL"], str(amount))
+            self.assertEqual(environ["LEAD_CAMPAIGN_SINCE_UTC"],
+                             "2026-11-12T10:00:00+00:00")
+            self.assertNotIn("--send", args)
+        for mode in ("VERIFIED_GOAL_0", "VERIFIED_GOAL_1001",
+                     "VERIFIED_GOAL_0450", "VERIFIED_GOAL_450;sh"):
+            with self.assertRaises(ValueError):
+                command.validate(versioned_event(mode))
+
+    def test_exact_goal_needs_trusted_event_time(self):
+        for value in ("", "not-a-date", "9999-01-01T00:00:00Z"):
+            request = versioned_event("VERIFIED_GOAL_450")
+            request["comment"]["created_at"] = value
+            with patch.object(command.subprocess, "run") as runner:
+                with self.assertRaises(ValueError):
+                    command.execute("VERIFIED_GOAL_450", event=request)
+                runner.assert_not_called()
+
     def test_unknown_region_mode_never_runs(self):
         for raw in ("VERIFIED_REGION_00", "VERIFIED_REGION_25",
                     "VERIFIED_REGION_01;echo unsafe", "VERIFIED_REGION_ROTTERDAM"):

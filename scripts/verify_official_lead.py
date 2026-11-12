@@ -49,6 +49,13 @@ CATEGORIES = {
     "laundromat": (6, "wasserijen"), "dry cleaner": (6, "wasserijen"),
 }
 GENERAL = ("info", "contact")
+# Clear first-party closure statements; a mere timeout is not bankruptcy proof.
+CLOSED_NOTICE = re.compile(
+    r"\b(?:permanent gesloten|definitief gesloten|voorgoed gesloten|"
+    r"ons bedrijf is gesloten|wij sluiten per \d|wij gaan definitief sluiten|"
+    r"wij stoppen met onze activiteiten|bedrijf is failliet verklaard|"
+    r"ons bedrijf is failliet)\b", re.I)
+
 # Require proof of the actual service on the official site, not an Overture label alone.
 BRANCH_PROOF = {
     "schilders": ("schilder",), "hoveniers": ("hovenier", "tuinaanleg", "tuinonderhoud"),
@@ -295,6 +302,8 @@ def verify_official_site(row, *, session=requests, expected_email=None,
     page.feed(html)
     evidence_pages = [(url, " ".join(page.texts))] if collect_evidence else []
     content = norm(" ".join(page.texts))
+    if CLOSED_NOTICE.search(content):
+        return reject("official_closure_notice")
     name_words = [x for x in norm(name).split()
                   if len(x) >= 3 and x not in NAME_TERMS
                   and x not in GENERIC_NAME_WORDS and not x.endswith("bedrijf")]
@@ -306,7 +315,6 @@ def verify_official_site(row, *, session=requests, expected_email=None,
     if not any(word in content for word in BRANCH_PROOF[mapping[1]]):
         return reject("homepage_activity_unverified")
     candidates = list(page.mailto)
-    named_links = list(page.named_links)
     candidates.extend(x.lower() for x in re.findall(
         r"(?<![a-z0-9._%+-])[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,63}", 
         " ".join(page.texts), re.I))
@@ -358,34 +366,20 @@ def verify_official_site(row, *, session=requests, expected_email=None,
                 r"(?<![a-z0-9._%+-])[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,63}",
                 " ".join(sub.texts), re.I))
             candidates.extend(discovered)
-            named_links.extend(sub.named_links)
+            if CLOSED_NOTICE.search(norm(" ".join(sub.texts))):
+                return reject("official_closure_notice")
             source_by_email.update({email: dest for email in discovered})
     published = sorted({x for x in candidates if MAIL_RE.fullmatch(x)})
     general = [x for x in published if x.split("@")[0] in GENERAL]
-    # Only a direct mailto link explicitly naming an owner/contact person
-    # proves the link between that person and the published address.
-    first = None
-    chosen = None
-    for email, label in named_links:
-        if not MAIL_RE.fullmatch(email) or not re.search(
-                r"\b(eigenaar|directeur|contactpersoon|owner)\b", label, re.I):
-            continue
-        person = re.match(r"^([A-ZÀ-ÿ][a-zà-ÿ-]{2,})\s+"
-                          r"(?:[a-z]{1,3}\s+)?[A-ZÀ-ÿ][A-Za-zÀ-ÿ'-]{2,}", label)
-        if person:
-            first, chosen = person.group(1), email
-            break
-    if expected:
-        if expected not in published:
-            return reject("selected_address_not_published")
-        # Exact-address rechecks must not silently substitute a different
-        # address that is also on the official contact page.
-        chosen, first = expected, None
-    if chosen is None:
-        if not general:
-            return reject("general_address_not_published")
-        chosen = next((x for x in general if x.startswith("info@")), general[0])
-    greeting = f"Hoi {first}," if first else ("Hoi," if mapping[0] >= 5 else "Goedendag,")
+    # New lead discovery selects ONLY an exact, first-party published general
+    # business inbox. Do not extract a named person's email as a prospect.
+    if expected and expected not in published:
+        return reject("selected_address_not_published")
+    if not expected and not general:
+        return reject("general_address_not_published")
+    chosen = expected or next(
+        (x for x in general if x.startswith("info@")), general[0])
+    greeting = "Hoi," if mapping[0] >= 5 else "Goedendag,"
     return _with_captured_pages({
         "company": name, "website": url, "email": chosen,
         "source_url": source_by_email[chosen], "cluster": mapping[0],

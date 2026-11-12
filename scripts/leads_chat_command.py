@@ -58,6 +58,13 @@ MODES = frozenset({
 }) | REVIEW_MODES | REGIONAL_VERIFIED.keys() | EXTRA_VERIFIED.keys()
 
 
+def requested_goal(mode):
+    """New owner-only V2 mode. Numbers are strict, never shell input."""
+    match = re.fullmatch(r"VERIFIED_GOAL_([1-9][0-9]{0,3})", str(mode))
+    goal = int(match[1]) if match else 0
+    return goal if 1 <= goal <= 1000 else None
+
+
 
 def parse_command(raw: object) -> tuple[str, str | None]:
     """Legacy read-only syntax or idempotent, opaque-ID on-demand request."""
@@ -72,7 +79,8 @@ def parse_command(raw: object) -> tuple[str, str | None]:
         return mode, None
     if raw.startswith(PREFIX2):
         parts = raw[len(PREFIX2):].split(":")
-        if (len(parts) != 2 or parts[0] not in REQUIRES_ID
+        if (len(parts) != 2 or
+                (parts[0] not in REQUIRES_ID and requested_goal(parts[0]) is None)
                 or not REQUEST_RE.fullmatch(parts[1])
                 or raw != PREFIX2 + parts[0] + ":" + parts[1]):
             raise ValueError("command_request_id_invalid")
@@ -131,7 +139,7 @@ def list_issue_comments() -> list[dict]:
 def authorize_once(event: dict, comments: list[dict], *, attempt: int = 1) -> bool:
     """Only earliest owner-comment for an opaque ID may execute private writes."""
     mode = validate(event)
-    if mode not in REQUIRES_ID:
+    if mode not in REQUIRES_ID and requested_goal(mode) is None:
         return True
     if attempt != 1:
         return False
@@ -164,9 +172,10 @@ def authorize_once(event: dict, comments: list[dict], *, attempt: int = 1) -> bo
     return True
 
 
-def execute(mode: str) -> None:
-    """Execute existing bounded scripts, never a shell or mail sender."""
-    if mode not in MODES:
+def execute(mode: str, *, event=None) -> None:
+    """Execute bounded, owner-only research. Never send mail."""
+    goal = requested_goal(mode)
+    if mode not in MODES and goal is None:
         raise ValueError("mode_not_allowlisted")
     if mode == "CHECK":
         from registry_readonly import load_discovery_suppressions
@@ -192,7 +201,7 @@ def execute(mode: str) -> None:
         args = ["scripts/new_leads.py", "--region", "Nederland",
                 "--keywords", "vakbedrijven", "--limit", limit,
                 "--radius-km", "25", "--summary-only", "--private-handoff"]
-    elif mode == "VERIFIED_100":
+    elif mode == "VERIFIED_100" or goal is not None:
         args = ["scripts/verified_fill.py"]
     elif mode in REGIONAL_VERIFIED or mode in EXTRA_VERIFIED:
         # Exact allowlist: no free-text region, shell command, or user-supplied
@@ -200,7 +209,23 @@ def execute(mode: str) -> None:
         args = ["scripts/verified_fill.py"]
     else:
         raise ValueError("mode_not_supported")
-    if mode in REGIONAL_VERIFIED or mode in EXTRA_VERIFIED:
+    if goal is not None:
+        from datetime import datetime, timezone
+        stamp = (event or {}).get("comment", {}).get("created_at", "")
+        try:
+            created = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+            if created.tzinfo is None or created > datetime.now(timezone.utc):
+                raise ValueError("invalid time")
+        except (TypeError, ValueError, AttributeError):
+            raise ValueError("command_created_at_missing") from None
+        environment = dict(os.environ)
+        environment.update(
+            LEAD_AUTO_TARGET="1", REGION="Nederland", KEYWORDS="vakbedrijven",
+            RADIUS="30", LEAD_CAMPAIGN_SINCE_UTC=created.isoformat(),
+            LEAD_CAMPAIGN_GOAL=str(goal),
+        )
+        subprocess.run([sys.executable, *args], check=True, env=environment)
+    elif mode in REGIONAL_VERIFIED or mode in EXTRA_VERIFIED:
         environment = dict(os.environ)
         environment.update(
             REGION=(EXTRA_VERIFIED[mode] if mode in EXTRA_VERIFIED
@@ -212,14 +237,15 @@ def execute(mode: str) -> None:
         subprocess.run([sys.executable, *args], check=True, env=environment)
     else:
         subprocess.run([sys.executable, *args], check=True)
-    print("LEADS_CHAT_COMMAND=green mode=" + mode)
+    # Research execution can be partial; source JSON reports exact completion.
+    print("LEADS_CHAT_COMMAND=processed mode=" + mode)
 
 
 def main() -> int:
     try:
         event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text("utf-8"))
         mode = validate(event, event_name=os.environ.get("GITHUB_EVENT_NAME", ""))
-        if mode in REQUIRES_ID:
+        if mode in REQUIRES_ID or requested_goal(mode) is not None:
             raw_attempt = os.getenv("GITHUB_RUN_ATTEMPT", "1")
             if not raw_attempt.isdigit() or int(raw_attempt) < 1:
                 raise RuntimeError("command_run_attempt_invalid")
@@ -231,7 +257,7 @@ def main() -> int:
             if not authorize_once(event, list_issue_comments(), attempt=attempt):
                 print("LEADS_CHAT_COMMAND=duplicate_noop")
                 return 0
-        execute(mode)
+        execute(mode, event=event)
         return 0
     except Exception:
         # No secrets, identities, request IDs or tracebacks in public logs.
