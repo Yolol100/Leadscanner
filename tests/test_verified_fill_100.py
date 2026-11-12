@@ -166,7 +166,7 @@ class WebsiteProofTests(unittest.TestCase):
         self.assertEqual(v["source_url"], "https://fictief-1.nl/contact/")
         self.assertEqual(v["greeting"], "Goedendag,")
 
-    def test_named_owner_email_takes_priority_and_proves_greeting(self):
+    def test_only_general_business_email_is_used_not_named_owner(self):
         row = hint(3)
         row["category_hint"] = "painter"
         row["name_hint"] = "Schildersbedrijf Amstel"
@@ -178,9 +178,39 @@ class WebsiteProofTests(unittest.TestCase):
             FakeResponse(status=404) if url.endswith("robots.txt") else FakeResponse(html))
         with patch("verify_official_lead.is_public_http_url", return_value=True):
             found = verify_official_site(row, session=session)
-        self.assertEqual(found["email"], "piet@fictief-3.nl")
-        self.assertEqual(found["greeting"], "Hoi Piet,")
+        self.assertEqual(found["email"], "info@fictief-3.nl")
+        self.assertEqual(found["greeting"], "Goedendag,")
         self.assertEqual(len(values([found], "1234567")), 2)
+
+    def test_official_permanent_closure_is_skipped_without_email_collection(self):
+        site = {"name_hint": "Schildersbedrijf Amstel",
+                "website_hint": "https://voorbeeld.nl/",
+                "category_hint": "painter"}
+        html = ('<h1>Schildersbedrijf Amstel</h1>'
+                '<p>Schilderwerk 5211 AB. Wij zijn permanent gesloten.</p>'
+                '<a href="mailto:info@voorbeeld.nl">Mail</a>')
+        client = Mock()
+        client.get.side_effect = lambda url, **kw: (
+            FakeResponse(status=404) if url.endswith("robots.txt")
+            else FakeResponse(html))
+        codes = []
+        with patch("verify_official_lead.is_public_http_url", return_value=True):
+            self.assertIsNone(verify_official_site(
+                site, session=client, diagnostic=codes.append))
+        self.assertIn("official_closure_notice", codes)
+
+    def test_personal_mail_only_is_not_a_business_inbox(self):
+        site = {"name_hint": "Schildersbedrijf Amstel",
+                "website_hint": "https://voorbeeld.nl/",
+                "category_hint": "painter"}
+        html = ('<h1>Schildersbedrijf Amstel</h1><p>Schilderwerk 5211 AB</p>'
+                '<a href="mailto:piet@voorbeeld.nl">Piet Jansen eigenaar</a>')
+        client = Mock()
+        client.get.side_effect = lambda url, **kw: (
+            FakeResponse(status=404) if url.endswith("robots.txt")
+            else FakeResponse(html))
+        with patch("verify_official_lead.is_public_http_url", return_value=True):
+            self.assertIsNone(verify_official_site(site, session=client))
 
     def test_category_from_overture_without_official_activity_is_rejected(self):
         row = hint(4)
@@ -224,6 +254,35 @@ class RefillTests(unittest.TestCase):
         self.assertGreater(result["counts"]["sites_checked"], 100)
         self.assertEqual(len(calls), 2)
         self.assertEqual(result["emails_sent"], 0)
+
+    def test_round_robin_branches_prevent_first_sector_monopoly(self):
+        hints = [dict(hint(i), category_hint="restaurant") for i in range(25)]
+        hints += [dict(hint(i), category_hint="painter") for i in range(25, 30)]
+        selected = []
+        def verify(row):
+            selected.append(row["category_hint"])
+            return approved(row)
+        result = fill_verified("Delft", ["vakbedrijven"], 8, target=8,
+            discoverer=lambda **kw: {"candidates": hints},
+            verifier=verify, load_registry=lambda: [])
+        self.assertTrue(result["complete"])
+        self.assertIn("painter", selected[:4])
+        self.assertIn("restaurant", selected[:4])
+
+    def test_only_full_evidence_gets_added_to_approved(self):
+        import verified_fill
+        original = approved(hint(1))
+        original["_captured_pages"] = [("https://fictief-1.nl/", "some text")]
+        with patch.object(verified_fill, "verify_official_site",
+                          return_value=original), \\
+             patch("fast_website_evidence.inspect_verified",
+                   return_value={"status": "needs_manual_check"}):
+            self.assertIsNone(verified_fill._verify_with_one_pass_evidence(hint(1)))
+        with patch.object(verified_fill, "verify_official_site",
+                          return_value=original), \\
+             patch("fast_website_evidence.inspect_verified",
+                   return_value={"status": "verified_activity_only"}):
+            self.assertIsNotNone(verified_fill._verify_with_one_pass_evidence(hint(1)))
 
     def test_historically_suppressed_company_is_skipped_before_web_requests(self):
         items = [hint(i) for i in range(1, 102)]
