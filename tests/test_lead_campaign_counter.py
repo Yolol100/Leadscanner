@@ -105,7 +105,7 @@ class CampaignCounterTests(unittest.TestCase):
                                     "LEAD_CAMPAIGN_GOAL": "450",
                                     "LEAD_CAMPAIGN_SINCE_UTC": SINCE}), \
              patch.object(vf, "_single", return_value=2) as checker, \\
-             patch("lead_campaign_counter.remaining", return_value=450), \\
+             patch("lead_campaign_counter.remaining", return_value=450), \
              contextlib.redirect_stdout(output):
             self.assertEqual(vf.main(), 0)
         self.assertEqual(checker.call_count, 3)
