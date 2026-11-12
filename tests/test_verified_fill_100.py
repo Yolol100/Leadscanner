@@ -274,12 +274,12 @@ class RefillTests(unittest.TestCase):
         original = approved(hint(1))
         original["_captured_pages"] = [("https://fictief-1.nl/", "some text")]
         with patch.object(verified_fill, "verify_official_site",
-                          return_value=original), \\
+                          return_value=original), \
              patch("fast_website_evidence.inspect_verified",
                    return_value={"status": "needs_manual_check"}):
             self.assertIsNone(verified_fill._verify_with_one_pass_evidence(hint(1)))
         with patch.object(verified_fill, "verify_official_site",
-                          return_value=original), \\
+                          return_value=original), \
              patch("fast_website_evidence.inspect_verified",
                    return_value={"status": "verified_activity_only"}):
             self.assertIsNotNone(verified_fill._verify_with_one_pass_evidence(hint(1)))
