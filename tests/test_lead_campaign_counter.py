@@ -90,7 +90,7 @@ class CampaignCounterTests(unittest.TestCase):
         with patch.dict(os.environ, {"LEAD_AUTO_TARGET": "1",
                                     "LEAD_CAMPAIGN_GOAL": "450",
                                     "LEAD_CAMPAIGN_SINCE_UTC": SINCE}), \
-             patch.object(vf, "_single", side_effect=simulate_batch), \\
+             patch.object(vf, "_single", side_effect=simulate_batch), \
              patch("lead_campaign_counter.remaining", side_effect=[450, 250, 100, 0]):
             self.assertEqual(vf.main(), 0)
         self.assertEqual(visited, list(vf.AUTO_REGIONS))
@@ -104,7 +104,7 @@ class CampaignCounterTests(unittest.TestCase):
         with patch.dict(os.environ, {"LEAD_AUTO_TARGET": "1",
                                     "LEAD_CAMPAIGN_GOAL": "450",
                                     "LEAD_CAMPAIGN_SINCE_UTC": SINCE}), \
-             patch.object(vf, "_single", return_value=2) as checker, \\
+             patch.object(vf, "_single", return_value=2) as checker, \
              patch("lead_campaign_counter.remaining", return_value=450), \
              contextlib.redirect_stdout(output):
             self.assertEqual(vf.main(), 0)
