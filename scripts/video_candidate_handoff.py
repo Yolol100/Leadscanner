@@ -12,6 +12,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
+from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
 MAX_INPUT = 100
@@ -55,6 +56,12 @@ def _verified_observation(item, domain):
     if not all(isinstance(item.get(field), str) and item[field].strip()
                for field in ('source_url', 'observed_at', 'method', 'finding')):
         return False
+    try:
+        observed_date = datetime.fromisoformat(item['observed_at'].replace('Z', '+00:00')).date()
+        if observed_date > datetime.now(timezone.utc).date():
+            return False
+    except (ValueError, TypeError):
+        return False
     url_domain = _safe_domain(item['source_url'])
     return url_domain == domain or (url_domain and url_domain.endswith('.' + domain))
 
@@ -90,7 +97,6 @@ def shortlist(payload, limit=MAX_SELECTED):
         if not domain or domain in considered or domain in blocked_domains:
             counts['rejected'] += 1
             continue
-        considered.add(domain)
         if (item.get('verification_status') not in VERIFIED or
             item.get('historical_suppression_checked') is not True or
             item.get('suppressed') is not False or
@@ -99,6 +105,7 @@ def shortlist(payload, limit=MAX_SELECTED):
             not item['company'].strip() or '@' in item['company']):
             counts['rejected'] += 1
             continue
+        considered.add(domain)
         counts['eligible'] += 1
         raw = item.get('observations', [])
         observations = [o for o in raw if _verified_observation(o, domain)] if isinstance(raw, list) else []
@@ -125,7 +132,7 @@ def shortlist(payload, limit=MAX_SELECTED):
         # Never transfer private contact fields, raw screenshots, or email values.
         accepted.append({
             'company': item['company'].strip()[:120],
-            'website': 'https://' + domain + '/',
+            'website': 'https://' + urlsplit(item['website']).hostname.lower().rstrip('.') + '/',
             'status': 'READY_FOR_REVIEW' if ready else 'NEEDS_EVIDENCE',
             'video_priority_score': score,
             'verified_issue_categories': sorted(issue_kinds),
@@ -136,7 +143,9 @@ def shortlist(payload, limit=MAX_SELECTED):
                              else 'EMAIL_BLOCKED'),
             'evidence_review_required': True,
         })
-    accepted.sort(key=lambda x: (-x['video_priority_score'], x['website']))
+    # Decision-ready leads always precede incomplete evidence, even at an equal score.
+    accepted.sort(key=lambda x: (x['status'] != 'READY_FOR_REVIEW',
+                                 -x['video_priority_score'], x['website']))
     selected = accepted[:limit]
     counts['selected'] = len(selected)
     counts['ready'] = sum(1 for item in selected if item['status'] == 'READY_FOR_REVIEW')
