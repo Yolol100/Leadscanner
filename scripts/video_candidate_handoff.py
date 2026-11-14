@@ -27,7 +27,10 @@ def _safe_domain(url):
     try:
         parsed = urlsplit(url)
         host = (parsed.hostname or '').lower().rstrip('.')
-        if (parsed.scheme != 'https' or not host or parsed.username or
+        if host.startswith('www.'):
+            host = host[4:]
+        if (parsed.scheme != 'https' or parsed.port not in (None, 443) or
+            not host or parsed.username is not None or
                 parsed.password or not host.count('.') or host == 'localhost'):
             return None
         try:
@@ -63,6 +66,18 @@ def shortlist(payload, limit=MAX_SELECTED):
         raise ValueError('invalid_input_shape')
     if len(payload['candidates']) > MAX_INPUT:
         raise ValueError('input_too_large')
+    # A later suppression or unverified duplicate must never be bypassed by
+    # an earlier valid record for the same website domain.
+    blocked_domains = set()
+    for record in payload['candidates']:
+        if not isinstance(record, dict):
+            continue
+        name = _safe_domain(record.get('website'))
+        if name and (record.get('historical_suppression_checked') is not True or
+                     record.get('suppressed') is not False or
+                     record.get('verification_status') not in VERIFIED or
+                     record.get('local_business_fit') is not True):
+            blocked_domains.add(name)
     considered = set()
     accepted = []
     counts = {'input': len(payload['candidates']), 'eligible': 0,
@@ -72,7 +87,7 @@ def shortlist(payload, limit=MAX_SELECTED):
             counts['rejected'] += 1
             continue
         domain = _safe_domain(item.get('website'))
-        if not domain or domain in considered:
+        if not domain or domain in considered or domain in blocked_domains:
             counts['rejected'] += 1
             continue
         considered.add(domain)
@@ -87,16 +102,26 @@ def shortlist(payload, limit=MAX_SELECTED):
         counts['eligible'] += 1
         raw = item.get('observations', [])
         observations = [o for o in raw if _verified_observation(o, domain)] if isinstance(raw, list) else []
-        issues = sum(1 for o in observations if o.get('problem') is True)
-        issue_kinds = {o['kind'] for o in observations if o.get('problem') is True}
-        screenshot_ready = sum(1 for o in observations if o.get('screenshot_ready') is True)
-        quickfix = sum(1 for o in observations if isinstance(o.get('small_fix'), str)
-                       and o['small_fix'].strip() and o.get('problem') is True)
-        score = (20 + (30 if len(issue_kinds) >= 2 else 10 if issues else 0) +
+        # Two independent findings may concern the same issue category.
+        # Duplicated evidence cannot inflate the selection score.
+        problems = {}
+        for evidence in observations:
+            if evidence.get('problem') is True:
+                key = (evidence['kind'],
+                       evidence['source_url'].split('?', 1)[0].rstrip('/').casefold(),
+                       evidence['finding'].strip().casefold())
+                problems.setdefault(key, evidence)
+        unique = list(problems.values())
+        issue_count = len(unique)
+        issue_kinds = {e['kind'] for e in unique}
+        screenshot_ready = sum(1 for e in unique if e.get('screenshot_ready') is True)
+        quickfix = sum(1 for e in unique if isinstance(e.get('small_fix'), str)
+                       and e['small_fix'].strip())
+        score = (20 + (30 if issue_count >= 2 else 10 if issue_count else 0) +
                  (20 if screenshot_ready >= 2 else 10 if screenshot_ready else 0) +
                  (20 if quickfix >= 2 else 10 if quickfix else 0) +
                  (10 if len(observations) >= 2 else 0))
-        ready = len(issue_kinds) >= 2 and score >= 60
+        ready = issue_count >= 2 and screenshot_ready >= 1 and quickfix >= 1 and score >= 60
         # Never transfer private contact fields, raw screenshots, or email values.
         accepted.append({
             'company': item['company'].strip()[:120],
@@ -104,6 +129,7 @@ def shortlist(payload, limit=MAX_SELECTED):
             'status': 'READY_FOR_REVIEW' if ready else 'NEEDS_EVIDENCE',
             'video_priority_score': score,
             'verified_issue_categories': sorted(issue_kinds),
+            'verified_problem_count': issue_count,
             'verified_observation_count': len(observations),
             'email_status': ('ELIGIBILITY_REVIEW_REQUIRED'
                              if item.get('marketing_permission') == 'confirmed'
@@ -113,6 +139,7 @@ def shortlist(payload, limit=MAX_SELECTED):
     accepted.sort(key=lambda x: (-x['video_priority_score'], x['website']))
     selected = accepted[:limit]
     counts['selected'] = len(selected)
+    counts['ready'] = sum(1 for item in selected if item['status'] == 'READY_FOR_REVIEW')
     return {'schema_version': '1.0', 'owner': 'video', 'status': 'REVIEW_ONLY',
             'counts': counts, 'selected': selected,
             'note': 'Not an email permission or confirmed website audit.'}
