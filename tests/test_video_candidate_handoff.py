@@ -158,6 +158,37 @@ class VideoCandidateHandoffTests(unittest.TestCase):
         data = {'candidates': [candidate(website='https://@voorbeeld.nl/')]}
         self.assertEqual(video.shortlist(data)['selected'], [])
 
+
+    def test_www_site_stays_www_in_reviewer_link(self):
+        data = {'candidates': [candidate(website='https://www.voorbeeld.nl/over-ons')]}
+        result = video.shortlist(data)
+        self.assertEqual(result['selected'][0]['website'], 'https://www.voorbeeld.nl/')
+
+    def test_invalid_earlier_company_does_not_hide_later_valid_candidate(self):
+        data = {'candidates': [candidate(company=' '), candidate()]}
+        result = video.shortlist(data)
+        self.assertEqual(result['counts']['eligible'], 1)
+        self.assertEqual(result['selected'][0]['status'], 'READY_FOR_REVIEW')
+
+    def test_ready_precedes_needs_evidence_at_equal_score(self):
+        bad = candidate(website='https://aaa.voorbeeld.nl', company='Needs',
+                        observations=[observation('conversion', source_url='https://aaa.voorbeeld.nl', screenshot_ready=False),
+                                      observation('technical', source_url='https://aaa.voorbeeld.nl', screenshot_ready=False)])
+        good = candidate(website='https://zzz.voorbeeld.nl', company='Ready',
+                         observations=[observation('conversion', source_url='https://zzz.voorbeeld.nl'),
+                                       observation('technical', source_url='https://zzz.voorbeeld.nl',
+                                                   screenshot_ready=False, small_fix='')])
+        result = video.shortlist({'candidates': [bad, good]}, limit=1)
+        self.assertEqual(result['selected'][0]['status'], 'READY_FOR_REVIEW')
+        self.assertEqual(result['selected'][0]['company'], 'Ready')
+
+    def test_future_or_unparseable_observation_date_not_ready(self):
+        for timestamp in ('not-a-date', '2999-01-01'):
+            evidence = [observation('conversion', observed_at=timestamp),
+                        observation('technical', observed_at=timestamp)]
+            result = video.shortlist({'candidates': [candidate(observations=evidence)]})
+            self.assertEqual(result['selected'][0]['status'], 'NEEDS_EVIDENCE')
+
     def test_no_network_or_send_dependencies(self):
         source=Path(video.__file__).read_text()
         for forbidden in ('import requests','smtplib','imaplib','create_draft','send_message'):
