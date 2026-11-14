@@ -113,6 +113,51 @@ class VideoCandidateHandoffTests(unittest.TestCase):
             linked.symlink_to(target)
             with self.assertRaises(ValueError):video._outside_repo(linked)
 
+
+    def test_suppression_duplicate_blocks_domain_in_both_orders(self):
+        clean = candidate()
+        banned = candidate(suppressed=True)
+        for records in ([clean, banned], [banned, clean]):
+            result = video.shortlist({'candidates': records})
+            self.assertEqual(result['selected'], [])
+            self.assertEqual(result['counts']['ready'], 0)
+
+    def test_unknown_suppression_duplicate_blocks_domain(self):
+        data = {'candidates': [candidate(), candidate(historical_suppression_checked=None)]}
+        self.assertEqual(video.shortlist(data)['selected'], [])
+
+    def test_www_and_apex_are_same_domain_for_suppression(self):
+        data = {'candidates': [candidate(), candidate(website='https://www.voorbeeld.nl/', suppressed=True)]}
+        self.assertEqual(video.shortlist(data)['selected'], [])
+
+    def test_two_distinct_conversion_findings_are_video_eligible(self):
+        issues = [observation('conversion', finding='CTA ontbreekt', source_url='https://voorbeeld.nl/'),
+                  observation('conversion', finding='Contactformulier onduidelijk', source_url='https://voorbeeld.nl/contact')]
+        result = video.shortlist({'candidates': [candidate(observations=issues)]})
+        self.assertEqual(result['selected'][0]['status'], 'READY_FOR_REVIEW')
+        self.assertEqual(result['selected'][0]['verified_problem_count'], 2)
+        self.assertEqual(result['counts']['ready'], 1)
+
+    def test_repeated_same_issue_does_not_count_twice(self):
+        repeated = observation('conversion', finding='CTA ontbreekt')
+        result = video.shortlist({'candidates': [candidate(observations=[repeated, repeated])]})
+        self.assertEqual(result['selected'][0]['verified_problem_count'], 1)
+        self.assertEqual(result['selected'][0]['status'], 'NEEDS_EVIDENCE')
+
+    def test_two_issues_need_visual_evidence_and_quick_fix(self):
+        issues = [observation('conversion', screenshot_ready=False, small_fix=''),
+                  observation('technical', screenshot_ready=False, small_fix='')]
+        result = video.shortlist({'candidates': [candidate(observations=issues)]})
+        self.assertEqual(result['selected'][0]['status'], 'NEEDS_EVIDENCE')
+
+    def test_non_standard_https_port_rejected(self):
+        data = {'candidates': [candidate(website='https://voorbeeld.nl:8443/')]}
+        self.assertEqual(video.shortlist(data)['selected'], [])
+
+    def test_empty_username_is_not_accepted(self):
+        data = {'candidates': [candidate(website='https://@voorbeeld.nl/')]}
+        self.assertEqual(video.shortlist(data)['selected'], [])
+
     def test_no_network_or_send_dependencies(self):
         source=Path(video.__file__).read_text()
         for forbidden in ('import requests','smtplib','imaplib','create_draft','send_message'):
