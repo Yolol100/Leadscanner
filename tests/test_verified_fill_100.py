@@ -603,7 +603,7 @@ class ThroughputMetricsTests(unittest.TestCase):
         rows = [hint(1), hint(2)]
         verifier = Mock(side_effect=lambda row: approved(row))
         result = fill_verified(
-            "Amsterdam", ["kappers"], 5.0, target=2,
+            "Amsterdam", ["vakbedrijven"], 5.0, target=2,
             discoverer=lambda **kwargs: {"candidates": rows},
             verifier=verifier, load_registry=lambda: [],
             max_site_checks=2,
