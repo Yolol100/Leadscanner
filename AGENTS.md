@@ -1,9 +1,9 @@
-# Leadscanner — uitsluitend onderzoek
+# Leadscanner — alleen leadonderzoek
 
-Volg de actuele Leads Skill en de live Project Leads-bron. Verifieer lokale Nederlandse vakbedrijven via hun officiële website. Gebruik alleen eigenaargeautoriseerde commands; geen automatische runs of geplande campagnes.
+Volg de actuele Leads Skill en de live Project Leads-bron. De enige actieve opdracht: nieuwe passende Nederlandse bedrijven zoeken, activiteit en exact openbaar algemeen zakelijk e-mailadres op officiële bron verifiëren, volledige historische deduplicatie uitvoeren en unieke geverifieerde leads in het bestaande privéregister bewaren.
 
-Controleer **altijd** volledige historische suppressies (HMAC, LeadHistory, oude DraftQueue als read-only bron). Zonder complete uitsluitingscontrole: blokkeer de scan. Alleen geverifieerde kandidaten naar privé Approved; ruwe hints naar Candidates. Publiceer nooit prospectnamen, adressen of brongegevens op GitHub.
+Zoek via de daadwerkelijk aanwezige PDOK/Overture-bronnen; gebruik Google Maps alleen na verificatie van een geautoriseerde actuele provider. Een historische Maps-scraper is geen actieve installatie. Gebruik geen ongeautoriseerde scraping.
 
-Geen Mijn.Host, mailconcepten, IMAP, SMTP, e-mailverzending of mailboxbeheer. Verwijder of reset geen opt-outs, bounces of historische contactidentiteiten. Videoselectie maximaal vijf geverifieerde kandidaten op uitdrukkelijk verzoek.
+Controleer vóór sitebezoek HMAC/V2, DedupeRegistry, LeadHistory, eerdere Approved, opt-outs, bounces en oude DraftQueue read-only. Dubbelen overslaan en verder zoeken. Alleen bewijs op de officiële site telt voor e-mail. Nieuwe records uitsluitend privé atomair in Approved, WebsiteEvidence en LeadHistory, met readback. Ontbrekende suppressie of opslagbewijs = blocked.
 
-Volledige eerdere repository: `archive/pre-myhost-mail-cleanup-2026-11-10`.
+Geen website-/SEO-audits, video, websiteabonnementen, prijsvoorstellen, e-mailconcepten, IMAP/SMTP, mailboxbeheer of verzending. Verwijder geen historische uitsluitingen of herstelarchieven. Geen prospectdata of secrets in publieke GitHub-commits of logs.
