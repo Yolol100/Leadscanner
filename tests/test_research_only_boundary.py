@@ -5,7 +5,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class ResearchOnlyBoundary(unittest.TestCase):
     def test_only_research_workflows_enabled(self):
         paths = {p.name for p in (ROOT / ".github/workflows").glob("*.yml")}
-        self.assertEqual(paths, {"fresh-leads.yml", "leads-chat-command.yml", "fast-website-evidence.yml"})
+        self.assertEqual(paths, {"fresh-leads.yml", "leads-chat-command.yml"})
         for path in (ROOT / ".github/workflows").glob("*.yml"):
             body = path.read_text(encoding="utf-8")
             for needle in ("OUTREACH_MAIL_PASSWORD", "OUTREACH_IMAP_HOST", "OUTREACH_SMTP", "DRAFTS_AUDIT", "myhost_draft.py", "draft_trigger.py", "schedule:"):
