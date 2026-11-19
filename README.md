@@ -1,25 +1,20 @@
-# Leadscanner — bedrijfsresearch (geen e-mail)
+# Leadscanner — uitsluitend nieuwe Nederlandse bedrijfsleads
 
-De actieve repository zoekt en verifieert Nederlandse lokale bedrijven en officiële websitegegevens. E-mailconcepten, Mijn.Host, IMAP, SMTP, mailboxbruggen en verzendacties zijn buiten gebruik gesteld op 10 november 2026.
+De actieve repository zoekt passende Nederlandse lokale bedrijven in verschillende branches en regio's, verifieert hun bedrijfsactiviteiten en exacte algemene zakelijke e-mail op de officiële website, voorkomt herhaalde leads en bewaart uitsluitend nieuwe geverifieerde records in het bestaande privéregister.
 
-## Beschikbare acties
+## Werkwijze
 
-- `LEADS_CHAT_V1:CHECK`: volledige historische uitsluitingscontrole, inclusief HMAC, LeadHistory en legacy DraftQueue (alleen lezen).
-- `LEADS_CHAT_V2:HINTS_10/30/50/100:r-<32hex>`: zoekhints naar privé Candidates.
-- `LEADS_CHAT_V2:VERIFIED_100:r-<32hex>`: officiële bedrijfsverificatie naar privé Approved.
-- `LEADS_CHAT_V2:EVIDENCE:r-<32hex>` en `REVIEW_EVIDENCE_1..5`: broncontrole van bestaande bedrijfswebsites.
+1. **Zoeken:** gebruik de huidige PDOK/Overture Maps-discovery voor lokale bedrijven; roteer branches en regio's. Google Maps is alleen toegestaan als een werkelijk aanwezige en geautoriseerde provider is vastgesteld. De historische Maps-scraper/hybride workflow is niet actief op de huidige `main`. `overturemaps` is geen Google Maps-installatie.
+2. **Ontdubbelen:** controleer vooraf alle historische HMAC/V2, DedupeRegistry, LeadHistory, eerder opgeslagen bedrijven, opt-outs, bounces en oude DraftQueue, uitsluitend read-only. Match naam, domein, e-mail en lead-ID. Eerder gevonden? Overslaan en een andere kandidaat zoeken.
+3. **Verifiëren:** officiële site bevestigt lokale activiteit, branche, identiteit en exact publiek vermeld algemeen zakelijk e-mailadres. Maps/Overture zijn uitsluitend zoekhints, geen zelfstandig bewijs.
+4. **Opslaan:** alleen unieke geverifieerde bedrijven atomair in privé `Approved`, `WebsiteEvidence` en `LeadHistory`, met bewijsbron en controledatum. Controleer readback en tel alleen nieuwe `verified_*` records.
 
-Bestaande opt-outs, bounces, dedupe en historische conceptgegevens blijven behouden als read-only uitsluiting of archief. Bij ontbrekende suppressiegegevens stopt het onderzoek. Geen prospectinformatie in publieke commits of logs.
+`complete` alleen bij exact doel en geslaagde privé-readback; anders `partial` of `blocked` met reden. Geen website-audits, video-handoff, websiteabonnementen, offertes, mailconcepten of verzending. Bewaar oude uitsluitingen en herstelarchieven; geen privécontactdata in GitHub.
 
-## Herstel
+## Huidige eigenaargeautoriseerde uitvoering
 
-Alle oorspronkelijke code en documenten: [archiefbranch](../../tree/archive/pre-myhost-mail-cleanup-2026-11-10). Herstel niet automatisch en activeer geen mailfuncties zonder nieuwe expliciete opdracht.
-## Optionele video-handoff (afzonderlijke Video Skill)
+- `LEADS_CHAT_V1:CHECK`: historische uitsluitingen controleren.
+- `LEADS_CHAT_V2:HINTS_10/30/50/100:r-<32hex>`: nieuwe hints privé opslaan.
+- `LEADS_CHAT_V2:VERIFIED_100:r-<32hex>` en `VERIFIED_GOAL_<1..1000>`: begrensd verifiëren en opslaan volgens bestaande runtimecontracten.
 
-De bestaande Leads-commando's, historische uitsluitingen, privé Approved/WebsiteEvidence en research-only grens blijven **ongewijzigd**. Voor een door de eigenaar gekozen shortlist van maximaal vijf reeds geverifieerde bedrijven kan een offline `scripts/video_candidate_handoff.py` de **private** bewijsexport gebruiken:
-
-`python3 scripts/video_candidate_handoff.py --input /private/verified-video-candidates.json --output /private/video-review.json --limit 5`
-
-Het bestand bevat reeds geselecteerde, door Leads geverifieerde records en aantoonbare public-site observaties (`verification_status`, `historical_suppression_checked`, `suppressed`, `local_business_fit`, `observations` met `source_url`, `verified`, `privacy_safe`, `observed_at`, `method`, `kind` en `finding`). De code maakt geen nieuwe leads, doet geen websiteverzoeken, toont geen privé-e-mailadressen in output, verzendt geen mails en schrijft geen GitHub-artefacten. Het resultaat is uitsluitend een **interne Video-reviewsuggestie**: geen bewezen SEO- of conversieresultaat en geen marketingtoestemming. Videobewijs, scènes, scripts en e-mailrecht worden afzonderlijk beoordeeld door de nieuwe `video`-skill en `webactueel-workflow`.
-
-Het uitvoerbestand moet buiten de publieke repository blijven. Er worden geen GitHub Actions, cronjobs, mailcommando's of werkende scripts verwijderd of gewijzigd. Test met `python3 -m unittest discover -s tests -p 'test_video_candidate_handoff.py'`.
+Historische extra scripts kunnen nog in de codebasis staan voor compatibiliteit, maar vallen buiten de actieve Leads-dienst. Geen automatische runs of campagnes.
