@@ -170,12 +170,15 @@ def fill_verified(region, keywords, radius_km, *, target=100,
     # Exhausted is a factual PARTIAL, never a false claim of 100 verified.
     if counts["regions_scanned"] == 0:
         raise RuntimeError("verified_fill_source_unavailable")
+    elapsed = time.monotonic() - started
     return {"approved": approved, "target": target,
             "complete": len(approved) == target,
             "counts": {**counts, "approved": len(approved)},
-            "timings": {"total_s": round(time.monotonic() - started, 2),
+            "timings": {"total_s": round(elapsed, 2),
                         "discovery_s": round(discovery_seconds, 2),
-                        "verification_s": round(verification_seconds, 2)},
+                        "verification_s": round(verification_seconds, 2),
+                        "sites_per_minute": round(counts["sites_checked"] * 60 / elapsed, 2) if elapsed > 0 else 0,
+                        "verified_per_minute": round(len(approved) * 60 / elapsed, 2) if elapsed > 0 else 0},
             "emails_sent": 0, "mailbox_writes": 0}
 
 
