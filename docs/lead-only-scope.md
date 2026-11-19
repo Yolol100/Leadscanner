@@ -11,3 +11,7 @@ Deze scope is uitsluitend voor nieuwe Nederlandse lokale bedrijfsleads.
 - Geen website-audits, websiteabonnementen, videoselectie, offertes, mailconcepten of verzending.
 
 Deze scope verandert bestaande historische suppressies, registers en mailarchieven niet. Oude video-/auditcode is niet meer een actieve Leads-taak en kan apart worden uitgefaseerd na compatibiliteitstests.
+
+## Veilig opgeschoond
+
+De oude videokandidaten-handoff en de bijbehorende tests zijn verwijderd. Officiële websiteverificatie en de privé `WebsiteEvidence`-registratie blijven bewust behouden: ze zijn nodig om bedrijfsactiviteit en zakelijke e-mailadressen te bewijzen. De bestaande `fast-website-evidence`-workflow wordt niet verwijderd zonder bewijs dat actieve registraties en readback onaangetast blijven. Website-audits en verkoopadvies zijn geen onderdeel van de Leads-dienst.
