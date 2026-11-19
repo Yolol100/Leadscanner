@@ -28,44 +28,13 @@ def verified(**changes):
     return result
 
 
-class OwnerEvidenceCommandContractTests(unittest.TestCase):
-    def test_exact_authorization_and_research_source_lock(self):
+class RetiredWebsiteWorkflowTests(unittest.TestCase):
+    def test_standalone_recheck_workflow_is_retired(self):
         from pathlib import Path
-        workflow = (Path(__file__).resolve().parents[1]
-                    / ".github/workflows/fast-website-evidence.yml").read_text()
-        self.assertIn("issue_comment:", workflow)
-        self.assertIn("github.event.issue.number == 1659", workflow)
-        self.assertIn("github.actor == 'Yolol100'", workflow)
-        self.assertIn("github.event.comment.user.login == 'Yolol100'", workflow)
-        self.assertIn("!github.event.issue.pull_request", workflow)
-        self.assertIn("group: leadscanner-website-evidence", workflow)
-        self.assertIn("queue: max", workflow)
-        for i in range(1, 6):
-            self.assertIn("LEADS_EVIDENCE_V1:REVIEW450_BATCH_" + str(i),
-                          workflow)
-        self.assertIn("SOURCE=Review450", workflow)
-        self.assertIn('python3 scripts/fast_website_evidence.py --source "$SOURCE" --batch "$BATCH"', workflow)
-        self.assertNotIn("cron:", workflow)
-        self.assertNotIn("smtplib", workflow)
+        root = Path(__file__).resolve().parents[1]
+        self.assertFalse((root / ".github/workflows/fast-website-evidence.yml").exists())
+        self.assertTrue((root / "scripts/fast_website_evidence.py").exists())
 
-
-    def test_noop_events_do_not_hold_owner_recheck_queue(self):
-        from pathlib import Path
-        workflow = (Path(__file__).resolve().parents[1]
-                    / ".github/workflows/fast-website-evidence.yml").read_text()
-        # Actual source writes retain both independent serialization gates.
-        self.assertIn("'leads-private-candidates'", workflow)
-        self.assertIn("group: leadscanner-website-evidence", workflow)
-        self.assertIn("cancel-in-progress: false", workflow)
-        self.assertIn("queue: max", workflow)
-        # Unrelated issue comments and PR tests do not block owner rechecks.
-        self.assertIn("leads-evidence-skip-{0}", workflow)
-        self.assertIn("github.run_id", workflow)
-        self.assertIn("github.event_name == 'issue_comment'", workflow)
-        self.assertIn("github.event.comment.body", workflow)
-        self.assertNotIn("github.event_name == 'push'", workflow)
-        self.assertNotIn("LEADS_EVIDENCE_ONCE:", workflow)
-        self.assertNotIn("LEADS_CACHE_SMOKE:", workflow)
 
 class FastOfficialEvidenceTests(unittest.TestCase):
     def test_private_failure_class_is_anonymous_and_does_not_approve(self):
@@ -693,21 +662,14 @@ class FastOfficialEvidenceTests(unittest.TestCase):
         store.assert_not_called()
         self.assertEqual(json.loads(output.getvalue())["approved_stored_privately"], 0)
 
-    def test_manual_evidence_has_no_cron_or_mailbox_transport(self):
+    def test_active_discovery_has_no_mailbox_transport(self):
         from pathlib import Path
         root = Path(__file__).resolve().parents[1]
-        fast = (root / ".github/workflows/fast-website-evidence.yml").read_text()
         new = (root / ".github/workflows/fresh-leads.yml").read_text()
-        self.assertIn("github.event_name == 'workflow_dispatch'", fast)
-        self.assertIn("github.actor == 'Yolol100'", fast)
-        self.assertIn("LEADS_EVIDENCE_V1:REVIEW450_BATCH_1", fast)
-        self.assertIn("LEAD_REGISTRY_SERVICE_ACCOUNT_JSON", fast)
-        for workflow in (fast, new):
-            self.assertNotIn("  schedule:", workflow)
-            self.assertNotIn("github.event_name == 'schedule'", workflow)
-            self.assertNotIn("OUTREACH_MAIL_PASSWORD", workflow)
-            self.assertNotIn("smtp", workflow.lower())
-        self.assertNotIn("LEADS_EVIDENCE_ONCE:", fast)
+        self.assertFalse((root / ".github/workflows/fast-website-evidence.yml").exists())
+        self.assertNotIn("  schedule:", new)
+        self.assertNotIn("OUTREACH_MAIL_PASSWORD", new)
+        self.assertNotIn("smtp", new.lower())
         self.assertNotIn("  auto_first_drafts:", new)
 
     def test_cache_retention_preserves_review450_and_current_batch(self):

@@ -15,3 +15,7 @@ Deze scope verandert bestaande historische suppressies, registers en mailarchiev
 ## Veilig opgeschoond
 
 De oude videokandidaten-handoff en de bijbehorende tests zijn verwijderd. Officiële websiteverificatie en de privé `WebsiteEvidence`-registratie blijven bewust behouden: ze zijn nodig om bedrijfsactiviteit en zakelijke e-mailadressen te bewijzen. De bestaande `fast-website-evidence`-workflow wordt niet verwijderd zonder bewijs dat actieve registraties en readback onaangetast blijven. Website-audits en verkoopadvies zijn geen onderdeel van de Leads-dienst.
+
+## Losse hercontrole uitgefaseerd
+
+De handmatig te starten GitHub Actions-workflow `fast-website-evidence.yml` is verwijderd, inclusief de historische Review450-trigger. De bestaande privegegevens blijven onaangeraakt. `scripts/fast_website_evidence.py` blijft als gedeelde module voor de verplichte verificatie en atomaire registratie in `Approved`, `WebsiteEvidence` en `LeadHistory`. Nieuwe leads blijven via de bestaande, geautoriseerde leadroute werken. Geen aparte website-auditdienst of hercontroleactie meer.
