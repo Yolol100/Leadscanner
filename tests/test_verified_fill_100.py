@@ -598,5 +598,21 @@ class AtomicApprovedEvidenceTests(unittest.TestCase):
 
 
 
+
+class SingleCategoryPassTests(unittest.TestCase):
+    def test_category_is_evaluated_once_per_new_hint(self):
+        import verified_fill
+        rows = [hint(1), hint(2), hint(3)]
+        original = verified_fill.category
+        with patch.object(verified_fill, "category", wraps=original) as classifier:
+            result = fill_verified(
+                "Delft", ["vakbedrijven"], 8, target=3,
+                discoverer=lambda **kwargs: {"candidates": rows},
+                verifier=lambda row: approved(row),
+                load_registry=lambda: [], max_site_checks=3,
+            )
+        self.assertEqual(result["counts"]["approved"], 3)
+        self.assertEqual(classifier.call_count, 3)
+
 if __name__ == "__main__":
     unittest.main()
