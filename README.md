@@ -9,4 +9,4 @@ De Leadscanner zoekt nieuwe Nederlandse lokale bedrijven via **PDOK en Overture 
 - `LEADS_CHAT_V2:HINTS_10/30/50/100:r-<32hex>`: verzamel bronhints in privé.
 - `LEADS_CHAT_V2:VERIFIED_100:r-<32hex>` en `VERIFIED_GOAL_<1..1000>`: verifieer en sla begrensde aantallen op.
 
-De bestaande bronproviders, verificatie, atomair opslaan en readback blijven intact. De anonieme samenvatting toont aantallen en bestaande tijdmetingen plus berekende doorvoer zonder extra websiteverzoeken. Geen e-mailverzending, drafts, video, website-audits of abonnementen. Historische uitsluitingen blijven bewaard.
+De bestaande bronproviders, verificatie, atomair opslaan en readback blijven intact. De verwerking vermijdt dubbele brancheclassificatie; bestaande verificatie en privéopslag blijven behouden. Geen e-mailverzending, drafts, video, website-audits of abonnementen. Historische uitsluitingen blijven bewaard.

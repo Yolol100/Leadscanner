@@ -12,7 +12,7 @@ Dit is de enige actuele werkwijze voor de repository. README en de Leads-skill v
 
 ## Snelheid zonder kwaliteitsverlies
 - Behoud de bestaande bronproviders, één workerpool, in-memory domeinfilter, branche-rotatie, korte batches, websitebewijs uit één bezoek en vroeg stoppen bij doel.
-- Gebruik bestaande tijdmetingen voor `total_s`, `discovery_s`, `verification_s`, `sites_per_minute` en `verified_per_minute`. De twee nieuwe snelheidsgetallen veroorzaken **geen extra netwerkverzoeken**.
+- Vermijd dubbel classificeren van dezelfde bronhint. Houd bestaande veiligheids- en verificatiestappen intact; voeg geen nieuwe meetvelden of netwerkverzoeken toe.
 - Voeg **geen per-bedrijf kwaliteitsscore** of geplande hercontrole toe: beide zijn buiten scope en een score zou extra berekeningen/risico op verkeerde afwijzing toevoegen. Bestaande verificatiestatus is de kwaliteitsgrens.
 - Het bestaande anonieme resultaat telt bronhints, bezochte sites, dubbelen, eerder gebruikte leads, onbewezen leads en goedgekeurde leads. Dit is het overzicht van **hoe leads worden gevonden**, niet Google Maps-data.
 - Verwijder historische registers of compatibiliteitscode nooit alleen vanwege de naam; eerst aantonen dat de huidige code en tests ze niet nodig hebben.

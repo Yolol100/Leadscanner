@@ -5,7 +5,7 @@ approval. Only aggregate counts reach GitHub; private handoff keeps identities.
 """
 from __future__ import annotations
 
-from collections import deque
+from collections import deque, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import redirect_stdout, redirect_stderr
 from io import StringIO
@@ -59,6 +59,7 @@ def fill_verified(region, keywords, radius_km, *, target=100,
     approved = []
     seen_names, seen_domains, seen_emails = set(), set(), set()
     seen_sites = set()
+    # Cache normalized category once per hint; avoid repeated taxonomy parsing.
     counts = {"source_hints": 0, "sites_checked": 0, "previously_used": 0,
               "duplicates": 0, "unverified": 0, "source_errors": 0,
               "regions_scanned": 0}
@@ -99,7 +100,8 @@ def fill_verified(region, keywords, radius_km, *, target=100,
                 website = safe_hint(row.get("website_hint"))
                 name = str(row.get("name_hint") or "").strip()
                 domain = normalize_domain(website) if website else ""
-                if not website or not name or len(name) > 160 or not domain or not category(row):
+                group = category(row) if website and name and len(name) <= 160 and domain else None
+                if not group:
                     counts["unverified"] += 1
                     continue
                 # Never query the same site repeatedly, even across Overture regions.
@@ -114,13 +116,13 @@ def fill_verified(region, keywords, radius_km, *, target=100,
                                                if isinstance(c, dict)]}, registry):
                     counts["previously_used"] += 1
                     continue
-                possible.append(row)
+                possible.append((row, group[1]))
 
             # Rotate industries before network checks. This avoids taking the
             # first hundred hints from one dominant sector.
-            buckets = {}
-            for item in possible:
-                buckets.setdefault(category(item)[1], deque()).append(item)
+            buckets = defaultdict(deque)
+            for item, group in possible:
+                buckets[group].append(item)
             possible = []
             while any(buckets.values()):
                 for group in buckets.values():
@@ -170,15 +172,12 @@ def fill_verified(region, keywords, radius_km, *, target=100,
     # Exhausted is a factual PARTIAL, never a false claim of 100 verified.
     if counts["regions_scanned"] == 0:
         raise RuntimeError("verified_fill_source_unavailable")
-    elapsed = time.monotonic() - started
     return {"approved": approved, "target": target,
             "complete": len(approved) == target,
             "counts": {**counts, "approved": len(approved)},
-            "timings": {"total_s": round(elapsed, 2),
+            "timings": {"total_s": round(time.monotonic() - started, 2),
                         "discovery_s": round(discovery_seconds, 2),
-                        "verification_s": round(verification_seconds, 2),
-                        "sites_per_minute": round(counts["sites_checked"] * 60 / elapsed, 2) if elapsed > 0 else 0,
-                        "verified_per_minute": round(len(approved) * 60 / elapsed, 2) if elapsed > 0 else 0},
+                        "verification_s": round(verification_seconds, 2)},
             "emails_sent": 0, "mailbox_writes": 0}
 
 
