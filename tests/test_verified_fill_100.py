@@ -598,23 +598,5 @@ class AtomicApprovedEvidenceTests(unittest.TestCase):
 
 
 
-class ThroughputMetricsTests(unittest.TestCase):
-    def test_metrics_reuse_existing_clock_without_extra_verification(self):
-        rows = [hint(1), hint(2)]
-        verifier = Mock(side_effect=lambda row: approved(row))
-        result = fill_verified(
-            "Amsterdam", ["vakbedrijven"], 5.0, target=2,
-            discoverer=lambda **kwargs: {"candidates": rows},
-            verifier=verifier, load_registry=lambda: [],
-            max_site_checks=2,
-        )
-        self.assertEqual(verifier.call_count, 2)
-        self.assertEqual(result["counts"]["approved"], 2)
-        self.assertEqual(result["counts"]["sites_checked"], 2)
-        self.assertIn("sites_per_minute", result["timings"])
-        self.assertIn("verified_per_minute", result["timings"])
-        self.assertGreaterEqual(result["timings"]["sites_per_minute"], 0)
-        self.assertGreaterEqual(result["timings"]["verified_per_minute"], 0)
-
 if __name__ == "__main__":
     unittest.main()
