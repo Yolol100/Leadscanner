@@ -5,6 +5,7 @@ on:
   pull_request:
   schedule:
     - cron: '17 4 * * *'
+    - cron: '57 12 20 11 *' # Temporary 2026-11-20 schedule-trigger acceptance
   workflow_dispatch:
     inputs:
       execution_mode:
