@@ -15,7 +15,7 @@ from urllib.parse import urljoin, urlparse
 
 import requests
 
-from target_scope import is_blocked_place, is_profile_keyword, profile_category_terms, requested_category_terms
+from target_scope import is_blocked_place, is_foreign_country_hint, is_profile_keyword, profile_category_terms, requested_category_terms
 from url_safety import is_public_http_url
 
 PDOK_FREE_URL = "https://api.pdok.nl/bzk/locatieserver/search/v3_1/free"
@@ -440,10 +440,15 @@ def read_candidates(
             primary_address = next(
                 (v for v in addresses if isinstance(v, dict)), {}
             ) if isinstance(addresses, list) else {}
+            country_hint = str(primary_address.get("country") or "").strip().upper()
+            # Border-region bboxes may include Belgian or German businesses.
+            # Reject a non-Dutch country before constructing a candidate.
+            if is_foreign_country_hint(country_hint):
+                continue
             candidates.append(
                 {
                     "overture_id": str(feature.get("id") or properties.get("id") or "").strip(),
-                    "country_hint": str(primary_address.get("country") or "").strip().upper(),
+                    "country_hint": country_hint,
                     "locality_hint": str(primary_address.get("locality") or "").strip(),
                     "postcode_hint": str(primary_address.get("postcode") or "").strip(),
                     "name_hint": _primary_name(properties),

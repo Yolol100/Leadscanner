@@ -21,7 +21,7 @@ from new_leads import NATIONAL_HUBS, NATIONAL_NAMES, safe_hint
 from overture_discovery import discover
 from registry_readonly import load_discovery_suppressions
 from scheduled_region_rotation import scheduled_regions
-from target_scope import validate_requested_keywords
+from target_scope import is_foreign_country_hint, validate_requested_keywords
 from verify_official_lead import category, verify_official_site
 
 MAX_PER_REGION = 700
@@ -100,6 +100,11 @@ def fill_verified(region, keywords, radius_km, *, target=100,
             possible = []
             for row in hints:
                 if not isinstance(row, dict):
+                    counts["unverified"] += 1
+                    continue
+                # Independent fail-closed guard for non-Dutch Overture hints.
+                # Do not contact websites for explicitly foreign businesses.
+                if is_foreign_country_hint(row.get("country_hint")):
                     counts["unverified"] += 1
                     continue
                 website = safe_hint(row.get("website_hint"))
