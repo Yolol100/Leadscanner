@@ -8,6 +8,7 @@ from __future__ import annotations
 from collections import deque, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import redirect_stdout, redirect_stderr
+from datetime import datetime, timezone
 from io import StringIO
 import json
 import os
@@ -19,6 +20,7 @@ from dedupe_preflight import domains_match, match_candidate, normalize_company, 
 from new_leads import NATIONAL_HUBS, NATIONAL_NAMES, safe_hint
 from overture_discovery import discover
 from registry_readonly import load_discovery_suppressions
+from scheduled_region_rotation import scheduled_regions
 from target_scope import validate_requested_keywords
 from verify_official_lead import category, verify_official_site
 
@@ -54,8 +56,11 @@ def fill_verified(region, keywords, radius_km, *, target=100,
     # The source registry/HMAC must be complete BEFORE a single website lookup.
     registry = load_registry()
     region_key = region.casefold().strip()
-    regions = (EXTRA_REGION_SETS[region_key] if region_key in EXTRA_REGION_SETS
-               else NATIONAL_HUBS if region_key in NATIONAL_NAMES else (region,))
+    if region_key == "auto":
+        regions = scheduled_regions(datetime.now(timezone.utc).date())
+    else:
+        regions = (EXTRA_REGION_SETS[region_key] if region_key in EXTRA_REGION_SETS
+                   else NATIONAL_HUBS if region_key in NATIONAL_NAMES else (region,))
     approved = []
     seen_names, seen_domains, seen_emails = set(), set(), set()
     seen_sites = set()
@@ -205,6 +210,10 @@ def _single():
         campaign_goal = None
         campaign_before = None
         target = 100
+        is_scheduled = os.getenv("GITHUB_EVENT_NAME") == "schedule"
+        if is_scheduled and (not os.getenv("LEAD_CAMPAIGN_SINCE_UTC")
+                             or not os.getenv("LEAD_CAMPAIGN_GOAL")):
+            raise RuntimeError("scheduled_campaign_configuration_missing")
         if os.getenv("LEAD_CAMPAIGN_SINCE_UTC"):
             from lead_campaign_counter import remaining
             goal_text = os.getenv("LEAD_CAMPAIGN_GOAL")
@@ -223,7 +232,7 @@ def _single():
                 return 0
             target = min(100, left)
         with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
-            # Weekly automation is deliberately bounded; it may end PARTIAL.
+            # Scheduled automation is deliberately bounded; it may end PARTIAL.
             limit = 240 if os.getenv("GITHUB_EVENT_NAME") == "schedule" else MAX_SITE_CHECKS
             result = fill_verified(region, words, radius, target=target,
                                    verifier=_verify_with_one_pass_evidence,
@@ -274,7 +283,7 @@ def _single():
             "counts": result["counts"], "timings": result["timings"], "emails_sent": 0,
             "mailbox_writes": 0, "public_identities": 0,
         }, sort_keys=True))
-        return 0 if goal_complete else 2
+        return 0 if goal_complete or is_scheduled else 2
     except Exception:
         print(json.dumps({"status": "blocked", "reason": "source_or_registry_unavailable",
                           "emails_sent": 0, "public_identities": 0}, sort_keys=True))

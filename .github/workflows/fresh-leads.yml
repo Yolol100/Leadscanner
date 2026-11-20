@@ -3,6 +3,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: '17 4 * * *'
   workflow_dispatch:
     inputs:
       execution_mode:
@@ -38,8 +40,8 @@ permissions:
   contents: read
 jobs:
   test:
-    # PR/push CI validates code. Only an explicit manual run may search.
-    if: github.event_name != 'workflow_dispatch'
+    # Push/PR validate code; scheduled and manual jobs perform bounded research.
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -101,10 +103,11 @@ jobs:
     needs: test
     if: >-
       always() && !cancelled() &&
-      github.event_name == 'workflow_dispatch' &&
       needs.test.result == 'skipped' &&
       github.ref == 'refs/heads/main' &&
-      contains(fromJSON('["discover","fill_100"]'), inputs.execution_mode)
+      (github.event_name == 'schedule' ||
+       (github.event_name == 'workflow_dispatch' &&
+        contains(fromJSON('["discover","fill_100"]'), inputs.execution_mode)))
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     concurrency:
@@ -126,11 +129,13 @@ jobs:
         env:
           PYTHONPATH: scripts
           LEAD_REGISTRY_SERVICE_ACCOUNT_JSON: ${{ secrets.LEAD_REGISTRY_SERVICE_ACCOUNT_JSON || secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-          EXECUTION_MODE: ${{ inputs.execution_mode }}
-          REGION: ${{ inputs.region }}
-          KEYWORDS: ${{ inputs.keywords }}
-          RADIUS: ${{ inputs.radius_km }}
-          LIMIT: ${{ inputs.limit }}
+          EXECUTION_MODE: ${{ github.event_name == 'schedule' && 'fill_100' || inputs.execution_mode }}
+          REGION: ${{ github.event_name == 'schedule' && 'auto' || inputs.region }}
+          KEYWORDS: ${{ github.event_name == 'schedule' && 'vakbedrijven' || inputs.keywords }}
+          RADIUS: ${{ github.event_name == 'schedule' && '25' || inputs.radius_km }}
+          LIMIT: ${{ github.event_name == 'schedule' && '100' || inputs.limit }}
+          LEAD_CAMPAIGN_SINCE_UTC: ${{ vars.LEAD_CAMPAIGN_SINCE_UTC }}
+          LEAD_CAMPAIGN_GOAL: ${{ vars.LEAD_CAMPAIGN_GOAL }}
         run: |
           if [ "$EXECUTION_MODE" = "fill_100" ]; then
             python3 scripts/verified_fill.py

@@ -8,9 +8,18 @@ class ResearchOnlyBoundary(unittest.TestCase):
         self.assertEqual(paths, {"fresh-leads.yml", "leads-chat-command.yml"})
         for path in (ROOT / ".github/workflows").glob("*.yml"):
             body = path.read_text(encoding="utf-8")
-            for needle in ("OUTREACH_MAIL_PASSWORD", "OUTREACH_IMAP_HOST", "OUTREACH_SMTP", "DRAFTS_AUDIT", "myhost_draft.py", "draft_trigger.py", "schedule:"):
+            for needle in ("OUTREACH_MAIL_PASSWORD", "OUTREACH_IMAP_HOST", "OUTREACH_SMTP", "DRAFTS_AUDIT", "myhost_draft.py", "draft_trigger.py"):
                 with self.subTest(path=path.name, needle=needle):
                     self.assertNotIn(needle, body)
+            if path.name == "fresh-leads.yml":
+                # Scheduled research is allowed only with a bounded private goal.
+                self.assertIn("  schedule:", body)
+                self.assertIn("LEAD_CAMPAIGN_GOAL:", body)
+                self.assertIn("LEAD_CAMPAIGN_SINCE_UTC:", body)
+                self.assertIn("python3 scripts/verified_fill.py", body)
+                self.assertIn("load_discovery_suppressions", body)
+            else:
+                self.assertNotIn("  schedule:", body)
     def test_no_legacy_writers_remain(self):
         for filename in ("myhost_draft.py", "draft_management.py", "draft_trigger.py", "draft_revision.py", "sync450_openings.py", "private_imap_archive.py"):
             with self.subTest(filename=filename):

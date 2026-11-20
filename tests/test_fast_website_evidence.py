@@ -651,23 +651,29 @@ class FastOfficialEvidenceTests(unittest.TestCase):
         from contextlib import redirect_stdout
         from io import StringIO
         with patch.dict("os.environ", {"GITHUB_EVENT_NAME": "schedule",
-                                       "REGION": "Nederland", "KEYWORDS": "vakbedrijven",
-                                       "RADIUS": "25"}), \
+                                       "REGION": "auto", "KEYWORDS": "vakbedrijven",
+                                       "RADIUS": "25",
+                                       "LEAD_CAMPAIGN_SINCE_UTC": "2024-01-01T00:00:00Z",
+                                       "LEAD_CAMPAIGN_GOAL": "100"}), \
+             patch("lead_campaign_counter.remaining", return_value=100), \
              patch.object(verified_fill, "fill_verified", return_value=result) as discover, \
              patch("approved_handoff.store_approved") as store, \
              redirect_stdout(StringIO()) as output:
             code = verified_fill.main()
-        self.assertEqual(code, 2)  # honest PARTIAL is never called complete
+        self.assertEqual(code, 0)  # bounded PARTIAL is processed without a CI error
         self.assertEqual(discover.call_args.kwargs["max_site_checks"], 240)
         store.assert_not_called()
         self.assertEqual(json.loads(output.getvalue())["approved_stored_privately"], 0)
+        self.assertEqual(json.loads(output.getvalue())["status"], "partial")
 
     def test_active_discovery_has_no_mailbox_transport(self):
         from pathlib import Path
         root = Path(__file__).resolve().parents[1]
         new = (root / ".github/workflows/fresh-leads.yml").read_text()
         self.assertFalse((root / ".github/workflows/fast-website-evidence.yml").exists())
-        self.assertNotIn("  schedule:", new)
+        self.assertIn("  schedule:", new)
+        self.assertIn("LEAD_CAMPAIGN_GOAL:", new)
+        self.assertIn("LEAD_CAMPAIGN_SINCE_UTC:", new)
         self.assertNotIn("OUTREACH_MAIL_PASSWORD", new)
         self.assertNotIn("smtp", new.lower())
         self.assertNotIn("  auto_first_drafts:", new)
