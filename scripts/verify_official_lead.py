@@ -278,10 +278,12 @@ def verify_official_site(row, *, session=requests, expected_email=None,
         return None
 
     from new_leads import safe_hint
-    from target_scope import is_blocked_place
+    from target_scope import is_blocked_place, is_foreign_country_hint
     name = str(row.get("name_hint") or "").strip()
     url = safe_hint(row.get("website_hint"))
     mapping = category(row)
+    if is_foreign_country_hint(row.get("country_hint")):
+        return reject("foreign_country_hint")
     if not name or not url or not mapping:
         return reject("input_not_verified")
     host = urlsplit(url).hostname

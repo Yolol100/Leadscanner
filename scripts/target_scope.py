@@ -321,6 +321,16 @@ def profile_category_terms() -> tuple[str, ...]:
     return tuple(sorted({normalize(category) for category in categories}))
 
 
+def is_foreign_country_hint(value: object) -> bool:
+    """Reject a disclosed foreign Overture country; do not infer from the site TLD.
+
+    Empty source country remains unproven and continues through the normal
+    first-party website verification, rather than assuming it is foreign.
+    """
+    code = str(value or "").strip().upper()
+    return bool(code and code not in {"NL", "NLD", "NETHERLANDS", "NEDERLAND"})
+
+
 def is_blocked_place(*values: object) -> bool:
     haystack = normalize(" ".join(str(v or "") for v in values))
     return any(_contains_phrase(haystack, item) for item in BLOCKED_PHRASES)
